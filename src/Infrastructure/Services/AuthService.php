@@ -28,7 +28,6 @@ class AuthService
 
     protected ?AccountsService $accountsService;
 
-
     /** @var AuthService */
     protected static $instance;
 
@@ -50,6 +49,9 @@ class AuthService
         }
         /** @var self $instance */
         $instance = DDDService::instance()->getService(self::class);
+        $instance->accountsService = DDDService::instance()->getService(
+            AccountsService::class
+        );
         self::$instance = $instance;
         return $instance;
     }
@@ -147,7 +149,6 @@ class AuthService
         }
         return true;
     }
-
 
     /**
      * Checks login state based on session cookie
