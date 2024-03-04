@@ -28,7 +28,7 @@ class DatabaseModels extends ObjectSet
     }
 
 
-    public function add(BaseObject &...$elements): void
+    public function add(?BaseObject &...$elements): void
     {
         foreach ($elements as $element) {
             /** @var DatabaseModel $element */

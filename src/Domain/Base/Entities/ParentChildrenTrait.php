@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Entities;
 
 use DDD\Infrastructure\Traits\Serializer\Attributes\HidePropertyOnSystemSerialization;
+use stdClass;
 
 trait ParentChildrenTrait
 {
@@ -19,13 +20,16 @@ trait ParentChildrenTrait
      * @param DefaultObject|null $child
      * @return void
      */
-    public function addChildren(DefaultObject &...$children): void
+    public function addChildren(?DefaultObject &...$children): void
     {
         if (!$this->children) {
             $this->children = new ChildrenSet();
             $this->children->setAddAsChild(false);
         }
         foreach ($children as $child) {
+            if (!$child) {
+                continue;
+            }
             $child->setParent($this);
         }
         // this must come in this order, as sometimes the child relies on his parent for uniqueId and add uses uniqueId
@@ -51,10 +55,12 @@ trait ParentChildrenTrait
         if (!$this->getParent()) {
             return false;
         }
-        if ($this->getParent() === $parentObject)
+        if ($this->getParent() === $parentObject) {
             return true;
-        if (method_exists($this->getParent(),'hasObjectInParents'))
+        }
+        if (method_exists($this->getParent(), 'hasObjectInParents')) {
             return $this->getParent()->hasObjectInParents($parentObject, $callPath);
+        }
         return false;
     }
 
@@ -70,9 +76,9 @@ trait ParentChildrenTrait
 
     /**
      * debug function that returns structure of objects and their children
-     * @return array|\stdClass
+     * @return array|stdClass
      */
-    public function getObjectStructure():array|\stdClass
+    public function getObjectStructure(): array|stdClass
     {
         $resultObject = [];
         $resultObject['objectType'] = static::class;

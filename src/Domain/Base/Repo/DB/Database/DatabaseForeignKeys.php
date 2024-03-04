@@ -20,7 +20,7 @@ class DatabaseForeignKeys extends ObjectSet
     /** @var DatabaseForeignKey[][] */
     private array $foreignKeysByForeignModelClassName = [];
 
-    public function add(BaseObject &...$elements): void
+    public function add(?BaseObject &...$elements): void
     {
         foreach ($elements as $element) {
             /** @var DatabaseForeignKey $element */

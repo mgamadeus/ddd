@@ -31,9 +31,13 @@ class Tags extends ObjectSet
      * @param DefaultObject ...$elements
      * @return void
      */
-    public function add(BaseObject &...$elements): void
+    public function add(?BaseObject &...$elements): void
     {
         foreach ($elements as $element) {
+            /** @var Tag $element */
+            if (!$element) {
+                continue;
+            }
             if ($this->contains($element)) {
                 $presentElement = $this->getByUniqueKey($element->uniqueKey());
                 $presentElement->fillMissingDataFromOtherTag($element);

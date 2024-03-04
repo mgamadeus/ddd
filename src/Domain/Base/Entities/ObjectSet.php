@@ -16,6 +16,7 @@ use DDD\Infrastructure\Reflection\ReflectionProperty;
 use DDD\Infrastructure\Reflection\ReflectionUnionType;
 use DDD\Infrastructure\Traits\Serializer\SerializerRegistry;
 use Iterator;
+use ReflectionException;
 
 class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable, IsEmptyInterface
 {
@@ -313,9 +314,12 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
      * @param BaseObject ...$elements
      * @return void
      */
-    public function add(BaseObject &...$elements): void
+    public function add(?BaseObject &...$elements): void
     {
         foreach ($elements as $element) {
+            if (!$element) {
+                continue;
+            }
             if ($element instanceof DefaultObject) {
                 $element->setParent($this);
             }
@@ -359,9 +363,12 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
      * @param BaseObject ...$elements
      * @return bool
      */
-    public function contains(BaseObject &...$elements): bool
+    public function contains(?BaseObject &...$elements): bool
     {
         foreach ($elements as $element) {
+            if (!$element) {
+                continue;
+            }
             if (!isset($this->elementsByUniqueKey[$element->uniqueKey()])) {
                 return false;
             }

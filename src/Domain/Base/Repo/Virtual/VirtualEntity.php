@@ -45,7 +45,7 @@ class VirtualEntity
      * @param DefaultObject $result
      * @return DefaultObject|null
      */
-    public function postProcessResult(DefaultObject &$result): ?DefaultObject
+    public function postProcessResult(?DefaultObject &$result): ?DefaultObject
     {
         return $result;
     }

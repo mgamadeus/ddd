@@ -11,7 +11,7 @@ class ChildrenSet extends ObjectSet
      * @param BaseObject ...$elements
      * @return void
      */
-    public function add(BaseObject &...$elements): void
+    public function add(?BaseObject &...$elements): void
     {
         foreach ($elements as $element) {
             if (!$this->contains($element)) {
