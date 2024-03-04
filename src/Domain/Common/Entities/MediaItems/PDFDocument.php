@@ -6,7 +6,7 @@ namespace DDD\Domain\Common\Entities\MediaItems;
 
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Validation\Constraints\Choice;
 use Dompdf\Dompdf;
 use Dompdf\Options;
@@ -170,7 +170,7 @@ class PDFDocument extends Document
         ?DateTime $modifiedDateTime = null
     ): PDFDocument {
         // Set cache path
-        $cachePath = AppService::instance()->getCacheDir(false) . '/dompdf_cache';
+        $cachePath = DDDService::instance()->getCacheDir(false) . '/dompdf_cache';
 
         // Check if the cache directory exists, if not create it
         if (!file_exists($cachePath)) {

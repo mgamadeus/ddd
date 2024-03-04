@@ -19,7 +19,7 @@ use DDD\Domain\Common\Services\CronsService;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use Exception;
 use Psr\Cache\InvalidArgumentException;
 use ReflectionException;
@@ -109,7 +109,7 @@ class Cron extends Entity
         $cronExecution->update();
         $this->lastExecutionStartedAt = $cronExecution->executionStartedAt;
         $this->update();
-        $baseCommand = ['php', AppService::instance()->getRootDir() . AppService::instance()->getConsoleDir()];
+        $baseCommand = ['php', DDDService::instance()->getRootDir() . DDDService::instance()->getConsoleDir()];
         $command = array_merge($baseCommand, explode(' ', $this->command));
         $process = new Process($command);
         // we want to capture the output combined

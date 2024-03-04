@@ -10,7 +10,7 @@ use DDD\Domain\Common\Entities\Accounts\LoginTokens\LoginToken;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\AuthService;
 use Doctrine\DBAL\Exception;
 use Doctrine\ORM\Exception\ORMException;
@@ -79,12 +79,12 @@ class LoginTokenService extends EntitiesService
     ): ?int {
         $dbLoginToken = LoginToken::getRepoClassInstance();
 
-        AppService::instance()->deactivateEntityRightsRestrictions();
+        DDDService::instance()->deactivateEntityRightsRestrictions();
         $queryBuilder = $dbLoginToken::createQueryBuilder();
         $queryBuilder->where($dbLoginToken::getBaseModelAlias() . '.token = :token')
             ->setParameter('token', $token);
         $loginToken = $dbLoginToken->find($queryBuilder);
-        AppService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
+        DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
         if (!$loginToken) {
             return null;
         }

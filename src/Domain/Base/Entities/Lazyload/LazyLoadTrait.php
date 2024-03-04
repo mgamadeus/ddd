@@ -16,7 +16,7 @@ use DDD\Domain\Base\Repo\RepoEntity;
 use DDD\Domain\Base\Repo\Virtual\VirtualEntity;
 use DDD\Domain\Common\Services\CacheScopeInvalidationsService;
 use DDD\Infrastructure\Reflection\ReflectionClass;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Traits\AfterConstruct\Attributes\AfterConstruct;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 use ReflectionException;
@@ -256,7 +256,7 @@ trait LazyLoadTrait
      */
     public static function getPropertiesToLazyLoad(): array
     {
-        $currentClassName = AppService::instance()->getContainerServiceClassNameForClass(static::class);
+        $currentClassName = DDDService::instance()->getContainerServiceClassNameForClass(static::class);
 
         $propertiesToLazyLoad = StaticRegistry::$propertiesToLazyLoadForClasses[$currentClassName] ?? null;
         if ($propertiesToLazyLoad) {
@@ -345,7 +345,7 @@ trait LazyLoadTrait
         if (!isset(StaticRegistry::$repoTypesForClasses[$currentClassName][$repoType])) {
             return null;
         }
-        return AppService::instance()->getContainerServiceClassNameForClass(
+        return DDDService::instance()->getContainerServiceClassNameForClass(
             StaticRegistry::$repoTypesForClasses[$currentClassName][$repoType]->repoClass
         );
     }
@@ -400,7 +400,7 @@ trait LazyLoadTrait
         $callStack[spl_object_id($this)] = true;
 
         /** @var LazyLoadTrait $currentClassName */
-        $currentClassName = AppService::instance()->getContainerServiceClassNameForClass(static::class);
+        $currentClassName = DDDService::instance()->getContainerServiceClassNameForClass(static::class);
 
         /** @var string[] $propertiesToBeArgusLoaded */
         $propertiesToBeArgusLoaded = [];

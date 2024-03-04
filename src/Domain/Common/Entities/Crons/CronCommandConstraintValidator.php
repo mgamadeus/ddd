@@ -2,7 +2,7 @@
 
 namespace DDD\Domain\Common\Entities\Crons;
 
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Exception\CommandNotFoundException;
 use Symfony\Component\Validator\Constraint;
@@ -27,7 +27,7 @@ class CronCommandConstraintValidator extends ConstraintValidator
         $commandName = $parts[0];
 
         /** @var Application $application */
-        $application = AppService::instance()->createConsoleApplicationForCurrentKernel();
+        $application = DDDService::instance()->createConsoleApplicationForCurrentKernel();
         try {
             $command = $application->find($commandName);
         } catch (CommandNotFoundException $t) {

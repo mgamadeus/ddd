@@ -6,14 +6,14 @@ namespace DDD\Domain\Base\Repo\DB\Doctrine;
 
 use DDD\Infrastructure\Cache\Cache;
 use DDD\Infrastructure\Libs\Config;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use Doctrine\Common\Proxy\AbstractProxyFactory;
 use Doctrine\ORM\ORMSetup;
 use DoctrineExtensions\Query\Mysql\Field;
 use DoctrineExtensions\Query\Mysql\IfNull;
 use DoctrineExtensions\Query\Mysql\MatchAgainst;
 use DoctrineExtensions\Query\Mysql\Rand;
-use Symfony\Component\DependencyInjection\ContainerInterface;
+use RuntimeException;
 
 class EntityManagerFactory
 {
@@ -49,7 +49,8 @@ class EntityManagerFactory
         gc_collect_cycles();
     }
 
-    protected static function getDBConfigForScope(string $scope = self::SCOPE_DEFAULT): array {
+    protected static function getDBConfigForScope(string $scope = self::SCOPE_DEFAULT): array
+    {
         $config = [
             'driver' => Config::getEnv("DB_{$scope}_CONNECTION_DRIVER"),
             'host' => Config::getEnv("DB_{$scope}_CONNECTION_HOST"),
@@ -60,8 +61,8 @@ class EntityManagerFactory
             'charset' => Config::getEnv("DB_{$scope}_CONNECTION_DB_SERVER_CHARSET"),
         ];
         $proxyGenerationMode = AbstractProxyFactory::AUTOGENERATE_FILE_NOT_EXISTS;
-        if ($proxyGenerationConfig = Config::getEnv("DB_{$scope}_DOCTRINE_PROXY_GENERATION_MODE")){
-            $proxyGenerationMode = match ($proxyGenerationConfig){
+        if ($proxyGenerationConfig = Config::getEnv("DB_{$scope}_DOCTRINE_PROXY_GENERATION_MODE")) {
+            $proxyGenerationMode = match ($proxyGenerationConfig) {
                 'AUTOGENERATE_FILE_NOT_EXISTS' => AbstractProxyFactory::AUTOGENERATE_FILE_NOT_EXISTS,
                 'AUTOGENERATE_ALWAYS' => AbstractProxyFactory::AUTOGENERATE_ALWAYS,
                 'AUTOGENERATE_NEVER' => AbstractProxyFactory::AUTOGENERATE_NEVER,
@@ -76,11 +77,11 @@ class EntityManagerFactory
     {
         $isDevMode = false;
         // Specify the directory where Doctrine should save proxy classes
-        $proxyDir = AppService::instance()->getCacheDir(false) . '/doctrine/orm/Proxies';
+        $proxyDir = DDDService::instance()->getCacheDir(false) . '/doctrine/orm/Proxies';
         if (!is_dir($proxyDir)) {
             // Attempt to create the directory with recursive flag set to true
             if (!mkdir($proxyDir, 0775, true)) {
-                throw new \RuntimeException(sprintf('Could not create proxy directory "%s".', $proxyDir));
+                throw new RuntimeException(sprintf('Could not create proxy directory "%s".', $proxyDir));
             }
         }
         $cache = Cache::instance('DOCTRINE')->getCacheAdapter();

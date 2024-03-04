@@ -13,7 +13,7 @@ use DDD\Infrastructure\Cache\Cache;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Traits\SingletonTrait;
 use Psr\Cache\InvalidArgumentException;
 use ReflectionException;
@@ -56,7 +56,7 @@ class DoctrineEntityRegistry
         bool $deferredCaching = false
     ):void {
         // if memory usage is too high, we do not store new objects
-        if (AppService::instance()->isMemoryUsageHigh()){
+        if (DDDService::instance()->isMemoryUsageHigh()){
             self::$entityRegistry = [];
             gc_collect_cycles();
             return;

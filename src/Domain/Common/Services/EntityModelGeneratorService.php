@@ -12,7 +12,7 @@ use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Libs\ClassFinder;
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
 use DDD\Infrastructure\Reflection\ReflectionClass;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use Doctrine\DBAL\Exception;
 use ReflectionException;
 
@@ -166,9 +166,9 @@ class EntityModelGeneratorService
      */
     public static function getAllEntityClasses(?string $restrictToClasesWithLazyloadRepoType = LazyLoadRepo::DB): array
     {
-        AppService::instance()->deactivateCaches();
-        $classesFromFramework = ClassFinder::getClassesInDirectory(AppService::instance()->getFrameworkRootDir() . '/Domain');
-        $classesFromApplication = ClassFinder::getClassesInDirectory(AppService::instance()->getRootDir() . '/src/Domain');
+        DDDService::instance()->deactivateCaches();
+        $classesFromFramework = ClassFinder::getClassesInDirectory(DDDService::instance()->getFrameworkRootDir() . '/Domain');
+        $classesFromApplication = ClassFinder::getClassesInDirectory(DDDService::instance()->getRootDir() . '/src/Domain');
         $allClasses = array_merge($classesFromFramework, $classesFromApplication);
         //header('content-type:application/json');
         //echo json_encode($allClasses);die();
@@ -208,7 +208,7 @@ class EntityModelGeneratorService
                 }
             }
         }
-        AppService::instance()->restoreCachesSnapshot();
+        DDDService::instance()->restoreCachesSnapshot();
         return $entityClasses;
     }
 }

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Traits\Serializer;
 
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Domain\Base\Entities\Entity;
 
 class SerializerRegistry
@@ -84,7 +84,7 @@ class SerializerRegistry
     public static function setToObjectCacheForObjectId(string|int $objectId, object|array &$object): void
     {
         // if memory usage is too high, we do not store new objects
-        if (AppService::instance()->isMemoryUsageHigh()){
+        if (DDDService::instance()->isMemoryUsageHigh()){
             return;
         }
         self::$toOjectCache[$objectId] = $object;

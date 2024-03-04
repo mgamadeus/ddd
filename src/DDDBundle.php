@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace DDD;
 
 use DDD\Infrastructure\Libs\Config;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 
@@ -21,7 +21,7 @@ class DDDBundle extends Bundle
         }
         self::$defaultContainer = $this->container;
 
-        Config::addConfigDirectory(AppService::instance()->getRootDir() . '/config/app');
+        Config::addConfigDirectory(DDDService::instance()->getRootDir() . '/config/app');
         parent::boot();
     }
 

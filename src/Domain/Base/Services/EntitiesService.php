@@ -13,7 +13,7 @@ use DDD\Domain\Common\Entities\Accounts\Account;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Exceptions\NotFoundException;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\Service;
 use Doctrine\ORM\Exception\ORMException;
 use Doctrine\ORM\NonUniqueResultException;
@@ -134,7 +134,7 @@ class EntitiesService extends Service
             return null;
         }
         /** @var Entity $entityClass */
-        $entityClass = AppService::instance()->getContainerServiceClassNameForClass(
+        $entityClass = DDDService::instance()->getContainerServiceClassNameForClass(
             (string)static::DEFAULT_ENTITY_CLASS
         );
         /** @var  $repoClassInstance */
@@ -154,7 +154,7 @@ class EntitiesService extends Service
             return null;
         }
         /** @var Entity $entityClass */
-        $entityClass = AppService::instance()->getContainerServiceClassNameForClass(
+        $entityClass = DDDService::instance()->getContainerServiceClassNameForClass(
             (string)static::DEFAULT_ENTITY_CLASS
         );
         /** @var EntitySet $entitySetClass */

@@ -15,7 +15,7 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\ClassFinder;
 use DDD\Infrastructure\Libs\Config;
 use DDD\Presentation\Services\RequestService;
-use DDD\Symfony\Kernels\AppKernel;
+use DDD\Symfony\Kernels\DDDKernel;
 use Exception;
 use Psr\Cache\InvalidArgumentException;
 use Psr\Log\LoggerInterface;
@@ -24,7 +24,7 @@ use ReflectionException;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Twig\Environment;
 
-class AppService
+class DDDService
 {
     public const FRAMEWORK_ROOT_NAMESPACE = 'DDD';
 
@@ -57,7 +57,7 @@ class AppService
         DBEntity::class => true
     ];
 
-    /** @var AppService */
+    /** @var DDDService */
     protected static $instance;
 
 
@@ -127,7 +127,7 @@ class AppService
         self::$cacheStates = [
             'doctrineRegistry' => !DoctrineEntityRegistry::$clearCache,
             'virtualRegistry' => !VirtualEntityRegistry::$clearCache,
-            'app' => !AppService::$noCache,
+            'app' => !DDDService::$noCache,
             'classFinder' => !ClassFinder::$clearCache
         ];
         self::$cachesSnapshotSet = true;
@@ -143,7 +143,7 @@ class AppService
         }
         DoctrineEntityRegistry::$clearCache = !self::$cacheStates['doctrineRegistry'];
         VirtualEntityRegistry::$clearCache = !self::$cacheStates['virtualRegistry'];
-        AppService::$noCache = !self::$cacheStates['app'];
+        DDDService::$noCache = !self::$cacheStates['app'];
         ClassFinder::$clearCache = !self::$cacheStates['classFinder'];
         self::$cachesSnapshotSet = false;
     }
@@ -157,7 +157,7 @@ class AppService
         DoctrineEntityRegistry::$clearCache = true;
         VirtualEntityRegistry::$clearCache = true;
         ClassFinder::$clearCache = true;
-        AppService::$noCache = true;
+        DDDService::$noCache = true;
     }
 
     /**
@@ -168,7 +168,7 @@ class AppService
         self::createCachesSnapshot();
         DoctrineEntityRegistry::$clearCache = false;
         VirtualEntityRegistry::$clearCache = false;
-        AppService::$noCache = false;
+        DDDService::$noCache = false;
         ClassFinder::$clearCache = false;
     }
 
@@ -189,11 +189,11 @@ class AppService
     }
 
     /**
-     * @return AppKernel Returns current Kernel
+     * @return DDDKernel Returns current Kernel
      */
-    public function getKernel(): AppKernel
+    public function getKernel(): DDDKernel
     {
-        /** @var AppKernel $kernel */
+        /** @var DDDKernel $kernel */
         $kernel = self::getService('kernel');
         return $kernel;
     }
@@ -213,7 +213,7 @@ class AppService
      */
     public function getKernelPrefix(): ?string
     {
-        /** @var AppKernel $kernel */
+        /** @var DDDKernel $kernel */
         $kernel = self::getService('kernel');
         if (method_exists($kernel, 'getKernelPrefix')) {
             return $kernel->getKernelPrefix();

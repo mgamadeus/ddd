@@ -6,7 +6,7 @@ namespace DDD\Domain\Base\Entities\MessageHandlers;
 
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\AuthService;
 use LogicException;
 use Symfony\Component\Messenger\Envelope;
@@ -67,8 +67,8 @@ class AppMessage extends ValueObject implements SerializerInterface
         }
         $this->setAccountId();
         /** @var MessageBusInterface $messageBus */
-        $this->dispatchedFromWorkspaceDir = AppService::instance()->getRootDir();
-        $messageBus = AppService::instance()->getService('messenger.default_bus');
+        $this->dispatchedFromWorkspaceDir = DDDService::instance()->getRootDir();
+        $messageBus = DDDService::instance()->getService('messenger.default_bus');
         //$messageBus->dispatch($this, [new AmqpStamp('sync')]);
         $messageBus->dispatch($this);
     }
@@ -189,7 +189,7 @@ class AppMessage extends ValueObject implements SerializerInterface
             : $this->encodeForCommandline();
 
         $useTempFileOption = $useTempFolderForTransport ? '--useTempFile' : '';
-        $consolePath = AppService::instance()->getConsoleDir();
+        $consolePath = DDDService::instance()->getConsoleDir();
         $command = "php {$this->dispatchedFromWorkspaceDir}{$consolePath} app:process-cli-message {$useTempFileOption} {$encodedMessage} --no-debug";
         //echo $command;
         //die();
@@ -207,7 +207,7 @@ class AppMessage extends ValueObject implements SerializerInterface
         if ($this?->dispatchedFromWorkspaceDir ?? null) {
             return false;
         }
-        if ($this->dispatchedFromWorkspaceDir == AppService::instance()->getRootDir()) {
+        if ($this->dispatchedFromWorkspaceDir == DDDService::instance()->getRootDir()) {
             return false;
         }
         $this->processOnWorkspace();

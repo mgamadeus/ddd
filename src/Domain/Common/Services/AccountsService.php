@@ -9,7 +9,7 @@ use DDD\Domain\Common\Entities\Accounts\Account;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Exceptions\NotFoundException;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\AuthService;
 use Doctrine\ORM\NonUniqueResultException;
 use Psr\Cache\InvalidArgumentException;
@@ -43,7 +43,7 @@ class AccountsService extends EntitiesService
             $accountId = AuthService::instance()->getAccount()->id;
         }
         /** @var Account $entityClass */
-        $entityClass = AppService::instance()->getContainerServiceClassNameForClass(
+        $entityClass = DDDService::instance()->getContainerServiceClassNameForClass(
             (string)static::DEFAULT_ENTITY_CLASS
         );
         $repoClassInstance = $entityClass::getRepoClassInstance();

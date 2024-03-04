@@ -9,7 +9,7 @@ use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\Lazyload\LazyLoad;
 use DDD\Domain\Base\Entities\Lazyload\LazyLoadRepo;
-use DDD\Domain\Base\Entities\QueryOptions\QueryOptions;
+use DDD\Domain\Base\Entities\QueryOptions\AppliedQueryOptions;
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptionsTrait;
 use DDD\Domain\Base\Repo\DatabaseRepoEntitySet;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityRegistry;
@@ -19,7 +19,7 @@ use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Traits\ReflectorTrait;
 use Doctrine\ORM\Exception\ORMException;
 use Doctrine\ORM\NonUniqueResultException;
@@ -50,7 +50,8 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
         if (!$entitySetReflectionClass->hasTrait(QueryOptionsTrait::class)) {
             return $queryBuilder;
         }
-        /** @var QueryOptions $defaultQueryOptions */
+        /** @var QueryOptionsTrait $entitySetClass */
+        /** @var AppliedQueryOptions $defaultQueryOptions */
         $defaultQueryOptions = $entitySetClass::getDefaultQueryOptions();
         if (!$queryBuilder->getMaxResults() && $defaultQueryOptions->getTop()) {
             $queryBuilder->setMaxResults($defaultQueryOptions->getTop());
@@ -187,7 +188,7 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
         $entityRegistry::commit();
         // Entity Manager's unit of work cache of various types especially loaded DoctrineModels can end up using
         // the whole allocated memory, so if the memory usage is high, we clear it
-        if (AppService::instance()->isMemoryUsageHigh()) {
+        if (DDDService::instance()->isMemoryUsageHigh()) {
             //echo (memory_get_usage() / AppService::getMemoryLimitInBytes() *100) . "% \n";
             //echo "Clear Memory Usage \n";
             //echo (memory_get_usage() / AppService::getMemoryLimitInBytes() *100) . "% \n";
@@ -278,7 +279,7 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
         $queryBuilder = self::createQueryBuilder(true);
         // we load through an intermediary n-n table
         if ($lazyloadAttributeInstance->loadThrough) {
-            /** @var EntitySet $loadThroughClass */
+            /** @var EntitySet $loadThroughEntitySetClass */
             $loadThroughEntitySetClass = $lazyloadAttributeInstance->loadThrough;
             /** @var Entity $loadThroughClass */
             $loadThroughClass = $loadThroughEntitySetClass::getEntityClass();
@@ -293,11 +294,13 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
             // we need to find the property in the current table, that references the $loadThrough EntitySet class
             $propertyReferencingJoinTable = null;
             foreach ($baseEntityReflectionClass->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
-                if ($property->getType() instanceof ReflectionNamedType and is_a(
+                if (
+                    $property->getType() instanceof ReflectionNamedType and is_a(
                         $loadThroughEntitySetClass,
                         $property->getType()->getName(),
                         true
-                    )) {
+                    )
+                ) {
                     $propertyReferencingJoinTable = $property->getName();
                     break;
                 }
@@ -306,21 +309,18 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
                 foreach ($loadThroughReflectionClass->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
                     // we find the property in the Join table is of the same type as the initiatingEntity, and then we try to find a property named
                     // with a prostFix 'Id'
-                    if ($property->getType() instanceof ReflectionNamedType and is_a(
+                    if (
+                        $property->getType() instanceof ReflectionNamedType and is_a(
                             $initiatingEntity::class,
                             $property->getType()->getName(),
                             true
-                        ) &&
-                        $loadThroughReflectionClass->hasProperty($property->getName() . 'Id')
+                        ) && $loadThroughReflectionClass->hasProperty($property->getName() . 'Id')
                     ) {
                         $foreignKey = $property->getName() . 'Id';
-                        $queryBuilder
-                            ->leftJoin(
+                        $queryBuilder->leftJoin(
                                 self::getBaseModelAlias() . '.' . $propertyReferencingJoinTable,
                                 $loadThroughBaseModelAlias
-                            )
-                            ->andWhere("{$loadThroughBaseModelAlias}.$foreignKey = :foreign_key_id")
-                            ->setParameter('foreign_key_id', $initiatingEntity->id);
+                            )->andWhere("{$loadThroughBaseModelAlias}.$foreignKey = :foreign_key_id")->setParameter('foreign_key_id', $initiatingEntity->id);
                         break;
                     }
                 }
@@ -329,17 +329,16 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
             foreach ($baseEntityReflectionClass->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
                 // if initiating entity is of a type that we have also in our basee entity and we have an id of this as property,
                 // we filter for the id of the initiating entity so we load all dependent entities of it
-                if ($property->getType() instanceof ReflectionNamedType and is_a(
+                if (
+                    $property->getType() instanceof ReflectionNamedType and is_a(
                         $initiatingEntity::class,
                         $property->getType()->getName(),
                         true
-                    ) &&
-                    $baseEntityReflectionClass->hasProperty($property->getName() . 'Id')
+                    ) && $baseEntityReflectionClass->hasProperty($property->getName() . 'Id')
                 ) {
                     $foreignKey = $property->getName() . 'Id';
                     $baseModelAlias = static::getBaseModelAlias();
-                    $queryBuilder->andWhere("{$baseModelAlias}.$foreignKey = :foreign_key_id")
-                        ->setParameter('foreign_key_id', $initiatingEntity->id);
+                    $queryBuilder->andWhere("{$baseModelAlias}.$foreignKey = :foreign_key_id")->setParameter('foreign_key_id', $initiatingEntity->id);
                     break;
                 }
             }

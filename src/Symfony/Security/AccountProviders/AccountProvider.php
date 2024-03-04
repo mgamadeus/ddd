@@ -6,7 +6,7 @@ namespace DDD\Symfony\Security\AccountProviders;
 
 use DDD\Domain\Common\Entities\Accounts\Account;
 use DDD\Domain\Common\Services\AccountsService;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\AuthService;
 use Symfony\Component\Security\Core\Exception\UnsupportedUserException;
 use Symfony\Component\Security\Core\Exception\UserNotFoundException;
@@ -36,9 +36,9 @@ class AccountProvider implements UserProviderInterface
         $decodedIdentifier = json_decode($identifier);
         $account = null;
         // ApiAccount context
-        AppService::instance()->deactivateEntityRightsRestrictions();
+        DDDService::instance()->deactivateEntityRightsRestrictions();
         $account = $this->accountsService->find($identifier);
-        AppService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
+        DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
         if (!$account) {
             throw new UserNotFoundException('Account with id ' . $identifier . ' not found');
         }

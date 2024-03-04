@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Presentation\Base\Controller;
 
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Presentation\Base\Dtos\HtmlResponseDto;
 use DDD\Presentation\Base\Dtos\RedirectResponseDto;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -16,7 +16,7 @@ class HttpController extends BaseController
     {
         $request = $requestStack->getCurrentRequest();
         if ($request->query->get('noCache')){
-            AppService::instance()->deactivateCaches();
+            DDDService::instance()->deactivateCaches();
         }
     }
 

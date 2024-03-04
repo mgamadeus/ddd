@@ -10,7 +10,7 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
 use DDD\Infrastructure\Reflection\ReflectionUnionType;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\Service;
 use Doctrine\Inflector\InflectorFactory;
 use Psr\Cache\InvalidArgumentException;
@@ -75,16 +75,16 @@ class Entity extends DefaultObject
                 true
             ) && !$reflectionClass->getParentClass()->isAbstract()) {
             if ($considerOnlyClassesFromSameRootNamespace) {
-                if ((str_starts_with((string)$currentClassName, AppService::APP_ROOT_NAMESPACE) && str_starts_with(
+                if ((str_starts_with((string)$currentClassName, DDDService::APP_ROOT_NAMESPACE) && str_starts_with(
                             (string)$parentEntityClassName,
-                            AppService::APP_ROOT_NAMESPACE
+                            DDDService::APP_ROOT_NAMESPACE
                         )) ||
                     (str_starts_with(
                             (string)$currentClassName,
-                            AppService::FRAMEWORK_ROOT_NAMESPACE
+                            DDDService::FRAMEWORK_ROOT_NAMESPACE
                         ) && str_starts_with(
                             (string)$parentEntityClassName,
-                            AppService::FRAMEWORK_ROOT_NAMESPACE
+                            DDDService::FRAMEWORK_ROOT_NAMESPACE
                         ))
                 ) {
                     return $parentEntityClassName;
@@ -261,7 +261,6 @@ class Entity extends DefaultObject
                     $depdensOn = true;
                     StaticRegistry::$entityDependsOnEntity[static::class][$entityOrSet::class] = $depdensOn;
                     return $depdensOn;
-                    break;
                 }
             }
         }

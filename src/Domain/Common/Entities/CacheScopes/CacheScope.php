@@ -6,7 +6,7 @@ namespace DDD\Domain\Common\Entities\CacheScopes;
 
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Infrastructure\Reflection\ReflectionClass;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use ReflectionClassConstant;
 use ReflectionException;
 
@@ -22,7 +22,7 @@ class CacheScope extends ValueObject
      */
     public static function getCacheScopes()
     {
-        $className = AppService::instance()->getContainerServiceClassNameForClass(static::class);
+        $className = DDDService::instance()->getContainerServiceClassNameForClass(static::class);
         $reflectionClass = ReflectionClass::instance($className);
         $featureFlagNames = [];
         return array_values($reflectionClass->getConstants(ReflectionClassConstant::IS_PUBLIC));

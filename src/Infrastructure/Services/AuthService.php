@@ -5,13 +5,20 @@ declare(strict_types=1);
 namespace DDD\Infrastructure\Services;
 
 use DDD\Domain\Common\Entities\Accounts\Account;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Domain\Common\Services\AccountsService;
+use DDD\Infrastructure\Exceptions\BadRequestException;
+use DDD\Infrastructure\Exceptions\InternalErrorException;
+use DDD\Infrastructure\Exceptions\NotFoundException;
+use DDD\Infrastructure\Exceptions\UnauthorizedException;
 use DDD\Infrastructure\Libs\AuthRedis;
 use DDD\Infrastructure\Libs\Config;
+use DDD\Infrastructure\Libs\JWTPayload;
+use Doctrine\ORM\NonUniqueResultException;
 use Exception;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use Psr\Cache\InvalidArgumentException;
+use ReflectionException;
 use Throwable;
 
 class AuthService
@@ -19,16 +26,32 @@ class AuthService
     protected static ?Account $account = null;
     protected static ?Account $adminAccount = null;
 
+    protected ?AccountsService $accountsService;
+
     /** @var AuthService */
     protected static $instance;
-    
+
+    public function __construct(?AccountsService $accountsService = null)
+    {
+        if (!$accountsService) {
+            /** @var AccountsService $accountsService */
+            $accountsService = DDDService::instance()->getService(
+                AccountsService::class
+            );
+        }
+        $this->accountsService = $accountsService;
+    }
+
     public static function instance(): self
     {
         if (isset(self::$instance)) {
             return self::$instance;
         }
         /** @var self $instance */
-        $instance = AppService::instance()->getService(self::class);
+        $instance = DDDService::instance()->getService(self::class);
+        $instance->accountsService = DDDService::instance()->getService(
+            AccountsService::class
+        );
         self::$instance = $instance;
         return $instance;
     }
@@ -55,10 +78,10 @@ class AuthService
      */
     public function setAccountId(int &$accountId): void
     {
-        AppService::instance()->deactivateEntityRightsRestrictions();
+        DDDService::instance()->deactivateEntityRightsRestrictions();
         $account = Account::getService()->find($accountId);
         $this->setAccount($account);
-        AppService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
+        DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
     }
 
     /**
@@ -95,7 +118,6 @@ class AuthService
         $tokenTypeBasic = Config::getEnv('AUTH_JWT_HASH_TOKEN_TYPE_BASIC');
         return match ($authTokenType) {
             $tokenTypeJwt => $this->validateJwt($authToken),
-            $tokenTypeBasic => $this->validateBasicAuthToken($authToken),
             default => $this->checkRedisAuthLogin()
         };
     }
@@ -111,12 +133,15 @@ class AuthService
             return false;
         }
         try {
-            $decoded = JWT::decode($jwt, new Key(Config::getEnv('AUTH_JWT_HASH_KEY'), Config::getEnv('AUTH_JWT_HASH_METHOD')));
+            $decoded = JWT::decode(
+                $jwt,
+                new Key(Config::getEnv('AUTH_JWT_HASH_KEY'), Config::getEnv('AUTH_JWT_HASH_METHOD'))
+            );
 
             if ($decoded->user_id) {
-                AppService::instance()->deactivateEntityRightsRestrictions();
+                DDDService::instance()->deactivateEntityRightsRestrictions();
                 $account = Account::byId($decoded->user_id);
-                AppService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
+                DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
                 self::setAccount($account);
             }
         } catch (Exception $e) {
@@ -124,7 +149,6 @@ class AuthService
         }
         return true;
     }
-
 
     /**
      * Checks login state based on session cookie
@@ -134,9 +158,9 @@ class AuthService
     {
         try {
             if ($authAccountId = AuthRedis::getAuthAccountId()) {
-                AppService::instance()->deactivateEntityRightsRestrictions();
+                DDDService::instance()->deactivateEntityRightsRestrictions();
                 $account = Account::byId($authAccountId);
-                AppService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
+                DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
                 self::setAccount($account);
                 return true;
             }
@@ -144,5 +168,115 @@ class AuthService
             return false;
         }
         return false;
+    }
+
+    /**
+     * Creates a new refresh token with renewed expiration date
+     * @param string $refreshToken
+     * @return string
+     * @throws BadRequestException
+     * @throws InternalErrorException
+     * @throws InvalidArgumentException
+     * @throws NonUniqueResultException
+     * @throws ReflectionException
+     * @throws UnauthorizedException
+     */
+    public function extendRefreshToken(string $refreshToken): string
+    {
+        $decoded = JWTPayload::getParametersFromJWT($refreshToken);
+        if (!$decoded || !($decoded['accountId'] ?? null)) {
+            throw new UnauthorizedException('Refresh token invalid');
+        }
+        return $this->getRefreshTokenForAccountId($decoded['accountId']);
+    }
+
+    /**
+     * Generates Refresh Token for Account, refresh tokens cannot be used for Login, only for obtaining a new Login Token
+     * @param string|int $accountId
+     * @param bool $isShortLived
+     * @return string
+     */
+    public function getRefreshTokenForAccountId(string|int $accountId, bool $isShortLived = false): string
+    {
+        $ttl = $isShortLived ? Config::getEnv('AUTH_REFRESH_TOKEN_SHORT_TTL') : Config::getEnv(
+            'AUTH_REFRESH_TOKEN_TTL'
+        );
+
+        return JWTPayload::createJWTFromParameters(['accountId' => $accountId, 'refreshToken' => true], $ttl);
+    }
+
+    /**
+     * Generates access token for Account based on refresh token
+     * @param string $refreshToken
+     * @param bool $isShortLived
+     * @return string
+     * @throws UnauthorizedException
+     */
+    public function getAccessTokenForAccountBasedOnRefreshToken(
+        string $refreshToken,
+        bool $isShortLived = false
+    ): string {
+        $decoded = JWTPayload::getParametersFromJWT($refreshToken);
+        if (!$decoded || !($decoded['accountId'] ?? null)) {
+            throw new UnauthorizedException('Refresh token invalid');
+        }
+        $ttl = $isShortLived ? Config::getEnv('AUTH_LOGIN_TOKEN_SHORT_TTL') : Config::getEnv(
+            'AUTH_LOGIN_TOKEN_TTL'
+        );
+
+        return JWTPayload::createJWTFromParameters(['accountId' => $decoded['accountId']], $ttl);
+    }
+
+    /**
+     * @param string $accountId
+     * @param string $password
+     * @param bool $isShortLived
+     * @return string
+     * @throws BadRequestException
+     * @throws InternalErrorException
+     * @throws InvalidArgumentException
+     * @throws NonUniqueResultException
+     * @throws ReflectionException
+     * @throws UnauthorizedException
+     * @throws NotFoundException
+     */
+    public function forceAuthenticateAccount(string $accountId, string $password, bool $isShortLived = false): string
+    {
+        DDDService::instance()->deactivateEntityRightsRestrictions();
+        $this->accountsService->throwErrors = true;
+        $account = $this->accountsService->find($accountId);
+        DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
+        if (!$account || $account->password !== $password) {
+            throw new UnauthorizedException('Wrong credentials.');
+        }
+        return $this->getRefreshTokenForAccountId($account->id, $isShortLived);
+    }
+
+    /**
+     * @param string $email
+     * @param string $password
+     * @return string
+     * @throws BadRequestException
+     * @throws InternalErrorException
+     * @throws InvalidArgumentException
+     * @throws NonUniqueResultException
+     * @throws ReflectionException
+     * @throws UnauthorizedException
+     */
+    public function getRefreshTokenForAccount(string $email, string $password): string
+    {
+        DDDService::instance()->deactivateEntityRightsRestrictions();
+        $this->accountsService->throwErrors = true;
+        $account = $this->accountsService->getAccountByEmail($email);
+        DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
+        $password = hash_hmac(
+            Config::getEnv('AUTH_PASSWORD_HAS_METHOD'),
+            $password,
+            Config::getEnv('AUTH_PASSWORD_HAS_KEY')
+        );
+        if ($account->password !== $password) {
+            throw new UnauthorizedException('Wrong credentials.');
+        }
+        return $this->getRefreshTokenForAccountId($account->id);
     }
 }

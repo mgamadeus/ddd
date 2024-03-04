@@ -3,41 +3,14 @@
 namespace DDD\Symfony\Kernels;
 
 use DDD\Symfony\CompilerPasses\ServiceClassCollectorPass;
-use ReflectionClass;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
-use Symfony\Component\Config\ConfigCache;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\DependencyInjection\Dumper\Preloader;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
-use Symfony\Component\ErrorHandler\DebugClassLoader;
-use Symfony\Component\Filesystem\Filesystem;
-use Symfony\Component\HttpKernel\CacheWarmer\WarmableInterface;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
-use Throwable;
 
-use function array_slice;
-use function count;
-use function defined;
-use function dirname;
-use function get_class;
-use function in_array;
-use function is_object;
-
-use const DEBUG_BACKTRACE_IGNORE_ARGS;
-use const DIRECTORY_SEPARATOR;
-use const E_ALL;
-use const E_DEPRECATED;
-use const E_USER_DEPRECATED;
-use const E_WARNING;
-use const GLOB_NOSORT;
-use const LOCK_EX;
-use const LOCK_NB;
-use const LOCK_SH;
-use const LOCK_UN;
-
-class AppKernel extends BaseKernel
+class DDDKernel extends BaseKernel
 {
     use MicroKernelTrait;
 
@@ -86,7 +59,6 @@ class AppKernel extends BaseKernel
     {
         return $this->getProjectDir() . '/var/log/' . $this->getKernelPrefix();
     }
-
 
     /**
      * Adds or imports routes into your application.
@@ -149,9 +121,10 @@ class AppKernel extends BaseKernel
 
     public function boot()
     {
-        $return = parent::boot();
-        self::$ontainer = $this->getContainer();
-        return $return;
+        parent::boot();
+        /** @var Container $container */
+        $container = $this->getContainer();
+        self::$ontainer = $container;
     }
 
     protected function build(ContainerBuilder $container)

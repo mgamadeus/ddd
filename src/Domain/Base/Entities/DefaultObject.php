@@ -7,7 +7,7 @@ namespace DDD\Domain\Base\Entities;
 use DDD\Domain\Base\Entities\Lazyload\LazyLoadTrait;
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Traits\AfterConstruct\AfterConstructTrait;
 use DDD\Infrastructure\Traits\ReflectorTrait;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
@@ -36,7 +36,7 @@ abstract class DefaultObject extends BaseObject
      */
     public static function newInstance(): static
     {
-        $className = AppService::instance()->getContainerServiceClassNameForClass(static::class);
+        $className = DDDService::instance()->getContainerServiceClassNameForClass(static::class);
         return new $className();
     }
 

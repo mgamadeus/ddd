@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Base\DateTime;
 
-use DDD\Infrastructure\Services\AppService;
+use DateTimeZone;
 use DDD\Domain\Base\Entities\StaticRegistry;
+use DDD\Infrastructure\Services\DDDService;
 
 /**
  * default DateTime class for Framework, serializes by default to 'Y-m-d' format
@@ -42,13 +43,13 @@ class Date extends DateTime
 
         // Set time to 00:00:00 and timezone to UTC
         $tDate->setTime(0, 0, 0);
-        $tDate->setTimezone(new \DateTimeZone('UTC'));
+        $tDate->setTimezone(new DateTimeZone('UTC'));
 
         $date = new Date();
         $date->setTimestamp($tDate->getTimestamp());
 
         // Store in cache unless memory usage is high
-        if (!AppService::instance()->isMemoryUsageHigh()) {
+        if (!DDDService::instance()->isMemoryUsageHigh()) {
             StaticRegistry::$dateFromStringCache[$stringFormattedDate] = $date;
         }
 
@@ -93,7 +94,6 @@ class Date extends DateTime
         $this->toStringCache = null;
         return parent::modify($modifier);
     }
-
 
     /**
      * sets date bsed on Y-m-d formatted string

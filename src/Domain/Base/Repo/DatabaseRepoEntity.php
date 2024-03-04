@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo;
 
-use DDD\Domain\Base\Repo\DB\Attributes\DBTranslation;
 use DDD\Domain\Base\Entities\Attributes\NoRecursiveUpdate;
 use DDD\Domain\Base\Entities\Attributes\RolesRequiredForUpdate;
 use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
@@ -14,6 +13,7 @@ use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\Lazyload\LazyLoad;
 use DDD\Domain\Base\Entities\StaticRegistry;
+use DDD\Domain\Base\Repo\DB\Attributes\DBTranslation;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
 use DDD\Domain\Base\Repo\DB\DBEntity;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityRegistry;
@@ -23,8 +23,8 @@ use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
-use DDD\Infrastructure\Services\AppService;
 use DDD\Infrastructure\Services\AuthService;
+use DDD\Infrastructure\Services\DDDService;
 use Doctrine\ORM\Exception\ORMException;
 use Doctrine\ORM\NonUniqueResultException;
 use Doctrine\ORM\OptimisticLockException;
@@ -228,7 +228,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
         }
         // Entity Manager's unit of work cache of various types especially loaded DoctrineModels can end up using
         // the whole allocated memory, so if the memory usage is high, we clear it
-        if (AppService::instance()->isMemoryUsageHigh()) {
+        if (DDDService::instance()->isMemoryUsageHigh()) {
             EntityManagerFactory::clearAllInstanceCaches();
         }
         // post processing needs to happen after storage!!!
@@ -368,10 +368,12 @@ abstract class DatabaseRepoEntity extends RepoEntity
         $updatedChildProperties = $this->updateDependentEntities($entity, $depth, false);
         // we need the name of the updated column in case of DBENtity
         $changeHistoryAttributeInstance = null;
-        if (is_a($this, DBEntity::class) && method_exists(
+        if (
+            is_a($this, DBEntity::class) && method_exists(
                 $entity::class,
                 'getChangeHistoryAttribute'
-            )) { // this trait is present
+            )
+        ) { // this trait is present
             /** @var ChangeHistoryTrait $entityClassName */
             $entityClassName = $entity::class;
             /** @var ChangeHistory $changeHistoryAttributeInstance */
@@ -440,8 +442,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
                     // in this case we need to upate the created and updated time and persist the main entity anyway, indifferent from translation
 
                     // we load current data and update created and updated columns
-                    $this->ormInstance = isset($this->ormInstance) && $this->ormInstance ? $this->ormInstance : new (static::BASE_ORM_MODEL)(
-                    );
+                    $this->ormInstance = isset($this->ormInstance) && $this->ormInstance ? $this->ormInstance : new (static::BASE_ORM_MODEL)();
                     $this->ormInstance->id = $entityId;
                     $this->mapCreatedAndUpdatedTime($entity);
                     $entityManager->upsert(
@@ -539,8 +540,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
                 $databaseRepoCLasses = $value::getDatabaseRelatedRepoClasses();
                 foreach ($databaseRepoCLasses as $repoClass) {
                     $repoInstance = $repoClass && class_exists($repoClass) ? new $repoClass() : null;
-                    $reflectionEntityAttribute =
-                        (ReflectionClass::instance($value::class))->getAttributes(NoRecursiveUpdate::class);
+                    $reflectionEntityAttribute = (ReflectionClass::instance($value::class))->getAttributes(NoRecursiveUpdate::class);
 
                     if ($repoInstance && empty($reflectionEntityAttribute)) {
                         if (method_exists($repoInstance, 'update')) {
@@ -604,7 +604,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
                     // handle translation update
                     $translationAttributeInstance = static::getTranslationAttributeInstance();
                     if ($translationAttributeInstance && !empty($translationAttributeInstance->columns)) {
-                        $translationAttributeInstance->deleteTranslation($entity, $this);
+                        $deleteTranslationResult = $translationAttributeInstance->deleteTranslation($entity, $this);
                     }
 
                     $entityManager = EntityManagerFactory::getInstance();

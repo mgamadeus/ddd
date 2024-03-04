@@ -5,7 +5,7 @@ declare (strict_types=1);
 namespace DDD\Symfony\Commands\Common\Crons;
 
 use DDD\Domain\Common\Entities\Crons\Crons;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\AuthService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -22,7 +22,7 @@ class CronsList extends Command
 {
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $defaultAdminAccount = AppService::instance()->getDefaultAccountForCliOperations();
+        $defaultAdminAccount = DDDService::instance()->getDefaultAccountForCliOperations();
         AuthService::instance()->setAccount($defaultAdminAccount);
         putenv('SYMFONY_DEPRECATIONS_HELPER=disabled');
         $output->writeln([

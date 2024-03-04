@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Entities;
 
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\Service;
 use Doctrine\Inflector\InflectorFactory;
 
@@ -26,7 +26,7 @@ class EntitySet extends ObjectSet
      */
     public static function getEntityClass(): string
     {
-        $currentClassName = AppService::instance()->getContainerServiceClassNameForClass(static::class);
+        $currentClassName = DDDService::instance()->getContainerServiceClassNameForClass(static::class);
         if (isset(StaticRegistry::$entityClasses[$currentClassName])) {
             return StaticRegistry::$entityClasses[$currentClassName];
         }
@@ -101,7 +101,7 @@ class EntitySet extends ObjectSet
     /** Returns the Service for this EntitySet */
     public static function getService(): ?Service
     {
-        $currentClassName = AppService::instance()->getContainerServiceClassNameForClass(static::class);
+        $currentClassName = DDDService::instance()->getContainerServiceClassNameForClass(static::class);
         if (isset(StaticRegistry::$entityServices[$currentClassName])) {
             return StaticRegistry::$entityServices[$currentClassName];
         }
@@ -115,7 +115,7 @@ class EntitySet extends ObjectSet
             $entityServiceName = $currentDomain . "\\Services\\" . $classWithNamespace->name . 'Service';
         }
         if (class_exists($entityServiceName)) {
-            StaticRegistry::$entityServices[$currentClassName] = AppService::instance()->getService($entityServiceName);
+            StaticRegistry::$entityServices[$currentClassName] = DDDService::instance()->getService($entityServiceName);
         } else {
             StaticRegistry::$entityServices[$currentClassName] = null;
         }

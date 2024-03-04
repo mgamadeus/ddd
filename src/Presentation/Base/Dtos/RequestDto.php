@@ -10,7 +10,7 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\Datafilter;
 use DDD\Infrastructure\Libs\Encrypt;
 use DDD\Infrastructure\Reflection\ReflectionClass;
-use DDD\Infrastructure\Services\AppService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 use DDD\Infrastructure\Traits\ValidatorTrait;
 use DDD\Presentation\Base\OpenApi\Attributes\Parameter;
@@ -111,7 +111,7 @@ class RequestDto
             throw $badRequestException;
         }
         if ($this->noCache) {
-            AppService::instance()->deactivateCaches();
+            DDDService::instance()->deactivateCaches();
         }
     }
 
