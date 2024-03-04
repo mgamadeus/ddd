@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Services;
 
+use DDD\DDDBundle;
 use DDD\Domain\Base\Entities\StaticRegistry;
 use DDD\Domain\Base\Repo\DB\DBEntity;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityRegistry;
@@ -14,7 +15,6 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\ClassFinder;
 use DDD\Infrastructure\Libs\Config;
 use DDD\Presentation\Services\RequestService;
-use DDD\Symfony\Bundles\AppBundle;
 use DDD\Symfony\Kernels\AppKernel;
 use Exception;
 use Psr\Cache\InvalidArgumentException;
@@ -115,7 +115,7 @@ class AppService
     public function getRequestService(): ?RequestService
     {
         /** @var RequestService $requestService */
-        $requestService = AppBundle::getContainer()->get(RequestService::class);
+        $requestService = DDDBundle::getContainer()->get(RequestService::class);
         return $requestService;
     }
 
@@ -175,7 +175,7 @@ class AppService
     protected static function getServicePrivate(string $serviceName): mixed
     {
         $className = self::getContainerServiceClassNameForClassPrivate($serviceName);
-        return AppBundle::getContainer()->get($className);
+        return DDDBundle::getContainer()->get($className);
     }
 
     /**
@@ -240,7 +240,7 @@ class AppService
 
     protected static function getCacheDirPrivate(bool $returnRelativePath = true): string
     {
-        $path = AppBundle::getContainer()->getParameter('kernel.cache_dir');
+        $path = DDDBundle::getContainer()->getParameter('kernel.cache_dir');
         if (!$returnRelativePath) {
             return $path;
         } else {
@@ -266,7 +266,7 @@ class AppService
 
     public static function getRootDirPrivate(): string
     {
-        return AppBundle::getContainer()->getParameter('kernel.project_dir');
+        return DDDBundle::getContainer()->getParameter('kernel.project_dir');
     }
 
     /**

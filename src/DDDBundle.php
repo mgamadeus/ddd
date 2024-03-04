@@ -2,15 +2,14 @@
 
 declare(strict_types=1);
 
-namespace DDD\Symfony\Bundles;
+namespace DDD;
 
-use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Services\AppService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 
-class AppBundle extends Bundle
+class DDDBundle extends Bundle
 {
     protected static ContainerInterface $defaultContainer;
 

@@ -40,10 +40,10 @@ class DatabaseForeignKeys extends ObjectSet
         }
         if ($foreignKeys && count($foreignKeys) > 1) {
             $keys = [];
-            foreach ($foreignKeys as $foreignKey){
+            foreach ($foreignKeys as $foreignKey) {
                 $keys[] = $foreignKey->internalIdColumn;
             }
-            throw new InternalErrorException('More than one foreign key referencing '. $foreiugnModelName . ' ('.implode(',',$keys).')');
+            throw new InternalErrorException('More than one foreign key referencing ' . $foreiugnModelName . ' (' . implode(',', $keys) . ')');
         }
         return $foreignKeys[0];
     }
