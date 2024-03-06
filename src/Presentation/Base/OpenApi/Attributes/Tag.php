@@ -28,11 +28,20 @@ class Tag extends Base
 
     public ?array $externalDocs = null;
 
-    public function __construct(?string $name, ?string $group = null, ?string $description = null, ?string $externalDocs = null)
-    {
+    /** @var bool If true, this tags represednts a Schema reference for an Entity or a DTO */
+    protected $isSchemaTag = false;
+
+    public function __construct(
+        ?string $name,
+        ?string $group = null,
+        ?string $description = null,
+        ?string $externalDocs = null,
+        bool $isSchemaTag = false
+    ) {
         $this->name = $name;
         $this->group = $group;
         $this->description = $description;
+        $this->isSchemaTag = $isSchemaTag;
         $this->setExternalDoc($externalDocs);
         parent::__construct();
     }
@@ -61,5 +70,15 @@ class Tag extends Base
     public function uniqueKey(): string
     {
         return $this->name;
+    }
+
+    public function isSchemaTag(): bool
+    {
+        return $this->isSchemaTag;
+    }
+
+    public function setIsSchemaTag(bool $isSchemaTag): void
+    {
+        $this->isSchemaTag = $isSchemaTag;
     }
 }

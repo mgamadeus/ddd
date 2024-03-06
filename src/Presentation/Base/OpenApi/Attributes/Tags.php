@@ -53,4 +53,16 @@ class Tags extends ObjectSet
             return strnatcmp($a->name, $b->name);
         });
     }
+
+    /**
+     * @return void Removes all Schema Tags
+     */
+    public function removeSchemaTags(): void
+    {
+        foreach ($this->getElements() as $tag) {
+            if ($tag->isSchemaTag()) {
+                $this->remove($tag);
+            }
+        }
+    }
 }

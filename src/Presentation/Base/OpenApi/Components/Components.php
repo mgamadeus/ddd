@@ -34,8 +34,8 @@ class Components
         }
 
         //redocly compatible Schema Tags
-        $schemaDesription = '<SchemaDefinition schemaRef="#/components/schemas/'.$classNamespaceWithDots.'" />';
-        $schemaTag = new Tag($classWithNamespace->name, 'Models',$schemaDesription);
+        $schemaDesription = '<SchemaDefinition schemaRef="#/components/schemas/' . $classNamespaceWithDots . '" />';
+        $schemaTag = new Tag($classWithNamespace->name, 'Models', $schemaDesription, isSchemaTag: true);
         $this->document->addGlobalTag($schemaTag);
 
 

@@ -148,8 +148,13 @@ class Document
             if (!isset($this->paths[$path])) {
                 $this->paths[$path] = [];
             }
-            foreach ($route->getMethods() as $httpMethod){
-                $this->paths[$path][strtolower($httpMethod)] = new Path($route, $httpMethod, $controllerReflectionClass, $controllerReflectionMethod);
+            foreach ($route->getMethods() as $httpMethod) {
+                $this->paths[$path][strtolower($httpMethod)] = new Path(
+                    $route,
+                    $httpMethod,
+                    $controllerReflectionClass,
+                    $controllerReflectionMethod
+                );
             }
         }
         // sort tags if present by name
@@ -220,5 +225,16 @@ class Document
             return $controllerMethod;
         }
         return null;
+    }
+
+    /**
+     * Remoes Schema Tags from Tags
+     * Schema Tags are usefull: on Documentation Platofrms such as redocly to document all Entity / DTO schemas
+     * Schema Tags are not usefull: On Postman, if you want to use a tag based organisation structure, as it will create empty folders for all schema tags
+     * @return void
+     */
+    public function removeSchemaTags(): void
+    {
+        $this->tags->removeSchemaTags();
     }
 }
