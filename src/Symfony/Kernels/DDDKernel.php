@@ -100,7 +100,7 @@ class DDDKernel extends BaseKernel
 
         if (is_file($configDir . '/services.yaml')) {
             $container->import($configDir . '/services.yaml');
-            $container->imNAppport($configDir . '/{services}_' . $this->environment . '.yaml');
+            $container->import($configDir . '/{services}_' . $this->environment . '.yaml');
         }
         {
             $container->import($defaultConfigDir . '/services.yaml');
