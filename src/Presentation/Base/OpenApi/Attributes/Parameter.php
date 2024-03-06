@@ -21,6 +21,7 @@ class Parameter extends Base
     public const HEADER = 'header';
 
     public string $in = 'query';
+
     public ?bool $required;
 
     public function __construct(string $in, ?bool $required = null)
@@ -29,10 +30,11 @@ class Parameter extends Base
         if ($required) {
             $this->required = true;
         }
+        parent::__construct();
     }
 
-    public function isRequired():bool {
+    public function isRequired(): bool
+    {
         return isset($this->required) && $this->required;
     }
-
 }

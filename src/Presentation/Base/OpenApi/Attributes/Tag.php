@@ -14,9 +14,18 @@ class Tag extends Base
     use BaseAttributeTrait;
 
     public ?string $name;
+
     #[HideProperty]
     public ?string $group = null;
+
+    /**
+     * @var string|null The fully qualified class name of the object
+     */
+    #[HideProperty]
+    public ?string $objectType;
+
     public ?string $description = null;
+
     public ?array $externalDocs = null;
 
     public function __construct(?string $name, ?string $group = null, ?string $description = null, ?string $externalDocs = null)
@@ -53,5 +62,4 @@ class Tag extends Base
     {
         return $this->name;
     }
-
 }

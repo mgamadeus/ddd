@@ -62,7 +62,8 @@ class Schema
                 //"in" property of the Parameter attribute (in can be in PATH, QUERY, BODY etc)
                 $skipProperty = false;
                 foreach ($reflectionProperty->getAttributes(Parameter::class) as $attribute) {
-                    $parameterAttributeInstance =  $attribute->newInstance();
+                    /** @var Parameter $parameterAttributeInstance */
+                    $parameterAttributeInstance = $attribute->newInstance();
                     if ($parameterAttributeInstance->in != $this->scope && $this->scope != Parameter::RESPONSE) {
                         $skipProperty = true;
                         break;
@@ -72,10 +73,7 @@ class Schema
                     continue;
                 }
                 $this->properties[$reflectionProperty->getName()] = new SchemaProperty(
-                    $schemReflectionClass,
-                    $reflectionProperty,
-                    $this->scope,
-                    $this
+                    $schemReflectionClass, $reflectionProperty, $this->scope, $this
                 );
             }
         }
