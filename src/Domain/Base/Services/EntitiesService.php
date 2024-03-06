@@ -8,8 +8,6 @@ use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Repo\DatabaseRepoEntity;
 use DDD\Domain\Base\Repo\DatabaseRepoEntitySet;
-use DDD\Domain\Base\Repo\DB\DBEntitySet;
-use DDD\Domain\Common\Entities\Accounts\Account;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Exceptions\NotFoundException;
@@ -42,8 +40,9 @@ class EntitiesService extends Service
     public function find(string|int|null $entityId, bool $useEntityRegistrCache = true): ?Entity
     {
         $repoClassInstance = $this->getEntityRepoClass();
-        if (!$repoClassInstance)
+        if (!$repoClassInstance) {
             return null;
+        }
 
         $enityInstance = $repoClassInstance->find($entityId, $useEntityRegistrCache);
         if (!$enityInstance && $this->throwErrors) {
@@ -63,16 +62,24 @@ class EntitiesService extends Service
      * @param $limit
      * @param bool $useEntityRegistrCache
      * @return EntitySet|null
+     * @throws BadRequestException
+     * @throws InternalErrorException
+     * @throws InvalidArgumentException
+     * @throws ReflectionException
      */
-    public function findAll(?int $offset = null, $limit = null, bool $useEntityRegistrCache = true):?EntitySet {
+    public function findAll(?int $offset = null, $limit = null, bool $useEntityRegistrCache = true): ?EntitySet
+    {
         $repoClassInstance = $this->getEntitySetRepoClass();
-        if (!$repoClassInstance)
+        if (!$repoClassInstance) {
             return null;
+        }
         $queryBuilder = $repoClassInstance::createQueryBuilder();
-        if ($offset !== null)
+        if ($offset !== null) {
             $queryBuilder->setFirstResult($offset);
-        if ($limit !== null)
+        }
+        if ($limit !== null) {
             $queryBuilder->setMaxResults($limit);
+        }
         return $repoClassInstance->find($queryBuilder, $useEntityRegistrCache);
     }
 
@@ -129,7 +136,8 @@ class EntitiesService extends Service
      * Returns Entity Repo Class
      * @return DatabaseRepoEntity|null
      */
-    public function getEntityRepoClass(): ?DatabaseRepoEntity{
+    public function getEntityRepoClass(): ?DatabaseRepoEntity
+    {
         if (!static::DEFAULT_ENTITY_CLASS) {
             return null;
         }
@@ -149,7 +157,8 @@ class EntitiesService extends Service
      * Returns EntitySet Repo Class
      * @return DatabaseRepoEntity|null
      */
-    public function getEntitySetRepoClass(): ?DatabaseRepoEntitySet{
+    public function getEntitySetRepoClass(): ?DatabaseRepoEntitySet
+    {
         if (!static::DEFAULT_ENTITY_CLASS) {
             return null;
         }
@@ -159,8 +168,9 @@ class EntitiesService extends Service
         );
         /** @var EntitySet $entitySetClass */
         $entitySetClass = $entityClass::getEntitySetClass();
-        if (!$entitySetClass)
+        if (!$entitySetClass) {
             return null;
+        }
         /** @var DatabaseRepoEntitySet $repoClassInstance */
         $repoClassInstance = $entitySetClass::getRepoClassInstance();
         return $repoClassInstance;

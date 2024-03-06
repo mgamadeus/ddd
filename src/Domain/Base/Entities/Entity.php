@@ -13,6 +13,9 @@ use DDD\Infrastructure\Reflection\ReflectionUnionType;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\Service;
 use Doctrine\Inflector\InflectorFactory;
+use Doctrine\ORM\Exception\ORMException;
+use Doctrine\ORM\NonUniqueResultException;
+use Doctrine\ORM\OptimisticLockException;
 use Psr\Cache\InvalidArgumentException;
 use ReflectionException;
 use ReflectionNamedType;
@@ -24,11 +27,12 @@ class Entity extends DefaultObject
 
     /**
      * returns the class of the corresponding EntitySet if existent
-     * uses configured number if present in static::$entitySetClass otherwise it uses inflector to pluralize
-     *
-     * In case of entities extending other specific entities, this will return the parents Entity's EntitySet class
-     * e.g. Event extends Post, will return Posts for Event as EntitySet class
-     * @return string
+     * * uses configured number if present in static::$entitySetClass otherwise it uses inflector to pluralize
+     * *
+     * * In case of entities extending other specific entities, this will return the parents Entity's EntitySet class
+     * * e.g. Event extends Post, will return Posts for Event as EntitySet class
+     * @return string|null
+     * @throws ReflectionException
      */
     public static function getEntitySetClass(): ?string
     {
@@ -69,17 +73,19 @@ class Entity extends DefaultObject
         $currentClassName = static::class;
         $reflectionClass = $currentClassName::getReflectionClass();
         $parentEntityClassName = $reflectionClass->getParentClass()->getName();
-        if (is_subclass_of(
+        if (
+            is_subclass_of(
                 $parentEntityClassName,
                 Entity::class,
                 true
-            ) && !$reflectionClass->getParentClass()->isAbstract()) {
+            ) && !$reflectionClass->getParentClass()->isAbstract()
+        ) {
             if ($considerOnlyClassesFromSameRootNamespace) {
-                if ((str_starts_with((string)$currentClassName, DDDService::APP_ROOT_NAMESPACE) && str_starts_with(
+                if (
+                    (str_starts_with((string)$currentClassName, DDDService::APP_ROOT_NAMESPACE) && str_starts_with(
                             (string)$parentEntityClassName,
                             DDDService::APP_ROOT_NAMESPACE
-                        )) ||
-                    (str_starts_with(
+                        )) || (str_starts_with(
                             (string)$currentClassName,
                             DDDService::FRAMEWORK_ROOT_NAMESPACE
                         ) && str_starts_with(
@@ -117,6 +123,14 @@ class Entity extends DefaultObject
 
     /**
      * @return Entity|null Persists Entity
+     * @return static|null
+     * @throws BadRequestException
+     * @throws InternalErrorException
+     * @throws InvalidArgumentException
+     * @throws ReflectionException
+     * @throws ORMException
+     * @throws NonUniqueResultException
+     * @throws OptimisticLockException
      */
     public function update(): ?static
     {
@@ -190,7 +204,12 @@ class Entity extends DefaultObject
     }
 
     /**
-     * @return Entity|null Deletes Entity
+     * @return void Delete Entity
+     * @throws BadRequestException
+     * @throws ReflectionException
+     * @throws ORMException
+     * @throws NonUniqueResultException
+     * @throws OptimisticLockException
      */
     public function delete(): void
     {
@@ -226,7 +245,9 @@ class Entity extends DefaultObject
         return;
     }
 
-    /** Returns the Service for this Entity */
+    /**
+     * @return Service|null Returns the Service for this Entity
+     */
     public static function getService(): ?Service
     {
         /** @var EntitySet $entitySetClass */
@@ -236,9 +257,10 @@ class Entity extends DefaultObject
 
     /**
      * Returns true, if the current entity depends on the given Entity or Set
-     * An Entity depends on another, when contains an id of the other, e.g. Project depends on Account when it has an accountId and LazyLoad on the Account
+     * * An Entity depends on another, when contains an id of the other, e.g. Project depends on Account when it has an accountId and LazyLoad on the Account
      * @param Entity|EntitySet $entityOrSet
-     * @return void
+     * @return bool
+     * @throws ReflectionException
      */
     public static function dependsOn(Entity|EntitySet &$entityOrSet): bool
     {

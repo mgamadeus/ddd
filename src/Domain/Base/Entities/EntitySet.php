@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Entities;
 
+use DDD\Infrastructure\Exceptions\BadRequestException;
+use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\Service;
 use Doctrine\Inflector\InflectorFactory;
+use Doctrine\ORM\Exception\ORMException;
+use Doctrine\ORM\NonUniqueResultException;
+use Doctrine\ORM\OptimisticLockException;
+use Psr\Cache\InvalidArgumentException;
+use ReflectionException;
 
 /**
  * @method Entity first()
@@ -55,7 +62,14 @@ class EntitySet extends ObjectSet
     }
 
     /**
-     * @return Entity|null Persists all Entities from Set
+     * @return static|null Persists all Entities from Set
+     * @throws BadRequestException
+     * @throws InternalErrorException
+     * @throws ORMException
+     * @throws NonUniqueResultException
+     * @throws OptimisticLockException
+     * @throws InvalidArgumentException
+     * @throws ReflectionException
      */
     public function update(): ?static
     {
@@ -66,7 +80,7 @@ class EntitySet extends ObjectSet
     }
 
     /**
-     * @return Entity|null Batch persists all Entities from Set
+     * @return void Batch persists all Entities from Set
      */
     public function batchUpdate(): void
     {
@@ -89,7 +103,13 @@ class EntitySet extends ObjectSet
     }
 
     /**
-     * @return Entity|null Deletes all Entities from set
+     * Deletes all Entities from set
+     * @return void
+     * @throws BadRequestException
+     * @throws NonUniqueResultException
+     * @throws ORMException
+     * @throws OptimisticLockException
+     * @throws ReflectionException
      */
     public function delete(): void
     {
@@ -98,7 +118,10 @@ class EntitySet extends ObjectSet
         }
     }
 
-    /** Returns the Service for this EntitySet */
+    /**
+     * Returns the Service for this EntitySet
+     * @return Service|null
+     */
     public static function getService(): ?Service
     {
         $currentClassName = DDDService::instance()->getContainerServiceClassNameForClass(static::class);
