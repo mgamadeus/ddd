@@ -57,12 +57,14 @@ class DatabaseVirtualColumn extends ValueObject
 
     /**
      * @param string $as
+     * @param bool $stored
      */
     public function __construct(
         string $as,
         bool $stored = true
     ) {
         $this->as = $as;
+        $this->stored = $stored;
         parent::__construct();
     }
 }
