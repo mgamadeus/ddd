@@ -286,14 +286,16 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
                     );
                 }
                 $entityFromCache = false;
-                if (is_a(
+                if (
+                    is_a(
                         $typeToInstance,
                         Entity::class,
                         true
                     ) && isset($value->id) && $value->id && $cachedEntityInstance = SerializerRegistry::getInstanceForSetPropertiesFromObjectCache(
                         $typeToInstance,
                         $value->id
-                    )) {
+                    )
+                ) {
                     $item = $cachedEntityInstance;
                     $entityFromCache = true;
                 } else {
@@ -374,6 +376,24 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
             }
         }
         return true;
+    }
+
+    /**
+     * Returns true, if at least one element is contained in current ObjectSet
+     * @param BaseObject ...$elements
+     * @return bool
+     */
+    public function containsOneOf(?BaseObject &...$elements): bool
+    {
+        foreach ($elements as $element) {
+            if (!$element) {
+                continue;
+            }
+            if ($this->contains($elemente)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function resetIteratorPosition()
