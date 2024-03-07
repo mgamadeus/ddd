@@ -22,6 +22,9 @@ class DatabaseVirtualColumn extends ValueObject
     /** @var string The generation instruction for the virtual column */
     public string $as;
 
+    /** @var bool If true, the column is stored */
+    public bool $stored = true;
+
     public function getSql(bool $asUpdate = false): string
     {
         $sql = $asUpdate ? 'ADD COLUMN IF NOT EXISTS ' : '';
@@ -38,7 +41,7 @@ class DatabaseVirtualColumn extends ValueObject
 
         $sql .= '`' . $this->getName()
             . '` ' . $this->referenceColumn->getSqlType()
-            . ' GENERATED ALWAYS AS ' . $this->as . ' STORED';
+            . ' GENERATED ALWAYS AS ' . $this->as . ($this->stored ? ' STORED' : '');
         return $sql;
     }
 
@@ -57,9 +60,9 @@ class DatabaseVirtualColumn extends ValueObject
      */
     public function __construct(
         string $as,
+        bool $stored = true
     ) {
         $this->as = $as;
         parent::__construct();
     }
-
 }
