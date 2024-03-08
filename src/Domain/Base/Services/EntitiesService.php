@@ -41,7 +41,7 @@ class EntitiesService extends Service
      */
     public function find(string|int|null $entityId, bool $useEntityRegistrCache = true): ?Entity
     {
-        $repoClassInstance = $this->getEntityRepoClass();
+        $repoClassInstance = $this->getEntityRepoClassInstance();
         if (!$repoClassInstance) {
             return null;
         }
@@ -71,7 +71,7 @@ class EntitiesService extends Service
      */
     public function findAll(?int $offset = null, $limit = null, bool $useEntityRegistrCache = true): ?EntitySet
     {
-        $repoClassInstance = $this->getEntitySetRepoClass();
+        $repoClassInstance = $this->getEntitySetRepoClassInstance();
         if (!$repoClassInstance) {
             return null;
         }
@@ -154,7 +154,7 @@ class EntitiesService extends Service
      * Returns Entity Repo Class
      * @return DatabaseRepoEntity|null
      */
-    public function getEntityRepoClass(): ?DatabaseRepoEntity
+    public function getEntityRepoClassInstance(): ?DatabaseRepoEntity
     {
         if (!static::DEFAULT_ENTITY_CLASS) {
             return null;
@@ -175,7 +175,7 @@ class EntitiesService extends Service
      * Returns EntitySet Repo Class
      * @return DatabaseRepoEntity|null
      */
-    public function getEntitySetRepoClass(): ?DatabaseRepoEntitySet
+    public function getEntitySetRepoClassInstance(): ?DatabaseRepoEntitySet
     {
         if (!static::DEFAULT_ENTITY_CLASS) {
             return null;
