@@ -345,25 +345,4 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
         }
         return $this->find($queryBuilder, $lazyloadAttributeInstance->useCache);
     }
-
-    /**
-     * High performance Batch update method:
-     * It does not return ids of updated Entities, it does not adapt translations if required, it is not updating recurively,
-     * best used in data import scenarios
-     * @param EntitySet $entitySet
-     * @return void
-     * @throws ReflectionException
-     */
-    public function batchUpdate(EntitySet &$entitySet): void
-    {
-        $dbModels = [];
-        foreach ($entitySet->getElements() as $entity) {
-            /** @var DBEntity $dbEntity */
-            $dbEntity = new (static::BASE_REPO_CLASS)();
-            $dbEntity->mapToRepository($entity);
-            $dbModels[] = $dbEntity->getOrmInstance();
-        }
-        $entityManager = EntityManagerFactory::getInstance();
-        $entityManager->upsertMultiple($dbModels);
-    }
 }

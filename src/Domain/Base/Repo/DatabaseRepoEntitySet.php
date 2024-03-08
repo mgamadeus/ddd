@@ -9,7 +9,10 @@ use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
+use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Traits\ReflectorTrait;
+use Doctrine\DBAL\Exception;
+use Doctrine\ORM\Mapping\MappingException;
 
 abstract class DatabaseRepoEntitySet
 {
@@ -64,4 +67,29 @@ abstract class DatabaseRepoEntitySet
         bool $useEntityRegistrCache = true,
         array &$initiatorClasses = []
     ): ?EntitySet;
+
+    /**
+     * High performance Batch update method:
+     * It does not return ids of updated Entities, it does not adapt translations if required, it is not updating recurively,
+     * best used in data import scenarios
+     *
+     * @param EntitySet $entitySet
+     * @return void
+     * @throws Exception
+     * @throws MappingException
+     */
+    public function batchUpdate(EntitySet &$entitySet): void
+    {
+        $doctrineModels = [];
+        $baseRepoClass = self::BASE_REPO_CLASS;
+        foreach ($entitySet->getElements() as $entity) {
+            /** @var DatabaseRepoEntity $dbEntity */
+            $dbEntity = new (static::BASE_REPO_CLASS)();
+            if ($dbEntity->mapToRepository($entity)) {
+                $doctrineModels[] = $dbEntity->getOrmInstance();
+            }
+        }
+        $entityManager = EntityManagerFactory::getInstance();
+        $entityManager->upsertMultiple($doctrineModels);
+    }
 }

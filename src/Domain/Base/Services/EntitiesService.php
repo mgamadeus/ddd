@@ -13,7 +13,9 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Exceptions\NotFoundException;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\Service;
+use Doctrine\DBAL\Exception;
 use Doctrine\ORM\Exception\ORMException;
+use Doctrine\ORM\Mapping\MappingException;
 use Doctrine\ORM\NonUniqueResultException;
 use Doctrine\ORM\OptimisticLockException;
 use Psr\Cache\InvalidArgumentException;
@@ -100,6 +102,22 @@ class EntitiesService extends Service
     ): Entity {
         $repoClass = $entity::getRepoClassInstance();
         return $repoClass->update($entity);
+    }
+
+    /**
+     * High performance Batch update method:
+     * It does not return ids of updated Entities, it does not adapt translations if required, it is not updating recurively,
+     * best used in data import scenarios
+     *
+     * @param EntitySet $entitySet
+     * @return void
+     * @throws Exception
+     * @throws MappingException
+     */
+    public function batchUpdate(EntitySet &$entitySet): void
+    {
+        $repoClass = $entitySet::getRepoClassInstance();
+        $repoClass->batchUpdate($entitySet);
     }
 
     /**
