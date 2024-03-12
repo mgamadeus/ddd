@@ -213,7 +213,6 @@ final class Config
     public static function getEnv(string $varname): bool|int|float|string|null
     {
         $value = $_ENV[$varname] ?? null;
-
         // Check and return boolean values
         if ($value !== null) {
             if (strtolower($value) === 'true') {
