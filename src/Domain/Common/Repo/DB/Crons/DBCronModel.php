@@ -7,15 +7,16 @@ namespace DDD\Domain\Common\Repo\DB\Crons;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use Doctrine\ORM\Mapping as ORM;
 use Doctrine\ORM\PersistentCollection;
+use DateTime;
 
 #[ORM\Entity]
 #[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
-#[ORM\Table(name: 'EntityCrons')]
+#[ORM\Table(name: 'Crons')]
 class DBCronModel extends DoctrineModel
 {
 	public const MODEL_ALIAS = 'Cron';
 
-	public const TABLE_NAME = 'EntityCrons';
+	public const TABLE_NAME = 'Crons';
 
 	public const ENTITY_CLASS = 'DDD\Domain\Common\Entities\Crons\Cron';
 

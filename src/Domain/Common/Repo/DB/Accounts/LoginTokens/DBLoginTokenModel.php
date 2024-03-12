@@ -7,16 +7,17 @@ namespace DDD\Domain\Common\Repo\DB\Accounts\LoginTokens;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use Doctrine\ORM\Mapping as ORM;
 use Doctrine\ORM\PersistentCollection;
+use DateTime;
 use DDD\Domain\Common\Repo\DB\Accounts\DBAccountModel;
 
 #[ORM\Entity]
 #[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
-#[ORM\Table(name: 'EntityLoginTokens')]
+#[ORM\Table(name: 'LoginTokens')]
 class DBLoginTokenModel extends DoctrineModel
 {
 	public const MODEL_ALIAS = 'LoginToken';
 
-	public const TABLE_NAME = 'EntityLoginTokens';
+	public const TABLE_NAME = 'LoginTokens';
 
 	public const ENTITY_CLASS = 'DDD\Domain\Common\Entities\Accounts\LoginTokens\LoginToken';
 

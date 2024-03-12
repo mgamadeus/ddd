@@ -610,7 +610,7 @@ class DatabaseModel extends ValueObject
         }
         // imports need to be generated after getOneToManyRelationShips, as within the generation of oneToManyRelationShips
         // additional imports of Models from foreign namespaces can be added
-        $imports = "use {$doctrineModelClass};\nuse Doctrine\ORM\Mapping as ORM;\nuse Doctrine\ORM\PersistentCollection;\n";
+        $imports = "use {$doctrineModelClass};\nuse Doctrine\ORM\Mapping as ORM;\nuse Doctrine\ORM\PersistentCollection;\nuse DateTime;\n";
         foreach ($this->modelImports->getElements() as $modelImport) {
             $imports .= $modelImport->getImportDefinition() . "\n";
         }

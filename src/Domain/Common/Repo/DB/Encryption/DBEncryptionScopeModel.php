@@ -7,15 +7,16 @@ namespace DDD\Domain\Common\Repo\DB\Encryption;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use Doctrine\ORM\Mapping as ORM;
 use Doctrine\ORM\PersistentCollection;
+use DateTime;
 
 #[ORM\Entity]
 #[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
-#[ORM\Table(name: 'EntityEncryptionScopes')]
+#[ORM\Table(name: 'EncryptionScopes')]
 class DBEncryptionScopeModel extends DoctrineModel
 {
 	public const MODEL_ALIAS = 'EncryptionScope';
 
-	public const TABLE_NAME = 'EntityEncryptionScopes';
+	public const TABLE_NAME = 'EncryptionScopes';
 
 	public const ENTITY_CLASS = 'DDD\Domain\Common\Entities\Encryption\EncryptionScope';
 
