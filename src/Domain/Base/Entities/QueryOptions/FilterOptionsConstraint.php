@@ -23,10 +23,9 @@ class FilterOptionsConstraint extends Constraint
         parent::__construct([], $groups, $payload);
     }
 
-    public function getTargets()
+    public function getTargets(): string|array
     {
         return self::CLASS_CONSTRAINT;
     }
-
 
 }
