@@ -16,6 +16,7 @@ use Doctrine\ORM\Query\Parser;
 use Doctrine\ORM\Query\ParserResult;
 use Doctrine\ORM\Query\QueryException;
 use Doctrine\ORM\Query\SqlWalker;
+use Doctrine\ORM\Query\TokenType;
 use Doctrine\ORM\Query\TreeWalkerChain;
 use LogicException;
 use ReflectionClass;
@@ -2363,12 +2364,12 @@ class DoctrineParser extends Parser
         switch ($this->lexer->lookahead->type) {
             case Lexer::T_IDENTIFIER:
                 switch (true) {
-                    case $peek->type === Lexer::T_DOT:
+                    case $peek->type === TokenType::T_DOT:
                         $expression = $this->StateFieldPathExpression();
 
                         return new AST\SimpleSelectExpression($expression);
 
-                    case $peek->type !== Lexer::T_OPEN_PARENTHESIS:
+                    case $peek->type !== TokenType::T_OPEN_PARENTHESIS:
                         $expression = $this->IdentificationVariable();
 
                         return new AST\SimpleSelectExpression($expression);

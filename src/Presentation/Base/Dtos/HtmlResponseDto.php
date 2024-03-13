@@ -14,7 +14,7 @@ class HtmlResponseDto extends Response
      * @var ResponseHeaderBag
      */
     #[HideProperty]
-    public $headers;
+    public ResponseHeaderBag $headers;
 
     public function __construct(
         ?string $content = '',

@@ -18,7 +18,7 @@ class RestResponseDto extends JsonResponse
      * @var ResponseHeaderBag
      */
     #[HideProperty]
-    public $headers;
+    public ResponseHeaderBag $headers;
 
     public function __construct(mixed $data = null, int $status = 200, array $headers = [], bool $json = false)
     {
