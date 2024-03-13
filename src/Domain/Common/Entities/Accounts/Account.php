@@ -54,9 +54,7 @@ class Account extends Entity implements UserInterface, AccountDependentEntityInt
         return (string)$this->id;
     }
 
-    public function eraseCredentials()
-    {
-    }
+    public function eraseCredentials(): void {}
 
     /**
      * Return symfony conform security roles
@@ -72,7 +70,6 @@ class Account extends Entity implements UserInterface, AccountDependentEntityInt
         }
         return $roles;
     }
-
 
     public function getAccount(): ?Account
     {
