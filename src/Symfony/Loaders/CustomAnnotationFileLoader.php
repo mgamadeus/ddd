@@ -11,12 +11,7 @@ use Symfony\Component\Routing\RouteCollection;
 
 class CustomAnnotationFileLoader extends AttributeFileLoader
 {
-    public function __construct2(FileLocator $locator, CustomAnnotationClassLoader $loader)
-    {
-        parent::__construct($locator, $loader);
-    }
-
-    public function __construct(FileLocatorInterface $locator, CustomAnnotationClassLoader $loader)
+    public function __construct(FileLocator $locator, CustomAnnotationClassLoader $loader)
     {
         parent::__construct($locator, $loader);
     }
