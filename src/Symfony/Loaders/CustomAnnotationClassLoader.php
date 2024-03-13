@@ -2,13 +2,19 @@
 
 namespace DDD\Symfony\Loaders;
 
-use Symfony\Bundle\FrameworkBundle\Routing\AnnotatedRouteControllerLoader;
+use InvalidArgumentException;
+use ReflectionAttribute;
+use ReflectionClass;
+use ReflectionMethod;
+use Symfony\Bundle\FrameworkBundle\Routing\AttributeRouteControllerLoader;
 use Symfony\Component\Config\Resource\FileResource;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Routing\Annotation\Route as RouteAnnotation;
 use Symfony\Component\Routing\RouteCollection;
 
-class CustomAnnotationClassLoader extends AnnotatedRouteControllerLoader
+use function is_int;
+
+class CustomAnnotationClassLoader extends AttributeRouteControllerLoader
 {
     protected function resetGlobals(): array
     {
@@ -31,17 +37,17 @@ class CustomAnnotationClassLoader extends AnnotatedRouteControllerLoader
     /**
      * Loads from annotations from a class.
      *
-     * @throws \InvalidArgumentException When route can't be parsed
+     * @throws InvalidArgumentException When route can't be parsed
      */
     public function load(mixed $class, string $type = null): RouteCollection
     {
         if (!class_exists($class)) {
-            throw new \InvalidArgumentException(sprintf('Class "%s" does not exist.', $class));
+            throw new InvalidArgumentException(sprintf('Class "%s" does not exist.', $class));
         }
 
-        $class = new \ReflectionClass($class);
+        $class = new ReflectionClass($class);
         if ($class->isAbstract()) {
-            throw new \InvalidArgumentException(sprintf('Annotations from class "%s" cannot be read as it is abstract.', $class->getName()));
+            throw new InvalidArgumentException(sprintf('Annotations from class "%s" cannot be read as it is abstract.', $class->getName()));
         }
         $collection = new RouteCollection();
 
@@ -57,8 +63,9 @@ class CustomAnnotationClassLoader extends AnnotatedRouteControllerLoader
             foreach ($class->getMethods() as $method) {
                 $this->defaultRouteIndex = 0;
                 foreach ($this->getAnnotations($method) as $annot) {
-                    if (!$annot->getName())
-                        $annot->setName(implode(',',$annot->getMethods()) . ':' . $globals['path'] . $annot->getPath());
+                    if (!$annot->getName()) {
+                        $annot->setName(implode(',', $annot->getMethods()) . ':' . $globals['path'] . $annot->getPath());
+                    }
                     $this->addRoute($collection, $annot, $globals, $class, $method);
                 }
             }
@@ -66,8 +73,9 @@ class CustomAnnotationClassLoader extends AnnotatedRouteControllerLoader
             if (0 === $collection->count() && $class->hasMethod('__invoke')) {
                 $globals = $this->resetGlobals();
                 foreach ($this->getAnnotations($class) as $annot) {
-                    if (!$annot->getName())
-                        $annot->setName(implode(',',$annot->getMethods()) .':'. $globals['path'] . $annot->getPath());
+                    if (!$annot->getName()) {
+                        $annot->setName(implode(',', $annot->getMethods()) . ':' . $globals['path'] . $annot->getPath());
+                    }
                     $this->addRoute($collection, $annot, $globals, $class, $class->getMethod('__invoke'));
                 }
             }
@@ -77,88 +85,83 @@ class CustomAnnotationClassLoader extends AnnotatedRouteControllerLoader
     }
 
     /**
-     * @param \ReflectionClass|\ReflectionMethod $reflection
+     * @param ReflectionClass|ReflectionMethod $reflection
      *
      * @return iterable<int, RouteAnnotation>
      */
-    protected function getAnnotations(object $reflection): iterable
+    protected function getAnnotations(ReflectionClass|ReflectionMethod $reflection): iterable
     {
-        foreach ($reflection->getAttributes($this->routeAnnotationClass, \ReflectionAttribute::IS_INSTANCEOF) as $attribute) {
+        foreach ($reflection->getAttributes($this->routeAnnotationClass, ReflectionAttribute::IS_INSTANCEOF) as $attribute) {
             yield $attribute->newInstance();
-        }
-
-        if (!$this->reader) {
-            return;
-        }
-
-        $anntotations = $reflection instanceof \ReflectionClass
-            ? $this->reader->getClassAnnotations($reflection)
-            : $this->reader->getMethodAnnotations($reflection);
-
-        foreach ($anntotations as $annotation) {
-            if ($annotation instanceof $this->routeAnnotationClass) {
-                yield $annotation;
-            }
         }
     }
 
-
-    protected function getGlobals(\ReflectionClass $class)
+    protected function getGlobals(ReflectionClass $class): array
     {
         //echo $class->getName() . '<br />';die();
         $annot = null;
-        $annotations = $class->getAttributes($this->routeAnnotationClass, \ReflectionAttribute::IS_INSTANCEOF   ) ?? null;
+        $attributes = $class->getAttributes($this->routeAnnotationClass, ReflectionAttribute::IS_INSTANCEOF) ?? null;
 
         $allGlobals = [];
-        if ($annotations){
-            foreach ($annotations as $annot){
-                /** @var Route $annot */
-                $annot = $annot->newInstance();
+        if ($attributes) {
+            foreach ($attributes as $attribute) {
+                /** @var ReflectionAttribute $attribute */
+                $attribute = $attribute->newInstance();
+
+                /** @var Route $attribute */
+
                 $globals = $this->resetGlobals();
-                if (null !== $annot->getName()) {
-                    $globals['name'] = $annot->getName();
+                if (null !== $attribute->getName()) {
+                    $globals['name'] = $attribute->getName();
                 }
 
-                if (null !== $annot->getPath()) {
-                    $globals['path'] = $annot->getPath();
+                if (null !== $attribute->getPath()) {
+                    $globals['path'] = $attribute->getPath();
                 }
 
-                $globals['localized_paths'] = $annot->getLocalizedPaths();
+                $globals['localized_paths'] = $attribute->getLocalizedPaths();
 
-                if (null !== $annot->getRequirements()) {
-                    $globals['requirements'] = $annot->getRequirements();
+                if (null !== $attribute->getRequirements()) {
+                    $globals['requirements'] = $attribute->getRequirements();
                 }
 
-                if (null !== $annot->getOptions()) {
-                    $globals['options'] = $annot->getOptions();
+                if (null !== $attribute->getOptions()) {
+                    $globals['options'] = $attribute->getOptions();
                 }
 
-                if (null !== $annot->getDefaults()) {
-                    $globals['defaults'] = $annot->getDefaults();
+                if (null !== $attribute->getDefaults()) {
+                    $globals['defaults'] = $attribute->getDefaults();
                 }
 
-                if (null !== $annot->getSchemes()) {
-                    $globals['schemes'] = $annot->getSchemes();
+                if (null !== $attribute->getSchemes()) {
+                    $globals['schemes'] = $attribute->getSchemes();
                 }
 
-                if (null !== $annot->getMethods()) {
-                    $globals['methods'] = $annot->getMethods();
+                if (null !== $attribute->getMethods()) {
+                    $globals['methods'] = $attribute->getMethods();
                 }
 
-                if (null !== $annot->getHost()) {
-                    $globals['host'] = $annot->getHost();
+                if (null !== $attribute->getHost()) {
+                    $globals['host'] = $attribute->getHost();
                 }
 
-                if (null !== $annot->getCondition()) {
-                    $globals['condition'] = $annot->getCondition();
+                if (null !== $attribute->getCondition()) {
+                    $globals['condition'] = $attribute->getCondition();
                 }
 
-                $globals['priority'] = $annot->getPriority() ?? 0;
-                $globals['env'] = $annot->getEnv();
+                $globals['priority'] = $attribute->getPriority() ?? 0;
+                $globals['env'] = $attribute->getEnv();
 
                 foreach ($globals['requirements'] as $placeholder => $requirement) {
-                    if (\is_int($placeholder)) {
-                        throw new \InvalidArgumentException(sprintf('A placeholder name must be a string (%d given). Did you forget to specify the placeholder key for the requirement "%s" in "%s"?', $placeholder, $requirement, $class->getName()));
+                    if (is_int($placeholder)) {
+                        throw new InvalidArgumentException(
+                            sprintf(
+                                'A placeholder name must be a string (%d given). Did you forget to specify the placeholder key for the requirement "%s" in "%s"?',
+                                $placeholder,
+                                $requirement,
+                                $class->getName()
+                            )
+                        );
                     }
                 }
                 $allGlobals[] = $globals;
