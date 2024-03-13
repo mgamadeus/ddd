@@ -99,7 +99,6 @@ abstract class Cache
                 $cacheConfig[$variableIndex] = $envVariable;
             }
         }
-        echo json_encode($cacheConfig);
         return $cacheConfig;
     }
 

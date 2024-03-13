@@ -10,17 +10,12 @@ use DDD\Domain\Base\Entities\Lazyload\LazyLoad;
 use DDD\Domain\Base\Entities\ParentChildrenTrait;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
 use DDD\Infrastructure\Validation\CustomValidationInputs;
-use DDD\Infrastructure\Validation\Metadata\LazyLoadingMetadataFactory;
-use DDD\Infrastructure\Validation\ValidationBuilder;
 use DDD\Infrastructure\Validation\ValidationError;
 use DDD\Infrastructure\Validation\ValidationErrors;
 use DDD\Infrastructure\Validation\ValidationResult;
 use JsonException;
 use ReflectionException;
-use Symfony\Component\Validator\{ConstraintViolation,
-    ConstraintViolationList,
-    Validation,
-    Validator\ValidatorInterface};
+use Symfony\Component\Validator\{ConstraintViolation, ConstraintViolationList, Validation, Validator\ValidatorInterface};
 use Throwable;
 
 trait ValidatorTrait
@@ -72,9 +67,7 @@ trait ValidatorTrait
 
         // validate object itself
         LazyLoad::$disableLazyLoadGlobally = true;
-        $violations = $customValidation ?
-            $this->getCustomValidationInputsViolations($customValidationInputs) :
-            $this->getValidationViolations();
+        $violations = $customValidation ? $this->getCustomValidationInputsViolations($customValidationInputs) : $this->getValidationViolations();
         if ($violations->count()) {
             if (!$validationErrors) {
                 $validationErrors = new ValidationErrors();
@@ -85,10 +78,7 @@ trait ValidatorTrait
                 // We treat array elements separately below
                 if (!str_starts_with($violation->getPropertyPath(), '[')) {
                     $validationResult = new ValidationResult(
-                        $violation->getPropertyPath(),
-                        $violation->getMessage(),
-                        $violation->getInvalidValue(),
-                        static::class
+                        $violation->getPropertyPath(), $violation->getMessage(), $violation->getInvalidValue(), static::class
                     );
                     $validationError->add($validationResult);
                 }
@@ -110,8 +100,8 @@ trait ValidatorTrait
                 continue;
             }
             // we do not validate parents
-            if (is_object($propertyValue) && is_a($propertyValue, DefaultObject::class)
-                && is_a($this, DefaultObject::class)
+            if (
+                is_object($propertyValue) && is_a($propertyValue, DefaultObject::class) && is_a($this, DefaultObject::class)
             ) {
                 /** @var ParentChildrenTrait $propertyValue */
                 if ($this->hasObjectInParents($propertyValue)) {
@@ -153,7 +143,7 @@ trait ValidatorTrait
 
     private function createValidatorForAnnotation(): ValidatorInterface
     {
-        return Validation::createValidatorBuilder()->enableAnnotationMapping()->getValidator();
+        return Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator();
     }
 
     /**
@@ -176,8 +166,8 @@ trait ValidatorTrait
     /**
      * @throws ReflectionException
      */
-    private function getCustomValidationInputsViolations(CustomValidationInputs $customValidationInputs
-    ): ConstraintViolationList {
+    private function getCustomValidationInputsViolations(CustomValidationInputs $customValidationInputs): ConstraintViolationList
+    {
         $constraintViolationList = new ConstraintViolationList();
         foreach ($this->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
             if (!$property->isInitialized($this)) {
@@ -185,8 +175,9 @@ trait ValidatorTrait
             }
             $propertyValue = $property->getValue($this);
             foreach ($customValidationInputs->getElements() as $customValidationInput) {
-                if (!is_object($propertyValue) && !is_array($propertyValue) &&
-                    $customValidationInput->value === (string)$propertyValue) {
+                if (
+                    !is_object($propertyValue) && !is_array($propertyValue) && $customValidationInput->value === (string)$propertyValue
+                ) {
                     $constraintViolationList->add(
                         new ConstraintViolation(
                             message: $customValidationInput->errorMessage,
