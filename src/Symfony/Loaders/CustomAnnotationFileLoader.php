@@ -2,14 +2,21 @@
 
 namespace DDD\Symfony\Loaders;
 
+use ReflectionClass;
+use Symfony\Component\Config\FileLocatorInterface;
 use Symfony\Component\Config\Resource\FileResource;
 use Symfony\Component\HttpKernel\Config\FileLocator;
-use Symfony\Component\Routing\Loader\AnnotationFileLoader;
+use Symfony\Component\Routing\Loader\AttributeFileLoader;
 use Symfony\Component\Routing\RouteCollection;
 
-class CustomAnnotationFileLoader extends AnnotationFileLoader
+class CustomAnnotationFileLoader extends AttributeFileLoader
 {
-    public function __construct(FileLocator $locator, CustomAnnotationClassLoader $loader)
+    public function __construct2(FileLocator $locator, CustomAnnotationClassLoader $loader)
+    {
+        parent::__construct($locator, $loader);
+    }
+
+    public function __construct(FileLocatorInterface $locator, CustomAnnotationClassLoader $loader)
     {
         parent::__construct($locator, $loader);
     }
@@ -20,7 +27,7 @@ class CustomAnnotationFileLoader extends AnnotationFileLoader
 
         $collection = new RouteCollection();
         if ($class = $this->findClass($path)) {
-            $refl = new \ReflectionClass($class);
+            $refl = new ReflectionClass($class);
             if ($refl->isAbstract()) {
                 return null;
             }
@@ -33,6 +40,5 @@ class CustomAnnotationFileLoader extends AnnotationFileLoader
 
         return $collection;
     }
-
 
 }
