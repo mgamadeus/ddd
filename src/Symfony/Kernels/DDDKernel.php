@@ -123,7 +123,7 @@ class DDDKernel extends BaseKernel
         return $this->getDefaultonfigDir() . '/bundles.php';
     }
 
-    public function boot()
+    public function boot(): void
     {
         parent::boot();
         /** @var Container $container */
@@ -131,9 +131,10 @@ class DDDKernel extends BaseKernel
         self::$ontainer = $container;
     }
 
-    protected function build(ContainerBuilder $container)
+    protected function build(ContainerBuilder $container): void
     {
         // In the ServiceClassCollectorPass we register all class / service name associations
         $container->addCompilerPass(new ServiceClassCollectorPass());
     }
+
 }

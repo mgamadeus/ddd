@@ -15,7 +15,7 @@ class ReflectionUnionType extends \ReflectionUnionType
     }
 
     /**
-     * @return ReflectionNamedType[]
+     * @return \ReflectionNamedType[]
      */
     public function getTypes(): array
     {
