@@ -93,16 +93,20 @@ class DDDKernel extends BaseKernel
         $defaultConfigDir = $this->getDefaultonfigDir();
 
         $container->import($configDir . '/{packages}/*.yaml');
-        $container->import($defaultConfigDir . '/{packages}/*.yaml');
+        if ($configDir != $defaultConfigDir) {
+            $container->import($defaultConfigDir . '/{packages}/*.yaml');
+        }
 
         $container->import($configDir . '/{packages}/' . $this->environment . '/*.yaml');
-        $container->import($defaultConfigDir . '/{packages}/' . $this->environment . '/*.yaml');
+        if ($configDir != $defaultConfigDir) {
+            $container->import($defaultConfigDir . '/{packages}/' . $this->environment . '/*.yaml');
+        }
 
         if (is_file($configDir . '/services.yaml')) {
             $container->import($configDir . '/services.yaml');
             $container->import($configDir . '/{services}_' . $this->environment . '.yaml');
         }
-        {
+        if ($configDir != $defaultConfigDir && is_file($defaultConfigDir . '/services.yaml')) {
             $container->import($defaultConfigDir . '/services.yaml');
             $container->import($defaultConfigDir . '/{services}_' . $this->environment . '.yaml');
         }
