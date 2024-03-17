@@ -269,9 +269,9 @@ class AuthService
         $account = $this->accountsService->getAccountByEmail($email);
         DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
         $password = hash_hmac(
-            Config::getEnv('AUTH_PASSWORD_HAS_METHOD'),
+            Config::getEnv('AUTH_PASSWORD_HASH_METHOD'),
             $password,
-            Config::getEnv('AUTH_PASSWORD_HAS_KEY')
+            Config::getEnv('AUTH_PASSWORD_HASH_KEY')
         );
         if ($account->password !== $password) {
             throw new UnauthorizedException('Wrong credentials.');
