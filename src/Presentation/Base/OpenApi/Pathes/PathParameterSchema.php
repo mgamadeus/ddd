@@ -12,14 +12,13 @@ use DDD\Domain\Base\Entities\QueryOptions\QueryOptions;
 use DDD\Infrastructure\Base\DateTime\Date;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Reflection\ReflectionClass;
+use DDD\Infrastructure\Reflection\ReflectionProperty;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 use DDD\Presentation\Base\OpenApi\Components\SchemaProperty;
 use DDD\Presentation\Base\OpenApi\Exceptions\TypeDefinitionMissingOrWrong;
 use DDD\Presentation\Base\QueryOptions\DtoQueryOptions;
 use DDD\Presentation\Base\QueryOptions\DtoQueryOptionsTrait;
-use ReflectionAttribute;
 use ReflectionNamedType;
-use ReflectionProperty;
 use ReflectionUnionType;
 use Symfony\Component\Validator\Constraints\Choice;
 use Symfony\Component\Validator\Constraints\Length;
@@ -107,10 +106,11 @@ class PathParameterSchema
                         }
                     }
 
-                    if ($attributes = $requestDtoReflectionProperty->getAttributes(
-                        Choice::class,
-                        ReflectionAttribute::IS_INSTANCEOF
-                    )) {
+                    if (($attributes = $requestDtoReflectionProperty->getAttributes(Choice::class))
+                        || ($attributes = $requestDtoReflectionProperty->getAttributes(
+                            \DDD\Infrastructure\Validation\Constraints\Choice::class
+                        ))
+                    ) {
                         /** @var Choice $choiceAttribute */
                         $choiceAttribute = $attributes[0]->newInstance();
                         $this->enum = $choiceAttribute->choices;
