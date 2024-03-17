@@ -34,12 +34,8 @@ class Role extends Entity
     /** @var string|null The description of the role */
     public ?string $description;
 
-    /** @var string|null The type of the role */
-    public ?string $type;
-
     /** @var bool Whether the role is an admin role or not */
     public bool $isAdminRole = false;
-
 
     public function uniqueKey(): string
     {
