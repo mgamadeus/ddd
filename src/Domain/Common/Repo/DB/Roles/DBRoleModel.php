@@ -26,9 +26,6 @@ class DBRoleModel extends DoctrineModel
 	#[ORM\Column(type: 'string')]
 	public ?string $description;
 
-	#[ORM\Column(type: 'string')]
-	public ?string $type;
-
 	#[ORM\Column(type: 'boolean')]
 	public ?bool $isAdminRole = false;
 
