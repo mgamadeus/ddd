@@ -18,7 +18,6 @@ use DDD\Presentation\Base\OpenApi\Attributes\Parameter;
 use DDD\Presentation\Base\OpenApi\Attributes\Required;
 use DDD\Presentation\Base\OpenApi\Document;
 use DDD\Presentation\Base\OpenApi\Exceptions\TypeDefinitionMissingOrWrong;
-use ReflectionAttribute;
 use ReflectionException;
 use ReflectionNamedType;
 use ReflectionProperty;
@@ -73,7 +72,8 @@ class SchemaProperty
 
         if (!$schemaClassReflectionProperty->getType()) {
             throw new TypeDefinitionMissingOrWrong(
-                'Type Definition Missing in ' . $schemaReflectionClass->getName() . '->$' . $schemaClassReflectionProperty->getName()
+                'Type Definition Missing in ' . $schemaReflectionClass->getName(
+                ) . '->$' . $schemaClassReflectionProperty->getName()
             );
         }
 
@@ -112,7 +112,9 @@ class SchemaProperty
             $required = false;
 
             if (
-                $schemaClassReflectionProperty->getAttributes(Required::class) || $schemaClassReflectionProperty->getAttributes(NotNull::class)
+                $schemaClassReflectionProperty->getAttributes(
+                    Required::class
+                ) || $schemaClassReflectionProperty->getAttributes(NotNull::class)
             ) {
                 $required = true;
             }
@@ -131,23 +133,24 @@ class SchemaProperty
                 // array types are not accepted in case of POST scenario, only in BODY
                 if ($this->type == 'array' && $scope == Parameter::POST) {
                     throw new TypeDefinitionMissingOrWrong(
-                        'Declared type array in ' . $schemaReflectionClass->getName() . '->$' . $schemaClassReflectionProperty->getName(
-                        ) . ' allowed only for BODY parameters'
+                        'Declared type array in ' . $schemaReflectionClass->getName(
+                        ) . '->$' . $schemaClassReflectionProperty->getName() . ' allowed only for BODY parameters'
                     );
                 }
                 if ($this->type == 'object') {
                     throw new TypeDefinitionMissingOrWrong(
-                        'Declared type object in ' . $schemaReflectionClass->getName() . '->$' . $schemaClassReflectionProperty->getName(
+                        'Declared type object in ' . $schemaReflectionClass->getName(
+                        ) . '->$' . $schemaClassReflectionProperty->getName(
                         ) . ' not allowed. Use array or create a class'
                     );
                 }
 
                 // handle Choice attributes (fixed set of options for the property)
                 if (
-                    $attributes = $schemaClassReflectionProperty->getAttributes(
-                        Choice::class,
-                        ReflectionAttribute::IS_INSTANCEOF
-                    )
+                    ($attributes = $schemaClassReflectionProperty->getAttributes(Choice::class)) ||
+                    ($attributes = $schemaClassReflectionProperty->getAttributes(
+                        \DDD\Infrastructure\Validation\Constraints\Choice::class
+                    ))
                 ) {
                     /** @var Choice $choiceAttribute */
                     $choiceAttribute = $attributes[0]->newInstance();
@@ -183,7 +186,8 @@ class SchemaProperty
                     }
                 }
                 if (
-                    $this->type != 'array' && $this->type != 'object' && $schemaClassReflectionProperty->hasDefaultValue()
+                    $this->type != 'array' && $this->type != 'object' && $schemaClassReflectionProperty->hasDefaultValue(
+                    )
                 ) {
                     $this->default = $schemaClassReflectionProperty->getDefaultValue();
                 }
@@ -204,7 +208,8 @@ class SchemaProperty
                     $arrayType = $type->getArrayType();
                     if (!$arrayType) {
                         throw new TypeDefinitionMissingOrWrong(
-                            'Array Type Definition Missing in ' . $schemaReflectionClass->getName() . '->$' . $schemaClassReflectionProperty->getName()
+                            'Array Type Definition Missing in ' . $schemaReflectionClass->getName(
+                            ) . '->$' . $schemaClassReflectionProperty->getName()
                         );
                     }
                     if ($arrayType instanceof ReflectionUnionType) {
@@ -246,7 +251,8 @@ class SchemaProperty
                                 if (!class_exists($propertyClass->getNameWithNamespace())) {
                                     //echo $propertyClass->getNameWithNamespace();die();
                                     throw new TypeDefinitionMissingOrWrong(
-                                        'Declared type class ' . $propertyClass->getNameWithNamespace() . ' in ' . $schemaReflectionClass->getName(
+                                        'Declared type class ' . $propertyClass->getNameWithNamespace(
+                                        ) . ' in ' . $schemaReflectionClass->getName(
                                         ) . '->$' . $schemaClassReflectionProperty->getName() . ' does not exist'
                                     );
                                 }
@@ -277,8 +283,8 @@ class SchemaProperty
                 // complex types are not accepted in POST scenario
                 if ($scope == Parameter::POST) {
                     throw new TypeDefinitionMissingOrWrong(
-                        'Declared type ' . $type->getName() . ' in ' . $schemaReflectionClass->getName() . '->$' . $schemaClassReflectionProperty->getName(
-                        ) . ' allowed only for BODY parameters'
+                        'Declared type ' . $type->getName() . ' in ' . $schemaReflectionClass->getName(
+                        ) . '->$' . $schemaClassReflectionProperty->getName() . ' allowed only for BODY parameters'
                     );
                 } else {
                     $this->type = 'object';
@@ -302,7 +308,8 @@ class SchemaProperty
                     }
                     if (!class_exists($propertyClass->getNameWithNamespace())) {
                         throw new TypeDefinitionMissingOrWrong(
-                            'Declared type class ' . $propertyClass->getNameWithNamespace() . ' in ' . $schemaReflectionClass->getName(
+                            'Declared type class ' . $propertyClass->getNameWithNamespace(
+                            ) . ' in ' . $schemaReflectionClass->getName(
                             ) . '->$' . $schemaClassReflectionProperty->getName() . ' does not exist'
                         );
                     }
