@@ -9,8 +9,8 @@ use DDD\Domain\Common\Entities\Accounts\Account;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Exceptions\NotFoundException;
-use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\AuthService;
+use DDD\Infrastructure\Services\DDDService;
 use Doctrine\ORM\NonUniqueResultException;
 use Psr\Cache\InvalidArgumentException;
 use ReflectionException;
@@ -23,9 +23,7 @@ class AccountsService extends EntitiesService
 {
     public const DEFAULT_ENTITY_CLASS = Account::class;
 
-    public function __construct(public ?RequestStack $requestStack = null)
-    {
-    }
+    public function __construct(public ?RequestStack $requestStack = null) {}
 
     /**
      * @param string|int|null $accountId
@@ -66,9 +64,8 @@ class AccountsService extends EntitiesService
         return $account;
     }
 
-
     /**
-     * Get account by email
+     * Find account by email
      * @param string $email
      * @return Account|null
      * @throws BadRequestException
@@ -81,13 +78,15 @@ class AccountsService extends EntitiesService
     {
         $entityClassInstance = self::getEntityClassInstance();
         $repoClassInstance = self::getEntityClassInstance()::getRepoClassInstance();
-        $account = $repoClassInstance->findByEmail($email);
+        $queryBuilder = $repoClassInstance::createQueryBuilder();
+        $alias = $repoClassInstance::getBaseModelAlias();
+        $queryBuilder->where("{$alias}.email = :email")->setParameter('email', $email);
+        $account = $repoClassInstance->find($queryBuilder);
         if ($this->throwErrors && !$account) {
             throw new NotFoundException('Account not found or current Auth Account is not authorized to access it');
         }
         return $account;
     }
-
 
     /**
      * Get currently authenticated account
