@@ -266,7 +266,7 @@ class AuthService
     {
         DDDService::instance()->deactivateEntityRightsRestrictions();
         $this->accountsService->throwErrors = true;
-        $account = $this->accountsService->getAccountByEmail($email);
+        $account = $this->accountsService->findByEmail($email);
         DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
         $password = hash_hmac(
             Config::getEnv('AUTH_PASSWORD_HASH_METHOD'),
