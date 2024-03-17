@@ -77,7 +77,7 @@ class AccountsService extends EntitiesService
      * @throws InvalidArgumentException
      * @throws ReflectionException
      */
-    public function getAccountByEmail(string $email): ?Account
+    public function findByEmail(string $email): ?Account
     {
         $entityClassInstance = self::getEntityClassInstance();
         $repoClassInstance = self::getEntityClassInstance()::getRepoClassInstance();
