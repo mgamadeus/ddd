@@ -16,10 +16,10 @@ use DDD\Infrastructure\Base\DateTime\Date;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
-use ReflectionAttribute;
-use ReflectionNamedType;
-use ReflectionProperty;
-use ReflectionUnionType;
+use DDD\Infrastructure\Reflection\ReflectionAttribute;
+use DDD\Infrastructure\Reflection\ReflectionNamedType;
+use DDD\Infrastructure\Reflection\ReflectionProperty;
+use DDD\Infrastructure\Reflection\ReflectionUnionType;
 use Symfony\Component\Validator\Constraints\Choice;
 use Symfony\Component\Validator\Constraints\Length;
 
@@ -138,6 +138,14 @@ class DatabaseColumn extends ValueObject
     ): ?DatabaseColumn {
         $databaseColum = new DatabaseColumn();
 
+        /** @var LazyLoad $lazyloadAttributeInstance */
+        // we ignore lazyloaded properties of type ClASS_METHOD
+        if ($lazyloadAttribute = $reflectionProperty?->getAttributes(LazyLoad::class)[0] ?? null) {
+            $lazyloadAttributeInstance = $lazyloadAttribute->newInstance();
+            if ($lazyloadAttributeInstance->repoType == LazyLoadRepo::CLASS_METHOD)
+                return null;
+        }
+
         $type = $reflectionProperty->getType();
         $propertyName = $reflectionProperty->getName();
         $databaseColum->name = $propertyName;
@@ -154,7 +162,7 @@ class DatabaseColumn extends ValueObject
         if (isset(self::PROPERTIES_TO_SKIP[$propertyName])) {
             return null;
         }
-        if ($type instanceof ReflectionUnionType) {
+        if ($type instanceof \ReflectionUnionType) {
             $types = $type->getTypes();//[0];
             $allowsNull = false;
             foreach ($types as $unionType) {
@@ -169,7 +177,7 @@ class DatabaseColumn extends ValueObject
             }
             $databaseColum->allowsNull = $allowsNull;
         }
-        if (!$type instanceof ReflectionNamedType) {
+        if (!$type instanceof \ReflectionNamedType) {
             throw new InternalErrorException(
                 "No type specified in {$reflectionClass->getName()}.{$propertyName}"
             );
@@ -317,7 +325,15 @@ class DatabaseColumn extends ValueObject
     {
         if ($this->encrypted) {
             // in case of encrypted properties, we use varchar always, e.g. convert int to varchar
-            if (!in_array($this->sqlType, [self::SQL_TYPE_VARCHAR, self::SQL_TYPE_TEXT, self::SQL_TYPE_MEDIUMTEXT, self::SQL_TYPE_LONGTEXT, self::SQL_TYPE_JSON])) {
+            if (!in_array($this->sqlType,
+                [
+                    self::SQL_TYPE_VARCHAR,
+                    self::SQL_TYPE_TEXT,
+                    self::SQL_TYPE_MEDIUMTEXT,
+                    self::SQL_TYPE_LONGTEXT,
+                    self::SQL_TYPE_JSON
+                ]
+            )) {
                 return self::SQL_TYPE_VARCHAR . '(255)';
             } // JSON is treated as text, as on encryption JSON is not persisted
             elseif ($this->sqlType == self::SQL_TYPE_JSON) {

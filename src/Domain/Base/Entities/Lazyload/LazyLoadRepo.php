@@ -19,10 +19,20 @@ class LazyLoadRepo
     public bool $forceDBEntityModelCreation = false;
     public bool $isDefault = false;
 
+    /** @var string ARGUS API */
     public const ARGUS = 'ARGUS';
+
+    /** @var string Legacy Database Repos */
     public const LEGACY_DB = 'LEGACY_DB';
+
+    /** @var string Default DB Repo (based on Entity structure) */
     public const DB = 'DB';
+
+    /** @var string Default Virtual Repo Class */
     public const VIRTUAL = 'VIRTUAL';
+
+    /** @var string A method from the Entity Class itself */
+    public const CLASS_METHOD = 'CLASS_METHOD';
 
     /** @var array Repositories that refer to database */
     public const DATABASE_REPOS = [self::DB, self::LEGACY_DB];

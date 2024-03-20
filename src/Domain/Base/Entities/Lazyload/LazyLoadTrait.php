@@ -68,7 +68,7 @@ trait LazyLoadTrait
         if ($lazyloadAttributeInstance && $lazyloadAttributeInstance->repoClass) {
             // first check if repoClass is defined on lazyLoadattribute instance
             $repoClass = $lazyloadAttributeInstance->repoClass;
-        } elseif($lazyloadAttributeInstance) {
+        } elseif ($lazyloadAttributeInstance) {
             // get property type and try to get repo class from getRepoClass function, if property type has this function
             if ($targetPropertyEntityClassName = $lazyloadAttributeInstance->entityClassName) {
                 if ($targetPropertyEntityClassName && method_exists(
@@ -133,37 +133,46 @@ trait LazyLoadTrait
             foreach ($propertiesToLazyLoad[$propertyName] as $repoType => $lazyloadAttributeInstance) {
                 $lazyloadAttributeInstance = $propertiesToLazyLoad[$propertyName][$repoType];
                 $repoFunction = $lazyloadAttributeInstance->loadMethod;
-                //we need to determine the Repo Class associated with the entity class of the property to be lazyloaded
-                $repoClass = $this->getRepoClassForProperty($repoType, $propertyName);
-                $repoClassInstance = new $repoClass();
-                // handling in case of Argus Repo Entities => we do not perform lazyloading on them but instead lazy instance them
-                // this is done in order to be able to perform all loading operations at once at the end
-                if ($repoType == LazyLoadRepo::ARGUS && property_exists($this, 'isArgusEntity')) {
-                    $this->$propertyName = $repoClassInstance;
-                    //set parent / child relationsship
-                    $this->addChildren($repoClassInstance);
-                    return $this->$propertyName;
-                }
-                $propertyContainingId = $lazyloadAttributeInstance->getPropertyContainingId();
-                if ($propertyContainingId && !isset($this->$propertyContainingId)) {
-                    return null;
-                }
-                // determine if caching is applicable
-                $repoClassReflection = ReflectionClass::instance($repoClass);
-                if ($lazyloadAttributeInstance->useCache && $entityCacheAttributeInstance = $repoClassReflection->getAttributeInstance(
-                        EntityCache::class
-                    )) {
-                    /** @var EntityCache $entityCacheAttributeInstance */
-                    if ($entityCacheAttributeInstance->cacheScopes) {
-                        $lazyloadAttributeInstance->useCache = CacheScopeInvalidationsService::canUseCachingForScopesAndLazyloadInitiatingEntity(
-                            $entityCacheAttributeInstance->cacheScopes,
-                            $this
-                        );
+
+                // For simple lazyloading using class methods, the repoClass instance is $this
+                if ($lazyloadAttributeInstance->repoType == LazyLoadRepo::CLASS_METHOD) {
+                    $repoClassInstance = $this;
+                } else {
+                    //we need to determine the Repo Class associated with the entity class of the property to be lazyloaded
+                    $repoClass = $this->getRepoClassForProperty($repoType, $propertyName);
+                    $repoClassInstance = new $repoClass();
+
+                    // handling in case of Argus Repo Entities => we do not perform lazyloading on them but instead lazy instance them
+                    // this is done in order to be able to perform all loading operations at once at the end
+                    if ($repoType == LazyLoadRepo::ARGUS && property_exists($this, 'isArgusEntity')) {
+                        $this->$propertyName = $repoClassInstance;
+                        //set parent / child relationsship
+                        $this->addChildren($repoClassInstance);
+                        return $this->$propertyName;
+                    }
+                    $propertyContainingId = $lazyloadAttributeInstance->getPropertyContainingId();
+                    if ($propertyContainingId && !isset($this->$propertyContainingId)) {
+                        return null;
+                    }
+                    // determine if caching is applicable
+                    $repoClassReflection = ReflectionClass::instance($repoClass);
+                    if ($lazyloadAttributeInstance->useCache && $entityCacheAttributeInstance = $repoClassReflection->getAttributeInstance(
+                            EntityCache::class
+                        )) {
+                        /** @var EntityCache $entityCacheAttributeInstance */
+                        if ($entityCacheAttributeInstance->cacheScopes) {
+                            $lazyloadAttributeInstance->useCache = CacheScopeInvalidationsService::canUseCachingForScopesAndLazyloadInitiatingEntity(
+                                $entityCacheAttributeInstance->cacheScopes,
+                                $this
+                            );
+                        }
                     }
                 }
 
                 /** @var Entity $lazyLoadedEntity */
-                if ($repoClassInstance instanceof VirtualEntity) {
+                if ($lazyloadAttributeInstance->repoType == LazyLoadRepo::CLASS_METHOD) {
+                    $lazyLoadedEntity = $this->$repoFunction();
+                } elseif ($repoClassInstance instanceof VirtualEntity) {
                     // in case of virtual repos, we use a precalling method that is handling caching
                     $lazyLoadedEntity = $repoClassInstance->callLazyLoadMethod(
                         $repoFunction,
@@ -355,8 +364,8 @@ trait LazyLoadTrait
      * @param string|null $repoType
      * @return RepoEntity|DatabaseRepoEntity|null
      */
-    public static function getRepoClassInstance(string $repoType = null): RepoEntity|DatabaseRepoEntity|DatabaseRepoEntitySet|null
-    {
+    public static function getRepoClassInstance(string $repoType = null
+    ): RepoEntity|DatabaseRepoEntity|DatabaseRepoEntitySet|null {
         $repoClass = self::getRepoClass($repoType);
         if ($repoClass) {
             return new $repoClass();
