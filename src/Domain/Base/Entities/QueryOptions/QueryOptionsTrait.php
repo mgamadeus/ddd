@@ -133,7 +133,7 @@ trait QueryOptionsTrait
                     /** @var QueryOptionsTrait $targetPropertyClass */
                     $targetPropertyClass = $propertyType->getName();
                     $targetPropertyReflectionClass = ReflectionClass::instance((string)$targetPropertyClass);
-                    if ($targetPropertyReflectionClass->hasTrait(QueryOptionsTrait::class)) {
+                    if ($targetPropertyReflectionClass && $targetPropertyReflectionClass->hasTrait(QueryOptionsTrait::class)) {
                         $targetPropertyHasQueryOptions = true;
                         /** @var AppliedQueryOptions $defaultQueryOptions */
                         // it can be that property is already loaded, in this case we still want to pass query options as it can be that we apply a recusrive expand and
