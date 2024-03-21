@@ -40,6 +40,8 @@ class Document
 
     public const BASE_TYPES = ['string' => true, 'integer' => true, 'float' => true, 'boolean' => true];
 
+    public const MODELS_TAG_GROUP_NAME = 'Models';
+
     private static Document $instance;
 
     public string $openapi = '3.0.0';
@@ -188,10 +190,10 @@ class Document
             $this->tagGroups = new TagGroups();
         }
         $this->tagGroups->sort(function (TagGroup $a, TagGroup $b) {
-            if ($a->name == 'Models') {
+            if ($a->name == self::MODELS_TAG_GROUP_NAME) {
                 return 1;
             }
-            if ($b->name == 'Models') {
+            if ($b->name == self::MODELS_TAG_GROUP_NAME) {
                 return -1;
             }
             return strcasecmp($a->name, $b->name);
@@ -236,5 +238,9 @@ class Document
     public function removeSchemaTags(): void
     {
         $this->tags->removeSchemaTags();
+        $modelsTagGroup = $this->tagGroups->getByUniqueKey(TagGroup::uniqueKeyStatic(self::MODELS_TAG_GROUP_NAME));
+        if ($modelsTagGroup) {
+            $this->tagGroups->remove($modelsTagGroup);
+        }
     }
 }
