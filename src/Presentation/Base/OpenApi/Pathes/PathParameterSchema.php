@@ -123,7 +123,7 @@ class PathParameterSchema
                             $choicesDescripton .= "-   `{$choice}`" . ($constantDescription ? ': ' . $constantDescription : '') . "\n";
                         }
                         if ($choicesDescripton) {
-                            $parameter->description .= "\nAllowed Values:\n" . $choicesDescripton;
+                            $parameter->description .= "  \nAllowed Values:  \n" . $choicesDescripton;
                         }
                     }
                 } else {
@@ -160,7 +160,7 @@ class PathParameterSchema
                                 continue;
                             }
                             $this->pattern = FiltersOptions::getRegexForOpenApi();
-                            $parameter->description .= "\n\nAllowed filter properties are:";
+                            $parameter->description .= "\n\n<details><summary>Allowed filter properties:</summary>  \n\n";
                             $queryOptionsBaseReflectionClass = ReflectionClass::instance($dtoQueryOptions->baseEntity);
                             $constantDescriptions = $queryOptionsBaseReflectionClass->getConstantsDescriptions();
 
@@ -177,16 +177,18 @@ class PathParameterSchema
                                     $parameter->description .= ']';
                                 }
                             }
+                            $parameter->description .= "</details>";
                         } elseif ($typeName == OrderByOptions::class) {
                             if (!isset($queryOptions->orderByDefinitions)) {
                                 $parameter->setToBeSkipped(true);
                                 continue;
                             }
                             $this->pattern = OrderByOptions::getRegexForOpenApi();
-                            $parameter->description .= "\n\nAllowed orderBy properties are:";
+                            $parameter->description .= "\n\n<details><summary>Allowed orderBy properties:</summary>  \n\n";
                             foreach ($queryOptions->orderByDefinitions as $allowedField) {
                                 $parameter->description .= "\n- `{$allowedField}`";
                             }
+                            $parameter->description .= "</details>";
                         } elseif ($typeName == ExpandOptions::class) {
                             /** @var DtoQueryOptions $dtoQueryOptionsAttributeInstane */
                             $dtoQueryOptionsAttributeInstane = $schemaReflectionClassName::getDtoQueryOptions();
@@ -202,7 +204,7 @@ class PathParameterSchema
                                 continue;
                             }
                             //$this->pattern = $queryOptions->orderBy->getRegexForOpenApi();
-                            $parameter->description .= "\n\nAllowed expand properties are:";
+                            $parameter->description .= "\n\n<details><summary>Allowed expand properties:</summary>  \n\n";
 
                             foreach ($expandDefinitions->getElements() as $expandDefinition) {
                                 $parameter->description .= "\n- `{$expandDefinition->propertyName}`";
@@ -228,6 +230,7 @@ class PathParameterSchema
                                     }
                                 }
                             }
+                            $parameter->description .= "</details>";
                         }
                         continue;
                     }

@@ -164,7 +164,7 @@ class SchemaProperty
                         $choicesDescripton .= "-   `{$choice}`" . ($constantDescription ? ': ' . $constantDescription : '') . "\n";
                     }
                     if ($choicesDescripton) {
-                        $this->description .= "\nAllowed Values:\n" . $choicesDescripton;
+                        $this->description .= "  \n Allowed Values:  \n" . $choicesDescripton;
                     }
                 }
                 // this is to handle e.g. objectType attriubte, which has only one enum option, the class Name

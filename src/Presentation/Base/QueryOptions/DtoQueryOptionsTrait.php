@@ -31,16 +31,22 @@ trait DtoQueryOptionsTrait
 
     /**
      * @var string Definition of orderBy follwing the syntax:
+     * <details><summary>Definitions and examples:</summary>
+     *
      * `<property> <direction>?, <property> <direction>? ... ]?`
+     *
      * **Examples:**
      * - `priority asc, creationDate desc, price?`
      * Direction one of: [`asc`, `desc`]
+     * </details>
      */
     #[Parameter(in: Parameter::QUERY, required: false)]
     public OrderByOptions $orderBy;
 
     /**
      * @var string Definition of filters follwing the syntax:
+     * <details><summary>Definitions and examples:</summary>
+     *
      * `<property> <operator> <value> [ <and|or> <property> <operator> <value> ... ]`
      * Value can be either `numeric`, (e.g. 10 or 10.4231) or `string` (e.g. 'active') or a JSON `array` format (e.g. ['ACTIVE','DELETED']) or `null` (null or 'null')
      *
@@ -48,62 +54,30 @@ trait DtoQueryOptionsTrait
      * - `price lt 10`
      * - `price ge 10.8 and price le 20 or categoryId eq 12`
      * - `city eq 'Berlin'`
+     * - `city in ['Berlin','Paris']`
      * Strings have to be put in quotes `'` If values contain single quotes, they need to be escaped. E.g. `location eq 'llocnou d\'en fenollet'`
      * Supported operators: `lt` lower then, `gt` greater then, `le` lower equal, `ge` greater equal, `eq` equal, `ne` not equal, `in` in and `bw` between.
      * `null`-value supports only `eq` and `ne`, `array`-value supports only `in` and `bw` operators.
+     * </details>
      */
     #[Parameter(in: Parameter::QUERY, required: false)]
     public FiltersOptions $filters;
 
     /**
-     * @var string Definition of expanding options (child fields to load alongside entity) follwing the syntax:
+     * @var string Definition of expanding options (properties to be loaded alongside with entity) follwing the syntax:
+     * <details><summary>Definitions and examples:</summary>
      *
-     * `<property> (<expandDefinitions>>)?, <property> (<expandDefinitions)? ... ]`
-     *
+     * `<property> (<expandDefinitions>)?, <property> (<expandDefinitions)? ... ]`
      *   `<expandDefinitions>` is defined as:
-     *
-     *     `<expandDefinition>;<expandDefinition>; ...`
-     *
+     *     `<expandDefinition>,<expandDefinition>, ...`
      *      `<expandDefinition>` is defined as:
-     *
      *         `<filterDefinitions>` or `<orderByDefinitions>` or `<topDefinition>` or `<skipDefinition>` or `<expandDefinition>`
-     *
-     *            `<filterDefinitions>` is defined as:
-     *
-     *               `filters=<property> <operator> <value> [ <and|or> <property> <operator> <value> ... ]`
-     *
-     *                *Examples:*
-     *                - `filters=price lt 10`
-     *                - `filters=price ge 10 and price le 20 or categoryId eq 12`
-     *                - `filters=city eq 'Berlin'`
-     *               Strings have to be put in quotes `'`
-     *
-     *               Supported operators: `lt` lower then, `gt` greater then, `le` lower equal, `ge` greater equal, `eq` equal, `ne` not equal.
-     *
-     *            `<orderByDefinitions>` is defined as:
-     *
-     *                `orderBy=<property> <direction>?, <property> <direction>? ... ]?`
-     *
-     *                *Examples:*
-     *                - `orderBy=priority asc, creationDate desc, price?`
-     *                Direction one of: [`asc`, `desc`]
-     *
-     *            `<topDefinition>` is defined as:
-     *                `top=<topCount>` where `<topCount>` is a positive integer
-     *
-     *                *Examples:*
-     *                - `top=10`
-     *
-     *            `<skipDefinition>` is defined as:
-     *                `skip=<skipCount>` where `<skipCount>` is a positive integer
-     *
-     *                *Examples:*
-     *                - `skip=10`
      *
      * *Examples:*
      * - `openingHours, competitors`
      * - `openingHours, competitors(filters=type eq 'GOOGLE';orderBy=KWS desc;top=10;skip=20)`
      * - `projects(expand=business(expand=locations(expand=website)))`
+     * </details>
      */
     #[Parameter(in: Parameter::QUERY, required: false)]
     public ExpandOptions $expand;
