@@ -394,7 +394,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
 
             $entityId = $entity->id ?? null;
             $hasTranslations = $translationAttributeInstance && $translationAttributeInstance->hasPropertiesToTranslate();
-            $translationIsInDefaultLanguage = $translationAttributeInstance::isCurrentLanguageCodeDefaultLanguage();
+            $translationIsInDefaultLanguage = $translationAttributeInstance && $translationAttributeInstance::isCurrentLanguageCodeDefaultLanguage();
 
             $modelName = static::BASE_ORM_MODEL;
             if (self::$applyRightsRestrictions) {

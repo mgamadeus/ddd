@@ -11,6 +11,8 @@ use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\Lazyload\LazyLoad;
 use DDD\Domain\Base\Entities\Lazyload\LazyLoadRepo;
+use DDD\Domain\Base\Entities\Translatable\Translatable;
+use DDD\Domain\Base\Entities\Translatable\TranslatableTrait;
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Domain\Base\Repo\DatabaseRepoEntity;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
@@ -140,11 +142,13 @@ class DBEntity extends DatabaseRepoEntity
         }
 
         // First we check if the Entity is already loaded, this is done to safe resources
-        if (is_object($this->ormInstance->$propertyName) && isset(
+        if (
+            is_object($this->ormInstance->$propertyName) && isset(
                 self::$ormInstanceToEntityAllocation[spl_object_id(
                     $this->ormInstance->$propertyName
                 )]
-            )) {
+            )
+        ) {
             // there is already an Entity that has been mapped from the same ORM instance
             $propertyEntity = self::$ormInstanceToEntityAllocation[spl_object_id($this->ormInstance->$propertyName)];
             $entity->$propertyName = $propertyEntity;
@@ -233,12 +237,10 @@ class DBEntity extends DatabaseRepoEntity
                 $entity->$propertyName = $this->ormInstance->$propertyName;
                 return;
             }
-            if ($possibleEntityTypeName == DateTime::class && $ormModelReflectionProperty->getType()->getName(
-                ) == \DateTime::class) {
+            if ($possibleEntityTypeName == DateTime::class && $ormModelReflectionProperty->getType()->getName() == \DateTime::class) {
                 $entity->$propertyName = DateTime::fromTimestamp($this->ormInstance->$propertyName->getTimestamp());
             }
-            if ($possibleEntityTypeName == Date::class && $ormModelReflectionProperty->getType()->getName(
-                ) == \DateTime::class) {
+            if ($possibleEntityTypeName == Date::class && $ormModelReflectionProperty->getType()->getName() == \DateTime::class) {
                 $entity->$propertyName = Date::fromTimestamp($this->ormInstance->$propertyName->getTimestamp());
             }
             // one to many relations implicitly loaded
@@ -273,15 +275,13 @@ class DBEntity extends DatabaseRepoEntity
                         $entitySet->setParent($entity);
                     }
                 }
-            } elseif (is_a($possibleEntityTypeName, ValueObject::class, true)
-                // exact match needed, for UnionTypes so the right type gets instantiated
+            } elseif (
+                is_a($possibleEntityTypeName, ValueObject::class, true) // exact match needed, for UnionTypes so the right type gets instantiated
                 && (count($possibleEntityTypes) == 1 || ((is_array(
                                 $this->ormInstance->$propertyName
-                            ) && ($this->ormInstance->$propertyName['objectType'] ?? null) == $possibleEntityTypeName)
-                        || (is_object(
+                            ) && ($this->ormInstance->$propertyName['objectType'] ?? null) == $possibleEntityTypeName) || (is_object(
                                 $this->ormInstance->$propertyName
-                            ) && ($this->ormInstance->$propertyName->objectType ?? null) == $possibleEntityTypeName))
-                )
+                            ) && ($this->ormInstance->$propertyName->objectType ?? null) == $possibleEntityTypeName)))
             ) {
                 /** @var ValueObject $valueObject */
                 $valueObject = new $possibleEntityTypeName();
@@ -296,9 +296,12 @@ class DBEntity extends DatabaseRepoEntity
                 $valueObject->setParent($entity);
             }
             // in case that ormInstance contains initialized dependent Mode, we load it
-            if (is_a($possibleEntityTypeName, Entity::class, true)
-                /*&& $this->ormInstance->$propertyName instanceof DoctrineModel */
-                && $this->ormInstance->isLoaded($propertyName)
+            if (
+                is_a(
+                    $possibleEntityTypeName,
+                    Entity::class,
+                    true
+                ) /*&& $this->ormInstance->$propertyName instanceof DoctrineModel */ && $this->ormInstance->isLoaded($propertyName)
             ) {
                 /** @var Entity $entityType */
                 $entityType = $possibleEntityTypeName;
@@ -378,9 +381,11 @@ class DBEntity extends DatabaseRepoEntity
                     $this->ormInstance->$createdColumn = $createdTime;
                 }
             }
-            if ($modifiedTime && ((!$createdTime && property_exists($this->ormInstance, $modifiedColumn)
-                        || ($entity->id && !isset($entity->changeHistory->createdTime))
-                    ) || (isset($entity->changeHistory) && $entity->changeHistory->overwriteCreatedAndModifiedTime))
+            if (
+                $modifiedTime && ((!$createdTime && property_exists(
+                            $this->ormInstance,
+                            $modifiedColumn
+                        ) || ($entity->id && !isset($entity->changeHistory->createdTime))) || (isset($entity->changeHistory) && $entity->changeHistory->overwriteCreatedAndModifiedTime))
             ) {
                 $this->ormInstance->$modifiedColumn = $modifiedTime;
             }
@@ -429,16 +434,20 @@ class DBEntity extends DatabaseRepoEntity
 
         // if attribute has lazyload on it, we do not map it to repository, it is then e.g. en EntitySet of dependent Entities
         $hasDBOrVirtualLazyloadRepo = false;
-        if ($entity->$propertyName instanceof ValueObject && ($lazyloadAttributes = $entityReflectionProperty->getAttributes(
+        if (
+            $entity->$propertyName instanceof ValueObject && ($lazyloadAttributes = $entityReflectionProperty->getAttributes(
                 LazyLoad::class
-            ))) {
+            ))
+        ) {
             foreach ($lazyloadAttributes as $lazyloadAttribute) {
                 /** @var LazyLoad $instance */
                 $instance = $lazyloadAttribute->newInstance();
-                if (in_array(
+                if (
+                    in_array(
                         $instance->repoType,
                         LazyLoadRepo::DATABASE_REPOS
-                    ) || $instance->repoType == LazyLoadRepo::VIRTUAL) {
+                    ) || $instance->repoType == LazyLoadRepo::VIRTUAL
+                ) {
                     $hasDBOrVirtualLazyloadRepo = true;
                 }
             }
@@ -472,6 +481,16 @@ class DBEntity extends DatabaseRepoEntity
         } elseif ($entity->$propertyName instanceof \DateTime) {
             $mappedValue = $entity->$propertyName;
             $mappedValueSet = true;
+        }
+
+        $translatableProperty = $entityReflectionClass->getAttributeInstanceForProperty($propertyName, Translatable::class);
+        if ($translatableProperty) {
+            /** @var TranslatableTrait $entity */
+            $translationInfos = $entity->getTranslationInfos();
+            $mappedValue = $translationInfos->getTranslationsForProperty($propertyName);
+            if ($mappedValue !== null) {
+                $mappedValueSet = true;
+            }
         }
 
         // if column is encrypted, we encrypt the value using the scope password

@@ -15,11 +15,11 @@ use DDD\Domain\Common\Entities\Encryption\EncryptionScope;
 use DDD\Infrastructure\Base\DateTime\Date;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
-use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionAttribute;
-use DDD\Infrastructure\Reflection\ReflectionNamedType;
+use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
-use DDD\Infrastructure\Reflection\ReflectionUnionType;
+use ReflectionNamedType;
+use ReflectionUnionType;
 use Symfony\Component\Validator\Constraints\Choice;
 use Symfony\Component\Validator\Constraints\Length;
 
@@ -125,6 +125,9 @@ class DatabaseColumn extends ValueObject
     /** @var bool It true, the column will be encrypted in the Database using an encryption password from the Encrypt class */
     public bool $encrypted = false;
 
+    /** @var bool It true, property is ignored and no Database column is generated */
+    public bool $ignoreProperty = false;
+
     /** @var string If encryption is set, encryptionScope is required, it can be one of the scopes defined in EncryptionScope ø */
     #[Choice(callback: [EncryptionScope::class, 'getScopes'])]
     public ?string $enryptionScope;
@@ -142,8 +145,9 @@ class DatabaseColumn extends ValueObject
         // we ignore lazyloaded properties of type ClASS_METHOD
         if ($lazyloadAttribute = $reflectionProperty?->getAttributes(LazyLoad::class)[0] ?? null) {
             $lazyloadAttributeInstance = $lazyloadAttribute->newInstance();
-            if ($lazyloadAttributeInstance->repoType == LazyLoadRepo::CLASS_METHOD)
+            if ($lazyloadAttributeInstance->repoType == LazyLoadRepo::CLASS_METHOD) {
                 return null;
+            }
         }
 
         $type = $reflectionProperty->getType();
@@ -162,7 +166,7 @@ class DatabaseColumn extends ValueObject
         if (isset(self::PROPERTIES_TO_SKIP[$propertyName])) {
             return null;
         }
-        if ($type instanceof \ReflectionUnionType) {
+        if ($type instanceof ReflectionUnionType) {
             $types = $type->getTypes();//[0];
             $allowsNull = false;
             foreach ($types as $unionType) {
@@ -177,7 +181,7 @@ class DatabaseColumn extends ValueObject
             }
             $databaseColum->allowsNull = $allowsNull;
         }
-        if (!$type instanceof \ReflectionNamedType) {
+        if (!$type instanceof ReflectionNamedType) {
             throw new InternalErrorException(
                 "No type specified in {$reflectionClass->getName()}.{$propertyName}"
             );
@@ -200,10 +204,12 @@ class DatabaseColumn extends ValueObject
                 }
             }
         }
-        if (($choicesAttribute = $reflectionProperty->getAttributes(
+        if (
+            ($choicesAttribute = $reflectionProperty->getAttributes(
                 Choice::class,
                 ReflectionAttribute::IS_INSTANCEOF
-            )[0] ?? null) && self::MAP_CHOICES_TO_ENUMS) {
+            )[0] ?? null) && self::MAP_CHOICES_TO_ENUMS
+        ) {
             /** @var Choice $choicesAttributeInstance */
             $choicesAttributeInstance = $choicesAttribute->newInstance();
             $databaseColum->sqlType = 'ENUM(' . implode(
@@ -213,9 +219,11 @@ class DatabaseColumn extends ValueObject
                     }, $choicesAttributeInstance->choices)
                 ) . ')';
         } // handle length limits
-        elseif ($type->getName() == ReflectionClass::STRING && ($lengthAttribute = $reflectionProperty->getAttributes(
+        elseif (
+            $type->getName() == ReflectionClass::STRING && ($lengthAttribute = $reflectionProperty->getAttributes(
                 Length::class
-            )[0] ?? null)) {
+            )[0] ?? null)
+        ) {
             /** @var Length $lengthAttributeInstance */
             $lengthAttributeInstance = $lengthAttribute->newInstance();
             if ($lengthAttributeInstance->max) {
@@ -252,20 +260,28 @@ class DatabaseColumn extends ValueObject
         }
 
         // if DatabaseColumn attribute is present, we overwrite definitions from attribute
-        if ($columnAttribute = $reflectionProperty->getAttributes(
-            DatabaseColumn::class
-        )[0] ?? null) {
+        if (
+            $columnAttribute = $reflectionProperty->getAttributes(
+                DatabaseColumn::class
+            )[0] ?? null
+        ) {
             /** @var DatabaseColumn $columnAttributeInstance */
             $columnAttributeInstance = $columnAttribute->newInstance();
+            // if property is to be ignored, we dont create DatabaseColumn
+            if ($columnAttributeInstance->ignoreProperty) {
+                return null;
+            }
             if ($columnAttributeInstance->sqlType !== null) {
                 $databaseColum->sqlType = $columnAttributeInstance->sqlType;
             }
             if ($columnAttributeInstance->encrypted !== null && $columnAttributeInstance->encrypted) {
                 $databaseColum->encrypted = $columnAttributeInstance->encrypted;
-                if (!isset($columnAttributeInstance->enryptionScope) || !in_array(
+                if (
+                    !isset($columnAttributeInstance->enryptionScope) || !in_array(
                         $columnAttributeInstance->enryptionScope,
                         EncryptionScope::getScopes()
-                    )) {
+                    )
+                ) {
                     throw new InternalErrorException(
                         'DatabaseColumn ' . $reflectionProperty->getName() . ' in ' . $reflectionClass->getName(
                         ) . ' is defined as encrypted, but encryption scope is either wrong or missing'
@@ -325,15 +341,17 @@ class DatabaseColumn extends ValueObject
     {
         if ($this->encrypted) {
             // in case of encrypted properties, we use varchar always, e.g. convert int to varchar
-            if (!in_array($this->sqlType,
-                [
-                    self::SQL_TYPE_VARCHAR,
-                    self::SQL_TYPE_TEXT,
-                    self::SQL_TYPE_MEDIUMTEXT,
-                    self::SQL_TYPE_LONGTEXT,
-                    self::SQL_TYPE_JSON
-                ]
-            )) {
+            if (
+                !in_array(
+                    $this->sqlType, [
+                        self::SQL_TYPE_VARCHAR,
+                        self::SQL_TYPE_TEXT,
+                        self::SQL_TYPE_MEDIUMTEXT,
+                        self::SQL_TYPE_LONGTEXT,
+                        self::SQL_TYPE_JSON
+                    ]
+                )
+            ) {
                 return self::SQL_TYPE_VARCHAR . '(255)';
             } // JSON is treated as text, as on encryption JSON is not persisted
             elseif ($this->sqlType == self::SQL_TYPE_JSON) {
@@ -343,8 +361,7 @@ class DatabaseColumn extends ValueObject
         if ($this->sqlType == self::SQL_TYPE_VARCHAR) {
             return self::SQL_TYPE_VARCHAR . "({$this->varCharLength})";
         }
-        $unsigned = in_array($this->sqlType, [self::SQL_TYPE_INT, self::SQL_TYPE_BIGINT]
-        ) && $this->isUnsigned ? ' UNSIGNED' : '';
+        $unsigned = in_array($this->sqlType, [self::SQL_TYPE_INT, self::SQL_TYPE_BIGINT]) && $this->isUnsigned ? ' UNSIGNED' : '';
         return $this->sqlType . $unsigned;
     }
 
@@ -366,8 +383,8 @@ class DatabaseColumn extends ValueObject
             $defaultValueSet = true;
         }
 
-        $sql .= '`' . $this->name . '` ' . $this->getSqlType() .
-            (!$this->allowsNull ? ' NOT NULL' : '') . ($this->hasAutoIncrement ? ' AUTO_INCREMENT' : '') . ($defaultValueSet ? ' DEFAULT ' . $defaultValue : '');
+        $sql .= '`' . $this->name . '` ' . $this->getSqlType(
+            ) . (!$this->allowsNull ? ' NOT NULL' : '') . ($this->hasAutoIncrement ? ' AUTO_INCREMENT' : '') . ($defaultValueSet ? ' DEFAULT ' . $defaultValue : '');
         return $sql;
     }
 
@@ -392,7 +409,8 @@ class DatabaseColumn extends ValueObject
         bool $isUnsigned = null,
         int $varCharLength = null,
         bool $encrypted = false,
-        ?string $encryptionScope = null
+        ?string $encryptionScope = null,
+        bool $ignoreProperty = false,
     ) {
         $this->sqlType = $sqlType;
         $this->allowsNull = $allowsNull;
@@ -401,8 +419,8 @@ class DatabaseColumn extends ValueObject
         $this->varCharLength = $varCharLength;
         $this->encrypted = $encrypted;
         $this->enryptionScope = $encryptionScope;
+        $this->ignoreProperty = $ignoreProperty;
         parent::__construct();
     }
-
 
 }
