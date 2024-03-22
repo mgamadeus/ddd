@@ -10,6 +10,7 @@ use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Repo\DatabaseRepoEntity;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Infrastructure\Exceptions\ForbiddenException;
+use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use Doctrine\DBAL\Exception;
 use Doctrine\ORM\Exception\ORMException;
@@ -18,38 +19,88 @@ use Doctrine\ORM\QueryBuilder;
 use ReflectionException;
 
 #[Attribute(Attribute::TARGET_CLASS)]
-class DBTranslation
+class DatabaseTranslation
 {
     use BaseAttributeTrait;
 
     /** @var bool whether to use registry APC cache for this Repo OrmEntity or not */
-    public const DEFAULT_LANGUAGE = 'en';
     public const MODELS_WITH_SEARCHABLE_COLUMNS = [];
 
-    public static $currentLanguageCode = self::DEFAULT_LANGUAGE;
+    /** @var string|null Default language code is set based on ENTITY_TRANSLATIONS_DEFAULT_LANGUAGE env variable, or defaults to en if not set */
+    protected static ?string $defaultLanguageCode = null;
 
-    /** @var DBTranslation[] */
+    /** @var string Currently active language code */
+    public static string $languageCode;
+
+    /** @var DatabaseTranslation[] */
     public static $instance = [];
 
-    /** @var string[] columns to translate */
-    public array $columns = [];
+    /** @var string[] Properties to translate */
+    public array $propertiesToTranslate = [];
 
     /**
-     * @param string ...$columns
+     * @param string ...$propertiesToTranslate
      */
-    public function __construct(string ...$columns)
+    public function __construct(string ...$propertiesToTranslate)
     {
-        $this->columns = $columns;
+        $this->propertiesToTranslate = $propertiesToTranslate;
     }
 
+    public static function getDefaultLanguageCode(): string
+    {
+        if (isset(static::$defaultLanguageCode)) {
+            return static::$defaultLanguageCode;
+        }
+        $languageCode = Config::getEnv('ENTITY_TRANSLATIONS_DEFAULT_LANGUAGE');
+        if (!$languageCode) {
+            $languageCode = 'en';
+        }
+        self::$defaultLanguageCode = $languageCode;
+        return self::$defaultLanguageCode;
+    }#
+
     /**
-     * Sets global current language
+     * Sets global current languageCode
      * @param string $languageCode
      * @return void
      */
-    public static function setLanguageCode(string $languageCode)
+    public static function setLanguageCode(string $languageCode): void
     {
-        self::$currentLanguageCode = $languageCode;
+        self::$languageCode = $languageCode;
+    }
+
+    /**
+     * Returns current glonal languageCode
+     * @param string $languageCode
+     * @return void
+     */
+    public static function getLanguageCode(): string
+    {
+        if (isset(static::$languageCode)) {
+            return static::$languageCode;
+        }
+        return static::getDefaultLanguageCode();
+    }
+
+    /**
+     * @return string[]|null Returns current properties to translate
+     */
+    public function getPropertiesToTranslate():?array {
+        return $this->propertiesToTranslate;
+    }
+
+    /**
+     * @return bool Returns true if properties to translate exist
+     */
+    public function hasPropertiesToTranslate():bool {
+        return !empty($this->getPropertiesToTranslate());
+    }
+
+    /**
+     * @return bool Returns true if current global languageCode is the default languageCode
+     */
+    public static function isCurrentLanguageCodeDefaultLanguage():bool {
+        return static::getLanguageCode() == static::getDefaultLanguageCode();
     }
 
     /**
@@ -64,7 +115,7 @@ class DBTranslation
         return implode(array_reverse($ar[0]));
     }
 
-    public static function getInstance(string $className): DBTranslation|false
+    public static function getInstance(string $className): DatabaseTranslation|false
     {
         if (isset(self::$instance[$className]) && self::$instance[$className]) {
             return self::$instance[$className];
@@ -101,9 +152,7 @@ class DBTranslation
      * @param DoctrineModel $doctrineModelInstance
      * @return void
      */
-    public function applyTranslationToDoctrineModelInstance(DoctrineModel &$doctrineModelInstance): void
-    {
-    }
+    public function applyTranslationToDoctrineModelInstance(DoctrineModel &$doctrineModelInstance): void {}
 
     /**
      * Updates or creates Translation
@@ -114,9 +163,7 @@ class DBTranslation
      * @throws Exception
      * @throws ReflectionException
      */
-    public function updateOrCreateTranslation(Entity $entity, DatabaseRepoEntity $databaseRepoEntity): void
-    {
-    }
+    public function updateOrCreateTranslation(Entity $entity, DatabaseRepoEntity $databaseRepoEntity): void {}
 
     /**
      * Deletes translation

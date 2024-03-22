@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo\DB\Database;
 
+use DDD\Domain\Common\Entities\Translations\EntityTranslations;
 use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
@@ -12,13 +13,15 @@ use DDD\Domain\Base\Entities\Lazyload\LazyLoadRepo;
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Domain\Base\Repo\DatabaseRepoEntity;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
+use DDD\Domain\Base\Repo\DB\Attributes\DatabaseTranslation;
 use DDD\Domain\Common\Services\EntityModelGeneratorService;
-use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
+use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
+use DDD\Infrastructure\Services\DDDService;
 use Doctrine\ORM\Mapping\Table;
 use ReflectionException;
 use ReflectionNamedType;
@@ -87,8 +90,8 @@ class DatabaseModel extends ValueObject
     /** @var string The Table's collation */
     public string $collation = self::DEFAULT_COLLATION;
 
-    /** @var ReflectionProperty[] */
-    private $potentialOneToManyProperties = [];
+    /** @var DatabasePotentialOneToManyRelationship[] */
+    public $potentialOneToManyRelationships = [];
 
     /**
      * Generates DatabaseModel from Entity class definitions
@@ -202,7 +205,7 @@ class DatabaseModel extends ValueObject
                 }
             }
 
-            // special handling for change history columns
+            // special handling for ChangeHistory columns
             if ($reflectionProperty->getName() == 'changeHistory') {
                 $databaseColumn = new DatabaseColumn();
                 $databaseColumn->name = ChangeHistory::DEFAULT_CREATED_COLUMN_NAME;
@@ -220,6 +223,12 @@ class DatabaseModel extends ValueObject
                 $databaseModel->columns->add($databaseColumn);
                 $index = new DatabaseIndex(indexColumns: [ChangeHistory::DEFAULT_MODIFIED_COLUMN_NAME]);
                 $databaseModel->indexes->add($index);
+            }
+            // special handling for Translatable columns
+            if ($reflectionProperty->hasAttribute(DatabaseTranslation::class)) {
+                $databaseModel->potentialOneToManyRelationships[] = new DatabasePotentialOneToManyRelationship(
+                    'translations', DDDService::instance()->getContainerServiceClassNameForClass(EntityTranslations::class)
+                );
             }
 
             if ($databaseColumn && ($databaseColumn?->sqlType ?? null) != DatabaseColumn::SQL_TYPE_JSON && !$databaseColumn->isPrimaryKey) {
@@ -253,7 +262,9 @@ class DatabaseModel extends ValueObject
                     $lazyLoadAttributeInstance = $lazyLoadAttribute->newInstance();
                     // right repo type found, we add property to potential one-to_many properties, to be checked later
                     if ($lazyLoadAttributeInstance->repoType == LazyLoadRepo::DB) {
-                        $databaseModel->addPotentialOneToManyProperty($reflectionProperty);
+                        $databaseModel->potentialOneToManyRelationships[] = new DatabasePotentialOneToManyRelationship(
+                            $reflectionProperty->getName(), $reflectionProperty->getType()->getName()
+                        );
                     }
                 }
             }
@@ -625,11 +636,6 @@ class DatabaseModel extends ValueObject
         return parent::uniqueKey($this->modelClassWithNamespace->getNameWithNamespace());
     }
 
-    public function addPotentialOneToManyProperty(ReflectionProperty &$reflectionProperty)
-    {
-        $this->potentialOneToManyProperties[] = $reflectionProperty;
-    }
-
     public function getOneToManyRelationsShips(): DatabaseOneToManyRelationships
     {
         if (isset($this->oneToManyRelationships)) {
@@ -637,9 +643,9 @@ class DatabaseModel extends ValueObject
         }
         $this->oneToManyRelationships = new DatabaseOneToManyRelationships();
         $databaseModels = EntityModelGeneratorService::getDatabaseModels();
-        foreach ($this->potentialOneToManyProperties as $reflectionProperty) {
+        foreach ($this->potentialOneToManyRelationships as $potentialOneToManyRelationship) {
             /** @var EntitySet $entitySetClass */
-            $entitySetClass = $reflectionProperty->getType()->getName();
+            $entitySetClass = $potentialOneToManyRelationship->targetEntitySetClass;
             $entityClass = $entitySetClass::getEntityClass();
             if (!$entityClass) {
                 continue;
@@ -664,7 +670,7 @@ class DatabaseModel extends ValueObject
                 $this->modelImports->add($modelImport);
             }
             $databaseOneToManyRelationShip = new DatabaseOneToManyRelationship(
-                $reflectionProperty->getName(),
+                $potentialOneToManyRelationship->propertyName,
                 $targetModel->getModelClassNameWithNameSpace()->name,
                 $foreignKeyInTargetClass->internalColumn
             );
