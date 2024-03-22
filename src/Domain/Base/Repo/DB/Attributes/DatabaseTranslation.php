@@ -10,7 +10,6 @@ use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Repo\DatabaseRepoEntity;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
-use DDD\Domain\Common\Repo\DB\Translations\DBEntityTranslationModel;
 use DDD\Infrastructure\Exceptions\ForbiddenException;
 use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Reflection\ReflectionClass;
@@ -20,6 +19,7 @@ use Doctrine\ORM\OptimisticLockException;
 use Doctrine\ORM\Query\Expr;
 use Doctrine\ORM\QueryBuilder;
 use ReflectionException;
+use ReflectionProperty;
 use stdClass;
 
 #[Attribute(Attribute::TARGET_CLASS)]
@@ -103,6 +103,17 @@ class DatabaseTranslation
     }
 
     /**
+     * @return void Adds propertiesToTranslate
+     */
+    public function addPropertiesToTranslate(string ...$propertiesToTranslate): void
+    {
+        if (!is_array($this->propertiesToTranslate)) {
+            $this->propertiesToTranslate = [];
+        }
+        $this->propertiesToTranslate = array_merge($this->propertiesToTranslate, $propertiesToTranslate);
+    }
+
+    /**
      * @return bool Returns true if current global languageCode is the default languageCode
      */
     public static function isCurrentLanguageCodeDefaultLanguage(): bool
@@ -122,21 +133,34 @@ class DatabaseTranslation
         return implode(array_reverse($ar[0]));
     }
 
-    public static function getInstance(string $className): DatabaseTranslation|false
+    public static function getInstance(string $repoEntityClassName): static|false
     {
-        if (isset(self::$instance[$className]) && self::$instance[$className]) {
-            return self::$instance[$className];
-        } elseif (isset(self::$instance[$className]) && !self::$instance[$className]) {
+        if (isset(self::$instance[$repoEntityClassName]) && self::$instance[$repoEntityClassName]) {
+            return self::$instance[$repoEntityClassName];
+        } elseif (isset(self::$instance[$repoEntityClassName]) && !self::$instance[$repoEntityClassName]) {
             return false;
         }
-        $reflectionClass = ReflectionClass::instance($className);
-        self::$instance[$className] = false;
+        $reflectionClass = ReflectionClass::instance($repoEntityClassName);
+        self::$instance[$repoEntityClassName] = false;
         foreach ($reflectionClass->getAttributes() as $attributes) {
             if (is_a($attributes->getName(), self::class, true)) {
-                self::$instance[$className] = $attributes->newInstance();
+                /** @var static $translationAttributeInstance */
+                $translationAttributeInstance = $attributes->newInstance();
+                /** @var DatabaseRepoEntity $repoEntityClassName */
+                $entityReflectionClass = ReflectionClass::instance($repoEntityClassName::BASE_ENTITY_CLASS);
+                // Add propreties from Entity Class that have DatabaseTranslation attribute
+                foreach ($entityReflectionClass->getProperties(ReflectionProperty::IS_PUBLIC) as $reflectionProperty) {
+                    if ($reflectionProperty->hasAttribute(self::class)) {
+                        $translationAttributeInstance->addPropertiesToTranslate($reflectionProperty->getName());
+                    }
+                }
+
+                /** @var string $repoEntityClassName */
+                self::$instance[$repoEntityClassName] = $attributes->newInstance();
             }
         }
-        return self::$instance[$className] ?? false;
+
+        return self::$instance[$repoEntityClassName] ?? false;
     }
 
     /**
@@ -151,15 +175,6 @@ class DatabaseTranslation
         string $tableName,
         string $modelAlias
     ): ?QueryBuilder {
-        if (static::isCurrentLanguageCodeDefaultLanguage()) {
-            return $queryBuilder;
-        }
-        $queryBuilder->addSelect('translation')->leftJoin(
-            $modelAlias . '.translations',
-            'translations',
-            Expr\Join::WITH,
-            'translation.language = :translationLanguageCode'
-        )->setParameter('translationLanguageCode', static::getLanguageCode());
         return $queryBuilder;
     }
 
@@ -168,23 +183,7 @@ class DatabaseTranslation
      * @param DoctrineModel $doctrineModelInstance
      * @return void
      */
-    public function applyTranslationToDoctrineModelInstance(DoctrineModel &$doctrineModelInstance): void
-    {
-        if (
-            isset($doctrineModelInstance->translations) && count($doctrineModelInstance->translations) && !static::isCurrentLanguageCodeDefaultLanguage()
-        ) {
-            /** @var DBEntityTranslationModel $translation */
-            $translation = $doctrineModelInstance->translations[0];
-            $translationContent = json_decode($translation->content);
-            if ($translationContent) {
-                foreach ($this->getPropertiesToTranslate() as $propertyToTranslate) {
-                    if (isset($translationContent->$propertyToTranslate)) {
-                        $doctrineModelInstance->$propertyToTranslate = $translationContent->$propertyToTranslate;
-                    }
-                }
-            }
-        }
-    }
+    public function applyTranslationToDoctrineModelInstance(DoctrineModel &$doctrineModelInstance): void {}
 
     /**
      * Updates or creates Translation
@@ -195,30 +194,7 @@ class DatabaseTranslation
      * @throws Exception
      * @throws ReflectionException
      */
-    public function updateOrCreateTranslation(Entity $entity, DatabaseRepoEntity $databaseRepoEntity): void
-    {
-        /** @var DoctrineModel $baseOrmModel */
-        $baseOrmModel = $databaseRepoEntity::BASE_ORM_MODEL;
-        $translationContent = new stdClass();
-        /** @var DoctrineModel $baseModelClassName */
-        foreach ($this->getPropertiesToTranslate() as $getPropertyToTranslate) {
-            if (isset($entity->$getPropertyToTranslate)) {
-                $translationContent->$getPropertyToTranslate = $entity->$getPropertyToTranslate;
-            }
-        }
-        $translationModelInstance = new DBEntityTranslationModel();
-        $translationModelInstance->languageCode = static::getLanguageCode();
-        $entityIdProperty = lcfirst($entity::getClassWithNamespace()->name) . 'Id';
-        $translationModelInstance->$entityIdProperty = $entity->id;
-        $translationModelInstance->content = json_encode($translationContent);
-
-        // build searchable content
-        foreach ($translationContent as $index => $value) {
-            $translationModelInstance->searchableContent .= ((isset($translationModelInstance->searchableContent) && $translationModelInstance->searchableContent) ? '|' : '') . $value;
-        }
-        $entityManager = EntityManagerFactory::getInstance();
-        $entityManager->upsert($translationModelInstance);
-    }
+    public function updateOrCreateTranslation(Entity $entity, DatabaseRepoEntity $databaseRepoEntity): void {}
 
     /**
      * Deletes translation
