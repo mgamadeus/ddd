@@ -18,9 +18,9 @@ use Symfony\Component\Validator\Constraints\Length;
 #[LazyLoadRepo(LazyLoadRepo::DB, DBEntityTranslation::class)]
 class EntityTranslation extends Entity
 {
-    /** @var string Language of Translation */
+    /** @var string LanguageCode of Translation */
     #[Length(max: 2, min: 2)]
-    public string $language;
+    public string $languageCode;
 
     /** @var string Content of the translation */
     #[DatabaseColumn(sqlType: DatabaseColumn::SQL_TYPE_TEXT)]

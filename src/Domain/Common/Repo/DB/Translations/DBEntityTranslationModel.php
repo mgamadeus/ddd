@@ -21,7 +21,7 @@ class DBEntityTranslationModel extends DoctrineModel
 	public const ENTITY_CLASS = 'DDD\Domain\Common\Entities\Translations\EntityTranslation';
 
 	#[ORM\Column(type: 'string')]
-	public ?string $language;
+	public ?string $languageCode;
 
 	#[ORM\Column(type: 'string')]
 	public ?string $content;

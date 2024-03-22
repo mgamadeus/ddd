@@ -174,7 +174,6 @@ class ExpandOptions extends ObjectSet
 
     public function applyExpandOptionsToDoctrineQueryBuilder(
         DoctrineQueryBuilder &$queryBuilder,
-
         string $baseModelClass,
         ?string $baseModelAlias = null
     ): DoctrineQueryBuilder {
