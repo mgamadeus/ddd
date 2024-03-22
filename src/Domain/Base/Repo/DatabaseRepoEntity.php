@@ -279,8 +279,12 @@ abstract class DatabaseRepoEntity extends RepoEntity
         if (!$doctrineModel) {
             $doctrineModel = static::BASE_ORM_MODEL;
         }
+        // If current Language is default language, no join needs to be applied
+        if ($translationAttributeInstance::isCurrentLanguageCodeDefaultLanguage()) {
+            return $queryBuilder;
+        }
         $tableName = $doctrineModel::getTableName();
-        $baseOrmModelAlias = (static::BASE_ORM_MODEL)::MODEL_ALIAS;
+        $baseOrmModelAlias = static::getBaseModelAlias();
         $translationAttributeInstance->applyTranslationJoinToQueryBuilder(
             $queryBuilder,
             $tableName,
