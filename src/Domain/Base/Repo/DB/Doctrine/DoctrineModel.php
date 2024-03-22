@@ -22,6 +22,8 @@ abstract class DoctrineModel
 
     protected static $tableNameCache = [];
 
+    public array $jsonMergableColumns = [];
+
     /**
      * This Function takes all the properties in a repository and maps them to the Model Object
      * @param $entity

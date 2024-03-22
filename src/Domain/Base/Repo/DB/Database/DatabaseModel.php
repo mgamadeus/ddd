@@ -255,7 +255,7 @@ class DatabaseModel extends ValueObject
                     $lazyLoadAttributeInstance = $lazyLoadAttribute->newInstance();
                     // right repo type found, we add property to potential one-to_many properties, to be checked later
                     if ($lazyLoadAttributeInstance->repoType == LazyLoadRepo::DB) {
-                        $databaseModel->potentialOneToManyProperties[] = $reflectionProperty;
+                        $databaseModel->potentialOneToManyRelationships[] = $reflectionProperty;
                     }
                 }
             }
@@ -555,6 +555,18 @@ class DatabaseModel extends ValueObject
                 $this->modelImports->mergeFromOtherSet($modelImportsFromSubclassIndicators);
             }
             $modelClassContent = "#[ORM\Entity]\n#[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]\n#[ORM\Table(name: '{$this->sqlTableName}')]{$subclassIndicatorDeclarations}\nclass {$this->getModelClassNameWithNameSpace()->name} extends DoctrineModel\n{\n\tpublic const MODEL_ALIAS = '{$this->name}';\n\n\tpublic const TABLE_NAME = '{$this->sqlTableName}';\n\n\tpublic const ENTITY_CLASS = '{$this->entityClassWithNamespace->getNameWithNamespace()}';\n\n";
+        }
+        $jsonMergableColumns = [];
+        foreach ($this->columns->getElements() as $column) {
+            if ($column->isMergableJSONColumn){
+                $jsonMergableColumns[$column->name] = true;
+            }
+        }
+        if (!empty($jsonMergableColumns)) {
+            $jsonMergableColumnsContent = implode(', ', array_map(function ($key) {
+                return "'{$key}' => true";
+            }, array_keys($jsonMergableColumns)));
+            $modelClassContent .= "\t" . 'public array $jsonMergableColumns = [' . $jsonMergableColumnsContent . '];' . "\n\n";
         }
 
         foreach ($this->columns->getElements() as $column) {

@@ -232,6 +232,18 @@ class DBEntity extends DatabaseRepoEntity
                 }
             }
 
+            // handling cases with translation
+            $translatableProperty = $entityReflectionClass->getAttributeInstanceForProperty($propertyName, Translatable::class);
+            if ($translatableProperty) {
+                /** @var TranslatableTrait $entity */
+                $translationInfos = $entity->getTranslationInfos();
+                $entity->setTranslationsForProperty($propertyName, $this->ormInstance->$propertyName);
+                $mappedValue = $translationInfos->getTranslationsForProperty($propertyName);
+                if ($mappedValue !== null) {
+                    $mappedValueSet = true;
+                }
+            }
+
             // trivial case, types are equal
             if ($possibleEntityTypeName == $ormModelReflectionProperty->getType()->getName()) {
                 $entity->$propertyName = $this->ormInstance->$propertyName;

@@ -10,6 +10,7 @@ use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\Lazyload\LazyLoad;
 use DDD\Domain\Base\Entities\Lazyload\LazyLoadRepo;
+use DDD\Domain\Base\Entities\Translatable\Translatable;
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Domain\Common\Entities\Encryption\EncryptionScope;
 use DDD\Infrastructure\Base\DateTime\Date;
@@ -127,6 +128,9 @@ class DatabaseColumn extends ValueObject
 
     /** @var bool It true, property is ignored and no Database column is generated */
     public bool $ignoreProperty = false;
+
+    /** @var bool It true, columns is json and will be upserted with JSON_MERGE_PATCH */
+    public bool $isMergableJSONColumn = false;
 
     /** @var string If encryption is set, encryptionScope is required, it can be one of the scopes defined in EncryptionScope ø */
     #[Choice(callback: [EncryptionScope::class, 'getScopes'])]
@@ -247,6 +251,11 @@ class DatabaseColumn extends ValueObject
 
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[ValueObject::class];
             $databaseColum->hasIndex = false;
+        } elseif ($reflectionProperty->hasAttribute(Translatable::class)) {
+            $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[ValueObject::class];
+            $databaseColum->hasIndex = false;
+            $databaseColum->phpType = ValueObject::class;
+            $databaseColum->isMergableJSONColumn = true;
         } elseif (is_a($type->getName(), Entity::class, true)) {
             return null;
         }
@@ -422,5 +431,4 @@ class DatabaseColumn extends ValueObject
         $this->ignoreProperty = $ignoreProperty;
         parent::__construct();
     }
-
 }

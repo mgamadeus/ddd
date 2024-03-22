@@ -66,10 +66,6 @@ class DoctrineEntityManager extends EntityManager
     {
         $connection = $this->getConnection();
         $metadata = $this->getClassMetadata($doctrineModel::class);
-        $makeUpdate = fn(
-            string $column,
-            $coalesce
-        ) => $coalesce ? "{$column} = COALESCE(VALUES($column), $column)" : "{$column} = VALUES({$column})";
         $columns = [];
         $values = [];
         $types = [];
@@ -100,30 +96,19 @@ class DoctrineEntityManager extends EntityManager
             $values[] = $value;
             $types[] = $metadata->getTypeOfField($fieldName);
             $set[] = '?';
-            // we do not execute updates on created columns
-            if ($fieldName == $createdColumn) {
+
+            // Check if in column JSON contents should be merged with JSON_MERGE_PATCH
+            if (isset($doctrineModel->jsonMergableColumns[$fieldName]) && is_array($value)) {
+                $jsonValue = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                $update[] = "{$column} = JSON_MERGE_PATCH({$column}, '$jsonValue')";
+            } elseif ($fieldName == $createdColumn) {
+                // we do not execute updates on created columns
                 $update[] = "{$column} = COALESCE(VALUES($column), $column)";
             } else {
                 $update[] = "{$column} = VALUES({$column})";
             }
         }
 
-        /*
-        foreach ($metadata->getAssociationNames() as $fieldName) {
-            $assocEntity = $metadata->getFieldValue($doctrineModel, $fieldName);
-            if (!$metadata->isAssociationWithSingleJoinColumn($fieldName) || !is_object($assocEntity)) {
-                continue;
-            }
-            $idCol = ucfirst($metadata->getSingleAssociationReferencedJoinColumnName($fieldName));
-            $idGetter = "get{$idCol}";
-            $column = $metadata->getSingleAssociationJoinColumnName($fieldName);
-            $column = '`' . $column . '`';
-            $columns[] = $column;
-            $values[] = $assocEntity->$idGetter();
-            $types[] = Types::STRING;
-            $set[] = '?';
-            $update[] = $makeUpdate($column);
-        }*/
         $checkUpdateRights = false;
         if (!$connection->isTransactionActive() && $updateRightsQueryBuilder) {
             $checkUpdateRights = true;
@@ -193,10 +178,11 @@ class DoctrineEntityManager extends EntityManager
     }
 
     /**
+     * Upsert multiple entities with JSON_MERGE_PATCH for specified JSON mergeable columns.
+     *
      * @param DoctrineModel[] $doctrineModels
      * @return void
      * @throws Exception
-     * @throws MappingException
      */
     public function upsertMultiple(array &$doctrineModels): void
     {
@@ -205,58 +191,45 @@ class DoctrineEntityManager extends EntityManager
         }
         $connection = $this->getConnection();
         $metadata = $this->getClassMetadata(reset($doctrineModels)::class);
-        $identifier = $metadata->getSingleIdentifierFieldName();
+        $jsonMergableColumns = reset($doctrineModels)->jsonMergableColumns;
 
-        $columns = [];
-        $values = [];
-        $types = [];
-        $set = [];
-        $update = [];
-        $hasId = $metadata->containsForeignIdentifier;
-        $createdColumn = ChangeHistory::DEFAULT_CREATED_COLUMN_NAME;
-
-        // Get column names outside of the loop
-        foreach ($metadata->getFieldNames() as $fieldName) {
-            $column = $metadata->getColumnName($fieldName);
-            $column = '`' . $column . '`';
-            $columns[] = $column;
-            $isIdentifier = false;
-            if ($metadata->isIdentifier($fieldName)) {
-                $isIdentifier = true;
-            }
-            if ($fieldName == $createdColumn) {
-                $update[] = "{$column} = COALESCE(VALUES($column), $column)";
-            } elseif ($isIdentifier) {
-                // we need to set this explicitely, otherwise in case of updates we cannot access the id with lastInsertId();
-                $update[] = "{$column} = LAST_INSERT_ID({$column})";
-            } else {
-                $update[] = "{$column} = VALUES({$column})";
-            }
-        }
-
-        // Loop over models to get values, types, set clause, and update clause
         foreach ($doctrineModels as $doctrineModel) {
-            $setRow = [];
-            $typesRow = [];
-            foreach ($columns as $index => $column) {
-                $fieldName = $metadata->getFieldName(str_replace('`', '', $column));
+            $columns = [];
+            $values = [];
+            $types = [];
+            $update = [];
+            foreach ($metadata->getFieldNames() as $fieldName) {
+                $column = $metadata->getColumnName($fieldName);
                 $value = $metadata->getFieldValue($doctrineModel, $fieldName);
-                $values[] = $value;
-                $setRow[] = '?';
-                $typesRow[] = $metadata->getTypeOfField($fieldName);
-            }
-            $set[] = '(' . implode(', ', $setRow) . ')';
-            $types = array_merge($types, $typesRow);
-        }
+                $type = $metadata->getTypeOfField($fieldName);
 
-        $connection->executeStatement(
-            'INSERT INTO ' . reset($doctrineModels)->getTableName() . ' (' . implode(', ', $columns) . ')' .
-            ' VALUES ' . implode(', ', $set) .
-            ' ON DUPLICATE KEY UPDATE ' . implode(', ', $update),
-            $values,
-            $types
-        );
+                if (array_key_exists($fieldName, $jsonMergableColumns) && $jsonMergableColumns[$fieldName]) {
+                    // JSON-encode value for JSON mergeable columns
+                    $encodedValue = json_encode($value);
+                    if ($encodedValue === false) {
+                        // Handle JSON encoding error
+                        throw new Exception('JSON encoding error for field ' . $fieldName);
+                    }
+                    $update[] = "`$column` = JSON_MERGE_PATCH(`$column`, ?)";
+                    $values[] = $encodedValue; // Use encoded value
+                    $types[] = 'json'; // Specify type as 'json'
+                } else {
+                    // Regular update for non-JSON columns
+                    $columns[] = "`$column`";
+                    $values[] = $value;
+                    $types[] = $type;
+                    $update[] = "`$column` = VALUES(`$column`)";
+                }
+            }
+
+            $sql = 'INSERT INTO ' . $doctrineModel->getTableName() . ' (' . implode(', ', $columns) . ')' .
+                ' VALUES (' . implode(',', array_fill(0, count($columns), '?')) . ')' .
+                ' ON DUPLICATE KEY UPDATE ' . implode(', ', $update);
+
+            $connection->executeStatement($sql, $values, $types);
+        }
     }
+
 
     public function createQuery($dql = ''): DoctrineQuery
     {
