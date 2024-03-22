@@ -13,7 +13,7 @@ use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\Lazyload\LazyLoad;
 use DDD\Domain\Base\Entities\StaticRegistry;
-use DDD\Domain\Base\Repo\DB\Attributes\DBTranslation;
+use DDD\Domain\Base\Repo\DB\Attributes\DatabaseTranslation;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
 use DDD\Domain\Base\Repo\DB\DBEntity;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityRegistry;
@@ -291,12 +291,12 @@ abstract class DatabaseRepoEntity extends RepoEntity
 
     /**
      * Reteurns translation attribute instance if present
-     * @return DBTranslation|false
+     * @return DatabaseTranslation|false
      * @throws ReflectionException
      */
-    public static function getTranslationAttributeInstance(): DBTranslation|false
+    public static function getTranslationAttributeInstance(): DatabaseTranslation|false
     {
-        return DBTranslation::getInstance(static::class);
+        return DatabaseTranslation::getInstance(static::class);
     }
 
     /**
@@ -389,8 +389,8 @@ abstract class DatabaseRepoEntity extends RepoEntity
             $reflectionClass = ReflectionClass::instance(static::class);
 
             $entityId = $entity->id ?? null;
-            $hasTranslations = $translationAttributeInstance && !empty($translationAttributeInstance->columns);
-            $translationIsInDefaultLanguage = $hasTranslations && $translationAttributeInstance::$currentLanguageCode == DBTranslation::DEFAULT_LANGUAGE;
+            $hasTranslations = $translationAttributeInstance && $translationAttributeInstance->hasPropertiesToTranslate();
+            $translationIsInDefaultLanguage = $translationAttributeInstance::isCurrentLanguageCodeDefaultLanguage();
 
             $modelName = static::BASE_ORM_MODEL;
             if (self::$applyRightsRestrictions) {
@@ -603,7 +603,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
                 try {
                     // handle translation update
                     $translationAttributeInstance = static::getTranslationAttributeInstance();
-                    if ($translationAttributeInstance && !empty($translationAttributeInstance->columns)) {
+                    if ($translationAttributeInstance && !empty($translationAttributeInstance->propertiesToTranslate)) {
                         $deleteTranslationResult = $translationAttributeInstance->deleteTranslation($entity, $this);
                     }
 
