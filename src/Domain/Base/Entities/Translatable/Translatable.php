@@ -39,22 +39,16 @@ class Translatable extends ValueObject
     public const DEFAULT_LANGUAGE_CODE = 'en';
 
     /**
-     * The default locale used in the application.
-     * @var string DEFAULT_LOCALE
-     */
-    public const DEFAULT_LOCALE = 'us';
-
-    /**
      * The current language code.
      * @var string
      */
     public static string $currentLanguageCode;
 
     /**
-     * The current locale of the application.
+     * The current country code of the application.
      * @var string
      */
-    public static string $currentLocale;
+    public static string $currentCountryCode;
 
     /**
      * The current writing style used in the application.
@@ -72,12 +66,6 @@ class Translatable extends ValueObject
     public static string $defaultLanguageCode;
 
     /**
-     * The default locale used in the application.
-     * @var string
-     */
-    public static string $defaultLocale;
-
-    /**
      * The default writing style used in the application.
      * @var string
      */
@@ -93,13 +81,16 @@ class Translatable extends ValueObject
      * If the environment variable is not set, it will use the DEFAULT_LANGUAGE_CODE constant as the default value.
      * @return string The default language code.
      */
-    public static function getDefaultLanguageCode():string {
-        if (isset(static::$defaultLanguageCode))
+    public static function getDefaultLanguageCode(): string
+    {
+        if (isset(static::$defaultLanguageCode)) {
             return static::$defaultLanguageCode;
-        if ($defaultLanguageCode = Config::getEnv('TRANSLATABLE_DEFAULT_LANGUAGE_CODE'))
+        }
+        if ($defaultLanguageCode = Config::getEnv('TRANSLATABLE_DEFAULT_LANGUAGE_CODE')) {
             static::$defaultLanguageCode = $defaultLanguageCode;
-        else
+        } else {
             static::$defaultLanguageCode = static::DEFAULT_LANGUAGE_CODE;
+        }
         return static::$defaultLanguageCode;
     }
 
@@ -107,33 +98,17 @@ class Translatable extends ValueObject
      * Retrieves the default writing style.
      * @return string The default writing style.
      */
-    public static function getDefaultWritingStyle():string {
-        if (isset(static::$defaultWritingStyle))
+    public static function getDefaultWritingStyle(): string
+    {
+        if (isset(static::$defaultWritingStyle)) {
             return static::$defaultWritingStyle;
-        if ($defaultWritingStyle = Config::getEnv('TRANSLATABLE_DEFAULT_WRITING_STYLE'))
+        }
+        if ($defaultWritingStyle = Config::getEnv('TRANSLATABLE_DEFAULT_WRITING_STYLE')) {
             static::$defaultWritingStyle = $defaultWritingStyle;
-        else
+        } else {
             static::$defaultWritingStyle = static::DEFAULT_WRITING_STYLE;
+        }
         return static::$defaultWritingStyle;
-    }
-
-    /**
-     * Returns the default locale.
-     *
-     * If the default locale is already set, it will be returned.
-     * If the default locale is not set, it will check if there is a value for 'TRANSLATABLE_DEFAULT_LOCALE'
-     * in the environment configuration. If a value exists, it will set the default locale to that value.
-     * If no value exists, it will set the default locale to the value of static::DEFAULT_LOCALE.
-     * @return string The default locale.
-     */
-    public static function getDefaultLocale():string {
-        if (isset(static::$defaultLocale))
-            return static::$defaultLocale;
-        if ($defaultLocale = Config::getEnv('TRANSLATABLE_DEFAULT_LOCALE'))
-            static::$defaultLocale = $defaultLocale;
-        else
-            static::$defaultLocale = static::DEFAULT_LOCALE;
-        return static::$defaultLocale;
     }
 
     /**
@@ -143,9 +118,11 @@ class Translatable extends ValueObject
      * and set as the current language code before returning it.
      * @return string The current language code.
      */
-    public static function getCurrentLanguageCode():string {
-        if (isset(static::$currentLanguageCode))
+    public static function getCurrentLanguageCode(): string
+    {
+        if (isset(static::$currentLanguageCode)) {
             return static::$currentLanguageCode;
+        }
         static::$currentLanguageCode = static::getDefaultLanguageCode();
         return static::$currentLanguageCode;
     }
@@ -158,24 +135,25 @@ class Translatable extends ValueObject
      *
      * @return string The current writing style.
      */
-    public static function getCurrentWritingStyle():string {
-        if (isset(static::$currentWritingStyle))
+    public static function getCurrentWritingStyle(): string
+    {
+        if (isset(static::$currentWritingStyle)) {
             return static::$currentWritingStyle;
+        }
         static::$currentWritingStyle = static::getDefaultWritingStyle();
         return static::$currentWritingStyle;
     }
 
     /**
      * Retrieves the current locale.
-     * This method returns the current locale if it's already set. If not, it sets the current locale to the default locale
-     * and then returns it.
-     * @return string The current locale.
+     * @return string|null The current locale.
      */
-    public static function getCurrentLocale():string {
-        if (isset(static::$currentLocale))
-            return static::$currentLocale;
-        static::$currentLocale = static::getDefaultLocale();
-        return static::$currentLocale;
+    public static function getCurrentCountryCode(): ?string
+    {
+        if (isset(static::$currentCountryCode)) {
+            return static::$currentCountryCode;
+        }
+        return null;
     }
 
     /**
@@ -183,7 +161,8 @@ class Translatable extends ValueObject
      * @param string $languageCode The language code to set.
      * @return void
      */
-    public function setCurrentLanguageCode(string $languageCode): void {
+    public static function setCurrentLanguageCode(string $languageCode): void
+    {
         static::$currentLanguageCode = $languageCode;
     }
 
@@ -192,30 +171,36 @@ class Translatable extends ValueObject
      * @param string $writingStyle The new writing style to set.
      * @return void
      */
-    public function setCurrentWritingStyle(string $writingStyle): void {
+    public static function setCurrentWritingStyle(string $writingStyle): void
+    {
         static::$currentWritingStyle = $writingStyle;
     }
 
     /**
-     * Set the current locale.
-     * @param string $locale The locale to set.
+     * Set the current country code.
+     * @param string $countryCode The country code to set.
      * @return void
      */
-    public function setCurrentLocale(string $locale): void {
-        static::$currentLocale = $locale;
+    public static function setCurrentCountryCode(string $countryCode): void
+    {
+        static::$currentCountryCode = $countryCode;
     }
 
     /**
-     * Returns the Key under wich to store the translation based on languageCode, locale and writingStyle, if any of these are not provided, default values are used
+     * Returns the Key under wich to store the translation based on languageCode, countryCode and writingStyle, if any of these are not provided, default values are used
      * @param string|null $languageCode
-     * @param string|null $locale
+     * @param string|null $countryCode
      * @param string|null $writingStyle
      * @return string
      */
-    public static function getTranslationKeyForLanguageCodeLocaleAndWritingStyle(?string $languageCode = null, ?string $locale = null, ?string $writingStyle = null):string {
+    public static function getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle(
+        ?string $languageCode = null,
+        ?string $countryCode = null,
+        ?string $writingStyle = null
+    ): string {
         $languageCode = $languageCode ?? static::getCurrentLanguageCode();
-        $locale = $languageCode ?? static::getCurrentLanguageCode();
+        $countryCode = $countryCode ?? (static::getCurrentCountryCode() ?? '');
         $writingStyle = $writingStyle ?? static::getCurrentWritingStyle();
-        return $languageCode . ':' . $locale . ':' . $writingStyle;
+        return $languageCode . ':' . $countryCode . ':' . $writingStyle;
     }
 }
