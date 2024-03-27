@@ -73,6 +73,45 @@ class Translatable extends ValueObject
     public static string $defaultWritingStyle;
 
     /**
+     * If no translation if found in given language, this setting determines, that default language content is returned
+     * @var bool
+     */
+    public static bool $fallbackToDefaultLanguageCode;
+
+    /**
+     * Returns true, if the current language code has already been set.
+     * Usefull for example if language can be determined either by a request parameter or by the Account's
+     * default languageCode, so
+     * @return bool
+     */
+    public static function isCurrentLanguageSet(): bool
+    {
+        if (isset(static::$currentLanguageCode)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Checks if the system should fallback to the default language if no translation is present.
+     *
+     * @return bool Returns true if the system should fallback to the default language, false otherwise.
+     */
+    public static function fallbackToDefaultLanguageIfNoTranslationIsPresent(): bool
+    {
+        if (isset(static::$fallbackToDefaultLanguageCode)) {
+            return static::$fallbackToDefaultLanguageCode;
+        }
+        $fallbackToDefaultLanguageCode = Config::getEnv('TRANSLATABLE_FALLBACK_TO_DEFAULT_LANGUAGE_CODE');
+        if (isset($fallbackToDefaultLanguageCode)) {
+            static::$fallbackToDefaultLanguageCode = $fallbackToDefaultLanguageCode;
+        }
+        else
+            static::$fallbackToDefaultLanguageCode = false;
+        return static::$fallbackToDefaultLanguageCode;
+    }
+
+    /**
      * Gets the default language code.
      *
      * If the default language code is set, it will return the value.

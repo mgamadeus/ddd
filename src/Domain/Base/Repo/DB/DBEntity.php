@@ -238,10 +238,7 @@ class DBEntity extends DatabaseRepoEntity
                 /** @var TranslatableTrait $entity */
                 $translationInfos = $entity->getTranslationInfos();
                 $entity->setTranslationsForProperty($propertyName, $this->ormInstance->$propertyName);
-                $mappedValue = $translationInfos->getTranslationsForProperty($propertyName);
-                if ($mappedValue !== null) {
-                    $mappedValueSet = true;
-                }
+                return;
             }
 
             // trivial case, types are equal
