@@ -20,6 +20,7 @@ use DDD\Infrastructure\Traits\Serializer\Attributes\OverwritePropertyName;
 use Error;
 use Exception;
 use ReflectionException;
+use stdClass;
 
 trait SerializerTrait
 {
@@ -77,7 +78,7 @@ trait SerializerTrait
         bool $ignoreHideAttributes = false,
         bool $ignoreNullValues = true,
         bool $forPersistence = true
-    ): array {
+    ): array|stdClass {
         $this->onToObject(
             $cached,
             $returnUniqueKeyInsteadOfContent,
@@ -168,6 +169,10 @@ trait SerializerTrait
                 SerializerRegistry::setToObjectCacheForObjectId($entityId, $resultArray);
             }*/
         }
+        if (empty($resultArray)) {
+            return new stdClass(); // Leeres Objekt statt leeres Array zurückgeben
+        }
+
         return $resultArray;
     }
 
@@ -346,9 +351,9 @@ trait SerializerTrait
 
     /**
      * we need to avoid to serialize values, that are not ment to be serialized, e.g. partent, children
-     * @return void
+     * @return array
      */
-    public function __serialize()
+    public function __serialize():array
     {
         $return = ['unset' => [], 'properties' => []];
         foreach ($this->getProperties(null, true) as $property) {

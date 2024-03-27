@@ -27,7 +27,7 @@ class TranslationInfos extends ValueObject
      * The current country code of the application.
      * @var string
      */
-    public string $currentCountryCode;
+    public ?string $currentCountryCode;
 
     /**
      * The current writing style used in the application.
@@ -87,7 +87,7 @@ class TranslationInfos extends ValueObject
      */
     public function getTranslationsForProperty(string $propertyName): ?array
     {
-        if (property_exists($this->getParent(), $propertyName)) {
+        if (!property_exists($this->getParent(), $propertyName)) {
             return null;
         }
         $translations = [];
@@ -97,9 +97,10 @@ class TranslationInfos extends ValueObject
             }
             return $this->translationsStore[$propertyName];
         }
-        $translations[Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle()] = $this->getParent()->$propertyName;
+        $translations[Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle()] = $this->getParent(
+        )->$propertyName;
         if (isset($this->translationsStore[$propertyName])) {
-            $translations = array_merge_recursive($translations, $this->translationsStore[$propertyName]);
+            $translations = array_merge($translations, $this->translationsStore[$propertyName]);
         }
         return $translations;
     }
@@ -113,11 +114,17 @@ class TranslationInfos extends ValueObject
      */
     public function setTranslationsForProperty(string $propertyName, array $translations): void
     {
-        if (property_exists($this->getParent(), $propertyName)) {
+        if (!property_exists($this->getParent(), $propertyName)) {
             return;
         }
         $this->translationsStore[$propertyName] = $translations;
-        $defaultTranslationWithFallback = $this->getTranslationForProperty($propertyName, useFallBack: true);
+        $defaultTranslationWithFallback = $this->getTranslationForProperty(
+            $propertyName,
+            Translatable::getCurrentLanguageCode(),
+            Translatable::getCurrentCountryCode(),
+            Translatable::getCurrentWritingStyle(),
+            useFallBack: true
+        );
         if ($defaultTranslationWithFallback) {
             $this->getParent()->$propertyName = $defaultTranslationWithFallback;
         }
@@ -140,10 +147,14 @@ class TranslationInfos extends ValueObject
         string $countryCode = null,
         string $writingStyle = null
     ): void {
-        if (property_exists($this->getParent(), $propertyName)) {
+        if (!property_exists($this->getParent(), $propertyName)) {
             return;
         }
-        $key = Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle($languageCode, $countryCode, $writingStyle);
+        $key = Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle(
+            $languageCode,
+            $countryCode,
+            $writingStyle
+        );
         $this->translationsStore[$propertyName][$key] = $translation;
 
         // if we are in the default state and all parameter matches, we also set the Entity's property to the translation value
@@ -163,8 +174,8 @@ class TranslationInfos extends ValueObject
      * @param string|null $languageCode The language code. Default is null.
      * @param string|null $countryCode The country code. Default is null.
      * @param string|null $writingStyle The writing style. Default is null.
-     * @param bool $useFallBack Whether to use fallback translations. Default is false.
-     * @return string|null The translation for the property, or null if not found.
+     * @param bool $useFallBack Set to true to use fallback translations. Default is false.
+     * @return string|null The translation for the property, or null if no translation is found.
      */
     public function getTranslationForProperty(
         string $propertyName,
@@ -173,28 +184,50 @@ class TranslationInfos extends ValueObject
         string $writingStyle = null,
         bool $useFallBack = false
     ): ?string {
-        if (property_exists($this->getParent(), $propertyName)) {
+        if (!property_exists($this->getParent(), $propertyName)) {
             return null;
         }
-        $key = Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle($languageCode, $countryCode, $writingStyle);
+        $key = Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle(
+            $languageCode,
+            $countryCode,
+            $writingStyle
+        );
         $translation = $this->translationsStore[$propertyName][$key] ?? null;
         // try to find translation with that is less specific
         if ($translation === null && $useFallBack) {
             // if countryCode was given, we try without country code
             if ($countryCode) {
-                $key = Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle($languageCode, null, $writingStyle);
+                $key = Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle(
+                    $languageCode,
+                    '',
+                    $writingStyle
+                );
                 $translation = $this->translationsStore[$propertyName][$key] ?? null;
                 if ($translation) {
                     return $translation;
                 }
                 // if writing style was given, we try without
                 if ($writingStyle) {
-                    $key = Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle($languageCode, null, null);
+                    // try out switching writing style
+                    $writingStyle = $writingStyle == Translatable::WRITING_STYLE_INFORMAL ? Translatable::WRITING_STYLE_FORMAL : Translatable::WRITING_STYLE_INFORMAL;
+                    $key = Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle(
+                        $languageCode,
+                        '',
+                        null
+                    );
                     $translation = $this->translationsStore[$propertyName][$key] ?? null;
                     if ($translation) {
                         return $translation;
                     }
                 }
+            }
+        }
+        // If not translation is found and we have set fallback to default language, returns default language
+        if (!$translation && Translatable::fallbackToDefaultLanguageIfNoTranslationIsPresent()) {
+            $key = Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle(Translatable::getDefaultLanguageCode());
+            $translation = $this->translationsStore[$propertyName][$key] ?? null;
+            if ($translation) {
+                return $translation;
             }
         }
         return $translation;
