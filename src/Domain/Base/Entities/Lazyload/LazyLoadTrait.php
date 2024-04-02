@@ -161,7 +161,9 @@ trait LazyLoadTrait
                         )) {
                         /** @var EntityCache $entityCacheAttributeInstance */
                         if ($entityCacheAttributeInstance->cacheScopes) {
-                            $lazyloadAttributeInstance->useCache = CacheScopeInvalidationsService::canUseCachingForScopesAndLazyloadInitiatingEntity(
+                            /** @var CacheScopeInvalidationsService $cacheScopeServiceClass */
+                            $cacheScopeServiceClass = DDDService::instance()->getService(CacheScopeInvalidationsService::class);
+                            $lazyloadAttributeInstance->useCache = $cacheScopeServiceClass::canUseCachingForScopesAndLazyloadInitiatingEntity(
                                 $entityCacheAttributeInstance->cacheScopes,
                                 $this
                             );
