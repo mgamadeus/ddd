@@ -24,6 +24,8 @@ abstract class DoctrineModel
 
     public array $jsonMergableColumns = [];
 
+    public array $virtualColumns = [];
+
     /**
      * This Function takes all the properties in a repository and maps them to the Model Object
      * @param $entity

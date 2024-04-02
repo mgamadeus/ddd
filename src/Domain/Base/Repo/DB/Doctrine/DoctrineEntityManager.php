@@ -76,6 +76,10 @@ class DoctrineEntityManager extends EntityManager
         foreach ($metadata->getFieldNames() as $fieldName) {
             $value = $metadata->getFieldValue($doctrineModel, $fieldName);
 
+            // We ignore virtual columns
+            if (isset($doctrineModel->virtualColumns[$fieldName])) {
+                continue;
+            }
             $column = $metadata->getColumnName($fieldName);
             $column = '`' . $column . '`';
             if ($metadata->isIdentifier($fieldName)) {
@@ -199,9 +203,14 @@ class DoctrineEntityManager extends EntityManager
         $update = [];
         $hasId = $metadata->containsForeignIdentifier;
         $createdColumn = ChangeHistory::DEFAULT_CREATED_COLUMN_NAME;
+        $doctrineModel = $doctrineModels[0];
 
         // Get column names outside of the loop
         foreach ($metadata->getFieldNames() as $fieldName) {
+            // We ignore virtual columns
+            if (isset($doctrineModel->virtualColumns[$fieldName])) {
+                continue;
+            }
             $column = $metadata->getColumnName($fieldName);
             $column = '`' . $column . '`';
             $columns[] = $column;

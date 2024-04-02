@@ -25,7 +25,7 @@ class QueryOptions extends ValueObject
     public int $skip;
 
     /** @var int The number of results to be returned */
-    public ?int $top;
+    public ?int $top = 50;
 
     /** @var array Array of filters options, can be either string or an array of [filterName, filterOption1, filterOption2 etc.] */
     public $filters = [];

@@ -569,6 +569,13 @@ class DatabaseModel extends ValueObject
             $modelClassContent .= "\t" . 'public array $jsonMergableColumns = [' . $jsonMergableColumnsContent . '];' . "\n\n";
         }
 
+        if ($this->virtualColumns->count()) {
+            $virtualColumns = implode(', ', array_map(function (DatabaseVirtualColumn $virtualColumn) {
+                return "'{$virtualColumn->getName()}' => true";
+            }, $this->virtualColumns->getElements()));
+            $modelClassContent .= "\t" . 'public array $virtualColumns = [' . $virtualColumns . '];' . "\n\n";
+        }
+
         foreach ($this->columns->getElements() as $column) {
             // doctrine does not want the discriminator column (in our case the subclassIndicator to be part of the model definition
             /*
