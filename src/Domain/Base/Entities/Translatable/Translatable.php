@@ -51,6 +51,11 @@ class Translatable extends ValueObject
     public static string $currentCountryCode;
 
     /**
+     * @var string[] Active language codes
+     */
+    public static array $activeLanguageCodes = [];
+
+    /**
      * The current writing style used in the application.
      * @var string
      */
@@ -131,6 +136,21 @@ class Translatable extends ValueObject
             static::$defaultLanguageCode = static::DEFAULT_LANGUAGE_CODE;
         }
         return static::$defaultLanguageCode;
+    }
+
+    /**
+     * Returns default language codes
+     * @return string[]
+     */
+    public static function getActiveLanguageCodes(): array
+    {
+        if (isset(static::$activeLanguageCodes)) {
+            return static::$activeLanguageCodes;
+        }
+        if ($activeLanguageCodes = Config::getEnv('TRANSLATABLE_ACTIVE_LANGUAGE_CODES')) {
+            static::$activeLanguageCodes = explode(',', $activeLanguageCodes);
+        }
+        return static::$activeLanguageCodes;
     }
 
     /**
@@ -226,13 +246,13 @@ class Translatable extends ValueObject
     }
 
     /**
-     * Returns the Key under wich to store the translation based on languageCode, countryCode and writingStyle, if any of these are not provided, default values are used
+     * Returns the index under wich to store the translation based on languageCode, countryCode and writingStyle, if any of these are not provided, default values are used
      * @param string|null $languageCode
      * @param string|null $countryCode
      * @param string|null $writingStyle
      * @return string
      */
-    public static function getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle(
+    public static function getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
         ?string $languageCode = null,
         ?string $countryCode = null,
         ?string $writingStyle = null
@@ -242,4 +262,67 @@ class Translatable extends ValueObject
         $writingStyle = $writingStyle ?? static::getCurrentWritingStyle();
         return $languageCode . ':' . $countryCode . ':' . $writingStyle;
     }
+
+    /**
+     * Translates the given translation key based on the provided language code, country code, writing style,
+     * and fallback option.
+     *
+     * @param string $translationKey The translation key to be translated.
+     * @param string|null $languageCode The language code to be used for translation. (Optional)
+     * @param string|null $countryCode The country code to be used for translation. (Optional)
+     * @param string|null $writingStyle The writing style to be used for translation. (Optional)
+     * @param bool $useFallBack Indicates whether to use fallback when translation is not found. (Default: false)
+     * @return string The translated value for the given translation key, or the translation key itself if no translation
+     *              is found and fallback is not enabled.
+     */
+    public static function translateKey(string $translationKey, string $languageCode = null, string $countryCode = null, string $writingStyle = null, bool $useFallBack = false):string {
+        $translationsFromConfig = Config::get('Common.Translations');
+        $index = static::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
+            $languageCode,
+            $countryCode,
+            $writingStyle
+        );
+        $translation = $translationsFromConfig[$translationKey][$index] ?? null;
+        // try to find translation with that is less specific
+        if ($translation === null && $useFallBack) {
+            // if countryCode was given, we try without country code
+            if ($countryCode) {
+                $index = static::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
+                    $languageCode,
+                    '',
+                    $writingStyle
+                );
+                $translation = $translationsFromConfig[$translationKey][$index] ?? null;
+                if ($translation) {
+                    return $translation;
+                }
+                // if writing style was given, we try without
+                if ($writingStyle) {
+                    // try out switching writing style
+                    $writingStyle = $writingStyle == Translatable::WRITING_STYLE_INFORMAL ? Translatable::WRITING_STYLE_FORMAL : Translatable::WRITING_STYLE_INFORMAL;
+                    $index = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
+                        $languageCode,
+                        '',
+                        null
+                    );
+                    $translation = $translationsFromConfig[$translationKey][$index] ?? null;
+                    if ($translation) {
+                        return $translation;
+                    }
+                }
+            }
+        }
+        // If not translation is found and we have set fallback to default language, returns default language
+        if (!$translation && Translatable::fallbackToDefaultLanguageIfNoTranslationIsPresent()) {
+            $index = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(Translatable::getDefaultLanguageCode());
+            $translation = $translationsFromConfig[$translationKey][$index] ?? null;
+            if ($translation) {
+                return $translation;
+            }
+        }
+        // if nothing is found, return key itself
+        return $translationKey;
+    }
+
+
 }
