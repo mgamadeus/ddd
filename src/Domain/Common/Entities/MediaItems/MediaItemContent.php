@@ -2,10 +2,9 @@
 
 namespace DDD\Domain\Common\Entities\MediaItems;
 
-use DDD\Domain\Base\Entities\Entity;
+use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Infrastructure\Exceptions\Exception;
 use DDD\Infrastructure\Exceptions\NotFoundException;
-use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Libs\PhotoUtils\PhotoUtils;
 use DDD\Infrastructure\Traits\Serializer\Attributes\DontPersistProperty;
 use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
@@ -15,7 +14,7 @@ use ImagickException;
 /**
  * @method MediaItem getParent()
  */
-abstract class MediaItemContent extends Entity
+abstract class MediaItemContent extends ValueObject
 {
     /** @var string|null */
     public ?string $base64EncodedContent;
@@ -127,29 +126,50 @@ abstract class MediaItemContent extends Entity
     }
 
     /**
-     * Loads MediaItemContent from file
-     * @param string $fileName
+     * Loads MediaItemContent from a local file or URL
+     * @param string $source Path to the local file or URL
      * @return void
      * @throws Exception
      * @throws NotFoundException
      * @throws ImagickException
      */
-    public function loadFromFile(string $fileName): void
+    public function loadFromSource(string $source = null): void
     {
-        // Check if the file exists
-        if (!file_exists($fileName)) {
-            throw new NotFoundException("File not found: $fileName");
+        if (!$source) {
+            $source = $this->getParent()->publicUrl ?? null;
+        }
+        if (!$source) {
+            throw new NotFoundException('No source specified');
+        }
+        $contentIsUrl = strpos($source, 'http://') === 0 || strpos($source, 'https://') === 0;
+
+        // Check if the source is a URL or a local file
+        if ($contentIsUrl) {
+            // Use get_headers to check if the URL exists (only if it's a URL)
+            $headers = @get_headers($source);
+            if ($headers === false || strpos($headers[0], '404') !== false) {
+                throw new NotFoundException("URL not found: $source");
+            }
+        } elseif (!file_exists($source)) {
+            // Check if the local file exists
+
+            throw new NotFoundException("File not found: $source");
         }
 
-        // Get the file content
-        $fileContent = file_get_contents($fileName);
+        // Get the content from the URL or local file
+        $content = @file_get_contents($source);
+        if ($content === false) {
+            throw new NotFoundException(
+                $contentIsUrl ? "Unable to read from URL: $source" : "Unable to read file: $source"
+            );
+        }
 
-        // Check if the file is an image and get its information
+        // Load the content into Imagick
         $imagick = new Imagick();
         try {
-            $imagick->readImageBlob($fileContent);
-        } catch (Exception $e) {
-            throw new Exception('Unable to read image file: ' . $e->getMessage());
+            $imagick->readImageBlob($content);
+        } catch (ImagickException $e) {
+            throw new NotFoundException('Unable to process image content: ' . $e->getMessage());
         }
 
         // Populate media item content information from the Imagick instance
