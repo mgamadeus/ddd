@@ -53,7 +53,7 @@ class Translatable extends ValueObject
     /**
      * @var string[] Active language codes
      */
-    public static array $activeLanguageCodes = [];
+    public static array $activeLanguageCodes;
 
     /**
      * The current writing style used in the application.
