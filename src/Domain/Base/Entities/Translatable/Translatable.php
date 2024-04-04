@@ -272,10 +272,18 @@ class Translatable extends ValueObject
      * @param string|null $countryCode The country code to be used for translation. (Optional)
      * @param string|null $writingStyle The writing style to be used for translation. (Optional)
      * @param bool $useFallBack Indicates whether to use fallback when translation is not found. (Default: false)
+     * @param string[] $placeholders Associative array of placeholders to replace in format ['placeholder' => 'value'], they replace %varname% in content
      * @return string The translated value for the given translation key, or the translation key itself if no translation
      *              is found and fallback is not enabled.
      */
-    public static function translateKey(string $translationKey, string $languageCode = null, string $countryCode = null, string $writingStyle = null, bool $useFallBack = false):string {
+    public static function translateKey(
+        string $translationKey,
+        string $languageCode = null,
+        string $countryCode = null,
+        string $writingStyle = null,
+        bool $useFallBack = false,
+        array $placeholders = []
+    ): string {
         $translationsFromConfig = Config::get('Common.Translations');
         $index = static::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
             $languageCode,
@@ -294,7 +302,7 @@ class Translatable extends ValueObject
                 );
                 $translation = $translationsFromConfig[$translationKey][$index] ?? null;
                 if ($translation) {
-                    return $translation;
+                    return static::replacePlaceholders($translation, $placeholders);
                 }
                 // if writing style was given, we try without
                 if ($writingStyle) {
@@ -307,22 +315,38 @@ class Translatable extends ValueObject
                     );
                     $translation = $translationsFromConfig[$translationKey][$index] ?? null;
                     if ($translation) {
-                        return $translation;
+                        return static::replacePlaceholders($translation, $placeholders);
                     }
                 }
             }
         }
         // If not translation is found and we have set fallback to default language, returns default language
         if (!$translation && Translatable::fallbackToDefaultLanguageIfNoTranslationIsPresent()) {
-            $index = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(Translatable::getDefaultLanguageCode());
+            $index = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
+                Translatable::getDefaultLanguageCode()
+            );
             $translation = $translationsFromConfig[$translationKey][$index] ?? null;
             if ($translation) {
-                return $translation;
+                return static::replacePlaceholders($translation, $placeholders);
             }
         }
         // if nothing is found, return key itself
-        return $translationKey;
+        return static::replacePlaceholders($translationKey, $placeholders);
     }
 
-
+    /**
+     * Replaces placeholders in the input string with values from an associative array.
+     * Placeholders are expected to be in the format %varname%.
+     *
+     * @param string $input The input string containing placeholders.
+     * @param string[] $placeholders Associative array of placeholders to replace in format ['varname' => 'value'].
+     * @return string The processed string with placeholders replaced by their corresponding values.
+     */
+    public static function replacePlaceholders(string $input, array $placeholders): string
+    {
+        foreach ($placeholders as $placeholder => $value) {
+            $input = str_replace("%$placeholder%", $value, $input);
+        }
+        return $input;
+    }
 }
