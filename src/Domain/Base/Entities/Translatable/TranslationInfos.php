@@ -97,7 +97,7 @@ class TranslationInfos extends ValueObject
             }
             return $this->translationsStore[$propertyName];
         }
-        $translations[Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle()] = $this->getParent(
+        $translations[Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle()] = $this->getParent(
         )->$propertyName;
         if (isset($this->translationsStore[$propertyName])) {
             $translations = array_merge($translations, $this->translationsStore[$propertyName]);
@@ -150,7 +150,7 @@ class TranslationInfos extends ValueObject
         if (!property_exists($this->getParent(), $propertyName)) {
             return;
         }
-        $key = Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle(
+        $key = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
             $languageCode,
             $countryCode,
             $writingStyle
@@ -187,7 +187,7 @@ class TranslationInfos extends ValueObject
         if (!property_exists($this->getParent(), $propertyName)) {
             return null;
         }
-        $key = Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle(
+        $key = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
             $languageCode,
             $countryCode,
             $writingStyle
@@ -197,7 +197,7 @@ class TranslationInfos extends ValueObject
         if ($translation === null && $useFallBack) {
             // if countryCode was given, we try without country code
             if ($countryCode) {
-                $key = Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle(
+                $key = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
                     $languageCode,
                     '',
                     $writingStyle
@@ -210,7 +210,7 @@ class TranslationInfos extends ValueObject
                 if ($writingStyle) {
                     // try out switching writing style
                     $writingStyle = $writingStyle == Translatable::WRITING_STYLE_INFORMAL ? Translatable::WRITING_STYLE_FORMAL : Translatable::WRITING_STYLE_INFORMAL;
-                    $key = Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle(
+                    $key = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
                         $languageCode,
                         '',
                         null
@@ -224,7 +224,7 @@ class TranslationInfos extends ValueObject
         }
         // If not translation is found and we have set fallback to default language, returns default language
         if (!$translation && Translatable::fallbackToDefaultLanguageIfNoTranslationIsPresent()) {
-            $key = Translatable::getTranslationKeyForLanguageCodeCountryCodeAndWritingStyle(Translatable::getDefaultLanguageCode());
+            $key = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(Translatable::getDefaultLanguageCode());
             $translation = $this->translationsStore[$propertyName][$key] ?? null;
             if ($translation) {
                 return $translation;
