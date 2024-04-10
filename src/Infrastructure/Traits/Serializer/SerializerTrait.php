@@ -78,7 +78,7 @@ trait SerializerTrait
         bool $ignoreHideAttributes = false,
         bool $ignoreNullValues = true,
         bool $forPersistence = true
-    ): array|stdClass {
+    ): mixed {
         $this->onToObject(
             $cached,
             $returnUniqueKeyInsteadOfContent,
