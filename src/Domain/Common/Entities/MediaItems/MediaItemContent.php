@@ -2,6 +2,7 @@
 
 namespace DDD\Domain\Common\Entities\MediaItems;
 
+use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Infrastructure\Exceptions\Exception;
 use DDD\Infrastructure\Exceptions\NotFoundException;
@@ -14,7 +15,7 @@ use ImagickException;
 /**
  * @method MediaItem getParent()
  */
-abstract class MediaItemContent extends ValueObject
+abstract class MediaItemContent extends Entity
 {
     /** @var string|null */
     public ?string $base64EncodedContent;
