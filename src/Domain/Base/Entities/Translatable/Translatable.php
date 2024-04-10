@@ -331,7 +331,9 @@ class Translatable extends ValueObject
             }
         }
         // if nothing is found, return key itself
-        return static::replacePlaceholders($translationKey, $placeholders);
+        if (!$translation)
+            $translation = $translationKey;
+        return static::replacePlaceholders($translation, $placeholders);
     }
 
     /**
