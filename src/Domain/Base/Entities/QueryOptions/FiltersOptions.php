@@ -521,7 +521,7 @@ class FiltersOptions extends ObjectSet
         $return = [];
         if ($this->type == self::TYPE_OPERATION) {
             foreach ($this->getElements() as $filtersOptions) {
-                $return += $filtersOptions->getExpressions();
+                $return = array_merge($return, $filtersOptions->getExpressions());
             }
         } else {
             $return[] = $this;
