@@ -49,7 +49,7 @@ class EntitiesService extends Service
         $enityInstance = $repoClassInstance->find($entityId, $useEntityRegistrCache);
         if (!$enityInstance && $this->throwErrors) {
             /** @var Entity $entityClass */
-            $entityClass = self::DEFAULT_ENTITY_CLASS;
+            $entityClass = static::DEFAULT_ENTITY_CLASS;
             $classWithNamespace = $entityClass::getReflectionClass()->getClassWithNamespace();
             throw new NotFoundException(
                 "{$classWithNamespace->name} not found or current authenticated Account is not authorized to access it"
