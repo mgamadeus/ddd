@@ -32,7 +32,7 @@ class Datafilter
     // delimiter characters to exclude from breakwords function.
     public static $exclude_chars = '';
     // regex special chars. those need to be escaped
-    public static $regex_special_chars = array(
+    public static $regex_special_chars = [
         '\\',
         '.',
         '[',
@@ -49,12 +49,12 @@ class Datafilter
         '$',
         '|',
         '#'
-    );
+    ];
     // greek: ΑαΒβΓγΔδΕεΖζΗηΘθΙιΚκΛλΜμΝνΞξΟοΠπΡρΣσΣσςΤτΥυΦφΧχΨψΩω
     // polish: ĄąĘęĆćŁłŃńŚśŹźŻżÓó
     // india (hindi): ऑऒऊऔउबभचछडढफफ़गघग़घग़हजझकखख़लळऌऴॡमनङञणऩॐपक़रऋॠऱसशषटतठदथधड़ढ़वयय़ज़
     // italian: ÀÈÉÌÒÙàèéìòù
-    public static $umlauts = array(
+    public static $umlauts = [
         'ß',
         'œ',
         'é',
@@ -122,8 +122,8 @@ class Datafilter
         'ω',
         'ό',
         'ώ'
-    );
-    public static $special = array(
+    ];
+    public static $special = [
         "'",  // - http://jira.rankingcoach.com/browse/RAN-1223271
         //'"', - http://jira.rankingcoach.com/browse/RAN-1120871 ,
         ' ',
@@ -157,11 +157,11 @@ class Datafilter
         ']',
         '{',
         '}'
-    );
+    ];
 
     public static function decodeAmpersand(string $input): string
     {
-        return preg_replace_callback("/([a-zA-Z0-9]*\s*)&amp;(\s*[a-zA-Z0-9]*)/", function($matches) {
+        return preg_replace_callback("/([a-zA-Z0-9]*\s*)&amp;(\s*[a-zA-Z0-9]*)/", function ($matches) {
             return $matches[1] . '&' . $matches[2];
         }, $input);
     }
@@ -199,11 +199,15 @@ class Datafilter
      * @param     $string
      * @return
      */
-    public static function is_utf8($string)
+    public static function is_utf8(string $string): bool
     { // v1.01
         if (strlen($string) > _is_utf8_split) {
             // Based on: http://mobile-website.mobi/php-utf8-vs-iso-8859-1-59
-            for ($i = 0, $s = _is_utf8_split, $j = ceil(strlen($string) / _is_utf8_split); $i < $j; $i++, $s += _is_utf8_split) {
+            for (
+                $i = 0, $s = _is_utf8_split, $j = ceil(
+                strlen($string) / _is_utf8_split
+            ); $i < $j; $i++, $s += _is_utf8_split
+            ) {
                 if (self::is_utf8(substr($string, $s, _is_utf8_split))) {
                     return true;
                 }
@@ -227,7 +231,22 @@ class Datafilter
         }
     }
 
-    public static function encode_utf8v2($text, $with_htmldecoding = true)
+    /**
+     * Checks if the given string contains a domain name.
+     * This function looks for patterns that match a domain within a string. It can detect domains
+     * that may start with 'http://' or 'https://', optionally preceded by 'www.', and checks for
+     * a valid domain format including top-level domains (TLDs) that are two or more characters long.
+     *
+     * @param string $string The string to check for the presence of a domain.
+     * @return bool True if a domain is found in the string, false otherwise.
+     */
+    public static function containsDomain(string $string): bool
+    {
+        $pattern = '/\b(?:https?:\/\/)?(?:www\.)?([\p{L}\p{N}-]+\.[\p{L}]{2,})(\/\S*)?\b/u';
+        return preg_match($pattern, $string) > 0;
+    }
+
+    public static function encode_utf8v2(string $text, bool $with_htmldecoding = true): string
     {
         $charset = mb_detect_encoding($text, 'EUC-JP, UTF-8', true);
         // if we have a meta charset="utf-8" header, then set that to curent encoding (this will fix sites such as: http://www.anwalt-oberursel.de/)
@@ -264,7 +283,7 @@ class Datafilter
      * @param     $text
      * @return
      */
-    public static function entity_decode($text)
+    public static function entity_decode(string $text): string
     {
         $text = html_entity_decode(str_replace('&nbsp;', ' ', $text), ENT_QUOTES, 'utf-8');
         return $text;
@@ -274,35 +293,35 @@ class Datafilter
      * Take care of extra spaces or add spaces between [.,!?]
      * @param $text
      */
-    public static function nice_text($text)
+    public static function nice_text(string $text): string
     {
-        $replace_array = array(
+        $replace_array = [
             ', ',
             '. ',
             '! ',
             '? ',
             ': '
-        );
+        ];
         // add space
-        $text = str_replace(array(
+        $text = str_replace([
             ',',
             '.',
             '!',
             '?',
             ':'
-        ), $replace_array, $text);
+        ], $replace_array, $text);
         // remove dobule space
-        $text = str_replace(array(
+        $text = str_replace([
             ',  ',
             '.  ',
             '!  ',
             '?  ',
             ':  '
-        ), $replace_array, $text);
+        ], $replace_array, $text);
         return $text;
     }
 
-    public static function removeNonAscii($string)
+    public static function removeNonAscii(string $string): string
     {
         return preg_replace('/[^(\x20-\x7F)]*/', '', $string);
     }
@@ -314,7 +333,7 @@ class Datafilter
      * @return
      *
      */
-    public static function cleanAndFilterKeyword($text)
+    public static function cleanAndFilterKeyword(string $text): string
     {
         $text = self::cleanText($text);
         $text_without_spaces = str_replace(' ', '', $text);
@@ -332,10 +351,13 @@ class Datafilter
      *
      * @param string $data
      * @return  string
-     * @author Draga Sergiu
      */
-    public static function cleanText($data, $utfdecode = 0, $utfencode = 1, $extrachars = 0)
-    {
+    public static function cleanText(
+        mixed $data,
+        bool $utfdecode = false,
+        bool $utfencode = true,
+        bool $extrachars = false
+    ): string {
         if (!is_string($data)) {
             return '';
         }
@@ -351,7 +373,11 @@ class Datafilter
             $data = self::encode_utf8($data);
         }
         //$data = self::encode_utf8($data);
-        $data = preg_replace('#[^~\r\n\ta-z ' . self::$special_chars . '90-9\.:,;=\-_\+\*&\?!/{}\(\)\[\]%$€<>' . $chars . '\|\\\]#isu', ' ', $data);
+        $data = preg_replace(
+            '#[^~\r\n\ta-z ' . self::$special_chars . '90-9\.:,;=\-_\+\*&\?!/{}\(\)\[\]%$€<>' . $chars . '\|\\\]#isu',
+            ' ',
+            $data
+        );
         $data = preg_replace('#[\r\n\t]#s', ' ', $data);
         $data = preg_replace('/\s+/', ' ', $data);
         /*
@@ -369,9 +395,8 @@ class Datafilter
      *
      * @param string $data
      * @return  string
-     * @author Draga Sergiu
      */
-    public static function encode_utf8($data)
+    public static function encode_utf8(string $data): string
     {
         /*
          *  Used before:
@@ -417,11 +442,14 @@ class Datafilter
         // remove trailing spaces
         $data = preg_replace('#\s{2,}#', ' ', $data);
         $dataExp = explode(' ', $data);
-        $wordArr = array();
+        $wordArr = [];
 
         foreach ($dataExp as $word) {
             // from DE, RO, jpn charset ..
-            if (preg_match('#Â©|Ã¤|Ã¼|Ã¶|Ã®|ÄÅ|[^\w\s\d\x00-\x7F]|â¬|Â»|â¢|â€|€™|Â|Å|â|Å£|Ã¢|Ã|Ã§|°Ñ|Ð|Ä|ã|¼|å|¤|¾|é#su', $word)) {
+            if (preg_match(
+                '#Â©|Ã¤|Ã¼|Ã¶|Ã®|ÄÅ|[^\w\s\d\x00-\x7F]|â¬|Â»|â¢|â€|€™|Â|Å|â|Å£|Ã¢|Ã|Ã§|°Ñ|Ð|Ä|ã|¼|å|¤|¾|é#su',
+                $word
+            )) {
                 //if (!self::is_utf8($word)) {
                 $wordArr[] = utf8_decode($word);
                 //echo "$word -^gt;  " . utf8_encode($word) . "<br/>";
@@ -443,27 +471,31 @@ class Datafilter
         return $data;
     }
 
-    public static function cleanUrl($url)
+    public static function cleanUrl(string $url): string
     {
-        return 'http://' . str_replace(array(
+        return 'http://' . str_replace([
                 'http://',
                 'https://'
-            ), '', $url);
+            ], '', $url);
     }
 
     public static function cleanTextTest($data, $utfdecode = 0)
     {
         $data = utf8_decode($data);
-        $data = preg_replace('#[^~\r\n\ta-z \xDC\xFC\xF6\xD6\xC4\xE4\xDF0-9\.:,;=\-_\+\*&\?!/{}\(\)\[\]%$€<>\|\\\]#isu', ' ', $data);
+        $data = preg_replace(
+            '#[^~\r\n\ta-z \xDC\xFC\xF6\xD6\xC4\xE4\xDF0-9\.:,;=\-_\+\*&\?!/{}\(\)\[\]%$€<>\|\\\]#isu',
+            ' ',
+            $data
+        );
         $data = preg_replace('#[\r\n\t]#s', '', $data);
-        $from = array(
+        $from = [
             "#'#",
             '#"#'
-        );
-        $to = array(
+        ];
+        $to = [
             '\u0027',
             '\u0022'
-        );
+        ];
         $data = preg_replace($from, $to, $data);
         $data = trim($data);
         return $data;
@@ -474,9 +506,8 @@ class Datafilter
      *
      * @param string $string
      * @return  string
-     * @author Draga Sergiu
      */
-    public static function alias($string, $spaceDelimiter = '-')
+    public static function alias(string $string, string $spaceDelimiter = '-'): string
     {
         $string = trim(mb_strtolower($string));
         /*
@@ -484,19 +515,19 @@ class Datafilter
             $replace = Array("ae", "oe", "ue", "ae", "oe", "ue", "ss");
             $string = preg_replace($umlaute, $replace, $string);
          */
-        $string = str_replace(array(
+        $string = str_replace([
             '&',
             ',',
             '.',
             '!',
             '?'
-        ), '-', $string);
+        ], '-', $string);
         $string = str_replace(' ', $spaceDelimiter, $string);
         // replace “ ”
-        $string = str_replace(array(
+        $string = str_replace([
             '“',
             '”'
-        ), '"', $string);
+        ], '"', $string);
         $string = preg_replace('/[^@0-9' . $spaceDelimiter . '\-_\p{L}\'"’]/iu', '', $string);
         $string = preg_replace('/[-]{2,}/', '-', $string);
         //$string = preg_replace('#^-(.*)-$#', '\\1', $string);
@@ -508,7 +539,7 @@ class Datafilter
      * @param     $string
      * @return
      */
-    public static function alias_keyword($string)
+    public static function alias_keyword(string $string): string
     {
         $string = trim($string);
         //$string = preg_replace('#[\r\n\t]#u', '', $string);
@@ -523,17 +554,17 @@ class Datafilter
      * @param $keyword
      * @return mixed
      */
-    public static function quoteKeyword($keyword)
+    public static function quoteKeyword(string $keyword): string
     {
-        return str_replace(array(
+        return str_replace([
             //'&apos;',
             "'",
             '"'
-        ), array(
+        ], [
             //"&rsquo;",
             "\'",
             '&quot;'
-        ), $keyword);
+        ], $keyword);
     }
 
     /**
@@ -541,9 +572,9 @@ class Datafilter
      * @param     $string
      * @return
      */
-    public static function clean_keywords($array, $removeDuplicates = false)
+    public static function clean_keywords(array $array, bool $removeDuplicates = false): ?array
     {
-        $auxarray = array();
+        $auxarray = [];
         foreach ($array as $keyword) {
             if ($removeDuplicates) {
                 $keyword = self::remove_consecutive_duplicate($keyword);
@@ -560,7 +591,7 @@ class Datafilter
      * @param $text
      * @return array
      */
-    public static function remove_consecutive_duplicate($text)
+    public static function remove_consecutive_duplicate(string $text): string
     {
         $arr = explode(' ', $text);
 
@@ -578,7 +609,7 @@ class Datafilter
      * @param     $string
      * @return
      */
-    public static function clean_keyword($string, $useWhitelist = false)
+    public static function clean_keyword(string $string, bool $useWhitelist = false): string
     {
         //@todo why don't use \p{L} for a-z AND utf8 diacrtics? why use umlauts array?
         //lowercase for normalization
@@ -586,12 +617,12 @@ class Datafilter
         //replace html entities to normal characters
         $string = html_entity_decode($string);
         // fast patch for keywords sent by RC ui.js (eg: children's clothes)
-        $string = str_replace(array(
+        $string = str_replace([
             '&#39;',
             '’'
-        ), "'", $string);
+        ], "'", $string);
         //replace unicode string representation with coresponding utf8 char
-        $string = str_replace(array(
+        $string = str_replace([
             'u00df',
             'u0153',
             'u00e9',
@@ -618,18 +649,18 @@ class Datafilter
             'u00fb',
             'u00f1',
             'u00ff'
-        ), Datafilter::$umlauts, $string);
-        $string = str_replace(array(
+        ], Datafilter::$umlauts, $string);
+        $string = str_replace([
             'ã£â¶',
             'ã£â¤',
             'ã£â¼',
             'ã£â'
-        ), array(
+        ], [
             'ö',
             'ä',
             'ü',
             'ß'
-        ), $string);
+        ], $string);
         //error fron json_decode( json_encode( utf8_encode( $string)))   string already encoded UTF-8
         //$string = str_replace(array("ã", "å", "ã©", "ã¨", "ã«", "ã¡", "ã ", "ã¤", "ã¢", "ã£", "ã¶", "ã´", "ã³", "ã²", "ã¯", "ã", "ã®", "å", "è", "å£", "è", "ã¼", "ã¹", "ã»", "ã±", "ã¿"), Datafilter::$umlauts, $string);
         //remove " from not <number>" or <space>" e.g.: 3.2" tft touchscreen 19 " 1/4" we3/4" telephone pda3" "mobile" p05-i92" test " => 3.2" tft touchscreen 19 " 1/4" we3/4 telephone pda3 mobile p05-i92 test
@@ -638,13 +669,13 @@ class Datafilter
         $special = implode("\\", self::$special);
         //$umlauts = implode('', self::$umlauts);
         // replace “ ”
-        $string = str_replace(array(
+        $string = str_replace([
             '“',
             '”'
-        ), '"', $string);
-        $string = str_replace(array(
+        ], '"', $string);
+        $string = str_replace([
             ',',
-        ), ' ', $string);
+        ], ' ', $string);
         //$regex = '[^\'"’a-z ' . $special . self::$special_chars . '0-9]';
         $regex = '[^a-z ' . $special . self::$special_chars . '0-9]';
         // var_dump($regex);
@@ -681,11 +712,10 @@ class Datafilter
      * Alow only unique values, takes cares of extra spaces and it's case InSenSiTiVe
      *
      * @param    $array
-     * @author Draga Sergiu
      */
-    public static function array_unique($array)
+    public static function array_unique(array $array): array
     {
-        $aux = array();
+        $aux = [];
         foreach ($array as $element) {
             // takes care of diacritics, replace into standard format, eg: ä => ae => a
             $element_key = self::filter_diacritics($element);
@@ -706,16 +736,16 @@ class Datafilter
      * Eg: Koln, Koeln, Köln
      * @param    $text
      */
-    public static function filter_diacritics($text, $allowedDiacritics = array())
+    public static function filter_diacritics(string $text, array $allowedDiacritics = []): string|bool
     {
         $text = mb_strtolower(trim($text));
         if (!$text) {
-            return;
+            return false;
         }
         // replace into standard format, eg: ä => ae
         $umlaute = [];
         if (!isset(self::$allowedDiacriticsCache)) {
-            $umlaute = array(
+            $umlaute = [
                 '/ä/' => 'ae',
                 '/ö/' => 'oe',
                 '/ü/' => 'ue',
@@ -732,7 +762,7 @@ class Datafilter
                 '/â/' => 'a',
                 '/Â/' => 'A',
                 '/í/' => 'i'
-            );
+            ];
             if ($allowedDiacritics === null) {
                 return $text;
             }
@@ -759,8 +789,12 @@ class Datafilter
      * @param bool|true $skipFileExclusion
      * @return object|string
      */
-    public static function getDomainAndPath($url, $asString = false, $removewww = false, bool $skipFileExclusion = true)
-    {
+    public static function getDomainAndPath(
+        string $url,
+        bool $asString = false,
+        bool $removewww = false,
+        bool $skipFileExclusion = true
+    ): ?\stdClass {
         $domain = self::domain($url, false, false, $removewww);
         $path = '';
 
@@ -777,7 +811,10 @@ class Datafilter
 
             // @TODO Maybe split the path into more than 2 parts and validate them individually
             // (e.g., paths like domain/{path_1}/{path_2}/..../{path_n})
-            $pathExploded = preg_split('#[/\?\#]+#', $path); // also take care of url such as omnomn.wix.com/hotel#!book-a-room
+            $pathExploded = preg_split(
+                '#[/\?\#]+#',
+                $path
+            ); // also take care of url such as omnomn.wix.com/hotel#!book-a-room
             // @TODO The pattern can be improved to allow more character types
             if (!preg_match('/^(?!\.)(?!.*\.$)(?!.*?\.\.)[a-z\-0-9.]+$/i', end($pathExploded))) {
                 // if last element not alphanum and is not like x-m-y then remove it
@@ -801,10 +838,10 @@ class Datafilter
             return $domain . $path;
         }
 
-        return (object)array(
+        return (object)[
             'domain' => $domain,
             'path' => (string)$path
-        );
+        ];
     }
 
     /**
@@ -815,8 +852,12 @@ class Datafilter
      * @param bool $removewww
      * @return int|mixed|string
      */
-    public static function domain($url, $fulldomain = false, $subdomain_removal = false, $removewww = true)
-    {
+    public static function domain(
+        string $url,
+        bool $fulldomain = false,
+        bool $subdomain_removal = false,
+        bool $removewww = true
+    ): string|bool {
         //$url = self::encode_utf8($url);
         // remove the rest from space. eg:
         if (empty($url)) {
@@ -871,7 +912,7 @@ class Datafilter
      * @return
      *
      */
-    public static function topdomain($url)
+    public static function topdomain(string $url): string|bool
     {
         $domain = self::domain($url);
         preg_match('#\.(?P<topdomain>[^\.]+)$#', $domain, $match);
@@ -884,7 +925,7 @@ class Datafilter
      * @param     $url
      * @return     R
      */
-    public static function subdomain($url)
+    public static function subdomain(string $url): ?string
     {
         $domain = self::domain($url);
         preg_match('#(?P<subdomain>.*?)\.(?P<domain>[^\.]+\.[a-z]{2,4})$#i', $domain, $match);
@@ -902,7 +943,7 @@ class Datafilter
      * @param string $url string containing url user input
      * @return   bool     Returns TRUE/FALSE
      */
-    public static function validateURL($url)
+    public static function validateURL(string $url): bool
     {
         $url = trim($url);
         $url = preg_replace('#^http(s)?://#i', '', $url);
@@ -914,12 +955,12 @@ class Datafilter
         try {
             parse_url($url);
         } catch (Exception $e) {
-            return 0;
+            return false;
         }
         if (!preg_match('#.*?\..*?#', $url)) {
-            return 0;
+            return false;
         }
-        return 1;
+        return true;
     }
 
     /**
@@ -929,12 +970,12 @@ class Datafilter
      * @return
      *
      */
-    public static function validateDomain($url)
+    public static function validateDomain(string $url): bool
     {
         if (preg_match('#^(http://)?(www\.)?[' . self::$special_chars . 'a-z0-9\._\-]+\.[a-z]{2,6}/?$#iu', $url)) {
-            return 1;
+            return true;
         }
-        return 0;
+        return false;
     }
 
     /**
@@ -943,20 +984,19 @@ class Datafilter
      * @param string $text
      * @param int $partial
      * @return  int
-     * @author Draga Sergiu
      */
-    public static function validEmail($text, $partial = 0)
+    public static function validEmail(string $text, bool $partial = false): bool
     {
         $start = '^';
         $end = '$';
-        if ($partial == 1) {
+        if ($partial) {
             $start = '';
             $end = '';
         }
         if (preg_match('/' . $start . "[A-Za-z0-9._\-\+]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,24}$end/", $text)) {
-            return 1;
+            return true;
         }
-        return 0;
+        return false;
     }
 
     /**
@@ -964,7 +1004,7 @@ class Datafilter
      *
      * @param     $text
      */
-    public static function wordcount($text)
+    public static function wordcount(string $text): int
     {
         $words = self::breakwords($text);
         return count($words ?? []);
@@ -975,12 +1015,11 @@ class Datafilter
      *
      * @param string $text
      * @return  array
-     * @author Draga Sergiu
      */
-    public static function breakwords($text, $breakMoreSpecialChars = 0, $filter = 0)
+    public static function breakwords(string $text, $breakMoreSpecialChars = false, $filter = false): ?array
     {
         $text = str_replace("\t", ' ', $text);
-        if ($breakMoreSpecialChars == 1) {
+        if ($breakMoreSpecialChars) {
             $breakChars = '\-/';
             // convert _ because if we want to delimt by this char the _ is part of an word and not as separator (see word \boundary).
             $text = str_replace('_', '-', $text);
@@ -989,9 +1028,9 @@ class Datafilter
         }
 
         if (!$text) {
-            return array();
+            return [];
         }
-        $wordstmpArr = array();
+        $wordstmpArr = [];
         $text = strtolower($text);
         $text = self::cleanUrlsAndEmails($text);
         // now breakup!
@@ -1000,10 +1039,14 @@ class Datafilter
         //preg_match_all('#(?P<word>[0-9a-z' . $special_chars . '\#_]+)#isu', $text, $wordstmpArr); // this is old
         // the second part is for preserving things likle iso 3834-2 or update 2.0 etc
         // \;\& was added because ampersand was being returned as amp instead of &amp; . This was done because the Text Optimization tool was not correctly comparing the text with keywords containing ampersand
-        preg_match_all('#(?P<word>([0-9]+[\.\-+]*[0-9]+)|([0-9a-z' . $special_chars . '\#_\;\&]+))#isu', $text, $wordstmpArr);
+        preg_match_all(
+            '#(?P<word>([0-9]+[\.\-+]*[0-9]+)|([0-9a-z' . $special_chars . '\#_\;\&]+))#isu',
+            $text,
+            $wordstmpArr
+        );
         // filter the text and return aliased words (optional)
         if ($filter) {
-            $filtered_words = array();
+            $filtered_words = [];
             foreach ($wordstmpArr['word'] as $word) {
                 $word = trim($word);
                 if (is_numeric($word)) {
@@ -1027,28 +1070,31 @@ class Datafilter
      * @param     $text
      * @return
      */
-    public static function cleanUrlsAndEmails($text)
+    public static function cleanUrlsAndEmails(string $text): string
     {
         // first and first REMOVE sites.
-        $text = preg_replace(array(
+        $text = preg_replace([
             '#http(s)?://(www\.)?[^\s\t\r\n]+#is',
             '#www\.[^\s\t\r\n]+#is'
-        ), '', $text);
+        ], '', $text);
         // remove emails.. [1] // as in info`[at]`loew.ag & http://pr-ranklist.de/impressum.php
-        $pAround = array(
+        $pAround = [
             '@',
             ' ?\[ ?at ?\] ?',
             '`\[at\]`',
             ' ?\(at\) ?',
             '\(via\)'
-        );
-        $pDot = array(
+        ];
+        $pDot = [
             '\.',
             '\[dot\]',
             '\(dot\)'
-        );
+        ];
         $text = preg_replace(
-            '#(?P<email>[a-z]([_a-z0-9\-]+)(\.[_a-z0-9\-]+)*(' . implode('|', $pAround) . ')([a-z0-9-]+)(\.[a-z0-9-]+)*(' . implode(
+            '#(?P<email>[a-z]([_a-z0-9\-]+)(\.[_a-z0-9\-]+)*(' . implode(
+                '|',
+                $pAround
+            ) . ')([a-z0-9-]+)(\.[a-z0-9-]+)*(' . implode(
                 '|',
                 $pDot
             ) . ')[a-z]{2,4})#is',
@@ -1063,13 +1109,12 @@ class Datafilter
      * v2
      * @todo: replace old function, but first we must make sure it's ``backward compatible``
      *
-     * @author Draga Sergiu
      * @param string $string
      * @return  string
      */
-    public static function aliasv2($string, $spaceDelimiter = '-')
+    public static function aliasv2(string $string, string $spaceDelimiter = '-'): string
     {
-        $umlaute = array(
+        $umlaute = [
             '/ä/',
             '/ö/',
             '/ü/',
@@ -1077,8 +1122,8 @@ class Datafilter
             '/Ö/',
             '/Ü/',
             '/ß/'
-        );
-        $replace = array(
+        ];
+        $replace = [
             'ae',
             'oe',
             'ue',
@@ -1086,17 +1131,17 @@ class Datafilter
             'oe',
             'ue',
             'ss'
-        );
+        ];
         $string = preg_replace($umlaute, $replace, $string);
 
         $string = trim(strtolower($string));
-        $string = str_replace(array(
+        $string = str_replace([
             '&',
             ',',
             '.',
             '!',
             '?'
-        ), '-', $string);
+        ], '-', $string);
         $string = str_replace(' ', $spaceDelimiter, $string);
 
         $string = preg_replace('/[^a-zA-Z0-9\-_\p{L}]/', '', $string);
@@ -1112,7 +1157,7 @@ class Datafilter
      * @param     $text
      * @return
      */
-    public static function textwords($text)
+    public static function textwords(string $text): string
     {
         $text = mb_strtolower($text);
         $words = self::breakwords($text);
@@ -1125,9 +1170,8 @@ class Datafilter
      *
      * @param $text
      * @return
-     * @author Draga Sergiu
      */
-    public static function encode($text)
+    public static function encode(string $text): string
     {
         //$text = json_encode($text);
         $text = base64_encode($text);
@@ -1141,9 +1185,8 @@ class Datafilter
      *
      * @param $text
      * @return
-     * @author Draga Sergiu
      */
-    public static function decode($text)
+    public static function decode(string $text): string
     {
         $text = str_replace('_SL_', '/', $text);
         $text = str_replace('_PL_', '+', $text);
@@ -1152,14 +1195,14 @@ class Datafilter
         return $text;
     }
 
-    public static function keyword_code($keyword)
+    public static function keyword_code(string $keyword): string
     {
         //if ((int)$keyword > 0)
         return 'KW__' . $keyword;
         //else return $keyword;
     }
 
-    public static function keywords_decode($keywords)
+    public static function keywords_decode(array $keywords): array
     {
         foreach ($keywords as $keyword) {
             $keywords_aux[] = self::keyword_decode($keyword);
@@ -1167,16 +1210,16 @@ class Datafilter
         return $keywords_aux ?? [];
     }
 
-    public static function keyword_decode($keyword)
+    public static function keyword_decode(string $keyword): string
     {
         return str_replace('KW__', '', $keyword);
     }
 
-    public static function stringToHex($string)
+    public static function stringToHex(string $string): string
     {
         // $string = 'ÄäÖöÜüß€ÀÂÄÈÉÊËÎÏÔŒÙÛÜŸàâäèéêëîïôœùûüÿÁÉÍÓÚÑÜáéíóúñüÀÈÉÌÒÓÙàèéìòóùăîâşţĂÎÂŞŢ';
         preg_match_all('#[^\.]{1}#u', $string, $chars);
-        $aux = array();
+        $aux = [];
         foreach ($chars[0] as $char) {
             $aux[$char] = dechex(self::ordUTF8($char));
             $aux[$char] = '\x' . strtoupper($aux[$char]);
@@ -1186,7 +1229,7 @@ class Datafilter
         return $aux;
     }
 
-    public static function ordUTF8($c, $index = 0, &$bytes = null)
+    public static function ordUTF8(string $c, int $index = 0, ?int &$bytes = null): int|bool
     {
         $len = strlen($c);
         $bytes = 0;
@@ -1210,23 +1253,25 @@ class Datafilter
             return ($h & 0x0F) << 12 | (ord($c[$index + 1]) & 0x3F) << 6 | (ord($c[$index + 2]) & 0x3F);
         } elseif ($h <= 0xF4 && $index < $len - 3) {
             $bytes = 4;
-            return ($h & 0x0F) << 18 | (ord($c[$index + 1]) & 0x3F) << 12 | (ord($c[$index + 2]) & 0x3F) << 6 | (ord($c[$index + 3]) & 0x3F);
+            return ($h & 0x0F) << 18 | (ord($c[$index + 1]) & 0x3F) << 12 | (ord($c[$index + 2]) & 0x3F) << 6 | (ord(
+                        $c[$index + 3]
+                    ) & 0x3F);
         } else {
             return false;
         }
     }
 
-    public static function compare_domains($domain, $domain2)
+    public static function compare_domains(string $domain, string $domain2): bool
     {
         $countryTld = 0;
         $domain = self::domain_tld($domain);
         $domain2 = self::domain_tld($domain2);
 
-        $countryCodes = array(
+        $countryCodes = [
             'de',
             'at',
             'ch'
-        );
+        ];
         if ($domain->domain != $domain2->domain) {
             return false;
         }
@@ -1245,7 +1290,7 @@ class Datafilter
         return false;
     }
 
-    public static function domain_tld($domain)
+    public static function domain_tld(string $domain): ?string
     {
         preg_match('#(?P<domain>.*?)\.(?P<tld>[a-z]{2,6})$#', $domain, $match);
         $return = new stdClass();
@@ -1260,7 +1305,7 @@ class Datafilter
      *
      * @param     $text
      */
-    public static function delimiterHtmlText($text, $delimiter_output = '###')
+    public static function delimiterHtmlText(string $text, string $delimiter_output = '###'): string
     {
         $delimiter = ',';
         // first we take care of html entities..
@@ -1288,7 +1333,7 @@ class Datafilter
         // strip urls & emails.
         $text = self::cleanUrlsAndEmails($text);
         // take care of other punctuations: eg: . ; ? !
-        $text = str_replace(array(
+        $text = str_replace([
             '.',
             ';',
             ':',
@@ -1308,15 +1353,15 @@ class Datafilter
             '{',
             '}',
             ' & '
-        ), ',', $text);
+        ], ',', $text);
         // some words delimit text, such as: and, or, und, oder
         $text = preg_replace('#\b(and|or|und|oder)\b#i', $delimiter, $text);
         // some cleanup
-        $text = str_replace(array(
+        $text = str_replace([
             "$delimiter ",
             " $delimiter",
             " $delimiter "
-        ), $delimiter, $text);
+        ], $delimiter, $text);
         // convert text to small case
         $text = mb_strtolower($text);
         // break up the text into words array.
@@ -1341,9 +1386,13 @@ class Datafilter
      * @param     $keyword
      * @param     $limit
      */
-    public static function prioritizeArrayElementsByKeyword($array, $keyword, $key_element = 'text', $limit = 500)
-    {
-        $aux = array();
+    public static function prioritizeArrayElementsByKeyword(
+        array $array,
+        string $keyword,
+        string $key_element = 'text',
+        int $limit = 500
+    ): array {
+        $aux = [];
         foreach ($array as $element) {
             $value = trim($element->$key_element);
             if (!$value) {
@@ -1355,15 +1404,15 @@ class Datafilter
             $element->density = $density->partial_density;
         }
         // sort
-        usort($array, array(
+        usort($array, [
             'Datafilter',
             'compare_array'
-        ));
+        ]);
 
         return $array;
     }
 
-    public static function compare_array($a, $b)
+    public static function compare_array(array $a, array $b): int
     {
         if ($a->density == $b->density) {
             return 0;
@@ -1377,9 +1426,9 @@ class Datafilter
      * @param string $keyword
      * @return string
      */
-    public static function getDiacriticInsensitivePregString($keyword)
+    public static function getDiacriticInsensitivePregString(string $keyword): string
     {
-        $umlaute = array(
+        $umlaute = [
             'ä',
             'ö',
             'ü',
@@ -1388,8 +1437,8 @@ class Datafilter
             'è',
             'ê',
             'â'
-        );
-        $umlaute2 = array(
+        ];
+        $umlaute2 = [
             'ae',
             'oe',
             'ue',
@@ -1398,9 +1447,9 @@ class Datafilter
             'e',
             'e',
             'a'
-        );
-        $umlaute3 = array();
-        $umlaute4 = array();
+        ];
+        $umlaute3 = [];
+        $umlaute4 = [];
         foreach ($umlaute as $index => $umlaut) {
             $umlaute3[] = '(' . mb_strtoupper($umlaute[$index]) . '|' . mb_strtoupper($umlaute2[$index]) . ')';
             $umlaute4[] = $umlaute[$index] . '|' . mb_strtoupper($umlaute[$index]);
@@ -1417,7 +1466,7 @@ class Datafilter
      * @param    $array
      * @return
      */
-    public static function normalize_diacritcs($array)
+    public static function normalize_diacritcs(array $array): array
     {
         foreach ($array as $key => $element) {
             $array[$key] = self::filter_diacritics($element);
@@ -1426,26 +1475,30 @@ class Datafilter
     }
 
     /**
-     * Get more combinations, considering aliases too.
-     * @param $query
-     * @param $minLength
-     * @return array
+     * Generates smart combinations of words from the given query after applying aliases and filters by minimum length.
+     *
+     * @param string $query The input string to generate combinations from.
+     * @param int $minLength The minimum length of each combination to include in the result. Defaults to 0.
+     * @return array An array of unique combinations that meet the specified minimum length.
      */
-    public static function getSmartCombinations($query, $minLength = 0)
+    public static function getSmartCombinations(string $query, int $minLength = 0): array
     {
         // break up by words
         $words = self::breakwords($query);
         // apply alias for each word
-        $text_aliased = array();
+        $text_aliased = [];
         foreach ($words as $word) {
             $text_aliased[] = self::aliasv2($word);
         }
-        $combinations = array();
+        $combinations = [];
         $combinations = array_merge($combinations, self::getCombinations($query, $minLength));
-        $combinations = array_merge($combinations, self::getCombinations(implode(' ', self::breakwords($query, 1)), $minLength));
+        $combinations = array_merge(
+            $combinations,
+            self::getCombinations(implode(' ', self::breakwords($query, 1)), $minLength)
+        );
         $combinations = array_merge($combinations, self::getCombinations(implode(' ', $text_aliased), $minLength));
         $combinations = array_unique($combinations);
-        $final_combinations = array();
+        $final_combinations = [];
         foreach ($combinations as $combination) {
             if (strlen($combination) >= $minLength) {
                 $final_combinations[] = $combination;
@@ -1454,11 +1507,17 @@ class Datafilter
         return $final_combinations;
     }
 
-    public static function getCombinations($query)
+    /**
+     * Generate all possible combinations of words up to a specified number of words in sequence from a given query.
+     *
+     * @param string $query The input string from which to generate word combinations.
+     * @return array An array of word combinations from the input query.
+     */
+    public static function getCombinations(string $query): array
     {
         $query = preg_replace('/\s\s+/', ' ', $query);
         $elements = explode(' ', $query);
-        $aux = array($query);
+        $aux = [$query];
         $maxwords = 3;
         $elementCount = count($elements ?? []);
         for ($i = 0; $i < $elementCount; $i++) {
@@ -1475,12 +1534,13 @@ class Datafilter
     }
 
     /**
-     * cleans scrips and normalizes int values
-     * @param null $request
-     * @param array $intValues array('key','key2') of int indexes => this will be (int) ed
-     * @return null
+     * Cleanses the request data by removing 'script' strings and normalizing specified values to integers.
+     *
+     * @param array|null $request The associative array of request data that may contain potentially unsafe values.
+     * @param array $intValues List of keys in the request array whose corresponding values should be cast to integer.
+     * @return array|null The cleansed request array, or null if the input was null.
      */
-    public static function cleanRequestFromScript($request = null, $intValues = array())
+    public static function cleanRequestFromScript(?array $request = null, array $intValues = []): ?array
     {
         foreach ($request as $index => $value) {
             if (is_array($intValues) && in_array($index, $intValues)) {
@@ -1493,13 +1553,13 @@ class Datafilter
     }
 
     /**
-     * determines correctness of phone numbers
+     * Validates a phone number against specified country code standards.
      *
-     * @param $number
-     * @param string $countryCode e.g. de if null, and number contains no international prefix, e.g. 0049 or +49 the function will return false
-     * @return bool
+     * @param string $number The phone number to validate.
+     * @param string|null $countryCode The ISO 3166-1 two-letter country code (e.g., 'DE'). If null, and number lacks an international prefix, the function returns false.
+     * @return bool True if the phone number is valid according to the country's standard, false otherwise.
      */
-    public static function validatePhoneNumber($number, $countryCode = 'de')
+    public static function validatePhoneNumber(string $number, ?string $countryCode = 'de'): bool
     {
         $phoneUtil = PhoneNumberUtil::getInstance();
         try {
@@ -1514,8 +1574,19 @@ class Datafilter
         }
     }
 
-    public static function validatePhoneNumberByCountry($number, $countryCode, $regionCountriesList = [])
-    {
+    /**
+     * Validates a phone number based on the specific country code and additional regional constraints.
+     *
+     * @param string $number The phone number to validate.
+     * @param string $countryCode The ISO 3166-1 two-letter country code (e.g., 'US').
+     * @param array $regionCountriesList Optional list of additional country codes that are considered valid for the region.
+     * @return bool True if the phone number is valid for the given country or region, false otherwise.
+     */
+    public static function validatePhoneNumberByCountry(
+        string $number,
+        string $countryCode,
+        array $regionCountriesList = []
+    ): bool {
         try {
             $number = str_replace('&nbsp', ' ', $number);
             $phoneUtil = PhoneNumberUtil::getInstance();
@@ -1525,7 +1596,11 @@ class Datafilter
                 $countryCode = strtoupper($countryCode);
                 if ($regionCode == $countryCode) { //check if the region code returned from filtering is the same from site
                     return true;
-                } elseif (!empty($regionCountriesList) && array_search(strtolower($regionCode), $regionCountriesList, true)) {
+                } elseif (!empty($regionCountriesList) && array_search(
+                        strtolower($regionCode),
+                        $regionCountriesList,
+                        true
+                    )) {
                     return true;
                 } else {
                     // there is a niche situation where the country prefix is the same, but the region code is different, for example Isle of Man and GB
@@ -1546,12 +1621,13 @@ class Datafilter
     }
 
     /**
-     * Returns national number formated such as: 0451 495905
-     * @param $number
-     * @param string $countryCode
-     * @return string
+     * Formats a phone number into a national format (e.g., "0451 495905").
+     *
+     * @param string $number The phone number to be formatted.
+     * @param string $countryCode The ISO 3166-1 alpha-2 country code (e.g., 'DE'). Default is 'DE'.
+     * @return string The formatted national phone number or an empty string if normalization fails.
      */
-    public static function normalizePhoneNumberNational($number, $countryCode = 'de')
+    public static function normalizePhoneNumberNational(string $number, string $countryCode = 'de'): string
     {
         $number = Datafilter::normalizePhoneNumber($number, $countryCode, 2);
         if (!$number) {
@@ -1561,44 +1637,38 @@ class Datafilter
         return $number;
     }
 
-    /*
-     * Manipulate cities name (?)
-     * @todo author
-     *
-     * @param string $query
-     * @return  array
-     */
-
     /**
-     * normalizes phone numbers
-     * formats available:
-     * PhoneNumberFormat::INTERNATIONAL
-     * PhoneNumberFormat::NATIONAL
-     * PhoneNumberFormat::E164
+     * Normalizes phone numbers to different formats based on the specified format and country code.
+     * Available formats:
+     * - PhoneNumberFormat::INTERNATIONAL
+     * - PhoneNumberFormat::NATIONAL
+     * - PhoneNumberFormat::E164
      *
-     * @param $number
-     * @param string $countryCode e.g. de
-     * @param int $format
-     * @params bool $returnFragments
-     * @return string
+     * @param string $number The phone number to be normalized.
+     * @param string $countryCode The ISO 3166-1 alpha-2 country code, default is 'DE'.
+     * @param int $format The format to use for the phone number normalization.
+     * @param bool $returnFragments If true, returns an object with countryCode and nationalNumber, otherwise returns formatted string.
+     * @return string|object The formatted phone number or an object with phone number fragments based on $returnFragments.
      */
-    public static function normalizePhoneNumber($number, $countryCode = 'de', $format = PhoneNumberFormat::INTERNATIONAL, $returnFragments = false)
-    {
+    public static function normalizePhoneNumber(
+        string $number,
+        string $countryCode = 'de',
+        int $format = PhoneNumberFormat::INTERNATIONAL,
+        bool $returnFragments = false
+    ) {
         $number = str_replace('&nbsp', ' ', $number);
         $phoneUtil = PhoneNumberUtil::getInstance();
         try {
             $parsedNumber = $phoneUtil->parseAndKeepRawInput($number, strtoupper($countryCode));
             if ($returnFragments) {
-                return (object)array(
+                return (object)[
                     'countryCode' => $parsedNumber->getCountryCode(),
                     'nationalNumber' => $parsedNumber->getNationalNumber()
-                );
+                ];
             }
             if ($phoneUtil->isValidNumber($parsedNumber)) {
-//			    echo "IS VALID '$countryCode':";
                 return $phoneUtil->format($parsedNumber, $format);
             } else {
-//			    echo "NOT VALID '$countryCode':";
                 return $number;
             }
         } catch (NumberParseException $e) {
@@ -1606,7 +1676,14 @@ class Datafilter
         }
     }
 
-    public static function normalizeAndFilterSpecialChars($text, $whiteList = '')
+    /**
+     * Normalizes text by converting to lowercase, normalizing non-German diacritics, and filtering out special characters.
+     *
+     * @param string $text The text to be normalized.
+     * @param string $whiteList A string containing characters to be preserved during normalization.
+     * @return string The normalized and filtered text.
+     */
+    public static function normalizeAndFilterSpecialChars(string $text, string $whiteList = ''): string
     {
         $text = mb_strtolower($text);
         $text = self::normalizeNonGermanDiacritics($text, $whiteList);
@@ -1621,9 +1698,9 @@ class Datafilter
      *
      * @param $text
      */
-    public static function normalizeNonGermanDiacritics($text)
+    public static function normalizeNonGermanDiacritics(string $text): string
     {
-        $diacritics_from = array(
+        $diacritics_from = [
             'Á',
             'É',
             'Í',
@@ -1663,8 +1740,8 @@ class Datafilter
             'Œ',
             'Ù',
             'Û'
-        );
-        $diacritics_to = array(
+        ];
+        $diacritics_to = [
             'A',
             'E',
             'I',
@@ -1704,7 +1781,7 @@ class Datafilter
             'O',
             'U',
             'U'
-        );
+        ];
 
         $text = str_replace($diacritics_from, $diacritics_to, $text);
         return $text;
@@ -1716,7 +1793,7 @@ class Datafilter
      * @param $text
      * @return mixed
      */
-    public static function filterSpecialChars($text, $whiteList = '')
+    public static function filterSpecialChars(string $text, string $whiteList = ''): string
     {
         $whiteList = self::escapeRegexSpecialChars($whiteList);
         // remove all that is not a letter or number . \p{L} match any letter with diacritics too
@@ -1732,9 +1809,9 @@ class Datafilter
      * @param $text
      * @return mixed
      */
-    public static function escapeRegexSpecialChars($text)
+    public static function escapeRegexSpecialChars(string $text): string
     {
-        $aux = array();
+        $aux = [];
         foreach (self::$regex_special_chars as $char) {
             $aux[] = "\\" . $char;
         }
@@ -1748,7 +1825,7 @@ class Datafilter
      * @param $str
      * @return string
      */
-    public static function utf8_strrev($str)
+    public static function utf8_strrev(string $str): string
     {
         preg_match_all('/./us', $str, $ar);
         return implode(array_reverse($ar[0]));
@@ -1763,11 +1840,11 @@ class Datafilter
      * @param $s
      * @return string
      */
-    public static function UTF2UCS($str, $s = false)
+    public static function UTF2UCS(string $str, bool $s = false): string
     {
         $str = strtolower($str);
         $char = 'UTF-8';
-        $arr = array();
+        $arr = [];
         $out = '';
         $c = mb_strlen($str, $char);
         $t = false;
@@ -1794,122 +1871,14 @@ class Datafilter
         return $out;
     }
 
-    // remove common words. used initially on companyName (when building search query) and when comparing.
 
-    public static function microtime_float()
-    {
-        [$usec, $sec] = explode(' ', microtime());
-        return ((float)$usec + (float)$sec);
-    }
-
-    /**
-     * Return date based on locale
-     * eg:
-     * for us: 12/23/2015
-     * for europe: 23.12.2015
-     * for uk: 23/12/2015
-     * @param null $time
-     * @return string
-     */
-    public static function getLocaleDate($time = null)
-    {
-        $time = $time ? $time : time();
-        // note, first the locale must be set as: eg setlocale(LC_TIME, array('en_US'. '.utf8', 'en_US'));
-        $date = strftime('%x', $time);
-        $year = strftime('%Y', $time);
-        // bad thing is that %x doesn't return year in 4digts.. so we shall replace. we assume the year is shown in the end evertime.
-        $aux = preg_split('#([^0-9a-b]+)#', $date, -1, PREG_SPLIT_DELIM_CAPTURE);
-        array_pop($aux);
-        $aux[] = $year;
-        $date = implode('', $aux);
-        return $date;
-    }
-
-    /**
-     * Return date with time based on locale
-     * @param null $time
-     * @return string
-     * @deprecated maybe
-     * eg:
-     * for us: 12/23/2015 04:00PM
-     * for europe: 23.12.2015 16:00
-     */
-    public static function getLocaleDateTime($time = null, $removeSeconds = true)
-    {
-        $time = $time ? $time : time();
-        // note, first the locale must be set as: eg setlocale(LC_TIME, array('en_US'. '.utf8', 'en_US'));
-        $date = strftime('%x', $time);
-        $year = strftime('%Y', $time);
-        // bad thing is that %x doesn't return year in 4digts.. so we shall replace. we assume the year is shown in the end evertime.
-        $aux = preg_split('#([^0-9a-b]+)#', $date, -1, PREG_SPLIT_DELIM_CAPTURE);
-        array_pop($aux);
-        $aux[] = $year;
-        $date = implode('', $aux);
-        $hour = strftime('%X', $time);
-        if ($removeSeconds) {
-            preg_match('#(am|pm)$#i', $hour, $match);
-            $hour = explode(':', $hour);
-            array_pop($hour);
-            $hour = implode(':', $hour);
-        }
-        return trim($date . ' ' . $hour . (!empty($match[1]) ? $match[1] : ''));
-    }
-
-    /**
-     * strtotime doesn't work when passing GB date, which is separated as US ones (/).. that make it confused.
-     * so we preprocess this.
-     * @param string $strdate
-     * @return
-     */
-    public static function getLocaleUnixTimestamp($strdate)
-    {
-        if (self::$locale) {
-            $locale = self::$locale;
-        } else {
-//			$locale = self::$locale = setlocale(LC_TIME, 0);
-            $locale = self::$locale = orm::getLocale();
-        }
-
-        //this is because us and ca have date format mm/dd/yyyy
-        if (strpos($locale, 'us') == true || strpos($locale, 'ca') == true || strpos($locale, 'au') == true || strpos($locale, 'be') == true) {
-            $result = strtotime($strdate);
-            return $result;
-        } else {
-            $result = strtotime(str_replace('/', '.', $strdate));
-            return $result;
-        }
-    }
-
-    public static function validateUberallText($text, $returnUnmatched = true)
-    {
-        // ty http://stackoverflow.com/questions/8082784/get-mystery-characters-ord-value-in-php
-        $text = preg_replace('#\xad#u', '', $text);
-
-        // when validating the text for special characters we decode the data
-        $text = self::htmlspecialchars_decode($text);
-        $valid = false;
-        // uberall accepts only these
-        $pattern = "\p{L}0-9\(\)\[\]\?:;\/!\,\。・\.\-%\&\s\r\n\t_\*§²`´·’\"'\+¡¿@\”\“\％\＊\＆\@\!\+";
-        if (!$text || preg_match("#^[$pattern]+$#isu", $text)) {
-            $valid = true;
-        } else {
-            preg_match_all("#[^$pattern]+#isu", $text, $matches);
-        } // PREG_OFFSET_CAPTURE
-        //preg_match("#^[$pattern]+$#isu", $text, $x);
-        //var_dump($x);
-        if ($returnUnmatched) {
-            return (object)['valid' => $valid, 'unmatched' => (isset($matches[0]) ? $matches[0] : '')];
-        }
-        return $valid;
-    }
-
-    public static function htmlspecialchars_decode($text)
+    public static function htmlspecialchars_decode(string $text): string
     {
         $text = str_replace('&apos;', "'", $text); // damn you php
         return htmlspecialchars_decode($text, ENT_QUOTES);
     }
 
-    public static function validateCompanyName($text, $returnUnmatched = true)
+    public static function validateCompanyName(string $text, bool $returnUnmatched = true): mixed
     {
         $text = preg_replace('#\xad#u', '', $text);
         $valid = false;
@@ -1929,89 +1898,21 @@ class Datafilter
         return $valid;
     }
 
-    public static function escapeQuotesForJavascriptJSON($text)
+    public static function escapeQuotesForJavascriptJSON(string $text): string
     {
         return str_replace(["'", "'", '"'], ["\'", '&#039;', '&quot;'], $text);
         return htmlentities(str_replace("'", "\'", $text), ENT_QUOTES);
     }
 
-    /**
-     * Returns amount and currency localized
-     * @param $value
-     * @param $currency
-     * @return mixed|string
-     */
-    public static function formatNumberWithCurrency($value, $currency = null, $decimals = true, $localeOverwrite = null)
-    {
-        //setlocale(LC_MONETARY, orm::getlocale());
-        setlocale(LC_NUMERIC, null); // fix  NaN
-        if (!$localeOverwrite) {
-            $nf = new NumberFormatter(orm::getlocale(), NumberFormatter::CURRENCY);
-        } else {
-            $nf = new NumberFormatter($localeOverwrite, NumberFormatter::CURRENCY);
-        }
-        if (!$currency) {
-            if (self::$currency) {
-                $currency = self::$currency;
-            } else {
-                self::$currency = $currency = orm::getCountry(true)->currency;
-            }
-        }
-
-        if (!$decimals) {
-            $nf->setAttribute(NumberFormatter::MAX_FRACTION_DIGITS, 0);
-            $nf->setAttribute(NumberFormatter::MAX_SIGNIFICANT_DIGITS, 7);
-        }
-        if ($value == '') {
-            return $value;
-        }
-
-        $return = $nf->formatCurrency($value, $currency);
-
-        return $return;
-    }
 
     /**
-     * @param null $currency
-     * @param null $localeOverwrite
-     * @return string
+     * Removes consecutive punctuations from a text string. Optionally, it can remove sequences of the same punctuation.
+     *
+     * @param string $text The input text from which to remove consecutive punctuations.
+     * @param bool $remove_only_same_occurrence If true, removes sequences of the same punctuation; otherwise, removes all sequences of punctuations.
+     * @return string The text with consecutive punctuations removed according to the specified mode.
      */
-    public static function getCurrencySymbol($localeOverwrite = null)
-    {
-        //setlocale(LC_MONETARY, orm::getlocale());
-        setlocale(LC_NUMERIC, null); // fix  NaN
-        if (!$localeOverwrite) {
-            $nf = new NumberFormatter(orm::getlocale(), NumberFormatter::CURRENCY);
-        } else {
-            $nf = new NumberFormatter($localeOverwrite, NumberFormatter::CURRENCY);
-        }
-
-        $symbol = $nf->getSymbol(NumberFormatter::CURRENCY_SYMBOL);
-
-        return $symbol;
-    }
-
-    /**
-     * @param null $currency
-     * @param null $localeOverwrite
-     * @return string
-     */
-    public static function getCurrencyDecimalSeparator($localeOverwrite = null)
-    {
-        //setlocale(LC_MONETARY, orm::getlocale());
-        setlocale(LC_NUMERIC, null); // fix  NaN
-        if (!$localeOverwrite) {
-            $nf = new NumberFormatter(orm::getlocale(), NumberFormatter::CURRENCY);
-        } else {
-            $nf = new NumberFormatter($localeOverwrite, NumberFormatter::CURRENCY);
-        }
-
-        $symbol = $nf->getSymbol(NumberFormatter::MONETARY_SEPARATOR_SYMBOL);
-
-        return $symbol;
-    }
-
-    public static function removeConsecutivePunctuations($text, $remove_only_same_occurrence = true)
+    public static function removeConsecutivePunctuations(string $text, bool $remove_only_same_occurrence = true): string
     {
         // detects sequences as: ! ! ! (<punctuation <space>) and normalize.
         $text = preg_replace('#([^\s\t\p{L}\p{N}])[\s\t]+(?![\p{L}\p{N}])#usi', '$1', $text);
@@ -2021,7 +1922,13 @@ class Datafilter
         return preg_replace('#([^\/\s\p{L}\p{N}]){1,}#usi', '$1', $text);
     }
 
-    public static function textContainsUrl($text)
+    /**
+     * Checks if the provided text contains a URL pattern.
+     *
+     * @param string $text The text to be checked for URL patterns.
+     * @return bool True if a URL pattern is found in the text, otherwise false.
+     */
+    public static function textContainsUrl(string $text): bool
     {
         if (preg_match('/([0-9a-zA-Z])\w+[.][a-zA-Z]{1,}/', $text)) {
             return true;
@@ -2035,7 +1942,7 @@ class Datafilter
      * @return bool
      * Checks if maximum characters allowed is reached in a string
      */
-    public static function hasMaxCharactersAllowed($text, $max_characters)
+    public static function hasMaxCharactersAllowed(string $text, int $max_characters): bool
     {
         // decode html entities before validation
         $text = html_entity_decode($text);
@@ -2050,7 +1957,7 @@ class Datafilter
         return false;
     }
 
-    public static function textContainsEmail($text)
+    public static function textContainsEmail(string $text): bool
     {
         if (preg_match('~([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6})~', $text)) {
             return true;
@@ -2063,7 +1970,7 @@ class Datafilter
      * @return bool
      * Checks if text contains an URL prefix (www. , http://, https://) but accepts URL sufixes( .com, .net)
      */
-    public static function textContainsURLPrefix($text)
+    public static function textContainsURLPrefix(string $text): bool
     {
         if (preg_match('/^(?:https?:\/\/|www.)/i', $text)) {
             return true;
@@ -2071,7 +1978,7 @@ class Datafilter
         return false;
     }
 
-    public static function textContainsPhoneNumber($text)
+    public static function textContainsPhoneNumber(string $text): bool
     {
         $user = AuthService::instance()->get_user();
         $phoneNumberUtil = PhoneNumberUtil::getInstance();
@@ -2081,7 +1988,7 @@ class Datafilter
             return true;
         }
 
-        $text = str_replace(array('(', ')', '/'), '', $text);
+        $text = str_replace(['(', ')', '/'], '', $text);
 
         //matches the following patterns and check if the match is longer than 6 (usual phone number length)
         //123-123-1234, (123) 123 1234 ,+12 123123123, +123123123123, 123123123
@@ -2116,7 +2023,7 @@ class Datafilter
         return false;
     }
 
-    public static function textHasOnlyDigits($text)
+    public static function textHasOnlyDigits(string $text): bool
     {
         // checks if text has only digits and space
         $regex = '"^[0-9 ]+$"';
@@ -2126,7 +2033,7 @@ class Datafilter
         return false;
     }
 
-    public static function textHasToManyPunctuation($text)
+    public static function textHasToManyPunctuation(string $text): bool
     {
         // checks if text has more than 6 digits
         $count = preg_match_all('/[[:punct:]]/', $text);
@@ -2136,7 +2043,7 @@ class Datafilter
         return false;
     }
 
-    public static function getYoutubeID($url)
+    public static function getYoutubeID(string $url): ?string
     {
         $rx = '~
           ^(?:https?://)?' .                            // Optional protocol
@@ -2151,17 +2058,31 @@ class Datafilter
         return null;
     }
 
-    public static function maskIBAN($iban)
+    public static function maskIBAN(string $iban): string
     {
         return substr_replace(substr_replace($iban, 'xx', 2, 2), 'xxxxxx', 12, 6);
     }
 
-    public static function roundMinutes($time, $minutes)
+    /**
+     * Rounds a given time in seconds to the nearest interval specified in minutes.
+     *
+     * @param int $time The time in seconds to be rounded.
+     * @param int $minutes The interval in minutes to which the time should be rounded.
+     * @return int The rounded time in seconds.
+     */
+    public static function roundMinutes(int $time, int $minutes): int
     {
         return round($time / ($minutes * 60)) * ($minutes * 60);
     }
 
-    public static function localeForJavascript($locale)
+    /**
+     * Formats a locale string from an ISO format to a format suitable for use in JavaScript.
+     * For example, it converts 'en_US' to 'en-US'.
+     *
+     * @param string $locale The locale string in ISO format (e.g., 'en_US').
+     * @return string The locale string formatted for JavaScript (e.g., 'en-US').
+     */
+    public static function localeForJavascript(string $locale): string
     {
         $language = substr($locale, 0, 2);
         $country = substr($locale, 3, 2);
@@ -2171,20 +2092,20 @@ class Datafilter
         return "$language-$country";
     }
 
-    public static function replaceUTF8SoftHyphen($text)
+    public static function replaceUTF8SoftHyphen(string $text): string
     {
         $text = str_replace('­', '', $text);
         return $text;
     }
 
     /** this clears all the characters that are not alphanumeric and replaces them with space */
-    public static function clearNonAlphaNumericCharacters($text)
+    public static function clearNonAlphaNumericCharacters(string $text): string
     {
         $text = preg_replace('~[^a-zA-Z 0-9]+~', ' ', $text);
         return $text;
     }
 
-    public static function getCityFromAddress($address)
+    public static function getCityFromAddress(string $address): string
     {
         $result = null;
         $match = preg_match('~(?P<city>.*),\s(?P<state>[a-z]{0,2})~', $address, $result);
@@ -2200,7 +2121,7 @@ class Datafilter
      * @param string|float $value
      * @return bool
      */
-    public static function isLatitude($value)
+    public static function isLatitude(float|string $value): bool
     {
         if (preg_match('/^[-]?(([0-8]?[0-9])\.(\d+))|(90(\.0+)?)$/', $value)) {
             return true;
@@ -2215,7 +2136,7 @@ class Datafilter
      * @param string|float $value
      * @return bool
      */
-    public static function isLongitude($value)
+    public static function isLongitude(float|string $value): bool
     {
         if (preg_match('/^[-]?((((1[0-7][0-9])|([0-9]?[0-9]))\.(\d+))|180(\.0+)?)$/', $value)) {
             return true;
@@ -2225,51 +2146,25 @@ class Datafilter
     }
 
     /**
-     * A function that returns the lowest integer that is not 0.
-     * @param array $values
-     * @return mixed
+     * Returns the smallest integer value from an array that is not zero.
+     *
+     * @param array $values An array of values from which to find the smallest non-zero integer.
+     * @return int The smallest integer that is not zero. Returns `null` if no valid non-zero integer is found.
      */
-    public static function minNotNull(array $values)
+    public static function minNotNull(array $values): ?int
     {
-        return min(array_diff(array_map('intval', $values), array(0)));
+        return min(array_diff(array_map('intval', $values), [0]));
     }
 
-    /**
-     * Validates the postal code with the help of a helper class
-     */
-    public static function validatePostalCode($countryShortCode, $value)
-    {
-        $validator = new Validator_PostalCode();
-
-        return $validator->isValid(mb_strtoupper($countryShortCode), $value);
-    }
-
-    public static function validateMobilePhoneNumber($countryShortCode, $value)
-    {
-        $validator = new Validator_MobilePhoneNumber();
-
-        return $validator->isValid(mb_strtoupper($countryShortCode), $value);
-    }
-
-    /**
-     * Validates an interval of 2 dates (usually)
-     * @param $from
-     * @param $to
-     * @return bool
-     */
-    public static function validateRangeInterval($from, $to)
-    {
-        return $from <= $to;
-    }
 
     /**
      * Replace language-specific characters by ASCII-equivalents. e.g. ö => oe
      * @param string $s
      * @return string
      */
-    public static function normalizeDiacritics($s)
+    public static function normalizeDiacritics(string $s): string
     {
-        $replace = array(
+        $replace = [
             'ъ' => '-',
             'Ь' => '-',
             'Ъ' => '-',
@@ -2594,7 +2489,7 @@ class Datafilter
             'ſ' => 'z',
             'Ж' => 'zh',
             'ж' => 'zh'
-        );
+        ];
         return strtr($s, $replace);
     }
 
@@ -2604,7 +2499,7 @@ class Datafilter
      * @param $url
      * @return bool
      */
-    public static function urlHasSecureProtocol($url)
+    public static function urlHasSecureProtocol(string $url): bool
     {
         return (self::getProtocolFromUrl($url) == 'https');
     }
@@ -2615,7 +2510,7 @@ class Datafilter
      * @param $url
      * @return mixed|string
      */
-    public static function getProtocolFromUrl($url)
+    public static function getProtocolFromUrl(string $url): string
     {
         $urlParts = parse_url($url);
         if (isset($urlParts['scheme'])) {
@@ -2625,7 +2520,7 @@ class Datafilter
         return '';
     }
 
-    public static function format_vatID_with_country_code($vatID, $country_shortcode)
+    public static function format_vatID_with_country_code(string $vatID, string $country_shortcode): string
     {
         if (!str_starts_with(strtoupper($vatID), strtoupper($country_shortcode))) {
             $vatID = $country_shortcode . $vatID;
@@ -2639,16 +2534,15 @@ class Datafilter
      *
      * @param string $data
      * @return  string
-     * @author Draga Sergiu
      */
-    public function cleanNum($data)
+    public function cleanNum(string $data): stroing
     {
-        return str_replace(array(
+        return str_replace([
             ' ',
             ',',
             '.',
             '\''
-        ), '', $data);
+        ], '', $data);
     }
 
     /**
@@ -2656,7 +2550,7 @@ class Datafilter
      * @param     $url
      * @return
      */
-    public function urlpage($url)
+    public function urlpage(string $url): string
     {
         preg_match(
             '#^((?:(?:http(?:s)?|ftp):(/){1,3})?(?:(?:(?:[a-z0-9\.\-_]+\.)?[^/\?\.]{1,255}\.[a-z]{2,4})|[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}))#iu',
@@ -2670,7 +2564,7 @@ class Datafilter
     /**
      * Remove http, www from an URL.
      */
-    public function sitenormalize($url)
+    public function sitenormalize(string $url): string
     {
         $url = preg_replace('#^http://#iu', '', $url);
         $url = preg_replace('#^www\.#iu', '', $url);
@@ -2695,7 +2589,7 @@ class Datafilter
      * @param $string
      * @return string
      */
-    public static function underscoreToCamelCase($string) :string
+    public static function underscoreToCamelCase(string $string): string
     {
         $words = explode('_', $string);
         $camelCase = '';
