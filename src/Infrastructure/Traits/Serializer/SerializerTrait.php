@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace DDD\Infrastructure\Traits\Serializer;
 
 use DDD\Domain\Base\Entities\Entity;
-use DDD\Domain\Base\Entities\Lazyload\LazyLoad;
+use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\Datafilter;

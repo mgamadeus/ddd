@@ -8,7 +8,7 @@ use DDD\Domain\Common\Entities\Roles\Role;
 use DDD\Domain\Base\Entities\Attributes\RolesRequiredForUpdate;
 use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistoryTrait;
 use DDD\Domain\Base\Entities\Entity;
-use DDD\Domain\Base\Entities\Lazyload\LazyLoadRepo;
+use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptions;
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptionsTrait;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseIndex;

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace DDD\Domain\Base\Entities\Lazyload;
+namespace DDD\Domain\Base\Entities\LazyLoad;
 
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;

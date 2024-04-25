@@ -3,7 +3,7 @@
 namespace DDD\Domain\Common\Entities\Roles;
 
 use DDD\Domain\Base\Entities\EntitySet;
-use DDD\Domain\Base\Entities\Lazyload\LazyLoadRepo;
+use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Common\Repo\DB\Roles\DBRoles;
 use DDD\Domain\Common\Services\RolesService;
 

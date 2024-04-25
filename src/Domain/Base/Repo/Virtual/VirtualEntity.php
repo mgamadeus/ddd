@@ -6,7 +6,7 @@ namespace DDD\Domain\Base\Repo\Virtual;
 
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
-use DDD\Domain\Base\Entities\Lazyload\LazyLoad;
+use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 
 class VirtualEntity
 {

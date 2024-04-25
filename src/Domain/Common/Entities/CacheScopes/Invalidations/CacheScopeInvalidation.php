@@ -6,8 +6,8 @@ namespace DDD\Domain\Common\Entities\CacheScopes\Invalidations;
 
 use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistoryTrait;
 use DDD\Domain\Base\Entities\Entity;
-use DDD\Domain\Base\Entities\Lazyload\LazyLoad;
-use DDD\Domain\Base\Entities\Lazyload\LazyLoadRepo;
+use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
+use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseIndex;
 use DDD\Domain\Common\Entities\Accounts\Account;
 use DDD\Domain\Common\Entities\CacheScopes\CacheScope;

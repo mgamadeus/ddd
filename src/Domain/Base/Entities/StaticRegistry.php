@@ -4,8 +4,8 @@ declare (strict_types=1);
 
 namespace DDD\Domain\Base\Entities;
 
-use DDD\Domain\Base\Entities\Lazyload\LazyLoad;
-use DDD\Domain\Base\Entities\Lazyload\LazyLoadRepo;
+use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
+use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Infrastructure\Base\DateTime\Date;
 
 class StaticRegistry

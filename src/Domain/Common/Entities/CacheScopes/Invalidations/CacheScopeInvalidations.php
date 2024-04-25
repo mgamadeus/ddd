@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Common\Entities\CacheScopes\Invalidations;
 
 use DDD\Domain\Base\Entities\EntitySet;
-use DDD\Domain\Base\Entities\Lazyload\LazyLoadRepo;
+use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptions;
 use DDD\Domain\Common\Repo\DB\CacheScopes\Invalidations\DBCacheScopeInvalidations;
 use DDD\Domain\Common\Services\CacheScopeInvalidationsService;

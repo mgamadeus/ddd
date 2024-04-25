@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Reflection;
 
-use DDD\Domain\Base\Entities\Lazyload\LazyLoad;
+use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use ReflectionClassConstant;
 use ReflectionException;
 use RuntimeException;

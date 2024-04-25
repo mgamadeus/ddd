@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Entities\QueryOptions;
 
 use DDD\Domain\Base\Entities\EntitySet;
-use DDD\Domain\Base\Entities\Lazyload\LazyLoadTrait;
+use DDD\Domain\Base\Entities\LazyLoad\LazyLoadTrait;
 use DDD\Domain\Base\Entities\ObjectSet;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;

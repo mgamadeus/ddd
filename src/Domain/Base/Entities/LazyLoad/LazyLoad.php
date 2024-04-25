@@ -2,14 +2,11 @@
 
 declare(strict_types=1);
 
-namespace DDD\Domain\Base\Entities\Lazyload;
+namespace DDD\Domain\Base\Entities\LazyLoad;
 
 use Attribute;
 use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
 use DDD\Infrastructure\Reflection\ReflectionClass;
-use DDD\Infrastructure\Reflection\ReflectionProperty;
-use DDD\Infrastructure\Services\DDDService;
-use PHPUnit\TextUI\ReflectionException;
 
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE)]
 class LazyLoad

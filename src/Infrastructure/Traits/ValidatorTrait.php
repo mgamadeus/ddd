@@ -6,7 +6,7 @@ namespace DDD\Infrastructure\Traits;
 
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
-use DDD\Domain\Base\Entities\Lazyload\LazyLoad;
+use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\ParentChildrenTrait;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
 use DDD\Infrastructure\Validation\CustomValidationInputs;

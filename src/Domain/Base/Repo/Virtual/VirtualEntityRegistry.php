@@ -8,7 +8,7 @@ namespace DDD\Domain\Base\Repo\Virtual;
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
-use DDD\Domain\Base\Entities\Lazyload\LazyLoad;
+use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Repo\DB\Attributes\EntityCache;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Infrastructure\Cache\Cache;

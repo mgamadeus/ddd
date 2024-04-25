@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Entities;
 
-use DDD\Domain\Base\Entities\Lazyload\LazyLoadTrait;
+use DDD\Domain\Base\Entities\LazyLoad\LazyLoadTrait;
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
 use DDD\Infrastructure\Services\DDDService;
