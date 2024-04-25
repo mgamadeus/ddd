@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Symfony\Security\Authenticators;
 
-use DDD\Domain\Common\Services\LoginTokenService;
+use DDD\Domain\Common\Services\LoginTokensService;
 use DDD\Infrastructure\Exceptions\UnauthorizedException;
 use DDD\Presentation\Base\Dtos\RestResponseDto;
 use Symfony\Component\HttpFoundation\Request;
@@ -20,9 +20,9 @@ use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPasspor
 class LoginTokenAuthenticator extends AbstractAuthenticator
 {
     private Security $security;
-    private LoginTokenService $loginTokenService;
+    private LoginTokensService $loginTokenService;
 
-    public function __construct(Security $security, LoginTokenService $loginTokenService)
+    public function __construct(Security $security, LoginTokensService $loginTokenService)
     {
         $this->security = $security;
         $this->loginTokenService = $loginTokenService;

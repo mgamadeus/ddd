@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Common\Services;
 
+use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Services\EntitiesService;
 use DDD\Domain\Common\Entities\Accounts\Account;
 use DDD\Domain\Common\Entities\Accounts\LoginTokens\LoginToken;
+use DDD\Domain\Common\Entities\Accounts\LoginTokens\LoginTokens;
+use DDD\Domain\Common\Repo\DB\Accounts\LoginTokens\DBLoginToken;
+use DDD\Domain\Common\Repo\DB\Accounts\LoginTokens\DBLoginTokens;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
@@ -19,8 +23,17 @@ use Doctrine\ORM\OptimisticLockException;
 use Psr\Cache\InvalidArgumentException;
 use ReflectionException;
 
-class LoginTokenService extends EntitiesService
+/**
+ * @method LoginToken find(string|int|null $entityId, bool $useEntityRegistrCache = true)
+ * @method LoginTokens findAll(?int $offset = null, $limit = null, bool $useEntityRegistrCache = true)
+ * @method LoginToken update(Entity $entity)
+ * @method DBLoginTokens getEntitySetRepoClassInstance()
+ * @method DBLoginToken getEntityRepoClassInstance()
+ */
+class LoginTokensService extends EntitiesService
 {
+    public const string DEFAULT_ENTITY_CLASS = LoginToken::class;
+
     /**
      * Creates a login token
      * @param Account|null $account

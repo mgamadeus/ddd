@@ -78,7 +78,7 @@ class Marshaller implements MarshallerInterface
                 // Ermittele den Typ und die Länge des folgenden serialisierten Wertes
                 $serializedValue = substr($sessionSerializedData, $offset);
                 $value = @unserialize($serializedValue, ['allowed_classes' => false]);
-                if ($value === false) {
+                if ($value === false && $serializedValue !== 'b:0;') {
                     throw new Exception("Unserialize failed at offset $offset.");
                 }
                 $unserializedData[$key] = $value;
