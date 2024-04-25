@@ -162,13 +162,13 @@ trait DtoQueryOptionsTrait
      * Returns pagination limimt
      * @return int
      */
-    public function getTop(): int
+    public function getTop(): ?int
     {
-        return $this->top;
+        return $this->top ?? null;
     }
 
-    public function getSkip(): int
+    public function getSkip(): ?int
     {
-        return $this->skip;
+        return $this->skip ?? null;
     }
 }
