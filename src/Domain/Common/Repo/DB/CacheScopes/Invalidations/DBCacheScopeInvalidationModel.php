@@ -12,12 +12,12 @@ use DDD\Domain\Common\Repo\DB\Accounts\DBAccountModel;
 
 #[ORM\Entity]
 #[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
-#[ORM\Table(name: 'CacheScopeInvalidations')]
+#[ORM\Table(name: 'EntityCacheScopeInvalidations')]
 class DBCacheScopeInvalidationModel extends DoctrineModel
 {
 	public const MODEL_ALIAS = 'CacheScopeInvalidation';
 
-	public const TABLE_NAME = 'CacheScopeInvalidations';
+	public const TABLE_NAME = 'EntityCacheScopeInvalidations';
 
 	public const ENTITY_CLASS = 'DDD\Domain\Common\Entities\CacheScopes\Invalidations\CacheScopeInvalidation';
 

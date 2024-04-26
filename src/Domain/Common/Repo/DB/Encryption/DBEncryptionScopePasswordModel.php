@@ -11,12 +11,12 @@ use DateTime;
 
 #[ORM\Entity]
 #[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
-#[ORM\Table(name: 'EncryptionScopePasswords')]
+#[ORM\Table(name: 'EntityEncryptionScopePasswords')]
 class DBEncryptionScopePasswordModel extends DoctrineModel
 {
 	public const MODEL_ALIAS = 'EncryptionScopePassword';
 
-	public const TABLE_NAME = 'EncryptionScopePasswords';
+	public const TABLE_NAME = 'EntityEncryptionScopePasswords';
 
 	public const ENTITY_CLASS = 'DDD\Domain\Common\Entities\Encryption\EncryptionScopePassword';
 

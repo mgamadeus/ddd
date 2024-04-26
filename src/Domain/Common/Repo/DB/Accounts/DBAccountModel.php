@@ -11,12 +11,12 @@ use DateTime;
 
 #[ORM\Entity]
 #[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
-#[ORM\Table(name: 'Accounts')]
+#[ORM\Table(name: 'EntityAccounts')]
 class DBAccountModel extends DoctrineModel
 {
 	public const MODEL_ALIAS = 'Account';
 
-	public const TABLE_NAME = 'Accounts';
+	public const TABLE_NAME = 'EntityAccounts';
 
 	public const ENTITY_CLASS = 'DDD\Domain\Common\Entities\Accounts\Account';
 

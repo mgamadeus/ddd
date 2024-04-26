@@ -12,12 +12,12 @@ use DDD\Domain\Common\Repo\DB\Accounts\DBAccountModel;
 
 #[ORM\Entity]
 #[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
-#[ORM\Table(name: 'LoginTokens')]
+#[ORM\Table(name: 'EntityLoginTokens')]
 class DBLoginTokenModel extends DoctrineModel
 {
 	public const MODEL_ALIAS = 'LoginToken';
 
-	public const TABLE_NAME = 'LoginTokens';
+	public const TABLE_NAME = 'EntityLoginTokens';
 
 	public const ENTITY_CLASS = 'DDD\Domain\Common\Entities\Accounts\LoginTokens\LoginToken';
 

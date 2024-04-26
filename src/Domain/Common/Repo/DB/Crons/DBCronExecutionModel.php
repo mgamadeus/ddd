@@ -11,12 +11,12 @@ use DateTime;
 
 #[ORM\Entity]
 #[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
-#[ORM\Table(name: 'CronExecutions')]
+#[ORM\Table(name: 'EntityCronExecutions')]
 class DBCronExecutionModel extends DoctrineModel
 {
 	public const MODEL_ALIAS = 'CronExecution';
 
-	public const TABLE_NAME = 'CronExecutions';
+	public const TABLE_NAME = 'EntityCronExecutions';
 
 	public const ENTITY_CLASS = 'DDD\Domain\Common\Entities\Crons\CronExecution';
 
