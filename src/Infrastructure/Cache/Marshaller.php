@@ -63,34 +63,18 @@ class Marshaller implements MarshallerInterface
      */
     protected function unserializeSessionData(string $sessionSerializedData, array $unserializedData = []): array
     {
-        $offset = 0;
-        try {
-            while ($offset < strlen($sessionSerializedData)) {
-                if (!strstr(substr($sessionSerializedData, $offset), '|')) {
-                    throw new Exception("Invalid session data at offset $offset.");
-                }
-                $pos = strpos($sessionSerializedData, '|', $offset);
-                $num = $pos - $offset;
-                $key = substr($sessionSerializedData, $offset, $num);
-                $offset += $num + 1;
-
-                // Der folgende Teil ist entscheidend:
-                // Ermittele den Typ und die Länge des folgenden serialisierten Wertes
-                $serializedValue = substr($sessionSerializedData, $offset);
-                $value = @unserialize($serializedValue, ['allowed_classes' => false]);
-                if ($value === false && $serializedValue !== 'b:0;') {
-                    throw new Exception("Unserialize failed at offset $offset.");
-                }
-                $unserializedData[$key] = $value;
-
-                // Update des Offsets nach der korrekten Länge des unserialisierten Wertes
-                $lengthOfSerializedValue = strlen(serialize($value));
-                $offset += $lengthOfSerializedValue;
-            }
-        } catch (\Exception $e) {
-            echo 'Caught exception: ', $e->getMessage(), "\n";
+        if (!str_contains($sessionSerializedData, '|')) {
+            throw new Exception('Error while unserializing session data: ' . $sessionSerializedData);
         }
+        $separatorPosition = strpos($sessionSerializedData, '|');
+        $key = substr($sessionSerializedData, 0, $separatorPosition);
+        $value = @unserialize(substr($sessionSerializedData, ++$separatorPosition), ['allowed_classes' => false]);
+        $unserializedData[$key] = $value;
+        $sessionSerializedData = substr($sessionSerializedData, strlen(serialize($value)) + $separatorPosition);
 
+        if ($sessionSerializedData !== '') {
+            return $this->unserializeSessionData($sessionSerializedData, $unserializedData);
+        }
         return $unserializedData;
     }
 
