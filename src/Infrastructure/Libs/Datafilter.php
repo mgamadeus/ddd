@@ -2586,7 +2586,7 @@ class Datafilter
     }
 
     /**
-     * @param $string
+     * @param string $string
      * @return string
      */
     public static function underscoreToCamelCase(string $string): string
@@ -2597,5 +2597,47 @@ class Datafilter
             $camelCase .= ucfirst($word);
         }
         return lcfirst($camelCase);
+    }
+
+    /**
+     * Obtain a valid IP address for the given domain name.
+     *
+     * @param string $domainName The domain name for which to obtain the IP address.
+     * @return mixed|null The valid IP address for the domain, or null if it is not valid.
+     */
+    public static function getValidIPForHost(string $domainName): ?string
+    {
+        $ips = gethostbynamel($domainName);
+
+        if (false === $ips) {
+            return null;
+        }
+
+        // Select the first IP address from the list, if available
+        $ip = null;
+        if (count($ips) > 0) {
+            $ip = $ips[0];
+        }
+
+        // Check if the selected IP address is valid, return it if valid, otherwise return null
+        return self::isValidIPAddress($ip) ? $ip : null;
+    }
+
+    /**
+     * This function checks if the provided IP address is valid.
+     * If the IP address is not provided, it returns false.
+     * It uses the filter_var function to validate the IP address, excluding reserved ranges.
+     *
+     * @param string|null $ipAddress The IP address to validate
+     * @return bool True if the IP address is valid, otherwise false
+     */
+    public static function isValidIPAddress(?string $ipAddress = null): bool
+    {
+        if (null === $ipAddress) {
+            return false;
+        }
+
+        // Validate the provided IP address using filter_var, excluding reserved ranges
+        return (bool)filter_var($ipAddress, FILTER_VALIDATE_IP, FILTER_FLAG_NO_RES_RANGE);
     }
 }
