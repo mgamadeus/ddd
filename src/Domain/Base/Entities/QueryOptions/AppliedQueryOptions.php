@@ -44,7 +44,7 @@ class AppliedQueryOptions extends ValueObject
     public ?int $totalResults;
 
     public function __construct(
-        QueryOptions $queryOptions,
+        QueryOptions $queryOptions = null,
     ) {
         if (isset($queryOptions->top)) {
             $this->top = $queryOptions->top;
