@@ -21,16 +21,18 @@ use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Exceptions\BadRequestException;
+use DDD\Infrastructure\Exceptions\ForbiddenException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Services\AuthService;
 use DDD\Infrastructure\Services\DDDService;
-use Doctrine\ORM\Exception\ORMException;
+use Doctrine\DBAL\Exception;
 use Doctrine\ORM\NonUniqueResultException;
-use Doctrine\ORM\OptimisticLockException;
 use Doctrine\ORM\Query;
 use Doctrine\ORM\Query\Expr\From;
 use Doctrine\ORM\QueryBuilder;
+use Doctrine\Persistence\Mapping\MappingException;
+use JsonException;
 use Psr\Cache\InvalidArgumentException;
 use ReflectionException;
 use Throwable;
@@ -108,6 +110,10 @@ abstract class DatabaseRepoEntity extends RepoEntity
      * @param DefaultObject $initiatingEntity
      * @param LazyLoad $lazyloadAttributeInstance
      * @return DefaultObject|null
+     * @throws BadRequestException
+     * @throws InternalErrorException
+     * @throws InvalidArgumentException
+     * @throws ReflectionException
      */
     public function lazyload(
         DefaultObject &$initiatingEntity,
@@ -128,7 +134,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
      * @param DoctrineModel|null $loadedOrmInstance
      * @param bool $deferredCaching
      * @param array $initiatorClasses
-     * @return Entity|EntitySet|null
+     * @return DefaultObject|null
      * @throws BadRequestException
      * @throws InternalErrorException
      * @throws InvalidArgumentException
@@ -253,7 +259,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
     /**
      * Applies restrictions to passed QueryBuilder used for loading Entities
      * if Restriction is applied, returns true, else false
-     * @param QueryBuilder $queryBuilder
+     * @param DoctrineQueryBuilder $queryBuilder
      * @return bool
      */
     public static function applyReadRightsQuery(DoctrineQueryBuilder &$queryBuilder): bool
@@ -264,6 +270,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
     /**
      * Applies translation join to query builder to use translations table and load implicit translations
      * @param QueryBuilder $queryBuilder
+     * @param null $doctrineModel
      * @return QueryBuilder
      * @throws ReflectionException
      */
@@ -279,10 +286,6 @@ abstract class DatabaseRepoEntity extends RepoEntity
         if (!$doctrineModel) {
             $doctrineModel = static::BASE_ORM_MODEL;
         }
-        // If current Language is default language, no join needs to be applied
-        if ($translationAttributeInstance::isCurrentLanguageCodeDefaultLanguage()) {
-            return $queryBuilder;
-        }
         $tableName = $doctrineModel::getTableName();
         $baseOrmModelAlias = static::getBaseModelAlias();
         $translationAttributeInstance->applyTranslationJoinToQueryBuilder(
@@ -294,7 +297,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
     }
 
     /**
-     * Reteurns translation attribute instance if present
+     * Returns translation attribute instance if present
      * @return DatabaseTranslation|false
      * @throws ReflectionException
      */
@@ -308,8 +311,8 @@ abstract class DatabaseRepoEntity extends RepoEntity
      * sometimes processing after mapping is needed, as e.g. we load something from cache, e.g. ProjectSetting
      * and we need to add something there, e.g. Rights DirectorySettings from Account, this should not be cached, as it could be
      * that another account accesses the same project with a different set of rights...
-     * @param Entity|EntitySet|null $entity
-     * @return Entity|EntitySet|null
+     * @param DefaultObject|null $entity
+     * @return DefaultObject|null
      */
     public function postProcessAfterMapping(
         DefaultObject|null &$entity
@@ -351,10 +354,11 @@ abstract class DatabaseRepoEntity extends RepoEntity
      * @throws BadRequestException
      * @throws InternalErrorException
      * @throws InvalidArgumentException
-     * @throws NonUniqueResultException
-     * @throws ORMException
-     * @throws OptimisticLockException
      * @throws ReflectionException
+     * @throws ForbiddenException
+     * @throws Exception
+     * @throws MappingException
+     * @throws JsonException
      */
     public function update(
         Entity &$entity,
@@ -465,8 +469,8 @@ abstract class DatabaseRepoEntity extends RepoEntity
 
     /**
      * Based on RolesRequiredForUpdate returns wheather current Account has the right to update or delete current Entity based on his Roles
-     * @param QueryBuilder $queryBuilder
      * @return bool
+     * @throws ReflectionException
      */
     public static function canUpdateOrDeleteBasedOnRoles(): bool
     {
@@ -502,7 +506,10 @@ abstract class DatabaseRepoEntity extends RepoEntity
      * Considers alreaadyUpdatedChildProperties and skips them, returns all properties that have been updated
      * @param Entity $entity
      * @param int $depth
-     * @return void
+     * @param bool $entityAlreadyStored
+     * @param array $alreaadyUpdatedChildProperties
+     * @return array
+     * @throws ReflectionException
      */
     public function updateDependentEntities(
         Entity &$entity,
@@ -565,7 +572,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
     /**
      * Applies restrictions to passed QueryBuilder used for updating Entities,
      * if Restriction is applied, returns true, else false
-     * @param QueryBuilder $queryBuilder
+     * @param DoctrineQueryBuilder $queryBuilder
      * @return bool
      */
     public static function applyUpdateRightsQuery(DoctrineQueryBuilder &$queryBuilder): bool
@@ -578,8 +585,6 @@ abstract class DatabaseRepoEntity extends RepoEntity
      * @return true
      * @throws BadRequestException
      * @throws NonUniqueResultException
-     * @throws ORMException
-     * @throws OptimisticLockException
      * @throws ReflectionException
      */
     public function delete(Entity &$entity): bool
@@ -627,7 +632,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
     /**
      * Applies restrictions to passed QueryBuilder used for deleting Entities
      * if Restriction is applied, returns true, else false
-     * @param QueryBuilder $queryBuilder
+     * @param DoctrineQueryBuilder $queryBuilder
      * @return bool
      */
     public static function applyDeleteRightsQuery(DoctrineQueryBuilder &$queryBuilder): bool

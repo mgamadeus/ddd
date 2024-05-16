@@ -9,26 +9,19 @@ use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Repo\DatabaseRepoEntity;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
-use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
-use DDD\Infrastructure\Exceptions\ForbiddenException;
 use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Reflection\ReflectionClass;
-use Doctrine\DBAL\Exception;
-use Doctrine\ORM\Exception\ORMException;
-use Doctrine\ORM\OptimisticLockException;
-use Doctrine\ORM\Query\Expr;
 use Doctrine\ORM\QueryBuilder;
 use ReflectionException;
 use ReflectionProperty;
-use stdClass;
 
 #[Attribute(Attribute::TARGET_CLASS)]
 class DatabaseTranslation
 {
     use BaseAttributeTrait;
 
-    /** @var bool whether to use registry APC cache for this Repo OrmEntity or not */
-    public const MODELS_WITH_SEARCHABLE_COLUMNS = [];
+    /** @var array whether to use registry APC cache for this Repo OrmEntity or not */
+    public const array MODELS_WITH_SEARCHABLE_COLUMNS = [];
 
     /** @var string|null Default language code is set based on ENTITY_TRANSLATIONS_DEFAULT_LANGUAGE env variable, or defaults to en if not set */
     protected static ?string $defaultLanguageCode = null;
@@ -37,7 +30,7 @@ class DatabaseTranslation
     public static string $languageCode;
 
     /** @var DatabaseTranslation[] */
-    public static $instance = [];
+    public static array $instance = [];
 
     /** @var string[] Properties to translate */
     public array $propertiesToTranslate = [];
@@ -75,8 +68,7 @@ class DatabaseTranslation
 
     /**
      * Returns current glonal languageCode
-     * @param string $languageCode
-     * @return void
+     * @return string
      */
     public static function getLanguageCode(): string
     {
@@ -133,13 +125,20 @@ class DatabaseTranslation
         return implode(array_reverse($ar[0]));
     }
 
+    /**
+     * @param string $repoEntityClassName
+     * @return false|static
+     * @throws ReflectionException
+     */
     public static function getInstance(string $repoEntityClassName): static|false
     {
         if (isset(self::$instance[$repoEntityClassName]) && self::$instance[$repoEntityClassName]) {
             return self::$instance[$repoEntityClassName];
-        } elseif (isset(self::$instance[$repoEntityClassName]) && !self::$instance[$repoEntityClassName]) {
+        }
+        if (isset(self::$instance[$repoEntityClassName]) && !self::$instance[$repoEntityClassName]) {
             return false;
         }
+
         $reflectionClass = ReflectionClass::instance($repoEntityClassName);
         self::$instance[$repoEntityClassName] = false;
         foreach ($reflectionClass->getAttributes() as $attributes) {
@@ -175,6 +174,10 @@ class DatabaseTranslation
         string $tableName,
         string $modelAlias
     ): ?QueryBuilder {
+        // If current Language is default language, no join needs to be applied
+        if (static::isCurrentLanguageCodeDefaultLanguage()) {
+            return $queryBuilder;
+        }
         return $queryBuilder;
     }
 
@@ -183,27 +186,25 @@ class DatabaseTranslation
      * @param DoctrineModel $doctrineModelInstance
      * @return void
      */
-    public function applyTranslationToDoctrineModelInstance(DoctrineModel &$doctrineModelInstance): void {}
+    public function applyTranslationToDoctrineModelInstance(DoctrineModel &$doctrineModelInstance): void
+    {
+    }
 
     /**
      * Updates or creates Translation
      * @param Entity $entity
      * @param DatabaseRepoEntity $databaseRepoEntity
      * @return void
-     * @throws ForbiddenException
-     * @throws Exception
-     * @throws ReflectionException
      */
-    public function updateOrCreateTranslation(Entity $entity, DatabaseRepoEntity $databaseRepoEntity): void {}
+    public function updateOrCreateTranslation(Entity $entity, DatabaseRepoEntity $databaseRepoEntity): void
+    {
+    }
 
     /**
      * Deletes translation
      * @param Entity $entity
      * @param DatabaseRepoEntity $databaseRepoEntity
      * @return bool
-     * @throws ReflectionException
-     * @throws ORMException
-     * @throws OptimisticLockException
      */
     public function deleteTranslation(Entity $entity, DatabaseRepoEntity $databaseRepoEntity): bool
     {

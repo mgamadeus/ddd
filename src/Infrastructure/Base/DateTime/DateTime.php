@@ -10,19 +10,23 @@ namespace DDD\Infrastructure\Base\DateTime;
  */
 class DateTime extends \DateTime
 {
-    public const SIMPLE = 'Y-m-d H:i:s';
-    public const UBERALL = 'Y-m-d\TH:i:s.uP';
-    public const DATE_RFC3339ZULU = 'Y-m-d\TH:i:sp';
-    public const DATE_RFC3339ZULU_MILLISECONDS = 'Y-m-d\TH:i:s.up';
+    public const string SIMPLE = 'Y-m-d H:i:s';
 
-    public const DATE_POSTGRES_WITH_TIMEZONE = 'Y-m-d H:i:sO';
+    public const string UBERALL = 'Y-m-d\TH:i:s.uP';
 
-    public const DATE_ARGUS_BUSINESS_LISTINGS = 'Y-m-d\TH:i:s.v\Z';
+    public const string DATE_RFC3339ZULU = 'Y-m-d\TH:i:sp';
 
+    public const string DATE_RFC3339ZULU_MILLISECONDS = 'Y-m-d\TH:i:s.up';
+
+    public const string DATE_POSTGRES_WITH_TIMEZONE = 'Y-m-d H:i:sO';
+
+    public const string DATE_ARGUS_BUSINESS_LISTINGS = 'Y-m-d\TH:i:s.v\Z';
+
+    public const string UNIX = 'U';
 
     /**
      * creates Date / DateTime from timestamp
-     * @param string $stringFormattedDate
+     * @param int $timestamp
      * @return static
      */
     public static function fromTimestamp(int $timestamp): static
@@ -35,7 +39,8 @@ class DateTime extends \DateTime
     /**
      * creates DateTime from Atom Date Format
      * @param string $stringFormattedDate
-     * @return Date
+     * @param string $dateTimeFormat
+     * @return DateTime|bool
      */
     public static function fromString(string $stringFormattedDate, string $dateTimeFormat = self::SIMPLE): DateTime|bool
     {
