@@ -503,7 +503,7 @@ class DatabaseModel extends ValueObject
     public static function getModelClassWithNamespaceForEntityClassWithNamespace(
         ClassWithNamespace $entityClassWithNamespace
     ): ClassWithNamespace {
-        $namespace = str_replace('Entities', 'Repo\\DB', $entityClassWithNamespace->namespace);
+        $namespace = str_replace('\\Entities\\', '\\Repo\\DB\\', $entityClassWithNamespace->namespace);
         $className = 'DB' . $entityClassWithNamespace->name . 'Model';
         $pathParts = explode('/', $entityClassWithNamespace->filename);
         $filenamePart = array_pop($pathParts); // Get the last part which is the filename
@@ -521,7 +521,6 @@ class DatabaseModel extends ValueObject
         $modelClassWithNamespace = new ClassWithNamespace($className, $namespace, $newFullFileName);#
         return $modelClassWithNamespace;
     }
-
 
     /**
      * Generates PHP Code for Doctrine model
