@@ -66,13 +66,30 @@ class Route extends \Symfony\Component\Routing\Annotation\Route
         if (!$path || !is_string($path)) {
             return;
         }
-        preg_match_all('{\w*Id}', $path, $matches);
 
-        if (!isset($matches)) {
-            return;
-        }
-        foreach ($matches[0] as $match) {
-            $requirements[$match] = '\d*';
+        // Find all parameters without looking for requirements
+        preg_match_all('/\{([^{}]+)\}/', $path, $matches);
+
+        foreach ($matches[1] as $paramName) {
+            // Look for <...> requirement within the match
+            if (preg_match('/(<[^>]+>)/', $paramName, $requirementMatch)) {
+                $paramRequirement = $requirementMatch[1];
+            } else {
+                $paramRequirement = null;
+            }
+
+            // If a requirement is defined in the route, skip setting a default
+            if ($paramRequirement) {
+                continue;
+            }
+
+            // If $requirements has a directive for the current parameter, use it
+            if (isset($requirements[$paramName])) {
+                continue;
+            }
+
+            // Set the default if no requirement is defined and $requirements doesn't contain the parameter
+            $requirements[$paramName] = '\d*';
         }
     }
 }
