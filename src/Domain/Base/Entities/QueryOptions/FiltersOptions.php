@@ -181,6 +181,9 @@ class FiltersOptions extends ObjectSet
      */
     public function getExpressionForProperty(string $property, ?array $operators = null): ?FiltersOptions
     {
+        if (!isset($this->type)) {
+            return null;
+        }
         if ($this->type == self::TYPE_EXPRESSION && $this->property == $property) {
             if (!$operators || (in_array($this->operator, $operators))) {
                 return $this;
@@ -218,17 +221,21 @@ class FiltersOptions extends ObjectSet
             return null;
         }
         $minOrMaxPropertyValue = null;
-        if (in_array(
-            $minOrMaxFiltersOptionsForValue->operator,
-            $returnMin ? [self::OPERATOR_GREATER_OR_EQUAL, self::OPERATOR_GREATER_THAN] : [
-                self::OPERATOR_LESS_OR_EQUAL,
-                self::OPERATOR_LESS_THAN
-            ]
-        )) {
+        if (
+            in_array(
+                $minOrMaxFiltersOptionsForValue->operator,
+                $returnMin ? [self::OPERATOR_GREATER_OR_EQUAL, self::OPERATOR_GREATER_THAN] : [
+                    self::OPERATOR_LESS_OR_EQUAL,
+                    self::OPERATOR_LESS_THAN
+                ]
+            )
+        ) {
             $minOrMaxPropertyValue = $minOrMaxFiltersOptionsForValue->value;
-        } elseif ($minOrMaxFiltersOptionsForValue->operator == self::OPERATOR_BETWEEN && is_array(
+        } elseif (
+            $minOrMaxFiltersOptionsForValue->operator == self::OPERATOR_BETWEEN && is_array(
                 $minOrMaxFiltersOptionsForValue->value
-            ) && $this->count($minOrMaxFiltersOptionsForValue->value) > 1) {
+            ) && $this->count($minOrMaxFiltersOptionsForValue->value) > 1
+        ) {
             $minOrMaxPropertyValue = $minOrMaxFiltersOptionsForValue->value[$returnMin ? 0 : 1];
         }
         return $minOrMaxPropertyValue;
@@ -352,10 +359,12 @@ class FiltersOptions extends ObjectSet
                 );
             }
         }
-        if ($filterDefinition->options && !is_array($this->value) && !in_array(
+        if (
+            $filterDefinition->options && !is_array($this->value) && !in_array(
                 $this->value,
                 $filterDefinition->options
-            )) {
+            )
+        ) {
             throw new BadRequestException(
                 "Filter applied to property name '{$this->property}' is not allowed. Allowed values are: [" . implode(
                     ', ',
@@ -428,7 +437,6 @@ class FiltersOptions extends ObjectSet
         return $queryBuilder;
     }
 
-
     protected function getFiltersExpressionForDoctrineQueryBuilder(
         DoctrineQueryBuilder &$queryBuilder,
         string $baseModelClass,
@@ -490,9 +498,11 @@ class FiltersOptions extends ObjectSet
                 return $queryBuilder->expr()->$operator("{$baseAliasApplied}{$propertyName}");
             }
             // if filter is not based on expand definition, we check if expression is valid for Model
-            if (!$this?->getFiltersDefinition()?->getExpandDefinition() && !$baseModelClass::isValidDatabaseExpression(
+            if (
+                !$this?->getFiltersDefinition()?->getExpandDefinition() && !$baseModelClass::isValidDatabaseExpression(
                     $baseAliasApplied . $propertyName
-                )) {
+                )
+            ) {
                 return null;
             }
             $parameterCount = $queryBuilder->getParameters()->count() + 1;
@@ -510,7 +520,6 @@ class FiltersOptions extends ObjectSet
         }
     }
 
-
     /**
      * Returns flat array of all expressions, especially usefull in cases where no logical operations are possible,
      * e.g. with some external APIs
@@ -519,6 +528,9 @@ class FiltersOptions extends ObjectSet
     public function getExpressions(): array
     {
         $return = [];
+        if (!isset($this->type)) {
+            return $return;
+        }
         if ($this->type == self::TYPE_OPERATION) {
             foreach ($this->getElements() as $filtersOptions) {
                 $return = array_merge($return, $filtersOptions->getExpressions());
