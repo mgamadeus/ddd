@@ -67,8 +67,9 @@ class Route extends \Symfony\Component\Routing\Annotation\Route
             return;
         }
 
-        // Find all parameters without looking for requirements
+        // Find all parameters ending with Id, to enforce integer Id's
         preg_match_all('/\{([^{}]+)\}/', $path, $matches);
+        preg_match_all('{\w*Id}', $path, $matches);
 
         foreach ($matches[1] as $paramName) {
             // Look for <...> requirement within the match
@@ -89,7 +90,7 @@ class Route extends \Symfony\Component\Routing\Annotation\Route
             }
 
             // Set the default if no requirement is defined and $requirements doesn't contain the parameter
-            $requirements[$paramName] = '\d*';
+                $requirements[$paramName] = '\d*';
         }
     }
 }
