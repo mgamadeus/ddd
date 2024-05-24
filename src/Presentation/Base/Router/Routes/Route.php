@@ -61,17 +61,15 @@ class Route extends \Symfony\Component\Routing\Annotation\Route
      * @param array $requirements
      * @return void
      */
-    private function addRouteParamRequirements(array|string|null $path, array &$requirements): void
+    protected function addRouteParamRequirements(array|string|null $path, array &$requirements): void
     {
         if (!$path || !is_string($path)) {
             return;
         }
-
         // Find all parameters ending with Id, to enforce integer Id's
-        preg_match_all('/\{([^{}]+)\}/', $path, $matches);
-        preg_match_all('{\w*Id}', $path, $matches);
+        preg_match_all('/\{([^{}]+Id(?:<[^>]+>)?)\}/', $path, $matches);
 
-        foreach ($matches[0] as $paramName) {
+        foreach ($matches[1] as $paramName) {
             // Look for <...> requirement within the match
             if (preg_match('/(<[^>]+>)/', $paramName, $requirementMatch)) {
                 $paramRequirement = $requirementMatch[1];
