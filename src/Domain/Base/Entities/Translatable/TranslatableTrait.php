@@ -15,7 +15,7 @@ trait TranslatableTrait
      * @var TranslationInfos|null Holds information about translations
      */
     #[DatabaseColumn(ignoreProperty: true)]
-    public ?TranslationInfos $translationInfos;
+    protected ?TranslationInfos $translationInfos;
 
     public function getTranslationInfos(): TranslationInfos
     {
@@ -38,7 +38,8 @@ trait TranslatableTrait
      * @param string $propertyName The name of the property to retrieve translations for.
      * @return array|null An array of translations, or null if the property does not exist or has no translations.
      */
-    public function getTranslationsForProperty(string $propertyName): ?array{
+    public function getTranslationsForProperty(string $propertyName): ?array
+    {
         return $this->getTranslationInfos()->getTranslationsForProperty($propertyName);
     }
 
@@ -49,7 +50,8 @@ trait TranslatableTrait
      * @param array $translations An associative array where the keys represent language codes and the values represent the translations.
      * @return void
      */
-    public function setTranslationsForProperty(string $propertyName, array $translations): void {
+    public function setTranslationsForProperty(string $propertyName, array $translations): void
+    {
         $this->getTranslationInfos()->setTranslationsForProperty($propertyName, $translations);
     }
 
@@ -63,7 +65,13 @@ trait TranslatableTrait
      * @param string|null $writingStyle The writing style. Default is null.
      * @return void
      */
-    public function setTranslationForProperty(string $propertyName, string $translation, string $languageCode = null, string $countryCode = null, string $writingStyle = null):void{
+    public function setTranslationForProperty(
+        string $propertyName,
+        string $translation,
+        string $languageCode = null,
+        string $countryCode = null,
+        string $writingStyle = null
+    ): void {
         $this->getTranslationInfos()->setTranslationForProperty($propertyName, $translation, $languageCode, $countryCode, $writingStyle);
     }
 
@@ -77,7 +85,13 @@ trait TranslatableTrait
      * @param bool $useFallBack Whether to use fallback translations. Default is false.
      * @return string|null The translation for the property, or null if not found.
      */
-    public function getTranslationForProperty(string $propertyName, string $languageCode = null, string $countryCode = null, string $writingStyle = null, bool $useFallBack = false):?string{
+    public function getTranslationForProperty(
+        string $propertyName,
+        string $languageCode = null,
+        string $countryCode = null,
+        string $writingStyle = null,
+        bool $useFallBack = false
+    ): ?string {
         return $this->getTranslationInfos()->getTranslationForProperty($propertyName, $languageCode, $countryCode, $writingStyle);
     }
 }
