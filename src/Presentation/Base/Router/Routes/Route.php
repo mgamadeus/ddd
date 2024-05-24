@@ -71,7 +71,7 @@ class Route extends \Symfony\Component\Routing\Annotation\Route
         preg_match_all('/\{([^{}]+)\}/', $path, $matches);
         preg_match_all('{\w*Id}', $path, $matches);
 
-        foreach ($matches[1] as $paramName) {
+        foreach ($matches[0] as $paramName) {
             // Look for <...> requirement within the match
             if (preg_match('/(<[^>]+>)/', $paramName, $requirementMatch)) {
                 $paramRequirement = $requirementMatch[1];
@@ -90,7 +90,7 @@ class Route extends \Symfony\Component\Routing\Annotation\Route
             }
 
             // Set the default if no requirement is defined and $requirements doesn't contain the parameter
-                $requirements[$paramName] = '\d*';
+            $requirements[$paramName] = '\d*';
         }
     }
 }
