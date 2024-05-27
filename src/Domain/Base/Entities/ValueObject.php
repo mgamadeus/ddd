@@ -66,6 +66,6 @@ class ValueObject extends DefaultObject
         } elseif (is_object($repoObject)) {
             $repoObjectProcessed = $repoObject;
         }
-        $this->setPropertiesFromObject($repoObjectProcessed);
+        $this->setPropertiesFromObject($repoObjectProcessed, false);
     }
 }

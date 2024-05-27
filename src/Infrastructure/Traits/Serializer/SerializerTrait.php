@@ -781,7 +781,20 @@ trait SerializerTrait
                 } else {
                     $validType = false;
                     foreach ($allowedTypes->allowedTypes as $allowedType => $true) {
-                        if (isset($value->objectType) && is_a($value->objectType, $allowedType, true)) {
+                        $invalidClass = false;
+                        try {
+                            if (isset($value->objectType) && !class_exists($value->objectType)) {
+                                $invalidClass = true;
+                            }
+                        } catch (Exception) {
+                            $invalidClass = true;
+                        }
+
+                        if (!$invalidClass && isset($value->objectType) && is_a(
+                                $value->objectType,
+                                $allowedType,
+                                true
+                            )) {
                             $typeToInstance = $value->objectType;
                             $validType = true;
                             break;
