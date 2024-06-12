@@ -38,7 +38,7 @@ class Arr
         return ($hasStrKeys) ? $resultObj : $resultArr;
     }
 
-    public static function fromObject(&$obj): ?array
+    public static function fromObject($obj): ?array
     {
         $arr = is_object($obj) ? get_object_vars($obj) : $obj;
         if ($obj && (is_array($obj) || is_object($obj))) {
@@ -75,7 +75,7 @@ class Arr
      * @author Daniel <daniel (at) danielsmedegaardbuus (dot) dk>
      * @author Gabriel Sobrinho <gabriel (dot) sobrinho (at) gmail (dot) com>
      */
-    public static function mergeRecursiveDistinct(array &$array1, array &$array2):?array {
+    public static function mergeRecursiveDistinct(array $array1, array $array2):?array {
         $merged = $array1;
 
         foreach ($array2 as $key => &$value) {
