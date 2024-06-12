@@ -75,7 +75,8 @@ class Arr
      * @author Daniel <daniel (at) danielsmedegaardbuus (dot) dk>
      * @author Gabriel Sobrinho <gabriel (dot) sobrinho (at) gmail (dot) com>
      */
-    public static function mergeRecursiveDistinct(array $array1, array $array2):?array {
+    public static function mergeRecursiveDistinct(array $array1, array $array2): ?array
+    {
         $merged = $array1;
 
         foreach ($array2 as $key => &$value) {
@@ -87,5 +88,18 @@ class Arr
         }
 
         return $merged;
+    }
+
+    /**
+     * Merge two objects recursively while removing duplicate values.
+     *
+     * @param stdClass $object1 The first object to merge.
+     * @param stdClass $object2 The second object to merge.
+     * @return stdClass|null The merged object, or null if the merge failed.
+     * @throws Exception If an error occurs during the merge process.
+     */
+    public static function mergeObjectsRecursiveDistinct(stdClass $object1, stdClass $object2): ?stdClass
+    {
+        return self::toObject(self::mergeRecursiveDistinct(self::fromObject($object1), self::fromObject($object2)));
     }
 }
