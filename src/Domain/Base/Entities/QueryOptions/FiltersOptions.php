@@ -441,7 +441,7 @@ class FiltersOptions extends ObjectSet
         DoctrineQueryBuilder &$queryBuilder,
         string $baseModelClass,
         callable $mappingFunction = null
-    ): Expr\Orx|Expr\Andx|Expr\Comparison|string|null {
+    ): Expr\Orx|Expr\Andx|Expr\Comparison|Expr\Func|string|null {
         /** @var DoctrineModel $baseModelClass */
         $baseAlias = $baseModelClass::MODEL_ALIAS;
         if ($this->type == self::TYPE_OPERATION) {
