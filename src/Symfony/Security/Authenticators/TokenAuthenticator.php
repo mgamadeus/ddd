@@ -7,11 +7,13 @@ namespace DDD\Symfony\Security\Authenticators;
 use DDD\Infrastructure\Exceptions\UnauthorizedException;
 use DDD\Infrastructure\Libs\JWTPayload;
 use DDD\Presentation\Base\Dtos\RestResponseDto;
+use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
+use Symfony\Component\Security\Core\Authorization\Voter\AuthenticatedVoter;
 use Symfony\Component\Security\Core\Exception\AuthenticationException;
-use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\Security\Http\AccessMapInterface;
 use Symfony\Component\Security\Http\Authenticator\AbstractAuthenticator;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
 use Symfony\Component\Security\Http\Authenticator\Passport\Passport;
@@ -19,14 +21,22 @@ use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPasspor
 
 class TokenAuthenticator extends AbstractAuthenticator
 {
-    private Security $security;
+    protected Security $security;
+    private AccessMapInterface $accessMap;
 
-    public const TOKEN_BEARER = 'Bearer';
-    public const TOKEN_BASIC = 'Basic';
+    public const string TOKEN_BEARER = 'Bearer';
+    public const string TOKEN_BASIC = 'Basic';
 
-    public function __construct(Security $security)
+    public function __construct(Security $security, AccessMapInterface $accessMap)
     {
         $this->security = $security;
+        $this->accessMap = $accessMap;
+    }
+
+    public function isPublicAccess(Request $request): bool
+    {
+        [$config, $context] = $this->accessMap->getPatterns($request);
+        return in_array(AuthenticatedVoter::PUBLIC_ACCESS, $config);
     }
 
     /**
@@ -36,6 +46,10 @@ class TokenAuthenticator extends AbstractAuthenticator
      */
     public function supports(Request $request): ?bool
     {
+        // if the URL is public access, we skip authentication
+        if ($this->isPublicAccess($request)) {
+            return false;
+        }
         // if there is already an authenticated user (likely due to the session)
         // then return false and skip authentication: there is no need.
         if ($this->security->getUser()) {
