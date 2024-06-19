@@ -6,7 +6,7 @@ namespace DDD\Domain\Common\Entities\MediaItems;
 
 use DDD\Infrastructure\Validation\Constraints\Choice;
 
-class PDFDocumentAsImage extends Photo
+class PDFDocumentAsImage extends GenericMediaItem
 {
     /** @var string|null The type of the mediaitem */
     #[Choice(choices: [self::TYPE_PHOTO])]

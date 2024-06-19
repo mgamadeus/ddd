@@ -5,7 +5,7 @@ namespace DDD\Domain\Common\Entities\MediaItems;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Validation\Constraints\Choice;
 
-abstract class Document extends MediaItem
+abstract class Document extends GenericMediaItem
 {
     /** @var string|null The type of the media item */
     #[Choice(choices: [self::TYPE_DOCUMENT])]

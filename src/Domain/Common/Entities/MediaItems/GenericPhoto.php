@@ -14,5 +14,4 @@ class GenericPhoto extends Photo
         $this->mediaItemContent = new GenericMediaItemContent();
         $this->addChildren($this->mediaItemContent);
     }
-
 }
