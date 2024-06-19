@@ -11,6 +11,4 @@ class PDFDocumentAsImage extends GenericMediaItem
     /** @var string|null The type of the mediaitem */
     #[Choice(choices: [self::TYPE_PHOTO])]
     public ?string $type = self::TYPE_PHOTO;
-
-    public PDFMediaItemContent $mediaItemContent;
 }

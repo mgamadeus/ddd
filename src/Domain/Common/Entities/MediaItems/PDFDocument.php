@@ -52,7 +52,7 @@ class PDFDocument extends Document
 
             // Get image blob
             $pdfDocumentAsImage = new PDFDocumentAsImage();
-            $pdfDocumentAsImage->mediaItemContent = new PDFMediaItemContent();
+            $pdfDocumentAsImage->mediaItemContent = new GenericMediaItemContent();
             $pdfDocumentAsImage->mediaItemContent->populateMediaItemContentInfoFromImagick($imagick);
             $pdfDocumentAsImage->addChildren($pdfDocumentAsImage->mediaItemContent);
 
