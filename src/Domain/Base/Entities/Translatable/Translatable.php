@@ -84,6 +84,46 @@ class Translatable extends ValueObject
     public static bool $fallbackToDefaultLanguageCode;
 
     /**
+     * @var array|null Snapshot of translation settings to be easily restored
+     */
+    protected static ?array $translationSettingsSnapshot = null;
+
+    /**
+     * @return void Sets a snapshot of current translation settings to be easily restored when needed, it does not set a snapshot if one already exists
+     */
+    public static function setTranslationSettingsSnapshot(): void
+    {
+        if (self::$translationSettingsSnapshot !== null) {
+            return;
+        }
+        self::$translationSettingsSnapshot = [
+            'writingStyle' => self::getCurrentWritingStyle(),
+            'languageCode' => self::getCurrentLanguageCode(),
+            'countryCode' => self::getCurrentCountryCode()
+        ];
+    }
+
+    /**
+     * @return void Restores snapshot of translation settings if present
+     */
+    public static function restoreTranslationSettingsSnapshot(): void
+    {
+        if (!self::$translationSettingsSnapshot) {
+            return;
+        }
+        if (isset(self::$translationSettingsSnapshot['writingStyle']) && self::$translationSettingsSnapshot['writingStyle']) {
+            self::setCurrentWritingStyle(self::$translationSettingsSnapshot['writingStyle']);
+        }
+        if (isset(self::$translationSettingsSnapshot['languageCode']) && self::$translationSettingsSnapshot['languageCode']) {
+            self::setCurrentLanguageCode(self::$translationSettingsSnapshot['languageCode']);
+        }
+        if (isset(self::$translationSettingsSnapshot['countryCode']) && self::$translationSettingsSnapshot['countryCode']) {
+            self::setCurrentCountryCode(self::$translationSettingsSnapshot['countryCode']);
+        }
+        self::$translationSettingsSnapshot = null;
+    }
+
+    /**
      * Returns true, if the current language code has already been set.
      * Usefull for example if language can be determined either by a request parameter or by the Account's
      * default languageCode, so
@@ -110,9 +150,9 @@ class Translatable extends ValueObject
         $fallbackToDefaultLanguageCode = Config::getEnv('TRANSLATABLE_FALLBACK_TO_DEFAULT_LANGUAGE_CODE');
         if (isset($fallbackToDefaultLanguageCode)) {
             static::$fallbackToDefaultLanguageCode = $fallbackToDefaultLanguageCode;
-        }
-        else
+        } else {
             static::$fallbackToDefaultLanguageCode = false;
+        }
         return static::$fallbackToDefaultLanguageCode;
     }
 
@@ -331,8 +371,9 @@ class Translatable extends ValueObject
             }
         }
         // if nothing is found, return key itself
-        if (!$translation)
+        if (!$translation) {
             $translation = $translationKey;
+        }
         return static::replacePlaceholders($translation, $placeholders);
     }
 

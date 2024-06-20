@@ -12,6 +12,9 @@ class Arr
     public static function toObject(array $array): mixed
     {
         $resultObj = new stdClass();
+        if (empty($array)) {
+            return $resultObj;
+        }
         $resultArr = [];
         $hasIntKeys = false;
         $hasStrKeys = false;
