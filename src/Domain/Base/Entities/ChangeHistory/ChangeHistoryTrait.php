@@ -40,8 +40,12 @@ trait ChangeHistoryTrait
             if (!(is_a(static::class, Entity::class, true) || is_a(static::class, ValueObject::class, true))) {
                 return null;
             }
-            $parentEntityClassName = static::getParentEntityClassName();
-            $reflectionClass = ReflectionClass::instance($parentEntityClassName ?? static::class);
+            try {
+                $parentEntityClassName = static::getParentEntityClassName();
+                $reflectionClass = ReflectionClass::instance($parentEntityClassName ?? static::class);
+            } catch (\Throwable $t) {
+                $reflectionClass = ReflectionClass::instance(static::class);
+            }
         } else {
             $reflectionClass = ReflectionClass::instance(static::class);
         }
