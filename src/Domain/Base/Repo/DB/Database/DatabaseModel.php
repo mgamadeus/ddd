@@ -12,15 +12,13 @@ use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Domain\Base\Repo\DatabaseRepoEntity;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
-use DDD\Domain\Base\Repo\DB\Attributes\DatabaseTranslation;
 use DDD\Domain\Common\Services\EntityModelGeneratorService;
-use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Base\DateTime\DateTime;
+use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
-use DDD\Infrastructure\Services\DDDService;
 use Doctrine\ORM\Mapping\Table;
 use ReflectionException;
 use ReflectionNamedType;
@@ -200,6 +198,27 @@ class DatabaseModel extends ValueObject
                         $virtualColumnAttributeInstance = $virtualColumnAttribute->newInstance();
                         $virtualColumnAttributeInstance->referenceColumn = $databaseColumn;
                         $databaseModel->virtualColumns->add($virtualColumnAttributeInstance);
+                        if (!$virtualColumnAttributeInstance->createIndex) {
+                            continue;
+                        }
+                        // Handle DB Indexes for Virtual Columns:
+                        $indexAttributes = $reflectionProperty->getAttributes(DatabaseIndex::class);
+                        if (count($indexAttributes)) {
+                            foreach ($indexAttributes as $indexAttribute) {
+                                /** @var DatabaseIndex $indexAttributeInstance */
+                                $indexAttributeInstance = $indexAttribute->newInstance();
+                                if ($indexAttributeInstance->indexType != DatabaseIndex::TYPE_NONE) {
+                                    $indexAttributeInstance->indexColumns = [
+                                        $virtualColumnAttributeInstance->getName()
+                                    ];
+                                    $databaseModel->indexes->add($indexAttributeInstance);
+                                }
+                            }
+                        } elseif ($databaseColumn) {
+                            // We create indexes for virtual columns even if column itself is ignored!!!
+                            $index = new DatabaseIndex(indexColumns: [$virtualColumnAttributeInstance->getName()]);
+                            $databaseModel->indexes->add($index);
+                        }
                     }
                 }
             }
@@ -237,8 +256,11 @@ class DatabaseModel extends ValueObject
                         }
                     }
                 } elseif ($databaseColumn) {
-                    $index = new DatabaseIndex(indexColumns: [$databaseColumn->name]);
-                    $databaseModel->indexes->add($index);
+                    // only created indexes for properties that are not ignored:
+                    if (!$databaseColumn->ignoreProperty) {
+                        $index = new DatabaseIndex(indexColumns: [$databaseColumn->name]);
+                        $databaseModel->indexes->add($index);
+                    }
                 }
             }
 
@@ -427,7 +449,10 @@ class DatabaseModel extends ValueObject
         });
         $this->columns->elements = $databaseColumns;
         foreach ($this->columns->getElements() as $column) {
-            $statements[] = $column->getSql();
+            $columnSQL = $column->getSql();
+            if ($columnSQL !== null) {
+                $statements[] = $columnSQL;
+            }
         }
         if ($primaryKey = $this->columns->getPrimaryKeyColumn()) {
             $statements[] = "PRIMARY KEY (`{$primaryKey->name}`)";
@@ -445,7 +470,10 @@ class DatabaseModel extends ValueObject
 
         $sql .= "ALTER TABLE `{$this->sqlTableName}`\n";
         foreach ($this->columns->getElements() as $column) {
-            $addedColumns[] = $column->getSql(true);
+            $columnSQL = $column->getSql(true);
+            if ($columnSQL !== null) {
+                $addedColumns[] = $columnSQL;
+            }
         }
         foreach ($this->virtualColumns->getElements() as $virtualColumn) {
             $addedColumns[] = $virtualColumn->getSql(true);
@@ -557,7 +585,7 @@ class DatabaseModel extends ValueObject
         }
         $jsonMergableColumns = [];
         foreach ($this->columns->getElements() as $column) {
-            if ($column->isMergableJSONColumn){
+            if ($column->isMergableJSONColumn) {
                 $jsonMergableColumns[$column->name] = true;
             }
         }
@@ -581,6 +609,10 @@ class DatabaseModel extends ValueObject
             if ($this->subclassIndicator && $this->subclassIndicator->indicatorPropertyName == $column->name) {
                 continue;
             }*/
+            // Ignore columns which are to be excluded
+            if ($column->ignoreProperty) {
+                continue;
+            }
             if ($this->subclassIndicator && $this->subclassIndicator->indicatorPropertyName == $column->name) {
                 $column->phpDefaultValue = $this->subclassIndicator->getDefaultValueOfIndicatorForEntityClass(
                     $this->entityClassWithNamespace->getNameWithNamespace()

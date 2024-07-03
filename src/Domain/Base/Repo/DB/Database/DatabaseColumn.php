@@ -276,13 +276,11 @@ class DatabaseColumn extends ValueObject
         ) {
             /** @var DatabaseColumn $columnAttributeInstance */
             $columnAttributeInstance = $columnAttribute->newInstance();
-            // if property is to be ignored, we dont create DatabaseColumn
-            if ($columnAttributeInstance->ignoreProperty) {
-                return null;
-            }
             if ($columnAttributeInstance->sqlType !== null) {
                 $databaseColum->sqlType = $columnAttributeInstance->sqlType;
             }
+            $databaseColum->ignoreProperty = $columnAttributeInstance->ignoreProperty;
+
             if ($columnAttributeInstance->encrypted !== null && $columnAttributeInstance->encrypted) {
                 $databaseColum->encrypted = $columnAttributeInstance->encrypted;
                 if (
@@ -370,12 +368,16 @@ class DatabaseColumn extends ValueObject
         if ($this->sqlType == self::SQL_TYPE_VARCHAR) {
             return self::SQL_TYPE_VARCHAR . "({$this->varCharLength})";
         }
-        $unsigned = in_array($this->sqlType, [self::SQL_TYPE_INT, self::SQL_TYPE_BIGINT]) && $this->isUnsigned ? ' UNSIGNED' : '';
+        $unsigned = in_array($this->sqlType, [self::SQL_TYPE_INT, self::SQL_TYPE_BIGINT]
+        ) && $this->isUnsigned ? ' UNSIGNED' : '';
         return $this->sqlType . $unsigned;
     }
 
-    public function getSql(bool $asUpdate = false): string
+    public function getSql(bool $asUpdate = false): ?string
     {
+        if ($this->ignoreProperty) {
+            return null;
+        }
         $sql = $asUpdate ? 'ADD COLUMN IF NOT EXISTS ' : '';
         $defaultValue = '';
         $defaultValueSet = false;

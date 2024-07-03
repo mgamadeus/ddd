@@ -48,7 +48,7 @@ class Translatable extends ValueObject
      * The current country code of the application.
      * @var string
      */
-    public static string $currentCountryCode;
+    public static ?string $currentCountryCode;
 
     /**
      * @var string[] Active language codes
@@ -280,7 +280,7 @@ class Translatable extends ValueObject
      * @param string $countryCode The country code to set.
      * @return void
      */
-    public static function setCurrentCountryCode(string $countryCode): void
+    public static function setCurrentCountryCode(?string $countryCode): void
     {
         static::$currentCountryCode = $countryCode;
     }

@@ -25,6 +25,9 @@ class DatabaseVirtualColumn extends ValueObject
     /** @var bool If true, the column is stored */
     public bool $stored = true;
 
+    /** @var bool If true, an index for the virtual column will be generated */
+    public bool $createIndex = false;
+
     public function getSql(bool $asUpdate = false): string
     {
         $sql = $asUpdate ? 'ADD COLUMN IF NOT EXISTS ' : '';
@@ -58,13 +61,16 @@ class DatabaseVirtualColumn extends ValueObject
     /**
      * @param string $as
      * @param bool $stored
+     * @param bool $createIndex
      */
     public function __construct(
         string $as,
-        bool $stored = true
+        bool $stored = true,
+        bool $createIndex = false
     ) {
         $this->as = $as;
         $this->stored = $stored;
+        $this->createIndex = $createIndex;
         parent::__construct();
     }
 }
