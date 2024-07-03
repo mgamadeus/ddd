@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Entities;
 
+use App\Domain\Common\Entities\Colors\Color;
 use ArrayAccess;
 use Countable;
 use DDD\Domain\Base\Entities\Interfaces\IsEmptyInterface;
@@ -299,9 +300,20 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
                     $item = $cachedEntityInstance;
                     $entityFromCache = true;
                 } else {
-                    $item = new $typeToInstance();
+                    if (is_string($value) && method_exists($typeToInstance, 'fromString')) {
+                        if (!$throwErrors) {
+                            try {
+                                $item = $typeToInstance::fromString($value);
+                            } catch (Exception) {
+                            }
+                        } else {
+                            $item = $typeToInstance::fromString($value);
+                        }
+                    } else {
+                        $item = new $typeToInstance();
+                    }
                 }
-                if (!$entityFromCache && method_exists($item, 'setPropertiesFromObject')) {
+                if (!$entityFromCache && !is_string($value) && method_exists($item, 'setPropertiesFromObject')) {
                     $item->setPropertiesFromObject($value, $throwErrors, false, $sanitizeInput);
                 }
                 $this->add($item);
