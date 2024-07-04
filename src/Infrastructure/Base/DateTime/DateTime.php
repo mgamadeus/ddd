@@ -22,6 +22,8 @@ class DateTime extends \DateTime
 
     public const string DATE_ARGUS_BUSINESS_LISTINGS = 'Y-m-d\TH:i:s.v\Z';
 
+    public const string DATE_RFC3339_MICROSECONDS_ZULU = 'Y-m-d\TH:i:s.u\Z';
+
     public const string UNIX = 'U';
 
     /**
