@@ -32,7 +32,7 @@ use ReflectionException;
  */
 class LoginTokensService extends EntitiesService
 {
-    public const string DEFAULT_ENTITY_CLASS = LoginToken::class;
+    public const DEFAULT_ENTITY_CLASS = LoginToken::class;
 
     /**
      * Creates a login token

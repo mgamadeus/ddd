@@ -24,8 +24,8 @@ class TokenAuthenticator extends AbstractAuthenticator
     protected Security $security;
     private AccessMapInterface $accessMap;
 
-    public const string TOKEN_BEARER = 'Bearer';
-    public const string TOKEN_BASIC = 'Basic';
+    public const TOKEN_BEARER = 'Bearer';
+    public const TOKEN_BASIC = 'Basic';
 
     public function __construct(Security $security, AccessMapInterface $accessMap)
     {

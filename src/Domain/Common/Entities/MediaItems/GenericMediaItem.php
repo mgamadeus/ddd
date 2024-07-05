@@ -14,13 +14,13 @@ use DDD\Infrastructure\Validation\Constraints\Choice;
 class GenericMediaItem extends ValueObject
 {
     /** @var string Photo type for media item */
-    public const string TYPE_PHOTO = 'PHOTO';
+    public const TYPE_PHOTO = 'PHOTO';
 
     /** @var string Video type for media item */
-    public const string TYPE_VIDEO = 'VIDEO';
+    public const TYPE_VIDEO = 'VIDEO';
 
     /** @var string Document type for media item */
-    public const string TYPE_DOCUMENT = 'DOCUMENT';
+    public const TYPE_DOCUMENT = 'DOCUMENT';
 
     /** @var string|null Public URL of the mediaitem */
     public ?string $publicUrl;

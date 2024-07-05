@@ -10,21 +10,21 @@ namespace DDD\Infrastructure\Base\DateTime;
  */
 class DateTime extends \DateTime
 {
-    public const string SIMPLE = 'Y-m-d H:i:s';
+    public const SIMPLE = 'Y-m-d H:i:s';
 
-    public const string UBERALL = 'Y-m-d\TH:i:s.uP';
+    public const UBERALL = 'Y-m-d\TH:i:s.uP';
 
-    public const string DATE_RFC3339ZULU = 'Y-m-d\TH:i:sp';
+    public const DATE_RFC3339ZULU = 'Y-m-d\TH:i:sp';
 
-    public const string DATE_RFC3339ZULU_MILLISECONDS = 'Y-m-d\TH:i:s.up';
+    public const DATE_RFC3339ZULU_MILLISECONDS = 'Y-m-d\TH:i:s.up';
 
-    public const string DATE_POSTGRES_WITH_TIMEZONE = 'Y-m-d H:i:sO';
+    public const DATE_POSTGRES_WITH_TIMEZONE = 'Y-m-d H:i:sO';
 
-    public const string DATE_ARGUS_BUSINESS_LISTINGS = 'Y-m-d\TH:i:s.v\Z';
+    public const DATE_ARGUS_BUSINESS_LISTINGS = 'Y-m-d\TH:i:s.v\Z';
 
-    public const string DATE_RFC3339_MICROSECONDS_ZULU = 'Y-m-d\TH:i:s.u\Z';
+    public const DATE_RFC3339_MICROSECONDS_ZULU = 'Y-m-d\TH:i:s.u\Z';
 
-    public const string UNIX = 'U';
+    public const UNIX = 'U';
 
     /**
      * creates Date / DateTime from timestamp
