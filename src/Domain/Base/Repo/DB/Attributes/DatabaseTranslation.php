@@ -21,7 +21,7 @@ class DatabaseTranslation
     use BaseAttributeTrait;
 
     /** @var array whether to use registry APC cache for this Repo OrmEntity or not */
-    public const array MODELS_WITH_SEARCHABLE_COLUMNS = [];
+    public const MODELS_WITH_SEARCHABLE_COLUMNS = [];
 
     /** @var string|null Default language code is set based on ENTITY_TRANSLATIONS_DEFAULT_LANGUAGE env variable, or defaults to en if not set */
     protected static ?string $defaultLanguageCode = null;

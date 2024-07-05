@@ -35,7 +35,7 @@ class LazyLoadRepo
     public const CLASS_METHOD = 'CLASS_METHOD';
 
     /** @var string[] Repositories that refer to database */
-    public const array DATABASE_REPOS = [self::DB, self::LEGACY_DB];
+    public const DATABASE_REPOS = [self::DB, self::LEGACY_DB];
 
     /** @var string Default repo type */
     public static string $defaultRepoType;
