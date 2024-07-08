@@ -374,6 +374,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
             return $entity;
         }
         $updatedChildProperties = $this->updateDependentEntities($entity, $depth, false);
+        $loadedChildPropertiesAfterUpdate = [];
         // we need the name of the updated column in case of DBENtity
         $changeHistoryAttributeInstance = null;
         if (
@@ -397,8 +398,10 @@ abstract class DatabaseRepoEntity extends RepoEntity
             $reflectionClass = ReflectionClass::instance(static::class);
 
             $entityId = $entity->id ?? null;
-            $hasTranslations = $translationAttributeInstance && $translationAttributeInstance->hasPropertiesToTranslate();
-            $translationIsInDefaultLanguage = $translationAttributeInstance && $translationAttributeInstance::isCurrentLanguageCodeDefaultLanguage();
+            $hasTranslations = $translationAttributeInstance && $translationAttributeInstance->hasPropertiesToTranslate(
+                );
+            $translationIsInDefaultLanguage = $translationAttributeInstance && $translationAttributeInstance::isCurrentLanguageCodeDefaultLanguage(
+                );
 
             $modelName = static::BASE_ORM_MODEL;
             if (self::$applyRightsRestrictions) {
@@ -431,6 +434,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
                                     // we put all properties that are not updated child properties from updatedEntity to entity
                                     $entity->$propertyName = $value;
                                     if ($value instanceof DefaultObject) {
+                                        $loadedChildPropertiesAfterUpdate[$propertyName] = $propertyName;
                                         if ($value->getParent() == $updatedEntity) {
                                             $entity->addChildren($updatedEntity);
                                         }
@@ -450,7 +454,8 @@ abstract class DatabaseRepoEntity extends RepoEntity
                     // in this case we need to upate the created and updated time and persist the main entity anyway, indifferent from translation
 
                     // we load current data and update created and updated columns
-                    $this->ormInstance = isset($this->ormInstance) && $this->ormInstance ? $this->ormInstance : new (static::BASE_ORM_MODEL)();
+                    $this->ormInstance = isset($this->ormInstance) && $this->ormInstance ? $this->ormInstance : new (static::BASE_ORM_MODEL)(
+                    );
                     $this->ormInstance->id = $entityId;
                     $this->mapCreatedAndUpdatedTime($entity);
                     $entityManager->upsert(
@@ -463,7 +468,13 @@ abstract class DatabaseRepoEntity extends RepoEntity
                 $translationAttributeInstance->updateOrCreateTranslation($entity, $this);
             }
         }
-        $this->updateDependentEntities($entity, $depth, true, $updatedChildProperties);
+        $this->updateDependentEntities(
+            $entity,
+            $depth,
+            true,
+            $updatedChildProperties,
+            $loadedChildPropertiesAfterUpdate
+        );
         return $entity;
     }
 
@@ -508,6 +519,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
      * @param int $depth
      * @param bool $entityAlreadyStored
      * @param array $alreaadyUpdatedChildProperties
+     * @param array $loadedChildPropertiesAfterUpdate
      * @return array
      * @throws ReflectionException
      */
@@ -515,7 +527,8 @@ abstract class DatabaseRepoEntity extends RepoEntity
         Entity &$entity,
         int $depth,
         bool $entityAlreadyStored,
-        array $alreaadyUpdatedChildProperties = []
+        array $alreaadyUpdatedChildProperties = [],
+        array $loadedChildPropertiesAfterUpdate = []
     ): array {
         $updatedChildProperties = [];
         // Update the objects in the main entity, only for one level
@@ -525,6 +538,11 @@ abstract class DatabaseRepoEntity extends RepoEntity
                     continue;
                 }
                 if (isset($alreaadyUpdatedChildProperties[$propertyName])) {
+                    continue;
+                }
+                // these are properties hat have been loaded after the update operation through find, if some of them are entities loaded implicitly,
+                // it makes no sense to update these recursively
+                if (isset($loadedChildPropertiesAfterUpdate[$propertyName])) {
                     continue;
                 }
                 // we cannot store an entity that depends on the current entity which is not yet stored
@@ -551,7 +569,9 @@ abstract class DatabaseRepoEntity extends RepoEntity
                 $databaseRepoCLasses = $value::getDatabaseRelatedRepoClasses();
                 foreach ($databaseRepoCLasses as $repoClass) {
                     $repoInstance = $repoClass && class_exists($repoClass) ? new $repoClass() : null;
-                    $reflectionEntityAttribute = (ReflectionClass::instance($value::class))->getAttributes(NoRecursiveUpdate::class);
+                    $reflectionEntityAttribute = (ReflectionClass::instance($value::class))->getAttributes(
+                        NoRecursiveUpdate::class
+                    );
 
                     if ($repoInstance && empty($reflectionEntityAttribute)) {
                         if (method_exists($repoInstance, 'update')) {
