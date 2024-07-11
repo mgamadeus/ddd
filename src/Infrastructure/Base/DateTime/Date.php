@@ -27,16 +27,25 @@ class Date extends DateTime
      * The resulting Date object will have a time component set to 00:00:00 UTC.
      *
      * @param string $stringFormattedDate The date string to convert.
-     * @param string $format The format of the input date string. Defaults to self::DATE.
+     * @param string|array $dateTimeFormat The format of the input date string. Defaults to self::DATE.
      * @return Date|bool Date object on success, or false on failure.
      */
-    public static function fromString(string $stringFormattedDate, string $format = self::DATE): Date|bool
+    public static function fromString(string $stringFormattedDate, string|array $dateTimeFormat = self::DATE): Date|bool
     {
         if (isset(StaticRegistry::$dateFromStringCache[$stringFormattedDate])) {
             return StaticRegistry::$dateFromStringCache[$stringFormattedDate];
         }
-
-        $tDate = \DateTime::createFromFormat($format, $stringFormattedDate);
+        if (is_string($dateTimeFormat)) {
+            $tDate = \DateTime::createFromFormat($dateTimeFormat, $stringFormattedDate);
+        } elseif (is_array($dateTimeFormat)) {
+            $tDate = null;
+            foreach ($dateTimeFormat as $actFormat) {
+                $tDate = \DateTime::createFromFormat($actFormat, $stringFormattedDate);
+                if ($tDate) {
+                    break;
+                }
+            }
+        }
         if ($tDate === false) {
             return false;
         }
