@@ -11,6 +11,7 @@ use Doctrine\Common\Cache\Psr6\InvalidArgument;
 use Doctrine\Common\EventManager;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception;
+use Doctrine\DBAL\Exception\ConnectionLost;
 use Doctrine\ORM\Configuration;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Exception\ORMException;
@@ -19,6 +20,12 @@ use ReflectionException;
 
 class DoctrineEntityManager extends EntityManager
 {
+    // The interval in seconds to check if the connection is still pingable
+    private const int CONNECTION_CHECK_INTERVAL = 30;
+
+    // The last time the connection was checked
+    private int $lastConnectionCheckTime = 0;
+
     /**
      * Factory method to create EntityManager instances.
      *
@@ -267,5 +274,25 @@ class DoctrineEntityManager extends EntityManager
         }
 
         return $query;
+    }
+
+    /**
+     * Verify the connection to the database.
+     * @return bool Returns true if the connection is active, false otherwise.
+     */
+    public function isConnectionActive(): bool
+    {
+        // Check if the connection is still pingable every CONNECTION_CHECK_INTERVAL seconds in case of a connection loss
+        if (time() - $this->lastConnectionCheckTime < self::CONNECTION_CHECK_INTERVAL) {
+            return true;
+        }
+
+        try {
+            $this->getConnection()->executeQuery('SELECT 1');
+            $this->lastConnectionCheckTime = time();
+            return true;
+        } catch (ConnectionLost|Exception) {
+            return false;
+        }
     }
 }

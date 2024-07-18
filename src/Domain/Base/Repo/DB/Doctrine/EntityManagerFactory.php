@@ -8,6 +8,8 @@ use DDD\Infrastructure\Cache\Cache;
 use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Services\DDDService;
 use Doctrine\Common\Proxy\AbstractProxyFactory;
+use Doctrine\DBAL\Exception;
+use Doctrine\DBAL\Exception\ConnectionLost;
 use Doctrine\ORM\ORMSetup;
 use DoctrineExtensions\Query\Mysql\Field;
 use DoctrineExtensions\Query\Mysql\IfNull;
@@ -20,11 +22,11 @@ class EntityManagerFactory
     /** @var DoctrineEntityManager[] */
     private static array $instances = [];
 
-    public const SCOPE_DEFAULT = 'DEFAULT';
+    public const string SCOPE_DEFAULT = 'DEFAULT';
 
-    public const DEFAULT_NAMESPACE = 'DoctrineProxies';
+    public const string DEFAULT_NAMESPACE = 'DoctrineProxies';
 
-    public const SCOPE_LEGACY_DB = 'LEGACY_DB';
+    public const string SCOPE_LEGACY_DB = 'LEGACY_DB';
 
     public static function getInstance(
         string $scope = self::SCOPE_DEFAULT
@@ -35,6 +37,11 @@ class EntityManagerFactory
         if (!self::$instances[$scope]->isOpen()) {
             self::create($scope);
         }
+        // Check if the connection is still pingable
+        if (!self::$instances[$scope]->isConnectionActive()) {
+            self::create($scope);
+        }
+
         return self::$instances[$scope];
     }
 
