@@ -91,7 +91,7 @@ class DBEntity extends DatabaseRepoEntity
                     );
                 }
             }
-            $entityInstance->changeHistory = $changeHistoryAttributeInstance;
+            $entityInstance->changeHistory = $changeHistoryAttributeInstance->clone();
             if ($createdTime) {
                 $entityInstance->changeHistory->createdTime = $createdTime;
             }
