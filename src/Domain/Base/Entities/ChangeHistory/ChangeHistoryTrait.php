@@ -24,7 +24,8 @@ trait ChangeHistoryTrait
             return $this->changeHistory;
         }
         $changeHistoryAttribute = self::getChangeHistoryAttribute();
-        $this->changeHistory = $changeHistoryAttribute;
+        // we need to clone the attribue in order to avoid using the same instance in multiple Entities
+        $this->changeHistory = $changeHistoryAttribute->clone();
         return $this->changeHistory;
     }
 
