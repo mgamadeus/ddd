@@ -23,7 +23,7 @@ trait DtoQueryOptionsTrait
 {
     /** @var int Number of results to be skipped / offsetted */
     #[Parameter(in: Parameter::QUERY, required: false)]
-    public int $skip = 0;
+    public ?int $skip = null;
 
     /** @var int The number of results to be returned */
     #[Parameter(in: Parameter::QUERY, required: false)]
