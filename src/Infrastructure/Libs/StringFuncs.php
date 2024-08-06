@@ -101,7 +101,7 @@ class StringFuncs
      * @param $capitalizeFirstCharacter
      * @return string
      */
-    public function convertSnakeCaseToCamelCase(string $string, $capitalizeFirstCharacter = false): string
+    public static function convertSnakeCaseToCamelCase(string $string, $capitalizeFirstCharacter = false): string
     {
         $str = str_replace('-', '', ucwords($string, '-'));
 
