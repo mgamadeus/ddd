@@ -98,17 +98,12 @@ class StringFuncs
     /**
      * Converts snake_case to camelCase
      * @param string $string
-     * @param $capitalizeFirstCharacter
      * @return string
      */
-    public static function convertSnakeCaseToCamelCase(string $string, $capitalizeFirstCharacter = false): string
+    public static function convertSnakeCaseToCamelCase(string $string): string
     {
-        $str = str_replace('-', '', ucwords($string, '-'));
-
-        if (!$capitalizeFirstCharacter) {
-            $str = lcfirst($str);
-        }
-        return $str;
+        // Use regular expression to find underscores followed by a letter and capitalize the letter
+        return lcfirst(str_replace('_', '', ucwords($string, '_')));
     }
 
     /**
