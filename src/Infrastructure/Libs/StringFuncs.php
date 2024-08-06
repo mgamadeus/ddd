@@ -96,6 +96,22 @@ class StringFuncs
     }
 
     /**
+     * Converts snake_case to camelCase
+     * @param string $string
+     * @param $capitalizeFirstCharacter
+     * @return string
+     */
+    public function convertSnakeCaseToCamelCase(string $string, $capitalizeFirstCharacter = false): string
+    {
+        $str = str_replace('-', '', ucwords($string, '-'));
+
+        if (!$capitalizeFirstCharacter) {
+            $str = lcfirst($str);
+        }
+        return $str;
+    }
+
+    /**
      * shortens text to avoid wrapping of long words
      * @param string $text
      * @param int $chars
@@ -198,8 +214,7 @@ class StringFuncs
                     ); // we replace full matches with a pattern that won't be overwritten in partial matches
                 }
                 // highlight partial keywords
-                if (/*$total_replacements == 0 && */
-                isset($markingElements['partial_keywords_style'])) {
+                if (/*$total_replacements == 0 && */ isset($markingElements['partial_keywords_style'])) {
                     $keyword_segments = Datafilter::breakwords($original_keyword, 1);
                     //print_r($keyword_segments);die();
                     foreach ($keyword_segments as $keyword_segment) {
@@ -238,7 +253,6 @@ class StringFuncs
         $input = str_replace('&nbsp;', ' ', trim($input));
         return preg_replace('/\s\s+/', ' ', $input);
     }
-
 
     /**
      * @param string $text
