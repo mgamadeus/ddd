@@ -46,6 +46,9 @@ class DatabaseColumn extends ValueObject
     public const SQL_TYPE_TEXT = 'TEXT';
     public const SQL_TYPE_MEDIUMTEXT = 'MEDIUMTEXT';
     public const SQL_TYPE_LONGTEXT = 'LONGTEXT';
+    public const SQL_TYPE_BLOB = 'BLOB';
+    public const SQL_TYPE_MEDIUMBLOB = 'MEDIUMBLOB';
+    public const SQL_TYPE_LONGBLOB = 'LONGBLOB';
     public const SQL_TYPE_JSON = 'JSON';
 
     public const SQL_TYPE_ALLOCATION = [
