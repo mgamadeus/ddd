@@ -65,6 +65,13 @@ trait MediaItemContentTrait
     }
 
     /**
+     * @return bool Returns true, if all relevant content infos are available
+     */
+    public function isMediaItemContentInfoGenerated():bool {
+        return isset($this->width, $this->height, $this->fileSize, $this->fileFormat);
+    }
+
+    /**
      * @throws Exception
      */
     public function populateMediaItemContentInfo(): void
