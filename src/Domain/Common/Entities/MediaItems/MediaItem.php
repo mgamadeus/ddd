@@ -58,6 +58,9 @@ abstract class MediaItem extends Entity
      */
     public function getFullPublicUrl(): string
     {
-        return Config::getEnv('PUBLIC_URL') . $this->publicUrl;
+        $baseUrl = rtrim(Config::getEnv('PUBLIC_URL'), '/');
+        $path = ltrim($this->publicUrl, '/');
+
+        return $baseUrl . '/' . $path;
     }
 }
