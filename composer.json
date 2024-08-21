@@ -3,7 +3,7 @@
   "description": "A DDD Entity Framework on top of symfony and doctrine",
   "minimum-stability": "stable",
   "license": "MIT",
-  "version": "1.9.9",
+  "version": "2.0.0",
   "authors": [
     {
       "name": "Marius-Eugen Gerdan",
@@ -32,7 +32,6 @@
     "symfony/amqp-messenger": "*",
     "symfony/console": "*",
     "symfony/expression-language": "*",
-    "symfony/flex": "*",
     "symfony/framework-bundle": "*",
     "symfony/http-client": "*",
     "symfony/messenger": "*",
@@ -62,7 +61,6 @@
   },
   "config": {
     "allow-plugins": {
-      "symfony/flex": false,
       "symfony/runtime": false
     }
   }
