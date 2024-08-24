@@ -271,9 +271,9 @@ class Entity extends DefaultObject
         foreach (self::getReflectionClass()->getProperties(ReflectionProperty::IS_PUBLIC) as $reflectionProperty) {
             $types = [];
             $reflectionType = $reflectionProperty->getType();
-            if ($reflectionType instanceof ReflectionNamedType) {
+            if ($reflectionType instanceof \ReflectionNamedType) {
                 $types[] = $reflectionType->getName();
-            } elseif ($reflectionType instanceof ReflectionUnionType) {
+            } elseif ($reflectionType instanceof \ReflectionUnionType) {
                 foreach ($reflectionType->getTypes() as $reflectionType) {
                     $types[] = $reflectionType->getName();
                 }
