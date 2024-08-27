@@ -388,7 +388,7 @@ class Translatable extends ValueObject
     public static function replacePlaceholders(string $input, array $placeholders): string
     {
         foreach ($placeholders as $placeholder => $value) {
-            $input = str_replace("%$placeholder%", $value, $input);
+            $input = str_replace("%$placeholder%", (string) $value, $input);
         }
         return $input;
     }
