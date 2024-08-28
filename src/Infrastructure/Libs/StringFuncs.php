@@ -103,7 +103,7 @@ class StringFuncs
     public static function convertSnakeCaseToCamelCase(string $string): string
     {
         // Use regular expression to find underscores followed by a letter and capitalize the letter
-        return lcfirst(str_replace('_', '', ucwords($string, '_')));
+        return lcfirst(str_replace('_', '', ucwords(strtolower($string), '_')));
     }
 
     /**
