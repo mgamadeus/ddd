@@ -162,7 +162,7 @@ abstract class DoctrineModel
     public static function getTargetModelClassForProperty(ReflectionProperty &$reflectionProperty): ?string
     {
         // in case of ManyToOne properties, the Type is already the desired one
-        if (is_a($reflectionProperty->getType()->getName(), DoctrineModel::class)) {
+        if (is_a($reflectionProperty->getType()->getName(), DoctrineModel::class, true)) {
             return $reflectionProperty->getType()->getName();
         } elseif ($oneToManyAttribue = ($reflectionProperty->getAttributes(ORM\OneToMany::class)[0] ?? null)) {
             /** @var ORM\OneToMany $oneToManyAttribueInstance */
