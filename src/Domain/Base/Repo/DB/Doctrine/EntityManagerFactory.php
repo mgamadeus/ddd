@@ -67,6 +67,9 @@ class EntityManagerFactory
             'server_version' => Config::getEnv("DB_{$scope}_CONNECTION_DB_SERVER_VERSION"),
             'charset' => Config::getEnv("DB_{$scope}_CONNECTION_DB_SERVER_CHARSET"),
         ];
+        if (Config::getEnv("DB_{$scope}_CONNECTION_HOST_PORT")){
+            $config ['port'] = Config::getEnv("DB_{$scope}_CONNECTION_HOST_PORT");
+        }
         $proxyGenerationMode = AbstractProxyFactory::AUTOGENERATE_FILE_NOT_EXISTS;
         if ($proxyGenerationConfig = Config::getEnv("DB_{$scope}_DOCTRINE_PROXY_GENERATION_MODE")) {
             $proxyGenerationMode = match ($proxyGenerationConfig) {
