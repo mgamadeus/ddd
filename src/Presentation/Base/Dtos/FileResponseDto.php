@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace DDD\Presentation\Base\Dtos;
 
+use DDD\Domain\Common\Entities\MediaItems\PDFDocument;
 use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 
-class ImageResponseDto extends FileResponseDto
+class FileResponseDto extends Response
 {
     /**
      * @var ResponseHeaderBag
@@ -20,9 +21,25 @@ class ImageResponseDto extends FileResponseDto
         ?string $content = '',
         int $status = 200,
         array $headers = [],
-        string $contentType = 'image/jpeg'
+        string $contentType = 'application/octet-stream'
     ) {
-        $headers = ['Pragma' => 'cache', 'Cache-Control' => 'public, max-age=15552000', 'Content-Type' => $contentType];
         parent::__construct($content, $status, $headers);
+    }
+
+    public function setContentType(string $mimeType): void
+    {
+        $this->headers->set('Content-Type', $mimeType);
+    }
+
+    /**
+     * Sends content for the current web response.
+     *
+     * @return $this
+     */
+    public function sendContent(): static
+    {
+        echo $this->getContent();
+
+        return $this;
     }
 }

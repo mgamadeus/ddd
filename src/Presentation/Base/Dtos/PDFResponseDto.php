@@ -9,7 +9,7 @@ use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 
-class PDFResponseDto extends Response
+class PDFResponseDto extends FileResponseDto
 {
     /**
      * @var ResponseHeaderBag
@@ -40,23 +40,5 @@ class PDFResponseDto extends Response
             ]
         );
         return $pdfResponseDto;
-    }
-
-
-    public function setContentType(string $mimeType): void
-    {
-        $this->headers->set('Content-Type', $mimeType);
-    }
-
-    /**
-     * Sends content for the current web response.
-     *
-     * @return $this
-     */
-    public function sendContent(): static
-    {
-        echo $this->getContent();
-
-        return $this;
     }
 }
