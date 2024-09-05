@@ -66,6 +66,27 @@ class Date extends DateTime
     }
 
     /**
+     * Method to calculate days difference for display purposes, e.g. starts in x days
+     * @param Date $other
+     * @return int
+     */
+    public function getDaysDiffToDisplay(Date $other): int {
+        // Clone the current and other Date objects to avoid modifying the originals
+        $nowClone = clone $this;
+        $otherClone = clone $other;
+
+        // Remove the time part to focus on date-only comparison
+        $nowClone->setTime(0, 0, 0);
+        $otherClone->setTime(0, 0, 0);
+
+        // Calculate the difference in days only (ignore the time)
+        $interval = $nowClone->diff($otherClone);
+
+        // Return the number of days
+        return $interval->days;
+    }
+
+    /**
      * Creates Date by passing year, month and day of month
      * @param int $year
      * @param int $month
