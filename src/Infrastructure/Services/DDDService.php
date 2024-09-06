@@ -89,9 +89,14 @@ class DDDService
         }
         if (str_starts_with($className, self::FRAMEWORK_ROOT_NAMESPACE)) {
             $appClassName = self::APP_ROOT_NAMESPACE . substr($className, strlen(self::FRAMEWORK_ROOT_NAMESPACE));
-            if (class_exists($appClassName)) {
-                StaticRegistry::$frameworkToAppClassNames[$className] = StaticRegistry::$containerServiceClassMap[$appClassName];
-                return $appClassName;
+            try {
+                if (class_exists($appClassName)) {
+                    StaticRegistry::$frameworkToAppClassNames[$className] = StaticRegistry::$containerServiceClassMap[$appClassName];
+                    return $appClassName;
+                }
+            }
+            catch (Exception $e){
+
             }
         }
         StaticRegistry::$frameworkToAppClassNames[$className] = $className;
