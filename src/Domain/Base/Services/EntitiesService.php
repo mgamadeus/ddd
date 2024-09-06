@@ -110,14 +110,14 @@ class EntitiesService extends Service
      * best used in data import scenarios
      *
      * @param EntitySet $entitySet
+     * @param bool $useInsertIgnore
      * @return void
      * @throws Exception
-     * @throws MappingException
      */
-    public function batchUpdate(EntitySet &$entitySet): void
+    public function batchUpdate(EntitySet &$entitySet, bool $useInsertIgnore = false): void
     {
         $repoClass = $entitySet::getRepoClassInstance();
-        $repoClass->batchUpdate($entitySet);
+        $repoClass->batchUpdate($entitySet, $useInsertIgnore);
     }
 
     /**

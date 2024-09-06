@@ -15,6 +15,7 @@ use Doctrine\DBAL\Exception\ConnectionLost;
 use Doctrine\ORM\Configuration;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Exception\ORMException;
+use Doctrine\ORM\Mapping\MappingException;
 use Doctrine\ORM\QueryBuilder;
 use ReflectionException;
 
@@ -191,10 +192,12 @@ class DoctrineEntityManager extends EntityManager
      * Upsert multiple entities with JSON_MERGE_PATCH for specified JSON mergeable columns.
      *
      * @param DoctrineModel[] $doctrineModels
+     * @param bool $useInsertIgnore
      * @return void
      * @throws Exception
+     * @throws MappingException
      */
-    public function upsertMultiple(array &$doctrineModels): void
+    public function upsertMultiple(array &$doctrineModels, bool $useInsertIgnore = false): void
     {
         if (!count($doctrineModels)) {
             return;
@@ -251,15 +254,19 @@ class DoctrineEntityManager extends EntityManager
             $set[] = '(' . implode(', ', $setRow) . ')';
             $types = array_merge($types, $typesRow);
         }
-
-        $connection->executeStatement(
-            'INSERT INTO ' . reset($doctrineModels)->getTableName() . ' (' . implode(
+        $ignoreStatement = $useInsertIgnore ? 'IGNORE' : '';
+        $sql = "INSERT {$ignoreStatement} INTO " . reset($doctrineModels)->getTableName() . ' (' . implode(
                 ', ',
                 $columns
             ) . ')' . ' VALUES ' . implode(
                 ', ',
                 $set
-            ) . ' ON DUPLICATE KEY UPDATE ' . implode(', ', $update),
+            );
+        if (!$useInsertIgnore) {
+            $sql .= ' ON DUPLICATE KEY UPDATE ' . implode(', ', $update);
+        }
+        $connection->executeStatement(
+            $sql,
             $values,
             $types
         );

@@ -74,11 +74,11 @@ abstract class DatabaseRepoEntitySet
      * best used in data import scenarios
      *
      * @param EntitySet $entitySet
+     * @param bool $useInsertIgnore
      * @return void
      * @throws Exception
-     * @throws MappingException
      */
-    public function batchUpdate(EntitySet &$entitySet): void
+    public function batchUpdate(EntitySet &$entitySet, bool $useInsertIgnore = false): void
     {
         $doctrineModels = [];
         $baseRepoClass = self::BASE_REPO_CLASS;
@@ -90,6 +90,6 @@ abstract class DatabaseRepoEntitySet
             }
         }
         $entityManager = EntityManagerFactory::getInstance();
-        $entityManager->upsertMultiple($doctrineModels);
+        $entityManager->upsertMultiple($doctrineModels, $useInsertIgnore);
     }
 }

@@ -80,9 +80,11 @@ class EntitySet extends ObjectSet
     }
 
     /**
-     * @return void Batch persists all Entities from Set
+     * Batch persists all Entities from Set
+     * @param bool $useInsertIgnore
+     * @return void
      */
-    public function batchUpdate(): void
+    public function batchUpdate(bool $useInsertIgnore = false): void
     {
         $service = static::getService();
         if (!$service) {
@@ -91,12 +93,12 @@ class EntitySet extends ObjectSet
         $classWithNamespace = static::getClassWithNamespace();
         $updateMethod = 'batchUpdate';
         if (method_exists($service, $updateMethod)) {
-            $updatedEntity = $service->$updateMethod($this);
+            $updatedEntity = $service->$updateMethod($this, $useInsertIgnore);
             return;
         }
         $updateMethod = 'batchUpdate' . $classWithNamespace->name;
         if (method_exists($service, $updateMethod)) {
-            $updatedEntity = $service->$updateMethod($this);
+            $updatedEntity = $service->$updateMethod($this, $useInsertIgnore);
             return;
         }
         return;
