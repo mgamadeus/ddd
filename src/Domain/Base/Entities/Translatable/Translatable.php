@@ -56,6 +56,11 @@ class Translatable extends ValueObject
     public static array $activeLanguageCodes;
 
     /**
+     * @var string[] Active locales codes
+     */
+    public static array $activeLocales;
+
+    /**
      * The current writing style used in the application.
      * @var string
      */
@@ -179,7 +184,7 @@ class Translatable extends ValueObject
     }
 
     /**
-     * Returns default language codes
+     * Returns active language codes
      * @return string[]
      */
     public static function getActiveLanguageCodes(): array
@@ -191,6 +196,21 @@ class Translatable extends ValueObject
             static::$activeLanguageCodes = explode(',', $activeLanguageCodes);
         }
         return static::$activeLanguageCodes;
+    }
+
+    /**
+     * Returns active locales
+     * @return string[]
+     */
+    public static function getActiveLocales(): array
+    {
+        if (isset(static::$activeLocales)) {
+            return static::$activeLocales;
+        }
+        if ($activeLocales = Config::getEnv('TRANSLATABLE_ACTIVE_LOCALES')) {
+            static::$activeLocales = explode(',', $activeLocales);
+        }
+        return static::$activeLocales;
     }
 
     /**
