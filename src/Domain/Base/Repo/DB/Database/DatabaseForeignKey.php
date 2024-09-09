@@ -17,6 +17,7 @@ class DatabaseForeignKey extends ValueObject
     public const ACTION_CASCADE = 'CASCADE';
     public const ACTION_NO_ACTION = 'NO ACTION';
     public const ACTION_SET_NULL = 'SET NULL';
+    public const ACTION_RESTRICT = 'RESTRICT';
     public const ACTION_SET_DEFAULT = 'SET DEFAULT';
 
     /** @var string Internal column containing id, e.g. cityId */
