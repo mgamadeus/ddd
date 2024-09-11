@@ -242,8 +242,7 @@ class DatabaseModel extends ValueObject
                 $index = new DatabaseIndex(indexColumns: [ChangeHistory::DEFAULT_MODIFIED_COLUMN_NAME]);
                 $databaseModel->indexes->add($index);
             }
-
-            if ($databaseColumn && ($databaseColumn?->sqlType ?? null) != DatabaseColumn::SQL_TYPE_JSON && !$databaseColumn->isPrimaryKey) {
+            if ($databaseColumn && !$databaseColumn->isPrimaryKey) {
                 // handle indexes
                 $indexAttributes = $reflectionProperty->getAttributes(DatabaseIndex::class);
                 if (count($indexAttributes)) {
@@ -255,10 +254,10 @@ class DatabaseModel extends ValueObject
                             $databaseModel->indexes->add($indexAttributeInstance);
                         }
                     }
-                } elseif ($databaseColumn) {
-                    // only created indexes for properties that are not ignored:
-                    if (!$databaseColumn->ignoreProperty) {
-                        $index = new DatabaseIndex(indexColumns: [$databaseColumn->name]);
+                } elseif (isset($databaseColumn->sqlType) && $databaseColumn->hasIndex && !$databaseColumn->ignoreProperty) {
+                    $indexType = DatabaseColumn::SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS[$databaseColumn->sqlType];
+                    if ($indexType != DatabaseIndex::TYPE_NONE){
+                        $index = new DatabaseIndex(indexColumns: [$databaseColumn->name], indexType: $indexType);
                         $databaseModel->indexes->add($index);
                     }
                 }

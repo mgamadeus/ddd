@@ -13,6 +13,7 @@ use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Entities\Translatable\Translatable;
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Domain\Common\Entities\Encryption\EncryptionScope;
+use DDD\Domain\Common\Entities\GeoEntities\GeoPoint;
 use DDD\Infrastructure\Base\DateTime\Date;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
@@ -50,6 +51,7 @@ class DatabaseColumn extends ValueObject
     public const SQL_TYPE_MEDIUMBLOB = 'MEDIUMBLOB';
     public const SQL_TYPE_LONGBLOB = 'LONGBLOB';
     public const SQL_TYPE_JSON = 'JSON';
+    public const SQL_TYPE_POINT = 'POINT';
 
     public const SQL_TYPE_ALLOCATION = [
         ReflectionClass::INTEGER => self::SQL_TYPE_INT,
@@ -58,7 +60,8 @@ class DatabaseColumn extends ValueObject
         ReflectionClass::STRING => self::SQL_TYPE_VARCHAR,
         Date::class => self::SQL_TYPE_DATE,
         DateTime::class => self::SQL_TYPE_DATETIME,
-        ValueObject::class => self::SQL_TYPE_JSON
+        GeoPoint::class => self::SQL_TYPE_POINT,
+        ValueObject::class => self::SQL_TYPE_JSON,
     ];
 
     public const DOCTRINE_COLUMN_TYPE_ALLOCATIONS = [
@@ -68,7 +71,8 @@ class DatabaseColumn extends ValueObject
         ReflectionClass::FLOAT => 'float',
         DateTime::class => 'datetime',
         Date::class => 'date',
-        ValueObject::class => 'json'
+        GeoPoint::class => 'point',
+        ValueObject::class => 'json',
     ];
 
     public const DOCTRINE_SQL_TYPE_ALLOCATIONS = [
@@ -80,7 +84,8 @@ class DatabaseColumn extends ValueObject
         self::SQL_TYPE_DOUBLE => 'float',
         self::SQL_TYPE_DATETIME => 'datetime',
         self::SQL_TYPE_DATE => 'date',
-        self::SQL_TYPE_JSON => 'json'
+        self::SQL_TYPE_POINT => 'point',
+        self::SQL_TYPE_JSON => 'json',
     ];
 
     public const DOCTRINE_PHP_TYPE_ALLOCATIONS = [
@@ -90,7 +95,31 @@ class DatabaseColumn extends ValueObject
         ReflectionClass::FLOAT => 'float',
         DateTime::class => '\DateTime',
         Date::class => '\DateTime',
-        ValueObject::class => 'mixed'
+        GeoPoint::class => 'mixed',
+        ValueObject::class => 'mixed',
+    ];
+
+    public const SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS = [
+        self::SQL_TYPE_INT => DatabaseIndex::TYPE_INDEX,
+        self::SQL_TYPE_BIGINT => DatabaseIndex::TYPE_INDEX,
+        self::SQL_TYPE_FLOAT => DatabaseIndex::TYPE_INDEX,
+        self::SQL_TYPE_DOUBLE => DatabaseIndex::TYPE_INDEX,
+        self::SQL_TYPE_BOOL => DatabaseIndex::TYPE_INDEX,
+        self::SQL_TYPE_VARCHAR => DatabaseIndex::TYPE_INDEX,
+        self::SQL_TYPE_DATE => DatabaseIndex::TYPE_INDEX,
+        self::SQL_TYPE_DATETIME => DatabaseIndex::TYPE_INDEX,
+        self::SQL_TYPE_TEXT => DatabaseIndex::TYPE_FULLTEXT,
+        self::SQL_TYPE_MEDIUMTEXT => DatabaseIndex::TYPE_FULLTEXT,
+        self::SQL_TYPE_LONGTEXT => DatabaseIndex::TYPE_FULLTEXT,
+        self::SQL_TYPE_BLOB => DatabaseIndex::TYPE_NONE,
+        self::SQL_TYPE_MEDIUMBLOB => DatabaseIndex::TYPE_NONE,
+        self::SQL_TYPE_LONGBLOB => DatabaseIndex::TYPE_NONE,
+        self::SQL_TYPE_JSON => DatabaseIndex::TYPE_NONE,
+        self::SQL_TYPE_POINT => DatabaseIndex::TYPE_SPATIAL,
+    ];
+
+    public const SPATIAL_SQL_TYPES = [
+        'point' => true
     ];
 
     /** @var string|null Name of the database Column */
@@ -156,6 +185,7 @@ class DatabaseColumn extends ValueObject
                 return null;
             }
         }
+
 
         $type = $reflectionProperty->getType();
         $propertyName = $reflectionProperty->getName();
@@ -240,6 +270,8 @@ class DatabaseColumn extends ValueObject
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[DateTime::class];
         } elseif ($type->getName() == Date::class) {
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[Date::class];
+        } elseif (is_a($type->getName(), GeoPoint::class, true)) {
+            $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[GeoPoint::class];
         } elseif (is_a($type->getName(), ValueObject::class, true)) {
             // ignore Lazyload Repos ValueObject e.g. Virtual Repotype
             if ($lazyloadAttributes = $reflectionProperty->getAttributes(LazyLoad::class)) {

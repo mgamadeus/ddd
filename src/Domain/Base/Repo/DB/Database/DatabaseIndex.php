@@ -18,9 +18,11 @@ class DatabaseIndex extends ValueObject
     public const TYPE_INDEX = 'INDEX';
     public const TYPE_UNIQUE = 'UNIQUE INDEX';
     public const TYPE_FULLTEXT = 'FULLTEXT INDEX';
+    public const TYPE_SPATIAL = 'SPATIAL INDEX';
 
     public const TYPE_NAME_ALLOCATION = [
         self::TYPE_INDEX => 'idx',
+        self::TYPE_SPATIAL => 'spx',
         self::TYPE_UNIQUE => 'uniq',
         self::TYPE_FULLTEXT => 'ft'
     ];

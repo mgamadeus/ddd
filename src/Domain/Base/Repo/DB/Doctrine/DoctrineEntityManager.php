@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Repo\DB\Doctrine;
 
 use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 use DDD\Infrastructure\Exceptions\ForbiddenException;
 use DDD\Infrastructure\Services\AuthService;
 use Doctrine\Common\Cache\Psr6\InvalidArgument;
@@ -103,15 +104,27 @@ class DoctrineEntityManager extends EntityManager
             if (!$reflectionProperty->isInitialized($doctrineModel)) {
                 continue;
             }
+            $type = $metadata->getTypeOfField($fieldName);
+            // Handle Spatial Types
+            if (isset(DatabaseColumn::SPATIAL_SQL_TYPES[$type])) {
+                $set[] = 'ST_GeomFromText(?)';
+                if ($value) {
+                    $value = (string)$value;
+                    $types[] = 'string';
+                }
+            } else {
+                $set[] = '?';
+                $types[] = $type;
+            }
             $columns[] = $column;
             $values[] = $value;
-            $types[] = $metadata->getTypeOfField($fieldName);
-            $set[] = '?';
+
 
             // Check if in column JSON contents should be merged with JSON_MERGE_PATCH
             if (isset($doctrineModel->jsonMergableColumns[$fieldName]) && is_array($value)) {
                 $update[] = "{$column} = JSON_MERGE_PATCH(COALESCE($column,'{}'), VALUES($column))";
-            } elseif ($fieldName == $createdColumn) {
+            }
+            elseif ($fieldName == $createdColumn) {
                 // we do not execute updates on created columns
                 $update[] = "{$column} = COALESCE(VALUES($column), $column)";
             } else {
@@ -221,6 +234,7 @@ class DoctrineEntityManager extends EntityManager
             if (isset($doctrineModel->virtualColumns[$fieldName])) {
                 continue;
             }
+            $type = $metadata->getTypeOfField($fieldName);
             $column = $metadata->getColumnName($fieldName);
             $column = '`' . $column . '`';
             $columns[] = $column;
@@ -235,7 +249,14 @@ class DoctrineEntityManager extends EntityManager
                 $update[] = "{$column} = LAST_INSERT_ID({$column})";
             } elseif (isset($doctrineModel->jsonMergableColumns[$fieldName])) {
                 $update[] = "{$column} = JSON_MERGE_PATCH(COALESCE({$column},'{}'), COALESCE(VALUES({$column}),'{}'))";
-            } else {
+            }
+            // Handle Spatial Types
+            elseif (isset(DatabaseColumn::SPATIAL_SQL_TYPES[$type])) {
+                //Attention: applying the following line would result into applying ST_GeomFromText twice, as it is already applied to value before
+                //$update[] = "{$column} = ST_GeomFromText(VALUES({$column}))";
+                $update[] = "{$column} = VALUES({$column})";
+            }
+            else {
                 $update[] = "{$column} = VALUES({$column})";
             }
         }
@@ -246,10 +267,20 @@ class DoctrineEntityManager extends EntityManager
             $typesRow = [];
             foreach ($columns as $index => $column) {
                 $fieldName = $metadata->getFieldName(str_replace('`', '', $column));
+                $type = $metadata->getTypeOfField($fieldName);
                 $value = $metadata->getFieldValue($doctrineModel, $fieldName);
+                // Handle Spatial Types
+                if (isset(DatabaseColumn::SPATIAL_SQL_TYPES[$type])) {
+                    $setRow[] = 'ST_GeomFromText(?)';
+                    if ($value) {
+                        $value = (string)$value;
+                        $typesRow[] = 'string';
+                    }
+                } else {
+                    $setRow[] = '?';
+                    $typesRow[] = $type;
+                }
                 $values[] = $value;
-                $setRow[] = '?';
-                $typesRow[] = $metadata->getTypeOfField($fieldName);
             }
             $set[] = '(' . implode(', ', $setRow) . ')';
             $types = array_merge($types, $typesRow);
@@ -265,6 +296,12 @@ class DoctrineEntityManager extends EntityManager
         if (!$useInsertIgnore) {
             $sql .= ' ON DUPLICATE KEY UPDATE ' . implode(', ', $update);
         }
+        //echo $sql;die();
+        echo json_encode([
+            'set' => $set,
+            'values' => $values,
+            'types' => $types,
+        ]);
         $connection->executeStatement(
             $sql,
             $values,
