@@ -132,14 +132,27 @@ class EntityManagerFactory
 
         $config->setProxyNamespace(self::DEFAULT_NAMESPACE);
         $config->setAutoGenerateProxyClasses($configSettings['doctrineConfig']['proxyGenerationMode']);
-
-        Type::addType('point', PointType::class);
-        Type::addType('geometry', GeometryType::class);
-        Type::addType('linestring', LineStringType::class);
-        Type::addType('polygon', PolygonType::class);
-        Type::addType('multilinestring', MultiLineStringType::class);
-        Type::addType('multipoint', MultiPointType::class);
-        Type::addType('multipolygon', MultiPolygonType::class);
+        if (!Type::hasType('point')) {
+            Type::addType('point', PointType::class);
+        }
+        if (!Type::hasType('geometry')) {
+            Type::addType('geometry', GeometryType::class);
+        }
+        if (!Type::hasType('linestring')) {
+            Type::addType('linestring', LineStringType::class);
+        }
+        if (!Type::hasType('polygon')) {
+            Type::addType('polygon', PolygonType::class);
+        }
+        if (!Type::hasType('multilinestring')) {
+            Type::addType('multilinestring', MultiLineStringType::class);
+        }
+        if (!Type::hasType('multipoint')) {
+            Type::addType('multipoint', MultiPointType::class);
+        }
+        if (!Type::hasType('multipolygon')) {
+            Type::addType('multipolygon', MultiPolygonType::class);
+        }
 
 
         $config->setProxyNamespace(self::DEFAULT_NAMESPACE);
