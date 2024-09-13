@@ -14,11 +14,20 @@ class DatabaseForeignKey extends ValueObject
 {
     use BaseAttributeTrait;
 
-    public const ACTION_CASCADE = 'CASCADE';
-    public const ACTION_NO_ACTION = 'NO ACTION';
-    public const ACTION_SET_NULL = 'SET NULL';
-    public const ACTION_RESTRICT = 'RESTRICT';
-    public const ACTION_SET_DEFAULT = 'SET DEFAULT';
+    /** @var string Cascades deletion if foreign Key Entity is deleted */
+    public const string ACTION_CASCADE = 'CASCADE';
+
+    /** @var string Changes nothing, usualy not a good idea */
+    public const string ACTION_NO_ACTION = 'NO ACTION';
+
+    /** @var string Sets foreign key reference column to null, especially relevant if Entity is far more essential, than foreign entity */
+    public const string ACTION_SET_NULL = 'SET NULL';
+
+    /** @var string Deletion of foreign Entity is prohibited until reference to it is removed */
+    public const string ACTION_RESTRICT = 'RESTRICT';
+
+    /** @var string Sets value to default usually in case of update; ATTENTION: not supported by many DBMS! */
+    public const string ACTION_SET_DEFAULT = 'SET DEFAULT';
 
     /** @var string Internal column containing id, e.g. cityId */
     public string $internalIdColumn;
@@ -36,11 +45,11 @@ class DatabaseForeignKey extends ValueObject
     public string $foreignIdColumn = 'id';
 
     /** @var string Action on update of foreign row key column */
-    #[Choice([self::ACTION_CASCADE, self::ACTION_NO_ACTION, self::ACTION_SET_DEFAULT, self::ACTION_SET_NULL])]
+    #[Choice([self::ACTION_CASCADE, self::ACTION_NO_ACTION, self::ACTION_SET_DEFAULT, self::ACTION_SET_NULL, self::ACTION_RESTRICT])]
     public string $onUpdateAction = self::ACTION_CASCADE;
 
     /** @var string Action on deletion of foreign row */
-    #[Choice([self::ACTION_CASCADE, self::ACTION_NO_ACTION, self::ACTION_SET_DEFAULT, self::ACTION_SET_NULL])]
+    #[Choice([self::ACTION_CASCADE, self::ACTION_NO_ACTION, self::ACTION_SET_DEFAULT, self::ACTION_SET_NULL, self::ACTION_RESTRICT])]
     public string $onDeleteAction = self::ACTION_CASCADE;
 
     /** @var bool If false, foreign key is not used */

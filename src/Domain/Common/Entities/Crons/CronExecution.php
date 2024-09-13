@@ -47,7 +47,7 @@ class CronExecution extends Entity
     public int $cronId;
 
     /** @var Cron The executed Cron */
-    #[LazyLoad(LazyLoadRepo::DB)]
+    #[LazyLoad(addAsParent: true)]
     public Cron $cron;
 
     /** @var DateTime The DateTime of the Cron's execution */

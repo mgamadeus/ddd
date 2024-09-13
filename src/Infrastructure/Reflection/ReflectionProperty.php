@@ -9,7 +9,7 @@ class ReflectionProperty extends \ReflectionProperty
 {
     protected static $typeCache = [];
     private string $reflectionClassName;
-    
+
     protected static array $attributesCache = [];
 
     public function __construct(object|string $class, string $property)
@@ -79,6 +79,20 @@ class ReflectionProperty extends \ReflectionProperty
             return $return;
         }
         return self::$attributesCache[$key][$attributeName] ?? [];
+    }
+
+    /**
+     * Returns first attribute instance for attribute name
+     * @param string $attributeName
+     * @return mixed
+     * @throws \ReflectionException
+     */
+    public function getAttributeInstance(string $attributeName): mixed
+    {
+        return ReflectionClass::instance($this->reflectionClassName)->getAttributeInstanceForProperty(
+            $this->name,
+            $attributeName
+        );
     }
 
 

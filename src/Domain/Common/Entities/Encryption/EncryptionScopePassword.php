@@ -37,7 +37,7 @@ class EncryptionScopePassword extends Entity
     public int $encryptionScopeId;
 
     /** @var EncryptionScope The associated EncryptedScope */
-    #[LazyLoad(LazyLoadRepo::DB)]
+    #[LazyLoad(LazyLoadRepo::DB, addAsParent: true)]
     public EncryptionScope $encryptionScope;
 
     /** @var string The hash of the password for easy retrieval */

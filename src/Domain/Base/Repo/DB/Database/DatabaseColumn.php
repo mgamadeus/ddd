@@ -164,12 +164,21 @@ class DatabaseColumn extends ValueObject
     /** @var bool It true, columns is json and will be upserted with JSON_MERGE_PATCH */
     public bool $isMergableJSONColumn = false;
 
+    /**
+     * @var string * If set, on duplicate, the update action is applioed instead of {$column} = VALUES({$column})
+     * Usefull e.g. if a counter has to be incremented on update
+     * */
+    public ?string $onUpdateAction;
+
     /** @var string If encryption is set, encryptionScope is required, it can be one of the scopes defined in EncryptionScope ø */
     #[Choice(callback: [EncryptionScope::class, 'getScopes'])]
     public ?string $enryptionScope;
 
     /** @var bool Wheather the column is primary key or not */
     public bool $isPrimaryKey = false;
+
+    /** @var DatabaseVirtualColumns Database VirtualColumns based on current column */
+    public DatabaseVirtualColumns $virtualColumnsBasedOnCurrentColumn;
 
     public static function createFromReflectionProperty(
         ReflectionClass $reflectionClass,
@@ -342,6 +351,9 @@ class DatabaseColumn extends ValueObject
             if ($columnAttributeInstance->varCharLength !== null) {
                 $databaseColum->varCharLength = $columnAttributeInstance->varCharLength;
             }
+            if ($columnAttributeInstance->onUpdateAction !== null) {
+                $databaseColum->onUpdateAction = $columnAttributeInstance->onUpdateAction;
+            }
         }
         return $databaseColum;
     }
@@ -456,7 +468,9 @@ class DatabaseColumn extends ValueObject
         int $varCharLength = null,
         bool $encrypted = false,
         ?string $encryptionScope = null,
+        ?string $onUpdateAction = null,
         bool $ignoreProperty = false,
+        bool $isMergableJSONColumn = false,
     ) {
         $this->sqlType = $sqlType;
         $this->allowsNull = $allowsNull;
@@ -464,8 +478,10 @@ class DatabaseColumn extends ValueObject
         $this->isUnsigned = $isUnsigned;
         $this->varCharLength = $varCharLength;
         $this->encrypted = $encrypted;
+        $this->onUpdateAction = $onUpdateAction;
         $this->enryptionScope = $encryptionScope;
         $this->ignoreProperty = $ignoreProperty;
+        $this->isMergableJSONColumn = $isMergableJSONColumn;
         parent::__construct();
     }
 }

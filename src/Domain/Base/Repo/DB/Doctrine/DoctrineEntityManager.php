@@ -7,6 +7,7 @@ namespace DDD\Domain\Base\Repo\DB\Doctrine;
 use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 use DDD\Infrastructure\Exceptions\ForbiddenException;
+use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Services\AuthService;
 use Doctrine\Common\Cache\Psr6\InvalidArgument;
 use Doctrine\Common\EventManager;
@@ -81,14 +82,14 @@ class DoctrineEntityManager extends EntityManager
         $update = [];
         $hasId = $metadata->containsForeignIdentifier;
         $createdColumn = ChangeHistory::DEFAULT_CREATED_COLUMN_NAME;
+        $reflectionClass = ReflectionClass::instance($doctrineModel::class);
 
         foreach ($metadata->getFieldNames() as $fieldName) {
-            $value = $metadata->getFieldValue($doctrineModel, $fieldName);
-
             // We ignore virtual columns
             if (isset($doctrineModel->virtualColumns[$fieldName])) {
                 continue;
             }
+            $value = $metadata->getFieldValue($doctrineModel, $fieldName);
             $column = $metadata->getColumnName($fieldName);
             $column = '`' . $column . '`';
             if ($metadata->isIdentifier($fieldName)) {
@@ -100,10 +101,13 @@ class DoctrineEntityManager extends EntityManager
                     continue;
                 }
             }
-            $reflectionProperty = $metadata->getReflectionProperty($fieldName);
+            $reflectionProperty = $reflectionClass->getProperty($fieldName);
             if (!$reflectionProperty->isInitialized($doctrineModel)) {
                 continue;
             }
+            /** @var DatabaseColumn $databaseColumnAttributeInstance */
+            $databaseColumnAttributeInstance = $reflectionProperty->getAttributeInstance(DatabaseColumn::class);
+
             $type = $metadata->getTypeOfField($fieldName);
             // Handle Spatial Types
             if (isset(DatabaseColumn::SPATIAL_SQL_TYPES[$type])) {
@@ -121,12 +125,15 @@ class DoctrineEntityManager extends EntityManager
 
 
             // Check if in column JSON contents should be merged with JSON_MERGE_PATCH
-            if (isset($doctrineModel->jsonMergableColumns[$fieldName]) && is_array($value)) {
+            if ($databaseColumnAttributeInstance?->isMergableJSONColumn && is_array(
+                    $value
+                )) {
                 $update[] = "{$column} = JSON_MERGE_PATCH(COALESCE($column,'{}'), VALUES($column))";
-            }
-            elseif ($fieldName == $createdColumn) {
+            } elseif ($fieldName == $createdColumn) {
                 // we do not execute updates on created columns
                 $update[] = "{$column} = COALESCE(VALUES($column), $column)";
+            } elseif (isset($databaseColumnAttributeInstance->onUpdateAction)) {
+                $update[] = "{$column} = " . $databaseColumnAttributeInstance->onUpdateAction;
             } else {
                 $update[] = "{$column} = VALUES({$column})";
             }
@@ -216,6 +223,7 @@ class DoctrineEntityManager extends EntityManager
             return;
         }
         $connection = $this->getConnection();
+        $firstModel = reset($doctrineModels);
         $metadata = $this->getClassMetadata(reset($doctrineModels)::class);
         $identifier = $metadata->getSingleIdentifierFieldName();
 
@@ -227,6 +235,7 @@ class DoctrineEntityManager extends EntityManager
         $hasId = $metadata->containsForeignIdentifier;
         $createdColumn = ChangeHistory::DEFAULT_CREATED_COLUMN_NAME;
         $doctrineModel = $doctrineModels[0];
+        $reflectionClass = ReflectionClass::instance($firstModel::class);
 
         // Get column names outside of the loop
         foreach ($metadata->getFieldNames() as $fieldName) {
@@ -234,6 +243,10 @@ class DoctrineEntityManager extends EntityManager
             if (isset($doctrineModel->virtualColumns[$fieldName])) {
                 continue;
             }
+            $reflectionProperty = $reflectionClass->getProperty($fieldName);
+            /** @var DatabaseColumn $databaseColumnAttributeInstance */
+            $databaseColumnAttributeInstance = $reflectionProperty->getAttributeInstance(DatabaseColumn::class);
+
             $type = $metadata->getTypeOfField($fieldName);
             $column = $metadata->getColumnName($fieldName);
             $column = '`' . $column . '`';
@@ -247,16 +260,12 @@ class DoctrineEntityManager extends EntityManager
             } elseif ($isIdentifier) {
                 // we need to set this explicitely, otherwise in case of updates we cannot access the id with lastInsertId();
                 $update[] = "{$column} = LAST_INSERT_ID({$column})";
-            } elseif (isset($doctrineModel->jsonMergableColumns[$fieldName])) {
+            } elseif ($databaseColumnAttributeInstance?->isMergableJSONColumn) {
                 $update[] = "{$column} = JSON_MERGE_PATCH(COALESCE({$column},'{}'), COALESCE(VALUES({$column}),'{}'))";
             }
-            // Handle Spatial Types
-            elseif (isset(DatabaseColumn::SPATIAL_SQL_TYPES[$type])) {
-                //Attention: applying the following line would result into applying ST_GeomFromText twice, as it is already applied to value before
-                //$update[] = "{$column} = ST_GeomFromText(VALUES({$column}))";
-                $update[] = "{$column} = VALUES({$column})";
-            }
-            else {
+            elseif (isset($databaseColumnAttributeInstance->onUpdateAction)) {
+                $update[] = "{$column} = " . $databaseColumnAttributeInstance->onUpdateAction;
+            } else {
                 $update[] = "{$column} = VALUES({$column})";
             }
         }
@@ -296,12 +305,6 @@ class DoctrineEntityManager extends EntityManager
         if (!$useInsertIgnore) {
             $sql .= ' ON DUPLICATE KEY UPDATE ' . implode(', ', $update);
         }
-        //echo $sql;die();
-        echo json_encode([
-            'set' => $set,
-            'values' => $values,
-            'types' => $types,
-        ]);
         $connection->executeStatement(
             $sql,
             $values,

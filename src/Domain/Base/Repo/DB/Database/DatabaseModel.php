@@ -142,9 +142,11 @@ class DatabaseModel extends ValueObject
                     ReflectionProperty::IS_PUBLIC
                 ) as $parentClassReflectionProperty
             ) {
-                if ($subclassIndicatorAttibute = $parentClassReflectionProperty->getAttributes(
-                    SubclassIndicator::class
-                )[0] ?? null) {
+                if (
+                    $subclassIndicatorAttibute = $parentClassReflectionProperty->getAttributes(
+                        SubclassIndicator::class
+                    )[0] ?? null
+                ) {
                     $reflectionProperties[] = $parentClassReflectionProperty;
                     /** @var SubclassIndicator $subclassIndicatorAttibuteInstance */
                     $subclassIndicatorAttibuteInstance = $subclassIndicatorAttibute->newInstance();
@@ -164,9 +166,11 @@ class DatabaseModel extends ValueObject
             // as the SubclassIndicator has to be defined only in the parent class, this is checked only in case of not handling a subclass
             foreach ($reflectionProperties as $reflectionProperty) {
                 // if we have a SubclassIndicator, we attach the property name and and the SubclassIndicator to the DatabaseModel
-                if ($subclassIndicatorAttibute = $reflectionProperty->getAttributes(
-                    SubclassIndicator::class
-                )[0] ?? null) {
+                if (
+                    $subclassIndicatorAttibute = $reflectionProperty->getAttributes(
+                        SubclassIndicator::class
+                    )[0] ?? null
+                ) {
                     /** @var SubclassIndicator $subclassIndicatorAttibuteInstance */
                     $subclassIndicatorAttibuteInstance = $subclassIndicatorAttibute->newInstance();
                     $subclassIndicatorAttibuteInstance->indicatorPropertyName = $reflectionProperty->getName();
@@ -186,10 +190,31 @@ class DatabaseModel extends ValueObject
                 );
             }
         }
-
+        // First we sort reflectionProperties so that we have Entities at the end, as Entities are mapped to Foreign Keys and we rely on some internal columns that have to be created first
+        usort($reflectionProperties, function (ReflectionProperty $a, ReflectionProperty $b) {
+            $aRepresentsEntity = $a->getType() instanceof ReflectionNamedType && is_a(
+                    $a->getType()->getName(),
+                    Entity::class,
+                    true
+                );
+            $bRepresentsEntity = $b->getType() instanceof ReflectionNamedType && is_a(
+                    $b->getType()->getName(),
+                    Entity::class,
+                    true
+                );
+            // Sort: non-entities ($aRepresentsEntity = false) before entities ($aRepresentsEntity = true)
+            if ($aRepresentsEntity && !$bRepresentsEntity) {
+                return 1; // $a is an entity and should be after $b
+            } elseif (!$aRepresentsEntity && $bRepresentsEntity) {
+                return -1; // $b is an entity and should be after $a
+            } else {
+                return 0; // both are either entities or non-entities, order stays the same
+            }
+        });
         foreach ($reflectionProperties as $reflectionProperty) {
             // create regular columns
             $databaseColumn = DatabaseColumn::createFromReflectionProperty($entityReflectionClass, $reflectionProperty);
+            $virtualColumnsForProperty = null;
             if ($databaseColumn) {
                 $databaseModel->columns->add($databaseColumn);
                 if ($virtualColumnAttributes = $reflectionProperty->getAttributes(DatabaseVirtualColumn::class)) {
@@ -198,6 +223,10 @@ class DatabaseModel extends ValueObject
                         $virtualColumnAttributeInstance = $virtualColumnAttribute->newInstance();
                         $virtualColumnAttributeInstance->referenceColumn = $databaseColumn;
                         $databaseModel->virtualColumns->add($virtualColumnAttributeInstance);
+                        if (!isset($databaseColumn->virtualColumnsBasedOnCurrentColumn)) {
+                            $databaseColumn->virtualColumnsBasedOnCurrentColumn = new DatabaseVirtualColumns();
+                            $databaseColumn->virtualColumnsBasedOnCurrentColumn->add($virtualColumnAttributeInstance);
+                        }
                         if (!$virtualColumnAttributeInstance->createIndex) {
                             continue;
                         }
@@ -256,7 +285,7 @@ class DatabaseModel extends ValueObject
                     }
                 } elseif (isset($databaseColumn->sqlType) && $databaseColumn->hasIndex && !$databaseColumn->ignoreProperty) {
                     $indexType = DatabaseColumn::SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS[$databaseColumn->sqlType];
-                    if ($indexType != DatabaseIndex::TYPE_NONE){
+                    if ($indexType != DatabaseIndex::TYPE_NONE) {
                         $index = new DatabaseIndex(indexColumns: [$databaseColumn->name], indexType: $indexType);
                         $databaseModel->indexes->add($index);
                     }
@@ -266,11 +295,13 @@ class DatabaseModel extends ValueObject
             // handle indexes added to potentialOneToManyPropertyNames and processed later
             // in order to avoid recursion, we need to process first all Classes and then go through them and
             // add one to many relationsships later
-            if ($reflectionProperty->getType() instanceof ReflectionNamedType && is_a(
+            if (
+                $reflectionProperty->getType() instanceof ReflectionNamedType && is_a(
                     $reflectionProperty->getType()->getName(),
                     EntitySet::class,
                     true
-                ) && $lazyLoadAttributes = $reflectionProperty->getAttributes(LazyLoad::class)) {
+                ) && $lazyLoadAttributes = $reflectionProperty->getAttributes(LazyLoad::class)
+            ) {
                 foreach ($lazyLoadAttributes as $lazyLoadAttribute) {
                     /** @var LazyLoad $lazyLoadAttributeInstance */
                     $lazyLoadAttributeInstance = $lazyLoadAttribute->newInstance();
@@ -282,21 +313,26 @@ class DatabaseModel extends ValueObject
             }
 
             // Entities are translated to foreign keys, if they have a DB related Repo
-            if ($reflectionProperty->getType() instanceof ReflectionNamedType && is_a(
+            if (
+                $reflectionProperty->getType() instanceof ReflectionNamedType && is_a(
                     $reflectionProperty->getType()->getName(),
                     Entity::class,
                     true
-                )) {
+                )
+            ) {
                 $propertyLazyLoadAttributes = $reflectionProperty->getAttributes(LazyLoad::class);
                 $propertyDBRepoLazyloadAttribute = null;
+                $propertyRepresentsParentClass = false;
                 foreach ($propertyLazyLoadAttributes as $propertyLazyLoadAttribute) {
                     /** @var LazyLoad $propertyLazyLoadAttributeInstance */
                     $propertyLazyLoadAttributeInstance = $propertyLazyLoadAttribute->newInstance();
+                    $propertyRepresentsParentClass = $propertyRepresentsParentClass || $propertyLazyLoadAttributeInstance->addAsParent;
                     if ($propertyLazyLoadAttributeInstance->repoType == LazyLoadRepo::DB) {
                         $propertyDBRepoLazyloadAttribute = $propertyLazyLoadAttributeInstance;
                         break;
                     }
                 }
+
                 /** @var Entity $foreignClassName */
                 $foreignClassName = $reflectionProperty->getType()->getName();
                 $foreignClassReflectionClass = ReflectionClass::instance((string)$foreignClassName);
@@ -326,16 +362,17 @@ class DatabaseModel extends ValueObject
                     // if we find a Legacy Repo on the foreign Entity class
                     // and the property referencing the Entity Class does not have a DB Repo repo set which is also present in the Entity class
                     // => we use the model from the Legacy DB Class
-                    if (($legacyDBEntity = $foreignClassName::getRepoClass(LazyLoadRepo::LEGACY_DB))
-                        && !($propertyDBRepoLazyloadAttribute && $foreignClassName::getRepoClass(LazyLoadRepo::DB))
+                    if (
+                        ($legacyDBEntity = $foreignClassName::getRepoClass(
+                            LazyLoadRepo::LEGACY_DB
+                        )) && !($propertyDBRepoLazyloadAttribute && $foreignClassName::getRepoClass(LazyLoadRepo::DB))
                     ) {
                         /** @var DatabaseRepoEntity $legacyDBEntity */
                         $foreignModelReflectionClass = ReflectionClass::instance($legacyDBEntity::BASE_ORM_MODEL);
                         $foreignModelClassWithNamespace = $foreignModelReflectionClass->getClassWithNamespace();
                         $foreignModelClassName = $foreignModelClassWithNamespace->name;
                         $modelImport = new DatabaseModelImport(
-                            $foreignModelClassWithNamespace,
-                            $databaseModel->modelClassWithNamespace->namespace
+                            $foreignModelClassWithNamespace, $databaseModel->modelClassWithNamespace->namespace
                         );
                         $databaseModel->modelImports->add($modelImport);
                         $tableAttribute = $foreignModelReflectionClass->getAttributes(Table::class)[0] ?? null;
@@ -359,8 +396,7 @@ class DatabaseModel extends ValueObject
                         // foreign model is from different namespace, we need to add an import
                         if ($databaseModel->modelClassWithNamespace->namespace != $foreignModelClassWithNamespace->namespace) {
                             $modelImport = new DatabaseModelImport(
-                                $foreignModelClassWithNamespace,
-                                $databaseModel->modelClassWithNamespace->namespace
+                                $foreignModelClassWithNamespace, $databaseModel->modelClassWithNamespace->namespace
                             );
                             $databaseModel->modelImports->add($modelImport);
                         }
@@ -370,22 +406,38 @@ class DatabaseModel extends ValueObject
                     $foreignKey = null;
 
                     // if we find an DatabaseForeignKey attribute, we use it
-                    if ($foreignReferenceAttribute = $reflectionProperty->getAttributes(
-                        DatabaseForeignKey::class
-                    )[0] ?? null) {
-                        /** @var DatabaseForeignKey $foreignKeyAttributeInstance */
-                        $foreignKeyAttributeInstance = $foreignReferenceAttribute->newInstance();
-                        $foreignKey = $foreignKeyAttributeInstance;
-                    } else {
-                        $foreignKey = new DatabaseForeignKey();
-                    }
-                    if ($foreignKey->onUpdateAction == $foreignKey::ACTION_SET_NULL || $foreignKey->onDeleteAction == $foreignKey::ACTION_SET_NULL
-                        && !$internalColumnProperty->getType()->allowsNull()
+                    $defaultOnDeleteAction = $propertyRepresentsParentClass ? DatabaseForeignKey::ACTION_CASCADE : DatabaseForeignKey::ACTION_SET_NULL;
+                    $foreignKey = $reflectionProperty->getAttributeInstance(DatabaseForeignKey::class) ?? new DatabaseForeignKey(onDeleteAction: $defaultOnDeleteAction);
+
+                    if (
+                        $foreignKey->onUpdateAction == $foreignKey::ACTION_SET_NULL || $foreignKey->onDeleteAction == $foreignKey::ACTION_SET_NULL && !$internalColumnProperty->getType(
+                        )->allowsNull()
                     ) {
                         throw new InternalErrorException(
                             "{$entityClassName}.{$internalColumn} does not allow null, 
                         but foreign reference definitions applied by attribute on {$entityClassName}.{$reflectionProperty->getName()} define SET NULL on DELTE or UPDATE"
                         );
+                    }
+                    // If there is a stored virtual Column present newer SQL Versions are not supporting Contraints that update the stored virtual Columns due to performance reasons
+                    // This results in errors on generation of Foreign Key contraints such as
+                    // [HY000][1901] (conn=7) Function or expression 'accountId' cannot be used in the GENERATED ALWAYS AS clause of `virtualAccountId`
+                    // In these cases we need to set on update action RESTRICT by default
+                    $internalDatabaseColumnInstance = $databaseModel->columns->getColumnByName($internalColumn);
+                    if (($foreignKey->onUpdateAction == DatabaseForeignKey::ACTION_CASCADE || $foreignKey->onUpdateAction == DatabaseForeignKey::ACTION_SET_NULL)
+                        && isset($internalDatabaseColumnInstance->virtualColumnsBasedOnCurrentColumn)) {
+                        $hasStoredVirtualColumn = false;
+                        foreach (
+                            $internalDatabaseColumnInstance->virtualColumnsBasedOnCurrentColumn->getElements(
+                            ) as $dependentDatabaseVirtualColumn
+                        ) {
+                            if ($dependentDatabaseVirtualColumn->stored) {
+                                $hasStoredVirtualColumn = true;
+                                break;
+                            }
+                        }
+                        if ($hasStoredVirtualColumn) {
+                            $foreignKey->onUpdateAction = DatabaseForeignKey::ACTION_RESTRICT;
+                        }
                     }
                     $foreignKey->internalColumn = $reflectionProperty->getName();
                     $foreignKey->internalIdColumn = $internalColumn;
@@ -504,7 +556,6 @@ class DatabaseModel extends ValueObject
             }
         }
 
-
         return $sql . "\n\n";
     }
 
@@ -582,18 +633,6 @@ class DatabaseModel extends ValueObject
             }
             $modelClassContent = "#[ORM\Entity]\n#[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]\n#[ORM\Table(name: '{$this->sqlTableName}')]{$subclassIndicatorDeclarations}\nclass {$this->getModelClassNameWithNameSpace()->name} extends DoctrineModel\n{\n\tpublic const MODEL_ALIAS = '{$this->name}';\n\n\tpublic const TABLE_NAME = '{$this->sqlTableName}';\n\n\tpublic const ENTITY_CLASS = '{$this->entityClassWithNamespace->getNameWithNamespace()}';\n\n";
         }
-        $jsonMergableColumns = [];
-        foreach ($this->columns->getElements() as $column) {
-            if ($column->isMergableJSONColumn) {
-                $jsonMergableColumns[$column->name] = true;
-            }
-        }
-        if (!empty($jsonMergableColumns)) {
-            $jsonMergableColumnsContent = implode(', ', array_map(function ($key) {
-                return "'{$key}' => true";
-            }, array_keys($jsonMergableColumns)));
-            $modelClassContent .= "\t" . 'public array $jsonMergableColumns = [' . $jsonMergableColumnsContent . '];' . "\n\n";
-        }
 
         if ($this->virtualColumns->count()) {
             $virtualColumns = implode(', ', array_map(function (DatabaseVirtualColumn $virtualColumn) {
@@ -601,6 +640,8 @@ class DatabaseModel extends ValueObject
             }, $this->virtualColumns->getElements()));
             $modelClassContent .= "\t" . 'public array $virtualColumns = [' . $virtualColumns . '];' . "\n\n";
         }
+        $databaseColumnModelImport = new DatabaseModelImport(DatabaseColumn::getClassWithNamespace());
+        $this->modelImports->add($databaseColumnModelImport);
 
         foreach ($this->columns->getElements() as $column) {
             // doctrine does not want the discriminator column (in our case the subclassIndicator to be part of the model definition
@@ -621,6 +662,16 @@ class DatabaseModel extends ValueObject
             // regular properties
             if ($column->isPrimaryKey) {
                 $modelClassContent .= "\t#[ORM\Id]\n";
+            }
+            $dataBasecolumnProperties = [];
+            if ($column->isMergableJSONColumn) {
+                $dataBasecolumnProperties[] = 'isMergableJSONColumn: true';
+            }
+            if ($column->onUpdateAction) {
+                $dataBasecolumnProperties[] = 'onUpdateAction:"' . $column->onUpdateAction . '"';
+            }
+            if ($dataBasecolumnProperties) {
+                $modelClassContent .= "\t#[DatabaseColumn(" . implode(', ', $dataBasecolumnProperties) . ")]\n";
             }
             if ($column->hasAutoIncrement) {
                 $modelClassContent .= "\t#[ORM\GeneratedValue]\n";
@@ -643,7 +694,6 @@ class DatabaseModel extends ValueObject
                     ) : '') . ";\n";
             $modelClassContent .= "\n";
         }
-
 
         // belongs to
         // Belongs-to / ManyToOne Relationsships
@@ -704,8 +754,7 @@ class DatabaseModel extends ValueObject
             if ($this->modelClassWithNamespace->namespace != $targetModel->getModelClassNameWithNameSpace(
                 )->namespace) {
                 $modelImport = new DatabaseModelImport(
-                    $targetModel->getModelClassNameWithNameSpace(),
-                    $this->modelClassWithNamespace->namespace
+                    $targetModel->getModelClassNameWithNameSpace(), $this->modelClassWithNamespace->namespace
                 );
                 $this->modelImports->add($modelImport);
             }

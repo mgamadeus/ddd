@@ -34,6 +34,10 @@ class GeoPoint extends ValueObject
         return $this->lat . ',' . $this->lng;
     }
 
+    public static function fromString(string $lnglat): ?GeoPoint {
+        return self::fromLatLngString($lnglat);
+    }
+
     /**
      * Creates GeoPoint from comma separated lat,lng pair, only if coordinates are valid
      * @param string $latLng
@@ -91,8 +95,8 @@ class GeoPoint extends ValueObject
 
     #[Override] public function mapFromRepository(mixed $repoObject): void
     {
-        $this->lng = $repoObject->y();
-        $this->lat = $repoObject->x();
+        $this->lng = $repoObject->x();
+        $this->lat = $repoObject->y();
         parent::mapFromRepository($repoObject);
     }
 
@@ -102,9 +106,7 @@ class GeoPoint extends ValueObject
      */
     public function mapToRepository(): mixed
     {
-        $point = Point::xy($this->lat, $this->lng);
-        $x = $point->x();
-        $y = $point->y();
+        $point = Point::xy($this->lng, $this->lat);
         return $point;
     }
 }

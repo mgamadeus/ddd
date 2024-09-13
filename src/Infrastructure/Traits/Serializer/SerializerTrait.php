@@ -748,7 +748,7 @@ trait SerializerTrait
                             try {
                                 $loadedInstance = $typeToInstance::fromString($value);
                                 if ($loadedInstance) {
-                                    $this->$propertyName = $typeToInstance::fromString($value);
+                                    $this->$propertyName = $loadedInstance;
                                 }
                                 return;
                             } catch (Exception) {
@@ -756,7 +756,7 @@ trait SerializerTrait
                         } else {
                             $loadedInstance = $typeToInstance::fromString($value);
                             if ($loadedInstance) {
-                                $this->$propertyName = $typeToInstance::fromString($value);
+                                $this->$propertyName = $loadedInstance;
                             }
                             return;
                         }
