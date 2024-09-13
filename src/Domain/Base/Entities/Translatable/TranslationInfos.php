@@ -97,8 +97,9 @@ class TranslationInfos extends ValueObject
             }
             return $this->translationsStore[$propertyName];
         }
-        $translations[Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle()] = $this->getParent(
-        )->$propertyName;
+        // commented this, as it creates the problem that current value is also considered and added to translation
+        // but current value could be set by default, when using fallback to default language
+        //$translations[Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle()] = $this->getParent()->$propertyName;
         if (isset($this->translationsStore[$propertyName])) {
             $translations = array_merge($translations, $this->translationsStore[$propertyName]);
         }
@@ -224,7 +225,9 @@ class TranslationInfos extends ValueObject
         }
         // If not translation is found and we have set fallback to default language, returns default language
         if (!$translation && Translatable::fallbackToDefaultLanguageIfNoTranslationIsPresent()) {
-            $key = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(Translatable::getDefaultLanguageCode());
+            $key = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
+                Translatable::getDefaultLanguageCode()
+            );
             $translation = $this->translationsStore[$propertyName][$key] ?? null;
             if ($translation) {
                 return $translation;
