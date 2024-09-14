@@ -581,6 +581,9 @@ abstract class DatabaseRepoEntity extends RepoEntity
                             if ($updatedChild instanceof EntitySet) {
                                 $updatedChild->regenerateElementsByUniqueKey();
                             }
+                            elseif($updatedChild instanceof Entity && property_exists($entity,$propertyName . 'Id') && isset($updatedChild->id)){
+                                $entity->{$propertyName . 'Id'} = $updatedChild->id;
+                            }
                         }
                     }
                 }
