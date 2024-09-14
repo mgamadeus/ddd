@@ -24,6 +24,7 @@ use ReflectionNamedType;
 use ReflectionUnionType;
 use Symfony\Component\Validator\Constraints\Choice;
 use Symfony\Component\Validator\Constraints\Length;
+use Symfony\Component\Validator\Constraints\NotNull;
 
 #[Attribute(Attribute::TARGET_PROPERTY)]
 class DatabaseColumn extends ValueObject
@@ -354,6 +355,9 @@ class DatabaseColumn extends ValueObject
             if ($columnAttributeInstance->onUpdateAction !== null) {
                 $databaseColum->onUpdateAction = $columnAttributeInstance->onUpdateAction;
             }
+        }
+        if ($reflectionProperty->hasAttribute(NotNull::class)) {
+            $databaseColum->allowsNull = false;
         }
         return $databaseColum;
     }
