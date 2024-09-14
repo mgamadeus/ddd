@@ -545,6 +545,16 @@ abstract class DatabaseRepoEntity extends RepoEntity
                 if (isset($loadedChildPropertiesAfterUpdate[$propertyName])) {
                     continue;
                 }
+                $propertyIsParent = false;
+                /** @var LazyLoad $lazyloadAttribute */
+                $lazyloadAttribute = ReflectionClass::instance($entity::class)->getProperty(
+                    $propertyName
+                )->getAttributeInstance(LazyLoad::class);
+                $propertyIsParent = $propertyIsParent || ($lazyloadAttribute && $lazyloadAttribute?->addAsParent ?? false);
+                // We do not update parent Entities
+                if ($propertyIsParent) {
+                    continue;
+                }
                 // we cannot store an entity that depends on the current entity which is not yet stored
                 if ($value::dependsOn($entity)) {
                     if (!$entityAlreadyStored) {
@@ -580,8 +590,10 @@ abstract class DatabaseRepoEntity extends RepoEntity
                             $entity->$propertyName = $updatedChild;
                             if ($updatedChild instanceof EntitySet) {
                                 $updatedChild->regenerateElementsByUniqueKey();
-                            }
-                            elseif($updatedChild instanceof Entity && property_exists($entity,$propertyName . 'Id') && isset($updatedChild->id)){
+                            } elseif ($updatedChild instanceof Entity && property_exists(
+                                    $entity,
+                                    $propertyName . 'Id'
+                                ) && isset($updatedChild->id)) {
                                 $entity->{$propertyName . 'Id'} = $updatedChild->id;
                             }
                         }
