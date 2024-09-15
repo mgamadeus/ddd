@@ -24,6 +24,7 @@ use DoctrineExtensions\Query\Mysql\Field;
 use DoctrineExtensions\Query\Mysql\IfNull;
 use DoctrineExtensions\Query\Mysql\MatchAgainst;
 use DoctrineExtensions\Query\Mysql\Rand;
+use DoctrineExtensions\Query\Mysql\StrToDate;
 use DoctrineExtensions\Types\PolygonType;
 use RuntimeException;
 
@@ -124,6 +125,7 @@ class EntityManagerFactory
         $config->addCustomStringFunction('IFNULL', IfNull::class);
         $config->addCustomStringFunction('MATCH', MatchAgainst::class);
         $config->addCustomNumericFunction('RAND', Rand::class);
+        $config->addCustomStringFunction('STR_TO_DATE', StrToDate::class);
         // This is an example to declare a standard spatial function which is returning a string
         $config->addCustomStringFunction('ST_Envelope', EnvelopeFunction::class);
         $config->addCustomNumericFunction('ST_Area', AreaFunction::class);
