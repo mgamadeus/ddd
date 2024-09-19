@@ -496,7 +496,7 @@ class DBEntity extends DatabaseRepoEntity
         if ($translatableProperty) {
             /** @var TranslatableTrait $entity */
             $translationInfos = $entity->getTranslationInfos();
-            $mappedValue = $translationInfos->getTranslationsForProperty($propertyName);
+            $mappedValue = $translationInfos->getTranslationsForProperty($propertyName, true);
             if ($mappedValue !== null) {
                 $mappedValueSet = true;
             }

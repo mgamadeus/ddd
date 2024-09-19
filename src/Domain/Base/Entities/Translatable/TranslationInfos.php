@@ -83,9 +83,10 @@ class TranslationInfos extends ValueObject
     /**
      * Retrieves the translations for a given property.
      * @param string $propertyName The name of the property to retrieve translations for.
+     * @param bool $forPersistence If true, we are operating in context of mapping the values for persistance, in this case also the value of the property is taken into consideration
      * @return array|null An array of translations, or null if the property does not exist or has no translations.
      */
-    public function getTranslationsForProperty(string $propertyName): ?array
+    public function getTranslationsForProperty(string $propertyName, bool $forPersistence = false): ?array
     {
         if (!property_exists($this->getParent(), $propertyName)) {
             return null;
@@ -97,9 +98,12 @@ class TranslationInfos extends ValueObject
             }
             return $this->translationsStore[$propertyName];
         }
-        // commented this, as it creates the problem that current value is also considered and added to translation
-        // but current value could be set by default, when using fallback to default language
-        //$translations[Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle()] = $this->getParent()->$propertyName;
+        // We are operating in context of mapping the values for persistance, in this case also the value of the property is taken into consideration
+        // Otherwise not, as we want to have the values "as they are" and understand if a translation is missing or not
+        if (isset($this->getParent()->$propertyName) && $this->getParent()->$propertyName !== null && $forPersistence) {
+            $translations[Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
+            )] = $this->getParent()->$propertyName;
+        }
         if (isset($this->translationsStore[$propertyName])) {
             $translations = array_merge($translations, $this->translationsStore[$propertyName]);
         }
