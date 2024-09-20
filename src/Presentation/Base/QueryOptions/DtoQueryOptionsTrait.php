@@ -164,11 +164,17 @@ trait DtoQueryOptionsTrait
      */
     public function getTop(): ?int
     {
+        if (isset($this->top) && $this->top <= 0 ){
+            $this->top = null;
+        }
         return $this->top ?? null;
     }
 
     public function getSkip(): ?int
     {
+        if (isset($this->skip) && $this->skip <= 0 ){
+            $this->skip = null;
+        }
         return $this->skip ?? null;
     }
 }
