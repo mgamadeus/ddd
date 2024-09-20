@@ -172,9 +172,6 @@ trait DtoQueryOptionsTrait
 
     public function getSkip(): ?int
     {
-        if (isset($this->skip) && $this->skip <= 0 ){
-            $this->skip = null;
-        }
         return $this->skip ?? null;
     }
 }
