@@ -74,24 +74,26 @@ class PathParameterSchema
             if ($type) {
                 $typeName = $type->getName();
                 if ($type->isBuiltin()) {
-                    $typeName = $this->typeNameAllocation[$typeName];
-                    if ($typeName == 'array') {
+                    $typeNameAllocated = $this->typeNameAllocation[$typeName];
+                    if ($typeNameAllocated == 'array') {
                         throw new TypeDefinitionMissingOrWrong(
                             'Declared type array in ' . $requestDtoReflectionClass->getName(
                             ) . '->$' . $requestDtoReflectionProperty->getName() . ' allowed only for BODY parameters'
                         );
                     }
-                    if ($typeName == 'object') {
-                        throw new TypeDefinitionMissingOrWrong(
-                            'Declared type object in ' . $requestDtoReflectionClass->getName(
-                            ) . '->$' . $requestDtoReflectionProperty->getName(
-                            ) . ' not allowed. Only basic types are allowed outside of Body or Post'
-                        );
+                    if ($typeNameAllocated == 'object') {
+                        if (!method_exists($typeName, 'fromString')) {
+                            throw new TypeDefinitionMissingOrWrong(
+                                'Declared type object in ' . $requestDtoReflectionClass->getName(
+                                ) . '->$' . $requestDtoReflectionProperty->getName(
+                                ) . ' not allowed. Only basic types are allowed outside of Body or Post, or Classes with fromString Method'
+                            );
+                        }
                     }
                     if ($unionType) {
-                        $this->oneOf[] = ['type' => $typeName];
+                        $this->oneOf[] = ['type' => $typeNameAllocated];
                     } else {
-                        $this->type = $typeName;
+                        $this->type = $typeNameAllocated;
                     }
                     if ($this->type == 'string') {
                         if ($lengthAttribute = $requestDtoReflectionProperty->getAttributes(Length::class)[0] ?? null) {
@@ -234,11 +236,13 @@ class PathParameterSchema
                         }
                         continue;
                     }
-                    throw new TypeDefinitionMissingOrWrong(
-                        'Declared type ' . $typeName . ' in ' . $requestDtoReflectionClass->getName(
-                        ) . '->$' . $requestDtoReflectionProperty->getName(
-                        ) . ' not allowed. Only basic types are allowed outside of Body or Post'
-                    );
+                    if (!method_exists($typeName, 'fromString')) {
+                        throw new TypeDefinitionMissingOrWrong(
+                            'Declared type ' . $typeName . ' in ' . $requestDtoReflectionClass->getName(
+                            ) . '->$' . $requestDtoReflectionProperty->getName(
+                            ) . ' not allowed. Only basic types are allowed outside of Body or Post'
+                        );
+                    }
                 }
             }
         }
