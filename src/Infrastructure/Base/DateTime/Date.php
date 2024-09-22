@@ -22,6 +22,14 @@ class Date extends DateTime
 
     private $toStringCache = null;
 
+    public function __construct(string $datetime = 'now', ?DateTimeZone $timezone = null)
+    {
+        parent::__construct($datetime, $timezone);
+        $this->setTime(0, 0, 0, 0);
+        $this->setTimezone(new DateTimeZone('UTC'));
+    }
+
+
     /**
      * Creates a Date object from a string formatted date.
      * The resulting Date object will have a time component set to 00:00:00 UTC.
