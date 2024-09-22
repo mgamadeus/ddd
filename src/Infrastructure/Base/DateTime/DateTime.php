@@ -39,6 +39,20 @@ class DateTime extends \DateTime
     }
 
     /**
+     * @return Date Returns Date instance from DateTime
+     */
+    public function getDate(): Date
+    {
+        $date = new Date();
+        $date->setDate(
+            (int)$this->format('Y'),  // Jahr
+            (int)$this->format('m'),  // Monat
+            (int)$this->format('d')   // Tag
+        );
+        return $date;
+    }
+
+    /**
      * creates DateTime from Atom Date Format, supports also multiple formats as array
      * @param string $stringFormattedDate
      * @param string|array $dateTimeFormat
