@@ -20,6 +20,7 @@ use DDD\Infrastructure\Services\DDDService;
 use Doctrine\Common\Proxy\AbstractProxyFactory;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\ORMSetup;
+use DoctrineExtensions\Query\Mysql\DateAdd;
 use DoctrineExtensions\Query\Mysql\Field;
 use DoctrineExtensions\Query\Mysql\IfNull;
 use DoctrineExtensions\Query\Mysql\MatchAgainst;
@@ -124,6 +125,7 @@ class EntityManagerFactory
         $config->addCustomStringFunction('FIELD', Field::class);
         $config->addCustomStringFunction('IFNULL', IfNull::class);
         $config->addCustomStringFunction('MATCH', MatchAgainst::class);
+        $config->addCustomStringFunction('DATE_ADD', DateAdd::class);
         $config->addCustomNumericFunction('RAND', Rand::class);
         $config->addCustomStringFunction('STR_TO_DATE', StrToDate::class);
         // This is an example to declare a standard spatial function which is returning a string
