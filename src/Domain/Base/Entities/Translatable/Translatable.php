@@ -218,7 +218,7 @@ class Translatable extends ValueObject
      * @param string $languageCode
      * @return bool
      */
-    public function isSupportedLanguageCode(string $languageCode): bool
+    public static function isSupportedLanguageCode(string $languageCode): bool
     {
         return in_array($languageCode, self::getActiveLanguageCodes());
     }
