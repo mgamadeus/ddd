@@ -214,6 +214,16 @@ class Translatable extends ValueObject
     }
 
     /**
+     * Returns true if given Language is contained in activeLanguageCodes
+     * @param string $languageCode
+     * @return bool
+     */
+    public function isSupportedLanguageCode(string $languageCode): bool
+    {
+        return in_array($languageCode, self::getActiveLanguageCodes());
+    }
+
+    /**
      * Retrieves the default writing style.
      * @return string The default writing style.
      */
@@ -408,7 +418,7 @@ class Translatable extends ValueObject
     public static function replacePlaceholders(string $input, array $placeholders): string
     {
         foreach ($placeholders as $placeholder => $value) {
-            $input = str_replace("%$placeholder%", (string) $value, $input);
+            $input = str_replace("%$placeholder%", (string)$value, $input);
         }
         return $input;
     }
