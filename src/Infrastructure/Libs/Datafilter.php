@@ -211,9 +211,9 @@ class Datafilter
      *      ],
      * ];
      *
-     * @return HTMLPurifier
+     * @return \HTMLPurifier
      */
-    public static function initializePurifier(array $customDefinitions = []): HTMLPurifier
+    public static function initializePurifier(array $customDefinitions = []): \HTMLPurifier
     {
         $config = \HTMLPurifier_Config::createDefault();
         $config->set('Core.Encoding', 'UTF-8');
