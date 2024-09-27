@@ -243,7 +243,7 @@ class DoctrineQueryBuilder extends QueryBuilder
         // Modify the subquery to avoid collisions in aliases and properties
         $subquerySQL = preg_replace('/([a-zA-Z]+[0-9]+_)/', '$1sub', $subquerySQL);
         $subquerySQL = preg_replace(
-            '/SELECT.*?FROM/',
+            '/^\s*SELECT.*?FROM/',
             'SELECT DISTINCT ' . $mainEntityAlias . 'sub.id FROM',
             $subquerySQL
         );
