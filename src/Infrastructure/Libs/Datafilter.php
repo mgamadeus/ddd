@@ -168,6 +168,7 @@ class Datafilter
 
     /**
      * @param string|array|int|float|bool|null $input
+     *
      * @return string|array|int|float|bool|null
      */
     public static function sanitizeInput(string|array|int|float|bool|null $input): string|array|int|float|bool|null
@@ -175,12 +176,11 @@ class Datafilter
         if (is_int($input) || is_float($input) || is_bool($input) || is_null($input)) {
             return $input;
         }
+
         if (!self::$htmlPurifier) {
-            $config = \HTMLPurifier_Config::createDefault();
-            $config->set('Core.Encoding', 'UTF-8');
-            $config->set('HTML.Doctype', 'HTML 4.01 Transitional');
-            self::$htmlPurifier = new \HTMLPurifier($config);
+            self::initializePurifier();
         }
+
         if (is_string($input)) {
             return html_entity_decode(self::$htmlPurifier->purify($input));
         }
@@ -191,6 +191,52 @@ class Datafilter
         return $input;
     }
 
+    /**
+     * @param array $customDefinitions
+     *
+     * Example of $customDefinitions structure:
+     * $customConfig = [
+     *      'definition_id' => 'my-custom-definition',
+     *      'definition_rev' => 1,
+     *      'elements' => [
+     *          'name' => [
+     *              'type' => 'Inline',
+     *              'contents' => 'Flow',
+     *              'attr_collections' => 'Common',
+     *              'attributes' => [
+     *                  'href' => 'URI',
+     *                  'target' => 'Enum#_blank,_self',
+     *              ]
+     *          ],
+     *      ],
+     * ];
+     *
+     * @return HTMLPurifier
+     */
+    public static function initializePurifier(array $customDefinitions = []): HTMLPurifier
+    {
+        $config = HTMLPurifier_Config::createDefault();
+        $config->set('Core.Encoding', 'UTF-8');
+        $config->set('HTML.Doctype', 'HTML 4.01 Transitional');
+        $config->set('HTML.DefinitionID', $customDefinitions['definition_id'] ?? 'default');
+        $config->set('HTML.DefinitionRev', $customDefinitions['definition_rev'] ?? 1);
+
+        if (!empty($customDefinitions['elements']) && ($def = $config->maybeGetRawHTMLDefinition())) {
+            foreach ($customDefinitions['elements'] as $elementName => $elementConfig) {
+                // Add the custom element
+                $def->addElement(
+                    $elementName,
+                    $elementConfig['type'],
+                    $elementConfig['contents'],
+                    $elementConfig['attr_collections'],
+                    $elementConfig['attributes'] ?? [],
+                );
+            }
+        }
+
+        self::$htmlPurifier = new HTMLPurifier($config);
+        return self::$htmlPurifier;
+    }
 
     /**
      * Check if string is UTF8 valid.
