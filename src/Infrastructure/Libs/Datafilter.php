@@ -215,7 +215,7 @@ class Datafilter
      */
     public static function initializePurifier(array $customDefinitions = []): HTMLPurifier
     {
-        $config = HTMLPurifier_Config::createDefault();
+        $config = \HTMLPurifier_Config::createDefault();
         $config->set('Core.Encoding', 'UTF-8');
         $config->set('HTML.Doctype', 'HTML 4.01 Transitional');
         $config->set('HTML.DefinitionID', $customDefinitions['definition_id'] ?? 'default');
@@ -234,7 +234,7 @@ class Datafilter
             }
         }
 
-        self::$htmlPurifier = new HTMLPurifier($config);
+        self::$htmlPurifier = new \HTMLPurifier($config);
         return self::$htmlPurifier;
     }
 
