@@ -30,6 +30,8 @@ class RequestDto
 
     protected RequestStack $requestStack;
 
+    protected array $propertiesSetFromBody = [];
+
     public function __construct(RequestStack $requestStack)
     {
         $this->requestStack = $requestStack;
@@ -102,6 +104,9 @@ class RequestDto
         }
 
         if ($bodyDecoded) {
+            foreach ($bodyDecoded as $propertyName => $value) {
+                $this->propertiesSetFromBody[$propertyName] = true;
+            }
             $this->setPropertiesFromObject($bodyDecoded, sanitizeInput: true);
         }
         $validationResults = $this->validate(depth: 1);
@@ -112,6 +117,16 @@ class RequestDto
         }
         if ($this->noCache) {
             DDDService::instance()->deactivateCaches();
+        }
+    }
+
+    /**
+     * @return void Usefull for eliminating body from appearing e.g. on Logs in DTO again
+     */
+    public function unsetPropertiesFromBody(): void
+    {
+        foreach ($this->propertiesSetFromBody as $propertyName => $true) {
+            unset($this->$propertyName);
         }
     }
 
