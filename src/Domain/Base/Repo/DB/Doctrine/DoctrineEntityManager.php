@@ -176,8 +176,16 @@ class DoctrineEntityManager extends EntityManager
                 ', ',
                 $set
             ) . ')' . ' ON DUPLICATE KEY UPDATE ' . implode(', ', $update);
-        $connection->executeStatement($sql, $values, $types);
-
+        try {
+            $connection->executeStatement($sql, $values, $types);
+        }
+        catch(\Throwable $t){
+            // make shure we dont leave open transactions
+            if ($checkUpdateRights && !$checkedRightsOnUpdateOperation){
+                $connection->rollBack();
+            }
+            throw $t;
+        }
         $entityId = $doctrineModel->id ?? (int)$connection->lastInsertId();
 
         // if we need to check rights and we did not perform a check on an update operation, we are checking an insert operation here.
