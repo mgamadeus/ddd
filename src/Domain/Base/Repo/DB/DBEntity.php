@@ -48,7 +48,7 @@ class DBEntity extends DatabaseRepoEntity
      */
     public function mapToEntity(
         bool $useEntityRegistryCache = true,
-        array &$initiatorClasses = []
+        array $initiatorClasses = []
     ): ?DefaultObject {
         // on the highest level, we first clear ormInstanceToEntityAllocation
         if (empty($initiatorClasses)) {
@@ -129,7 +129,7 @@ class DBEntity extends DatabaseRepoEntity
     public function mapPropertyToEntity(
         Entity &$entity,
         string $propertyName,
-        array &$initiatorClasses = [],
+        array $initiatorClasses = [],
         bool $useEntityRegistryCache = true
     ) {
         if (!isset($this->ormInstance->$propertyName)) {

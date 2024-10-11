@@ -65,7 +65,7 @@ abstract class DatabaseRepoEntitySet
     abstract public function find(
         ?DoctrineQueryBuilder $queryBuilder = null,
         bool $useEntityRegistrCache = true,
-        array &$initiatorClasses = []
+        array $initiatorClasses = []
     ): ?EntitySet;
 
     /**

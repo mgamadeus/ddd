@@ -145,7 +145,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
         bool $useEntityRegistrCache = true,
         ?DoctrineModel &$loadedOrmInstance = null,
         bool $deferredCaching = false,
-        array &$initiatorClasses = [],
+        array $initiatorClasses = [],
     ): ?DefaultObject {
         if (!$this::BASE_ENTITY_CLASS) {
             throw new InternalErrorException('No BASE_ENTITY_CLASS defined in ' . static::class);

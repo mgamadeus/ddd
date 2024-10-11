@@ -92,7 +92,7 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
     public function find(
         ?DoctrineQueryBuilder $queryBuilder = null,
         bool $useEntityRegistrCache = true,
-        array &$initiatorClasses = []
+        array $initiatorClasses = []
     ): ?EntitySet {
         if (!$this::BASE_REPO_CLASS) {
             throw new InternalErrorException('No BASE_REPO_CLASS defined in ' . static::class);
@@ -318,9 +318,9 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
                     ) {
                         $foreignKey = $property->getName() . 'Id';
                         $queryBuilder->leftJoin(
-                                self::getBaseModelAlias() . '.' . $propertyReferencingJoinTable,
-                                $loadThroughBaseModelAlias
-                            )->andWhere("{$loadThroughBaseModelAlias}.$foreignKey = :foreign_key_id")->setParameter('foreign_key_id', $initiatingEntity->id);
+                            self::getBaseModelAlias() . '.' . $propertyReferencingJoinTable,
+                            $loadThroughBaseModelAlias
+                        )->andWhere("{$loadThroughBaseModelAlias}.$foreignKey = :foreign_key_id")->setParameter('foreign_key_id', $initiatingEntity->id);
                         break;
                     }
                 }
