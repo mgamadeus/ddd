@@ -47,7 +47,7 @@ use function stripos;
 /**
  * A Query object represents a DQL query.
  */
-class DoctrineQuery extends AbstractQuery
+class DoctrineQuery extends Query
 {
     /**
      * A query object is in CLEAN state when it has NO unparsed/unprocessed DQL parts.
