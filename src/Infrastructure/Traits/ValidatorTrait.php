@@ -82,15 +82,15 @@ trait ValidatorTrait
             /** @var ConstraintViolation $violation */
             foreach ($violations as $violation) {
                 // We treat array elements separately below
-                if (!str_starts_with($violation->getPropertyPath(), '[')) {
-                    $validationResult = new ValidationResult(
-                        $violation->getPropertyPath(),
-                        $violation->getMessage(),
-                        $violation->getInvalidValue(),
-                        static::class
-                    );
-                    $validationError->add($validationResult);
-                }
+                //if (!str_starts_with($violation->getPropertyPath(), '[')) {
+                $validationResult = new ValidationResult(
+                    $violation->getPropertyPath(),
+                    $violation->getMessage(),
+                    $violation->getInvalidValue(),
+                    static::class
+                );
+                $validationError->add($validationResult);
+                //}
             }
             // We might not have elements in the case of object that contain only an array, like an EntitySet
             if (count($validationError->elements)) {
