@@ -652,8 +652,11 @@ class Datafilter
 
     /**
      * Clean keyword
-     * @param     $string
-     * @return
+     *
+     * @param string $string
+     * @param bool   $useWhitelist
+     *
+     * @return string
      */
     public static function clean_keyword(string $string, bool $useWhitelist = false): string
     {
@@ -723,7 +726,7 @@ class Datafilter
             ',',
         ], ' ', $string);
         //$regex = '[^\'"’a-z ' . $special . self::$special_chars . '0-9]';
-        $regex = '[^a-z ' . $special . self::$special_chars . '0-9]';
+        $regex = '[^a-z "' . $special . self::$special_chars . '0-9]';
         // var_dump($regex);
         $string = preg_replace("#$regex#isu", '', $string);
         //compress multiple spaces to one
