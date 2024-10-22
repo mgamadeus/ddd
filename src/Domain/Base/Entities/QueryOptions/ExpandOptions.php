@@ -12,7 +12,9 @@ use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionUnionType;
+use Doctrine\ORM\Query\Expr\Join;
 use ReflectionException;
+use ReflectionNamedType;
 
 /**
  * @property ExpandOption[] $elements
@@ -87,9 +89,11 @@ class ExpandOptions extends ObjectSet
     {
         $expandDefinitions = ExpandDefinitions::getExpandDefinitionsForReferenceClass($referenceClassName);
         foreach ($this->getElements() as $expandOption) {
-            if (!($expandDefinition = $expandDefinitions->getExpandDefinitionByPropertyName(
-                $expandOption->propertyName
-            ))) {
+            if (
+                !($expandDefinition = $expandDefinitions->getExpandDefinitionByPropertyName(
+                    $expandOption->propertyName
+                ))
+            ) {
                 throw new BadRequestException(
                     "Property name used to expand ({$expandOption->propertyName}) is not allowed. Allowed field names are: [" . implode(
                         ', ',
@@ -127,15 +131,15 @@ class ExpandOptions extends ObjectSet
                 $reflectionProperty = $reflectionClass->getProperty($expandOption->propertyName);
                 $propertyType = $reflectionProperty->getType();
                 $targetPropertyTypes = [];
-                if ($propertyType instanceof \ReflectionNamedType) {
+                if ($propertyType instanceof ReflectionNamedType) {
                     $targetPropertyTypes[] = $propertyType;
                 } elseif ($propertyType instanceof ReflectionUnionType) {
                     $targetPropertyTypes = $targetPropertyTypes + $propertyType->getTypes();
                 }
                 $targetPropertyHasQueryOptions = false;
-                foreach($targetPropertyTypes as $propertyType){
+                foreach ($targetPropertyTypes as $propertyType) {
                     $targetPropertyClass = $propertyType->getName();
-                    if (is_a($targetPropertyClass,EntitySet::class, true)){
+                    if (is_a($targetPropertyClass, EntitySet::class, true)) {
                         $targetPropertyClass = $targetPropertyClass::getEntityClass();
                     }
                     $targetPropertyReflectionClass = ReflectionClass::instance((string)$targetPropertyClass);
@@ -143,10 +147,12 @@ class ExpandOptions extends ObjectSet
                         $targetPropertyHasQueryOptions = true;
                         /** @var QueryOptionsTrait $targetPropertyClass */
                         $targetPropertyClass::setDefaultQueryOptions($targetPropertyClass::getDefaultQueryOptions());
-                        $expandOption->expandOptions->validateAgainstDefinitionsFromReferenceClass($targetPropertyClass);
+                        $expandOption->expandOptions->validateAgainstDefinitionsFromReferenceClass(
+                            $targetPropertyClass
+                        );
                     }
                 }
-                if (!$targetPropertyHasQueryOptions){
+                if (!$targetPropertyHasQueryOptions) {
                     throw new BadRequestException(
                         "Expand property ({$expandOption->propertyName}) is not valid in {$referenceClassName} as target class has no QueryOptions"
                     );
@@ -155,7 +161,6 @@ class ExpandOptions extends ObjectSet
         }
         return true;
     }
-
 
     /**
      * Returns OPEN Api schmea definition regex
@@ -188,9 +193,28 @@ class ExpandOptions extends ObjectSet
             }
             if ($expandReflectionProperty) {
                 $propertyName = $expandOption->propertyName;
+                $joinAlreadyExists = false;
+                $existingJoins = $queryBuilder->getDQLPart('join');
+                // Check if the join for the current alias already exists
+                if (!empty($existingJoins) && isset($existingJoins[$modelAlias])) {
+                    foreach ($existingJoins[$modelAlias] as $joinPart) {
+                        /** @var Join $joinPart */
+                        if (!$joinPart instanceof Join) {
+                            continue;
+                        }
+                        if (
+                            $joinPart->getJoin() == "{$modelAlias}.$propertyName" && $joinPart->getAlias() == $expandOption->propertyName
+                        ) {
+                            $joinAlreadyExists = true;
+                            break;
+                        }
+                    }
+                }
                 $join = "{$modelAlias}.$expandOption->propertyName";
                 $queryBuilder->addSelect($expandOption->propertyName);
-                $queryBuilder->leftJoin("{$modelAlias}.$expandOption->propertyName", $expandOption->propertyName);
+                if (!$joinAlreadyExists) {
+                    $queryBuilder->leftJoin("{$modelAlias}.$expandOption->propertyName", $expandOption->propertyName);
+                }
                 if (isset($expandOption->expandOptions)) {
                     // when property is a Collection, we need its Model class
                     $targetModel = $baseModelClass::getTargetModelClassForProperty($expandReflectionProperty);
@@ -206,6 +230,4 @@ class ExpandOptions extends ObjectSet
         }
         return $queryBuilder;
     }
-
-
 }
