@@ -63,7 +63,7 @@ class FiltersDefinitions extends ObjectSet
         string $referenceClassName,
         $depth = 1
     ): ?FiltersDefinitions {
-        if ($depth < 0) {
+        if ($depth <= 0) {
             return new FiltersDefinitions();
         }
         if (self::$filtersDefinitionsForClass[$referenceClassName] ?? null) {

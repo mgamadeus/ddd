@@ -120,14 +120,16 @@ class ExpandOptions extends ObjectSet
                 $expandOption->orderByOptions->validateAgainstDefinitions($expandDefinition->orderByDefinitions);
             }
             if (isset($expandOption->expandOptions)) {
-                /** @var LazyLoadTrait $referenceClassName */
-                $propertiesToLazyLoad = $referenceClassName::getPropertiesToLazyLoad();
+                /** @var LazyLoadTrait $propertyReferenceClassName */
+                $propertyReferenceClassName = $expandDefinition->referenceClass;
+                $propertiesToLazyLoad = $propertyReferenceClassName::getPropertiesToLazyLoad();
                 if (!isset($propertiesToLazyLoad[$expandOption->propertyName])) {
                     throw new BadRequestException(
                         "Expand property ({$expandOption->propertyName}) is not valid in {$referenceClassName} as property Name has no LazyLoad"
                     );
                 }
-                $reflectionClass = ReflectionClass::instance($referenceClassName);
+                /** @var string $propertyReferenceClassName */
+                $reflectionClass = ReflectionClass::instance($propertyReferenceClassName);
                 $reflectionProperty = $reflectionClass->getProperty($expandOption->propertyName);
                 $propertyType = $reflectionProperty->getType();
                 $targetPropertyTypes = [];

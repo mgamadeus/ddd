@@ -106,6 +106,7 @@ class ExpandDefinitions extends ObjectSet
             $propertyType = $propertyToLazyLoad['property']->getType();
             $expandDefinition = new ExpandDefinition();
             $expandDefinition->propertyName = $propertyName;
+            $expandDefinition->referenceClass = $propertyToLazyLoad['class'];
             if ($propertyType instanceof ReflectionNamedType) {
                 /** @var QueryOptionsTrait $targetPropertyClass */
                 $targetPropertyClass = $propertyType->getName();

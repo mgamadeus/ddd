@@ -14,6 +14,9 @@ class ExpandDefinition extends ValueObject
     /** @var string The proeprty name to expand */
     public ?string $propertyName;
 
+    /** @var string The name of the Class referenced */
+    public ?string $referenceClass;
+
     /** @var FiltersDefinitions Allowed filtering property definitions */
     public FiltersDefinitions $filtersDefinitions;
 
