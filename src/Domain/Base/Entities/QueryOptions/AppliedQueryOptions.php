@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Entities\QueryOptions;
 
 use DDD\Domain\Base\Entities\ValueObject;
-use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
 use DDD\Presentation\Base\Dtos\RequestDto;
 
 /**
@@ -24,12 +23,13 @@ class AppliedQueryOptions extends ValueObject
     /** @var int The number of results to be returned */
     public ?int $top;
 
+    public ?string $rerenceClass;
+
     /** @var FiltersDefinitions Allowed filtering property definitions */
-    #[HideProperty]
-    public ?FiltersDefinitions $filtersDefinitions;
+    protected ?FiltersDefinitions $filtersDefinitions;
 
     /** @var string[] Allowed orderBy property definitions */
-    public array $orderByDefinitions;
+    protected ?array $orderByDefinitions;
 
     /** @var FiltersOptions Applied filters options */
     public ?FiltersOptions $filters;
@@ -45,6 +45,7 @@ class AppliedQueryOptions extends ValueObject
 
     public function __construct(
         QueryOptions $queryOptions = null,
+        ?string $referenceClass = null
     ) {
         if (isset($queryOptions->top)) {
             $this->top = $queryOptions->top;
@@ -57,6 +58,9 @@ class AppliedQueryOptions extends ValueObject
         }
         if (isset($queryOptions->orderBy) && !empty($queryOptions->orderBy)) {
             $this->orderByDefinitions = $queryOptions->orderBy;
+        }
+        if ($referenceClass) {
+            $this->rerenceClass = $referenceClass;
         }
         parent::__construct();
     }
@@ -92,7 +96,10 @@ class AppliedQueryOptions extends ValueObject
     {
         $this->filters = $filters;
         // filters need filter definitions also attached to them
-        $this->filters?->setFiltersDefinitionsForAllFilterOptions($this->filtersDefinitions);
+        $filtersDefinitions = $this->getFiltersDefinitions();
+        if ($filtersDefinitions) {
+            $this->filters?->setFiltersDefinitionsForAllFilterOptions($filtersDefinitions);
+        }
         return $this;
     }
 
@@ -221,5 +228,33 @@ class AppliedQueryOptions extends ValueObject
         return self::uniqueKeyStatic($key);
     }
 
+    public function getFiltersDefinitions(): ?FiltersDefinitions
+    {
+        if (isset($this->filtersDefinitions)) {
+            return $this->filtersDefinitions;
+        } elseif (isset($this->rerenceClass)) {
+            $this->filtersDefinitions = FiltersDefinitions::getFiltersDefinitionsForReferenceClass(
+                $this->rerenceClass
+            );
+            return $this->filtersDefinitions;
+        }
+        return null;
+    }
 
+    public function getOrderByDefinitions(): ?array
+    {
+        if (isset($this->orderByDefinitions)) {
+            return $this->orderByDefinitions;
+        } else {
+            $filtersDefinitions = $this->getFiltersDefinitions();
+            $this->orderByDefinitions = [];
+            if ($filtersDefinitions) {
+                $this->orderByDefinitions = [];
+                foreach ($this->filtersDefinitions->getElements() as $filtersDefinition) {
+                    $this->orderByDefinitions[] = $filtersDefinition->propertyName;
+                }
+            }
+            return $this->orderByDefinitions;
+        }
+    }
 }

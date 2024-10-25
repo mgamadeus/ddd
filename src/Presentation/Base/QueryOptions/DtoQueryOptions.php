@@ -49,4 +49,3 @@ class DtoQueryOptions extends ValueObject
         return null;
     }
 }
-

@@ -71,19 +71,7 @@ trait QueryOptionsTrait
         if (!$queryOptionsAttributeInstance) {
             $queryOptionsAttributeInstance = new QueryOptions();
         }
-        $queryOptions = new AppliedQueryOptions($queryOptionsAttributeInstance);
-        if (!isset($queryOptions->filtersDefinitions)) {
-            $queryOptions->filtersDefinitions = FiltersDefinitions::getFiltersDefinitionsForReferenceClass(
-                $className,
-                $depth
-            );
-        }
-        if (!isset($queryOptions->orderByDefinitions)) {
-            $queryOptions->orderByDefinitions = [];
-            foreach ($queryOptions->filtersDefinitions->getElements() as $filtersDefinition) {
-                $queryOptions->orderByDefinitions[] = $filtersDefinition->propertyName;
-            }
-        }
+        $queryOptions = new AppliedQueryOptions($queryOptionsAttributeInstance, $className);
         self::$defaultQueryOptions[$className] = $queryOptions;
         return $queryOptions;
     }
@@ -133,7 +121,9 @@ trait QueryOptionsTrait
                     /** @var QueryOptionsTrait $targetPropertyClass */
                     $targetPropertyClass = $propertyType->getName();
                     $targetPropertyReflectionClass = ReflectionClass::instance((string)$targetPropertyClass);
-                    if ($targetPropertyReflectionClass && $targetPropertyReflectionClass->hasTrait(QueryOptionsTrait::class)) {
+                    if ($targetPropertyReflectionClass && $targetPropertyReflectionClass->hasTrait(
+                            QueryOptionsTrait::class
+                        )) {
                         $targetPropertyHasQueryOptions = true;
                         /** @var AppliedQueryOptions $defaultQueryOptions */
                         // it can be that property is already loaded, in this case we still want to pass query options as it can be that we apply a recusrive expand and

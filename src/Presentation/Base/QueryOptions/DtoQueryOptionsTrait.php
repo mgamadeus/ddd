@@ -100,20 +100,19 @@ trait DtoQueryOptionsTrait
             $this->expand->validateAgainstDefinitionsFromReferenceClass($dtoQueryOptionsAttributeInstane->baseEntity);
         }
         if (isset($this->filters)) {
-            if ($queryOptions && isset($queryOptions->filtersDefinitions)) {
+            if ($queryOptions && $queryOptions->getFiltersDefinitions()) {
                 $expandOptions = $this->expand ?? null;
-                $this->filters->validateAgainstDefinitions($queryOptions->filtersDefinitions, $expandOptions);
+                $this->filters->validateAgainstDefinitions($queryOptions->getFiltersDefinitions(), $expandOptions);
             }
         }
         if (isset($this->orderBy)) {
             if ($queryOptions) {
-                $orderByDefinitions = $queryOptions->orderByDefinitions ?? [];
-                $this->orderBy->validateAgainstDefinitions($orderByDefinitions);
+                $this->orderBy->validateAgainstDefinitions($queryOptions->getOrderByDefinitions());
                 // set filters definitions for OrderBy options that are based on filters
                 // this is relevant for knowning that no alias is needed when we apply orderBy option to query builder
-                if ($queryOptions->filtersDefinitions) {
+                if ($queryOptions->getFiltersDefinitions()) {
                     foreach ($this->orderBy->getElements() as $orderByOption) {
-                        if ($filterDefinition = $queryOptions->filtersDefinitions->getFilterDefinitionForPropertyName(
+                        if ($filterDefinition = $queryOptions->getFiltersDefinitions()->getFilterDefinitionForPropertyName(
                             $orderByOption->propertyName
                         )) {
                             $orderByOption->setFiltersDefinition($filterDefinition);

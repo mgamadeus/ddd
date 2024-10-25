@@ -61,11 +61,7 @@ class FiltersDefinitions extends ObjectSet
      */
     public static function getFiltersDefinitionsForReferenceClass(
         string $referenceClassName,
-        $depth = 1
     ): ?FiltersDefinitions {
-        if ($depth <= 0) {
-            return new FiltersDefinitions();
-        }
         if (self::$filtersDefinitionsForClass[$referenceClassName] ?? null) {
             return self::$filtersDefinitionsForClass[$referenceClassName];
         }
@@ -85,10 +81,12 @@ class FiltersDefinitions extends ObjectSet
                     $filtersDefinitions->add($filterDefinition);
                 }
             }
+            /*
             $expandDefinitions = ExpandDefinitions::getExpandDefinitionsForReferenceClass(
                 $referenceClassName,
-                $depth - 1
+                $depth
             );
+
             foreach ($expandDefinitions->getElements() as $expandDefinition) {
                 // check property of expand definition
                 if ($expandDefinition->filtersDefinitions ?? null) {
@@ -103,7 +101,7 @@ class FiltersDefinitions extends ObjectSet
                         $filtersProperties[$expandDefinition->propertyName . '.' . $filtersDefinition->propertyName] = $filtersDefinition->options ?? true;
                     }
                 }
-            }
+            }*/
         }
         self::$filtersDefinitionsForClass[$referenceClassName] = $filtersDefinitions;
         return $filtersDefinitions;

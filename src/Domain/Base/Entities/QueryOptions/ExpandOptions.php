@@ -104,20 +104,20 @@ class ExpandOptions extends ObjectSet
                 );
             }
             if (isset($expandOption->filters)) {
-                if (!isset($expandDefinition->filtersDefinitions)) {
+                if (!$expandDefinition->getFiltersDefinitions()) {
                     throw new BadRequestException(
                         "Expand property ({$expandOption->propertyName}) has no filters definitions"
                     );
                 }
-                $expandOption->filters->validateAgainstDefinitions($expandDefinition->filtersDefinitions);
+                $expandOption->filters->validateAgainstDefinitions($expandDefinition->getFiltersDefinitions());
             }
             if (isset($expandOption->orderByOptions)) {
-                if (!isset($expandDefinition->orderByDefinitions)) {
+                if (!$expandDefinition->getOrderbyDefinitions()) {
                     throw new BadRequestException(
                         "Expand property ({$expandOption->propertyName}) has no orderBy definitions"
                     );
                 }
-                $expandOption->orderByOptions->validateAgainstDefinitions($expandDefinition->orderByDefinitions);
+                $expandOption->orderByOptions->validateAgainstDefinitions($expandDefinition->getOrderbyDefinitions());
             }
             if (isset($expandOption->expandOptions)) {
                 /** @var LazyLoadTrait $propertyReferenceClassName */

@@ -115,12 +115,6 @@ class ExpandDefinitions extends ObjectSet
                     if ($targetPropertyReflectionClass->hasTrait(QueryOptionsTrait::class)) {
                         /** @var QueryOptions $defaultQueryOptions */
                         $defaultQueryOptions = $targetPropertyClass::getDefaultQueryOptions($depth);
-                        if (isset($defaultQueryOptions->filtersDefinitions)) {
-                            $expandDefinition->filtersDefinitions = $defaultQueryOptions->filtersDefinitions;
-                        }
-                        if (isset($defaultQueryOptions->orderByDefinitions)) {
-                            $expandDefinition->orderByDefinitions = $defaultQueryOptions->orderByDefinitions;
-                        }
                     }
                 }
             }

@@ -59,8 +59,9 @@ class OrderByOptions extends ObjectSet
      * @return bool
      * @throws BadRequestException
      */
-    public function validateAgainstDefinitions(array &$orderByDefinitions): bool
+    public function validateAgainstDefinitions(?array $orderByDefinitions): bool
     {
+        $orderByDefinitions = $orderByDefinitions ?? [];
         foreach ($this->getElements() as $orderByOption) {
             if (!in_array($orderByOption->propertyName, $orderByDefinitions)) {
                 throw new BadRequestException(

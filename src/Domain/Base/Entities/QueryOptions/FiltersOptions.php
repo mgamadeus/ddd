@@ -328,8 +328,8 @@ class FiltersOptions extends ObjectSet
      * @throws BadRequestException
      */
     public function validateAgainstDefinitions(
-        FiltersDefinitions &$filtersDefinitions,
-        ?ExpandOptions &$expandOptions = null
+        FiltersDefinitions $filtersDefinitions,
+        ?ExpandOptions $expandOptions = null
     ): bool {
         if ($this->type == self::TYPE_OPERATION) {
             $result = true;
