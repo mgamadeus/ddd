@@ -237,6 +237,12 @@ class DatabaseColumn extends ValueObject
         $databaseColum->isBuildinType = $type->isBuiltin();
 
         if ($databaseColum->isBuildinType) {
+            if (!isset(self::SQL_TYPE_ALLOCATION[$type->getName()])){
+                throw new InternalErrorException(
+                    'DatabaseColumn ' . $reflectionProperty->getName() . ' in ' . $reflectionClass->getName(
+                    ) . ' is defined '. $type->getName(). ' but no SQL TYPE allocation is present for this type'
+                );
+            }
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[$type->getName()];
             if ($reflectionProperty->getDefaultValue() !== null) {
                 $databaseColum->phpDefaultValue = $reflectionProperty->getDefaultValue();

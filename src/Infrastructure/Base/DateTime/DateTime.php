@@ -106,4 +106,31 @@ class DateTime extends \DateTime
         $interval = $this->diff($otherDate);
         return abs((int)$interval->format('%a'));
     }
+
+    public function setTimeZoneWithoutChangingTime(\DateTimeZone $newTimeZone): void {
+        // Check if the timezone is the same, and return if no change is needed
+        if ($newTimeZone->getName() === $this->getTimezone()->getName()) {
+            return;
+        }
+
+        // Clone the current DateTime to keep original time values intact
+        $originalDateTime = clone $this;
+
+        // Change the timezone without altering the time representation
+        $this->setTimezone($newTimeZone);
+
+        // Set the date and time parts including microseconds to match the original
+        $this->setDate(
+            (int) $originalDateTime->format('Y'),
+            (int) $originalDateTime->format('m'),
+            (int) $originalDateTime->format('d')
+        );
+
+        $this->setTime(
+            (int) $originalDateTime->format('H'),
+            (int) $originalDateTime->format('i'),
+            (int) $originalDateTime->format('s'),
+            (int) $originalDateTime->format('u') // microseconds
+        );
+    }
 }

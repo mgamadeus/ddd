@@ -233,7 +233,10 @@ class DBEntity extends DatabaseRepoEntity
             }
 
             // handling cases with translation
-            $translatableProperty = $entityReflectionClass->getAttributeInstanceForProperty($propertyName, Translatable::class);
+            $translatableProperty = $entityReflectionClass->getAttributeInstanceForProperty(
+                $propertyName,
+                Translatable::class
+            );
             if ($translatableProperty) {
                 /** @var TranslatableTrait $entity */
                 $translationInfos = $entity->getTranslationInfos();
@@ -246,10 +249,12 @@ class DBEntity extends DatabaseRepoEntity
                 $entity->$propertyName = $this->ormInstance->$propertyName;
                 return;
             }
-            if ($possibleEntityTypeName == DateTime::class && $ormModelReflectionProperty->getType()->getName() == \DateTime::class) {
+            if ($possibleEntityTypeName == DateTime::class && $ormModelReflectionProperty->getType()->getName(
+                ) == \DateTime::class) {
                 $entity->$propertyName = DateTime::fromTimestamp($this->ormInstance->$propertyName->getTimestamp());
             }
-            if ($possibleEntityTypeName == Date::class && $ormModelReflectionProperty->getType()->getName() == \DateTime::class) {
+            if ($possibleEntityTypeName == Date::class && $ormModelReflectionProperty->getType()->getName(
+                ) == \DateTime::class) {
                 $entity->$propertyName = Date::fromTimestamp($this->ormInstance->$propertyName->getTimestamp());
             }
             // one to many relations implicitly loaded
@@ -285,7 +290,11 @@ class DBEntity extends DatabaseRepoEntity
                     }
                 }
             } elseif (
-                is_a($possibleEntityTypeName, ValueObject::class, true) // exact match needed, for UnionTypes so the right type gets instantiated
+                is_a(
+                    $possibleEntityTypeName,
+                    ValueObject::class,
+                    true
+                ) // exact match needed, for UnionTypes so the right type gets instantiated
                 && (count($possibleEntityTypes) == 1 || ((is_array(
                                 $this->ormInstance->$propertyName
                             ) && ($this->ormInstance->$propertyName['objectType'] ?? null) == $possibleEntityTypeName) || (is_object(
@@ -297,8 +306,12 @@ class DBEntity extends DatabaseRepoEntity
                 // Handling ValueObjects in case of encryption
                 $propertyValue = $this->ormInstance->$propertyName;
                 if ($encryptionScopePassword) {
-                    $propertyValue = Encrypt::decrypt($propertyValue, $encryptionScopePassword);
+                    $decryptedValue = Encrypt::decrypt($propertyValue, $encryptionScopePassword);
+                    if ($decryptedValue) {
+                        $propertyValue = Encrypt::decrypt($propertyValue, $encryptionScopePassword);
+                    }
                 }
+
                 $valueObject->mapFromRepository($propertyValue);
                 $entity->$propertyName = $valueObject;
                 $entity->addChildren($entity->$propertyName);
@@ -310,7 +323,9 @@ class DBEntity extends DatabaseRepoEntity
                     $possibleEntityTypeName,
                     Entity::class,
                     true
-                ) /*&& $this->ormInstance->$propertyName instanceof DoctrineModel */ && $this->ormInstance->isLoaded($propertyName)
+                ) /*&& $this->ormInstance->$propertyName instanceof DoctrineModel */ && $this->ormInstance->isLoaded(
+                    $propertyName
+                )
             ) {
                 /** @var Entity $entityType */
                 $entityType = $possibleEntityTypeName;
@@ -492,7 +507,10 @@ class DBEntity extends DatabaseRepoEntity
             $mappedValueSet = true;
         }
 
-        $translatableProperty = $entityReflectionClass->getAttributeInstanceForProperty($propertyName, Translatable::class);
+        $translatableProperty = $entityReflectionClass->getAttributeInstanceForProperty(
+            $propertyName,
+            Translatable::class
+        );
         if ($translatableProperty) {
             /** @var TranslatableTrait $entity */
             $translationInfos = $entity->getTranslationInfos();
