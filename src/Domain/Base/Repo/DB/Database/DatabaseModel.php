@@ -150,8 +150,7 @@ class DatabaseModel extends ValueObject
                     $reflectionProperties[] = $parentClassReflectionProperty;
                     /** @var SubclassIndicator $subclassIndicatorAttibuteInstance */
                     $subclassIndicatorAttibuteInstance = $subclassIndicatorAttibute->newInstance();
-                    $subclassIndicatorAttibuteInstance->indicatorPropertyName = $parentClassReflectionProperty->getName(
-                    );
+                    $subclassIndicatorAttibuteInstance->indicatorPropertyName = $parentClassReflectionProperty->getName();
                     $databaseModel->subclassIndicator = $subclassIndicatorAttibuteInstance;
                     // if one of the subclass indicator model classes has a different namespace than current model, we need to add it as import
                     $modelImportsFromSubclassIndicators = $subclassIndicatorAttibuteInstance->getDatabaseModelImportsBasedOnSubclassIndicatorsForDatabaseModel(
@@ -212,6 +211,9 @@ class DatabaseModel extends ValueObject
             }
         });
         foreach ($reflectionProperties as $reflectionProperty) {
+            if ($reflectionProperty->isStatic()) {
+                continue;
+            }
             // create regular columns
             $databaseColumn = DatabaseColumn::createFromReflectionProperty($entityReflectionClass, $reflectionProperty);
             $virtualColumnsForProperty = null;
@@ -407,7 +409,9 @@ class DatabaseModel extends ValueObject
 
                     // if we find an DatabaseForeignKey attribute, we use it
                     $defaultOnDeleteAction = $propertyRepresentsParentClass ? DatabaseForeignKey::ACTION_CASCADE : DatabaseForeignKey::ACTION_SET_NULL;
-                    $foreignKey = $reflectionProperty->getAttributeInstance(DatabaseForeignKey::class) ?? new DatabaseForeignKey(onDeleteAction: $defaultOnDeleteAction);
+                    $foreignKey = $reflectionProperty->getAttributeInstance(
+                        DatabaseForeignKey::class
+                    ) ?? new DatabaseForeignKey(onDeleteAction: $defaultOnDeleteAction);
 
                     if (
                         $foreignKey->onUpdateAction == $foreignKey::ACTION_SET_NULL || $foreignKey->onDeleteAction == $foreignKey::ACTION_SET_NULL && !$internalColumnProperty->getType(
@@ -423,12 +427,12 @@ class DatabaseModel extends ValueObject
                     // [HY000][1901] (conn=7) Function or expression 'accountId' cannot be used in the GENERATED ALWAYS AS clause of `virtualAccountId`
                     // In these cases we need to set on update action RESTRICT by default
                     $internalDatabaseColumnInstance = $databaseModel->columns->getColumnByName($internalColumn);
-                    if (($foreignKey->onUpdateAction == DatabaseForeignKey::ACTION_CASCADE || $foreignKey->onUpdateAction == DatabaseForeignKey::ACTION_SET_NULL)
-                        && isset($internalDatabaseColumnInstance->virtualColumnsBasedOnCurrentColumn)) {
+                    if (
+                        ($foreignKey->onUpdateAction == DatabaseForeignKey::ACTION_CASCADE || $foreignKey->onUpdateAction == DatabaseForeignKey::ACTION_SET_NULL) && isset($internalDatabaseColumnInstance->virtualColumnsBasedOnCurrentColumn)
+                    ) {
                         $hasStoredVirtualColumn = false;
                         foreach (
-                            $internalDatabaseColumnInstance->virtualColumnsBasedOnCurrentColumn->getElements(
-                            ) as $dependentDatabaseVirtualColumn
+                            $internalDatabaseColumnInstance->virtualColumnsBasedOnCurrentColumn->getElements() as $dependentDatabaseVirtualColumn
                         ) {
                             if ($dependentDatabaseVirtualColumn->stored) {
                                 $hasStoredVirtualColumn = true;
@@ -621,8 +625,7 @@ class DatabaseModel extends ValueObject
                 $singleClassIndicatorColumn = $this->columns->getColumnByName(
                     $this->subclassIndicator->indicatorPropertyName
                 );
-                $doctrineClassDiscriminatorMapPHPCode = $this->subclassIndicator->getDoctrineClassDiscriminatorMapPHPCode(
-                );
+                $doctrineClassDiscriminatorMapPHPCode = $this->subclassIndicator->getDoctrineClassDiscriminatorMapPHPCode();
                 $subclassIndicatorDeclarations = "\n#[ORM\InheritanceType('SINGLE_TABLE')]\n#[ORM\DiscriminatorColumn(name: '{$this->subclassIndicator->indicatorPropertyName}', type: '{$singleClassIndicatorColumn->phpType}')]\n{$doctrineClassDiscriminatorMapPHPCode}\n";
 
                 // if one of the subclass indicator model classes has a different namespace than current model, we need to add it as import
@@ -680,16 +683,14 @@ class DatabaseModel extends ValueObject
             // avoid Type mixed cannot be marked as nullable since mixed already includes null
             $isNullable = $column->allowsNull && $column->getDoctrinePhpType() != 'mixed';
             $modelClassContent .= "\tpublic " . ($isNullable ? '?' : '') . $column->getDoctrinePhpType(
-                ) . ' $' . $column->name . (isset($column->phpDefaultValue) ? ' = ' . $column->getPhpDefaultValueAsString(
-                    ) : '') . ";\n";
+                ) . ' $' . $column->name . (isset($column->phpDefaultValue) ? ' = ' . $column->getPhpDefaultValueAsString() : '') . ";\n";
             $modelClassContent .= "\n";
         }
 
         foreach ($this->virtualColumns->getElements() as $virtualColumn) {
             $modelClassContent .= "\t#[ORM\Column(type: '{$virtualColumn->referenceColumn->getDoctrineColumnAttributeType()}')]\n";
             // avoid Type mixed cannot be marked as nullable since mixed already includes null
-            $modelClassContent .= "\tpublic " . $virtualColumn->referenceColumn->getDoctrinePhpType(
-                ) . ' $' . $virtualColumn->getName(
+            $modelClassContent .= "\tpublic " . $virtualColumn->referenceColumn->getDoctrinePhpType() . ' $' . $virtualColumn->getName(
                 ) . (isset($virtualColumn->referenceColumn->phpDefaultValue) ? ' = ' . $virtualColumn->referenceColumn->getPhpDefaultValueAsString(
                     ) : '') . ";\n";
             $modelClassContent .= "\n";
@@ -751,17 +752,16 @@ class DatabaseModel extends ValueObject
                 continue;
             }
             // if current namespace differs from foreign class, we need to add it as import
-            if ($this->modelClassWithNamespace->namespace != $targetModel->getModelClassNameWithNameSpace(
-                )->namespace) {
+            if (
+                $this->modelClassWithNamespace->namespace != $targetModel->getModelClassNameWithNameSpace()->namespace
+            ) {
                 $modelImport = new DatabaseModelImport(
                     $targetModel->getModelClassNameWithNameSpace(), $this->modelClassWithNamespace->namespace
                 );
                 $this->modelImports->add($modelImport);
             }
             $databaseOneToManyRelationShip = new DatabaseOneToManyRelationship(
-                $reflectionProperty->getName(),
-                $targetModel->getModelClassNameWithNameSpace()->name,
-                $foreignKeyInTargetClass->internalColumn
+                $reflectionProperty->getName(), $targetModel->getModelClassNameWithNameSpace()->name, $foreignKeyInTargetClass->internalColumn
             );
             $this->oneToManyRelationships->add($databaseOneToManyRelationShip);
         }
