@@ -450,16 +450,17 @@ class DBEntity extends DatabaseRepoEntity
         // we write the property if it is set, means it has a value or it is null
         // in case of null, we take care to check if the target value supports null
         $setProperty = false;
-        if (isset($entity->$propertyName) || (property_exists(
-                    $entity,
-                    $propertyName
-                ) && $entity->$propertyName === null && $entityReflectionProperty->allowsNull())) {
-            $setProperty = true;
+        if (ReflectionClass::isPropertyInitialized($entity, $propertyName)) {
+            if ($entity->$propertyName === null) // id shall not be written as null ecen if we allow null on Entity->id
+            {
+                $setProperty = $entityReflectionProperty->allowsNull() && $propertyName != 'id';
+            } else {
+                $setProperty = true;
+            }
         }
         if (!$setProperty) {
             return;
         }
-
 
         $ormModelReflectionProperty = $ormModelReflectionClass->getProperty($propertyName);
 
@@ -490,10 +491,9 @@ class DBEntity extends DatabaseRepoEntity
         $mappedValueSet = false;
 
         // handle null case
-        if ($entity->$propertyName === null){
+        if ($entity->$propertyName === null) {
             $mappedValueSet = true;
-        }
-        else {
+        } else {
             if ($entity->$propertyName instanceof ValueObject && !$hasDBOrVirtualLazyloadRepo) {
                 /** @var ValueObject $valueObject */
                 $valueObject = $entity->$propertyName;

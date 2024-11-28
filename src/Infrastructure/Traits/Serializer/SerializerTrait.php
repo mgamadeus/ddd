@@ -461,11 +461,11 @@ trait SerializerTrait
             $setProperty = false;
             // we write the property if it is set, means it has a value or it is null
             // in case of null, we take care to check if the target value supports null
-            if (isset($object->$propertyName) || (property_exists(
-                        $object,
-                        $propertyName
-                    ) && $object->$propertyName === null && $property->allowsNull())) {
-                $setProperty = true;
+            if (ReflectionClass::isPropertyInitialized($object, $propertyName)){
+                if ($object->$propertyName === null)
+                    $setProperty = $property->allowsNull();
+                else
+                    $setProperty = true;
             }
             if ($setProperty) {
                 $this->setPropertyFromObject(

@@ -627,4 +627,21 @@ class ReflectionClass extends \ReflectionClass
 
         return null;
     }
+
+    /**
+     * Checks if property is initialized within object, supports stdClass and namd classes
+     * @param object $object
+     * @param string $propertyName
+     * @return bool
+     * @throws ReflectionException
+     */
+    public static function isPropertyInitialized(object $object, string $propertyName):bool {
+        if (isset($object->$propertyName))
+            return true;
+        if ($object instanceof \stdClass)
+            return property_exists($object, $propertyName);
+        $reflectionClass = ReflectionClass::instance($object::class);
+        $reflectionProperty = $reflectionClass->getProperty($propertyName);
+        return $reflectionProperty->isInitialized($object);
+    }
 }
