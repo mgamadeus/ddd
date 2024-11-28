@@ -51,6 +51,23 @@ class ReflectionProperty extends \ReflectionProperty
     }
 
     /**
+     * @return bool Returns true if Type of one of the Types in UnionType allows null
+     */
+    public function allowsNull():bool {
+        $type = $this->getType();
+        if ($type instanceof \ReflectionNamedType){
+            return $type->allowsNull();
+        }
+        elseif ($type instanceof \ReflectionUnionType){
+            foreach ($type->getTypes() as $unionType){
+                if ($unionType->allowsNull())
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Cached getAttributes
      * @param string|null $attributeName
      * @param int $flags

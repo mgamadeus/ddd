@@ -353,7 +353,7 @@ trait SerializerTrait
      * we need to avoid to serialize values, that are not ment to be serialized, e.g. partent, children
      * @return array
      */
-    public function __serialize():array
+    public function __serialize(): array
     {
         $return = ['unset' => [], 'properties' => []];
         foreach ($this->getProperties(null, true) as $property) {
@@ -458,7 +458,16 @@ trait SerializerTrait
                 continue;
             }
             $propertyName = $property->getName();
-            if (isset($object->$propertyName)) {
+            $setProperty = false;
+            // we write the property if it is set, means it has a value or it is null
+            // in case of null, we take care to check if the target value supports null
+            if (isset($object->$propertyName) || (property_exists(
+                        $object,
+                        $propertyName
+                    ) && $object->$propertyName === null && $property->allowsNull())) {
+                $setProperty = true;
+            }
+            if ($setProperty) {
                 $this->setPropertyFromObject(
                     $property,
                     $object->$propertyName,

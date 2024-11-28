@@ -306,12 +306,8 @@ class DBEntity extends DatabaseRepoEntity
                 // Handling ValueObjects in case of encryption
                 $propertyValue = $this->ormInstance->$propertyName;
                 if ($encryptionScopePassword) {
-                    $decryptedValue = Encrypt::decrypt($propertyValue, $encryptionScopePassword);
-                    if ($decryptedValue) {
-                        $propertyValue = Encrypt::decrypt($propertyValue, $encryptionScopePassword);
-                    }
+                    $propertyValue = Encrypt::decrypt($propertyValue, $encryptionScopePassword);
                 }
-
                 $valueObject->mapFromRepository($propertyValue);
                 $entity->$propertyName = $valueObject;
                 $entity->addChildren($entity->$propertyName);
@@ -442,19 +438,30 @@ class DBEntity extends DatabaseRepoEntity
      * @return void
      * @throws ReflectionException
      */
-    public function mapPropertyToRepository(Entity &$entity, string $propertyName)
+    public function mapPropertyToRepository(Entity &$entity, string $propertyName): void
     {
-        if (!isset($entity->$propertyName)) {
-            return;
-        }
         $ormModelReflectionClass = ReflectionClass::instance($this->ormInstance::class);
         if (!$ormModelReflectionClass->hasProperty($propertyName)) {
             return;
         }
-        $ormModelReflectionProperty = $ormModelReflectionClass->getProperty($propertyName);
-
         $entityReflectionClass = ReflectionClass::instance($this->ormInstance::ENTITY_CLASS);
         $entityReflectionProperty = $entityReflectionClass->getProperty($propertyName);
+
+        // we write the property if it is set, means it has a value or it is null
+        // in case of null, we take care to check if the target value supports null
+        $setProperty = false;
+        if (isset($entity->$propertyName) || (property_exists(
+                    $entity,
+                    $propertyName
+                ) && $entity->$propertyName === null && $entityReflectionProperty->allowsNull())) {
+            $setProperty = true;
+        }
+        if (!$setProperty) {
+            return;
+        }
+
+
+        $ormModelReflectionProperty = $ormModelReflectionClass->getProperty($propertyName);
 
         // if attribute has lazyload on it, we do not map it to repository, it is then e.g. en EntitySet of dependent Entities
         $hasDBOrVirtualLazyloadRepo = false;
@@ -482,69 +489,75 @@ class DBEntity extends DatabaseRepoEntity
         $mappedValue = null;
         $mappedValueSet = false;
 
-        if ($entity->$propertyName instanceof ValueObject && !$hasDBOrVirtualLazyloadRepo) {
-            /** @var ValueObject $valueObject */
-            $valueObject = $entity->$propertyName;
-            $mappedValue = $valueObject->mapToRepository();
-            $mappedValueSet = true;
-        } elseif ($ormType->isBuiltin()) {
-            $value = $entity->$propertyName;
-            if ($ormType->getName() == ReflectionClass::STRING) {
-                $mappedValue = (string)$value;
-                $mappedValueSet = true;
-            } elseif ($ormType->getName() == ReflectionClass::INTEGER) {
-                $mappedValue = (int)$value;
-                $mappedValueSet = true;
-            } elseif ($ormType->getName() == ReflectionClass::FLOAT) {
-                $mappedValue = (float)$value;
-                $mappedValueSet = true;
-            } elseif ($ormType->getName() == ReflectionClass::BOOL) {
-                $mappedValue = (bool)$value;
-                $mappedValueSet = true;
-            }
-        } elseif ($entity->$propertyName instanceof \DateTime) {
-            $mappedValue = $entity->$propertyName;
+        // handle null case
+        if ($entity->$propertyName === null){
             $mappedValueSet = true;
         }
-
-        $translatableProperty = $entityReflectionClass->getAttributeInstanceForProperty(
-            $propertyName,
-            Translatable::class
-        );
-        if ($translatableProperty) {
-            /** @var TranslatableTrait $entity */
-            $translationInfos = $entity->getTranslationInfos();
-            $mappedValue = $translationInfos->getTranslationsForProperty($propertyName, true);
-            if ($mappedValue !== null) {
+        else {
+            if ($entity->$propertyName instanceof ValueObject && !$hasDBOrVirtualLazyloadRepo) {
+                /** @var ValueObject $valueObject */
+                $valueObject = $entity->$propertyName;
+                $mappedValue = $valueObject->mapToRepository();
+                $mappedValueSet = true;
+            } elseif ($ormType->isBuiltin()) {
+                $value = $entity->$propertyName;
+                if ($ormType->getName() == ReflectionClass::STRING) {
+                    $mappedValue = (string)$value;
+                    $mappedValueSet = true;
+                } elseif ($ormType->getName() == ReflectionClass::INTEGER) {
+                    $mappedValue = (int)$value;
+                    $mappedValueSet = true;
+                } elseif ($ormType->getName() == ReflectionClass::FLOAT) {
+                    $mappedValue = (float)$value;
+                    $mappedValueSet = true;
+                } elseif ($ormType->getName() == ReflectionClass::BOOL) {
+                    $mappedValue = (bool)$value;
+                    $mappedValueSet = true;
+                }
+            } elseif ($entity->$propertyName instanceof \DateTime) {
+                $mappedValue = $entity->$propertyName;
                 $mappedValueSet = true;
             }
-        }
 
-        // if column is encrypted, we encrypt the value using the scope password
-        /** @var DatabaseColumn $databaseColumnAttribute */
-        $databaseColumnAttribute = $entityReflectionClass->getAttributeInstanceForProperty(
-            $propertyName,
-            DatabaseColumn::class
-        );
-        if ($databaseColumnAttribute && $databaseColumnAttribute->encrypted) {
-            if (!Encrypt::$password) {
-                throw new UnauthorizedException(
-                    'Encryption cannot be performed without an encryption password set in Encrypt class'
-                );
-            }
-            $scopePassword = EncryptionScopes::getService()->getScopePassword(
-                Encrypt::$password,
-                $databaseColumnAttribute->enryptionScope
+            $translatableProperty = $entityReflectionClass->getAttributeInstanceForProperty(
+                $propertyName,
+                Translatable::class
             );
-            if (!$scopePassword) {
-                throw new UnauthorizedException(
-                    'No EncryptionScopePassword available for given encryptionPassword'
+            if ($translatableProperty) {
+                /** @var TranslatableTrait $entity */
+                $translationInfos = $entity->getTranslationInfos();
+                $mappedValue = $translationInfos->getTranslationsForProperty($propertyName, true);
+                if ($mappedValue !== null) {
+                    $mappedValueSet = true;
+                }
+            }
+
+            // if column is encrypted, we encrypt the value using the scope password
+            /** @var DatabaseColumn $databaseColumnAttribute */
+            $databaseColumnAttribute = $entityReflectionClass->getAttributeInstanceForProperty(
+                $propertyName,
+                DatabaseColumn::class
+            );
+            if ($databaseColumnAttribute && $databaseColumnAttribute->encrypted) {
+                if (!Encrypt::$password) {
+                    throw new UnauthorizedException(
+                        'Encryption cannot be performed without an encryption password set in Encrypt class'
+                    );
+                }
+                $scopePassword = EncryptionScopes::getService()->getScopePassword(
+                    Encrypt::$password,
+                    $databaseColumnAttribute->enryptionScope
                 );
+                if (!$scopePassword) {
+                    throw new UnauthorizedException(
+                        'No EncryptionScopePassword available for given encryptionPassword'
+                    );
+                }
+                if (is_array($mappedValue)) {
+                    $mappedValue = json_encode($mappedValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                }
+                $mappedValue = Encrypt::encrypt((string)$mappedValue, $scopePassword);
             }
-            if (is_array($mappedValue)) {
-                $mappedValue = json_encode($mappedValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-            }
-            $mappedValue = Encrypt::encrypt((string)$mappedValue, $scopePassword);
         }
         if ($mappedValueSet) {
             $this->ormInstance->$propertyName = $mappedValue;
