@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo;
 
+use App\Infrastructure\Services\AppService;
 use DDD\Domain\Base\Entities\Attributes\NoRecursiveUpdate;
 use DDD\Domain\Base\Entities\Attributes\RolesRequiredForUpdate;
 use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
@@ -153,6 +154,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
         if (!$this::BASE_ORM_MODEL) {
             throw new InternalErrorException('No BASE_ORM_MODEL defined in ' . static::class);
         }
+        $useEntityRegistrCache = $useEntityRegistrCache && !DoctrineEntityRegistry::$clearCache;
         $baseOrmModelAlias = (static::BASE_ORM_MODEL)::MODEL_ALIAS;
 
         $entityRegistry = DoctrineEntityRegistry::getInstance();
@@ -229,9 +231,9 @@ abstract class DatabaseRepoEntity extends RepoEntity
 
         $this->ormInstance = $ormInstance;
         $entityInstance = $this->mapToEntity($useEntityRegistrCache, $initiatorClasses);
-        if ($useEntityRegistrCache) {
-            $entityRegistry->add($entityInstance, static::class, $queryBuilder, $deferredCaching);
-        }
+        //if ($useEntityRegistrCache) {
+        $entityRegistry->add($entityInstance, static::class, $queryBuilder, $deferredCaching);
+        //}
         // Entity Manager's unit of work cache of various types especially loaded DoctrineModels can end up using
         // the whole allocated memory, so if the memory usage is high, we clear it
         if (DDDService::instance()->isMemoryUsageHigh()) {

@@ -15,7 +15,7 @@ use DDD\Infrastructure\Validation\Constraints\Choice;
 class TranslationInfos extends ValueObject
 {
     /** @var array Stores translations applied with setter function */
-    protected array $translationsStore = [];
+    public array $translationsStore = [];
 
     /**
      * The current language code.

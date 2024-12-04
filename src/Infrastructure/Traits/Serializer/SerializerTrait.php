@@ -8,6 +8,7 @@ use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
+use DDD\Infrastructure\Libs\Arr;
 use DDD\Infrastructure\Libs\Datafilter;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
@@ -461,11 +462,12 @@ trait SerializerTrait
             $setProperty = false;
             // we write the property if it is set, means it has a value or it is null
             // in case of null, we take care to check if the target value supports null
-            if (ReflectionClass::isPropertyInitialized($object, $propertyName)){
-                if ($object->$propertyName === null)
+            if (ReflectionClass::isPropertyInitialized($object, $propertyName)) {
+                if ($object->$propertyName === null) {
                     $setProperty = $property->allowsNull();
-                else
+                } else {
                     $setProperty = true;
+                }
             }
             if ($setProperty) {
                 $this->setPropertyFromObject(
@@ -513,12 +515,16 @@ trait SerializerTrait
         if ($allowedTypes->isArrayType) {
             // we have by design an array but $number is not an array
             if (!is_array($value)) {
-                if ($throwErrors) {
-                    throw new BadRequestException(
-                        'Property ' . static::class . '->' . $propertyName . ' has to be array'
-                    );
+                if (is_object($value)) {
+                    $value = Arr::fromObject($value);
+                } else {
+                    if ($throwErrors) {
+                        throw new BadRequestException(
+                            'Property ' . static::class . '->' . $propertyName . ' has to be array'
+                        );
+                    }
+                    return;
                 }
-                return;
             }
             // the types allowed for current array items
 
@@ -532,7 +538,11 @@ trait SerializerTrait
 
                 // if array element is of type array, we let it be and just pass the data
                 if (isset($allowedTypes->allowedTypes[ReflectionClass::ARRAY])) {
-                    $this->$propertyName[] = $value;
+                    if (is_int($index)) {
+                        $this->$propertyName[] = $arrayItem;
+                    } else {
+                        $this->{$propertyName}[$index] = $arrayItem;
+                    }
                     continue;
                 }
 

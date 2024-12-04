@@ -15,7 +15,7 @@ trait TranslatableTrait
      * @var TranslationInfos|null Holds information about translations
      */
     #[DatabaseColumn(ignoreProperty: true)]
-    protected ?TranslationInfos $translationInfos;
+    public ?TranslationInfos $translationInfos;
 
     public function getTranslationInfos(): TranslationInfos
     {
