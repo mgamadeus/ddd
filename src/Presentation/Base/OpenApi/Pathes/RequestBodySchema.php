@@ -25,14 +25,14 @@ class RequestBodySchema
         $this->scope = $scope;
         $classWithNamespace = new ClassWithNamespace($requestDtoReflectionClass->getName());
         // in case of request BODY we add schema with $ref to components
-        // we are assuming here a complex potentially recoursive schema definition
+        // we are assuming here a complex potentially recursive schema definition
         if ($this->scope == Parameter::BODY) {
             $this->schema['$ref'] = '#/components/schemas/' . $classWithNamespace->getNameWithNamespace('.');
             Document::getInstance()->components->addSchemaForClass($classWithNamespace, $scope);
         }
-        // in case of request POST form data we add schema with $ref to components
-        // we are assuming here a complex potentially recoursive schema definition
-        if ($this->scope == Parameter::POST) {
+        // in case of request POST or FILES form data we add schema with $ref to components
+        // we are assuming here a complex potentially recursive schema definition
+        if (in_array($this->scope, [Parameter::POST, Parameter::FILES])) {
             $schema = new Schema($classWithNamespace, $scope);
             $schema->buildSchema();
             $this->schema = $schema;

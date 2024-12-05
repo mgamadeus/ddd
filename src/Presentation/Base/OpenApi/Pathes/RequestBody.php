@@ -21,6 +21,7 @@ class RequestBody
 
     protected $hasBodyParameters = false;
     protected $hasPostParameters = false;
+    protected $hasFileParameters = false;
 
     /**
      * @param ReflectionClass $requestDtoReflectionClass
@@ -41,6 +42,9 @@ class RequestBody
             if ($pathParameter->in == Parameter::POST) {
                 $this->hasPostParameters = true;
             }
+            if ($pathParameter->in == Parameter::FILES) {
+                $this->hasFileParameters = true;
+            }
         }
         if ($this->hasBodyParameters) {
             $this->content['application/json'] = new RequestBodySchema($requestDtoReflectionClass, Parameter::BODY);
@@ -50,10 +54,13 @@ class RequestBody
                 $requestDtoReflectionClass, Parameter::POST
             );
         }
+        if ($this->hasFileParameters) {
+            $this->content['multipart/form-data'] = new RequestBodySchema($requestDtoReflectionClass, Parameter::FILES);
+        }
     }
 
     public function hasContent():bool
     {
-        return $this->hasPostParameters || $this->hasBodyParameters;
+        return $this->hasPostParameters || $this->hasBodyParameters || $this->hasFileParameters;
     }
 }

@@ -66,33 +66,37 @@ class RequestDto
             if (!$oaParameter) {
                 continue;
             }
-            $proppertyIsPresentInRequest = false;
+            $propertyIsPresentInRequest = false;
             if ($oaParameter->in == Parameter::QUERY && $request->query->has($propertyName)) {
-                $proppertyIsPresentInRequest = true;
+                $propertyIsPresentInRequest = true;
                 $callObject->$propertyName = Datafilter::sanitizeInput($request->query->get($propertyName));
             }
             if ($oaParameter->in == Parameter::PATH && $request->attributes->has($propertyName)) {
-                $proppertyIsPresentInRequest = true;
+                $propertyIsPresentInRequest = true;
                 $callObject->$propertyName = Datafilter::sanitizeInput($request->attributes->get($propertyName));
             }
             if ($oaParameter->in == Parameter::HEADER && $request->headers->has($propertyName)) {
-                $proppertyIsPresentInRequest = true;
+                $propertyIsPresentInRequest = true;
                 $callObject->$propertyName = Datafilter::sanitizeInput($request->headers->get($propertyName));
             }
             if ($oaParameter->in == Parameter::COOKIE && $request->cookies->has($propertyName)) {
-                $proppertyIsPresentInRequest = true;
+                $propertyIsPresentInRequest = true;
                 $callObject->$propertyName = Datafilter::sanitizeInput(
                     EncryptedCookie::getEncryptedCookie($request, $propertyName)
                 );
             }
             if ($oaParameter->in == Parameter::POST && $request->request->has($propertyName)) {
-                $proppertyIsPresentInRequest = true;
+                $propertyIsPresentInRequest = true;
                 $callObject->$propertyName = Datafilter::sanitizeInput($request->request->get($propertyName));
             }
             if ($oaParameter->in == Parameter::BODY && isset($bodyDecoded->$propertyName)) {
-                $proppertyIsPresentInRequest = true;
+                $propertyIsPresentInRequest = true;
             }
-            if (!$proppertyIsPresentInRequest && $oaParameter->isRequired()) {
+            if ($oaParameter->in == Parameter::FILES && $request->files->count()) {
+                $propertyIsPresentInRequest = true;
+                $callObject->$propertyName = $request->files->all();
+            }
+            if (!$propertyIsPresentInRequest && $oaParameter->isRequired()) {
                 throw new BadRequestException('Property "' . $propertyName . '" is missing in ' . static::class);
             }
         }
@@ -140,4 +144,3 @@ class RequestDto
         return true;
     }
 }
-

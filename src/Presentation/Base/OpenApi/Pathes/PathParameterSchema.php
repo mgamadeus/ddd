@@ -78,7 +78,7 @@ class PathParameterSchema
                     if ($typeNameAllocated == 'array') {
                         throw new TypeDefinitionMissingOrWrong(
                             'Declared type array in ' . $requestDtoReflectionClass->getName(
-                            ) . '->$' . $requestDtoReflectionProperty->getName() . ' allowed only for BODY parameters'
+                            ) . '->$' . $requestDtoReflectionProperty->getName() . ' allowed only for BODY or FILES parameters'
                         );
                     }
                     if ($typeNameAllocated == 'object') {

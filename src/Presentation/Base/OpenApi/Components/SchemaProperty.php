@@ -130,11 +130,11 @@ class SchemaProperty
                 $this->schema->addRequiredProperty($schemaClassReflectionProperty->getName());
             }
             if ($type->isBuiltin()) {
-                // array types are not accepted in case of POST scenario, only in BODY
+                // array types are not accepted in case of POST scenario, only in BODY or FILES
                 if ($this->type == 'array' && $scope == Parameter::POST) {
                     throw new TypeDefinitionMissingOrWrong(
                         'Declared type array in ' . $schemaReflectionClass->getName(
-                        ) . '->$' . $schemaClassReflectionProperty->getName() . ' allowed only for BODY parameters'
+                        ) . '->$' . $schemaClassReflectionProperty->getName() . ' allowed only for BODY or FILES parameters'
                     );
                 }
                 if ($this->type == 'object') {
@@ -202,7 +202,7 @@ class SchemaProperty
                     $this->type = $this->typeNameAllocation[$type->getName()];
                 }
 
-                if ($this->type == 'array' && ($scope == Parameter::BODY || $scope == Parameter::RESPONSE)) {
+                if ($this->type == 'array' && in_array($scope, [Parameter::BODY, Parameter::FILES, Parameter::RESPONSE])) {
                     $arrayTypes = [];
                     /** @var ReflectionArrayType $type */
                     $arrayType = $type->getArrayType();
@@ -242,9 +242,13 @@ class SchemaProperty
                                 } elseif ($arrayType == 'array') {
                                     // in case of unspecified array types, we let type generic
                                     $this->items = (object)[];
+                                } elseif ($scope == Parameter::FILES) {
+                                    $this->items['type'] = 'string';
+                                    $this->items['format'] = 'binary';
                                 } else {
                                     $this->items['type'] = $this->typeNameAllocation[$arrayType];
                                 }
+
                             } // we have a complex type
                             else {
                                 $propertyClass = new ClassWithNamespace($arrayType);
@@ -284,7 +288,7 @@ class SchemaProperty
                 if ($scope == Parameter::POST) {
                     throw new TypeDefinitionMissingOrWrong(
                         'Declared type ' . $type->getName() . ' in ' . $schemaReflectionClass->getName(
-                        ) . '->$' . $schemaClassReflectionProperty->getName() . ' allowed only for BODY parameters'
+                        ) . '->$' . $schemaClassReflectionProperty->getName() . ' allowed only for BODY or FILES parameters'
                     );
                 } else {
                     $this->type = 'object';

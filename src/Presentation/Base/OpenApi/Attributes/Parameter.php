@@ -19,6 +19,7 @@ class Parameter extends Base
     public const QUERY = 'query';
     public const COOKIE = 'cookie';
     public const HEADER = 'header';
+    public const FILES = 'files';
 
     public string $in = 'query';
 

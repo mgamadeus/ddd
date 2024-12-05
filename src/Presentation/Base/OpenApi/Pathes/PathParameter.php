@@ -63,7 +63,7 @@ class PathParameter
                 }
             }
         }
-        if ($this->in != Parameter::BODY && $this->in != Parameter::POST) {
+        if (!in_array($this->in,[Parameter::BODY, Parameter::POST, Parameter::FILES])) {
             $this->schema = new PathParameterSchema($this, $requestDtoReflectionClass, $requestDtoReflectionProperty);
         }
     }

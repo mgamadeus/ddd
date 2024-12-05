@@ -56,9 +56,9 @@ class Schema
                     continue;
                 }
                 //we document entities, entityDtos and request / response DTO classes in the same way
-                //in case of request DTOs we need to skip all properties that are not passed in the BODY or POST,
+                //in case of request DTOs we need to skip all properties that are not passed in the BODY, POST or FILES,
                 //e.g. query or path assigned properties
-                //as request DTOs have Attributes on their propertiers of type Parameter we can rely on the
+                //as request DTOs have Attributes on their properties of type Parameter we can rely on the
                 //"in" property of the Parameter attribute (in can be in PATH, QUERY, BODY etc)
                 $skipProperty = false;
                 foreach ($reflectionProperty->getAttributes(Parameter::class) as $attribute) {
