@@ -102,9 +102,9 @@ class Translatable extends ValueObject
             return;
         }
         self::$translationSettingsSnapshot = [
-            'writingStyle' => self::getCurrentWritingStyle(),
-            'languageCode' => self::getCurrentLanguageCode(),
-            'countryCode' => self::getCurrentCountryCode()
+            'writingStyle' => static::getCurrentWritingStyle(),
+            'languageCode' => static::getCurrentLanguageCode(),
+            'countryCode' => static::getCurrentCountryCode()
         ];
     }
 
@@ -117,13 +117,13 @@ class Translatable extends ValueObject
             return;
         }
         if (isset(self::$translationSettingsSnapshot['writingStyle']) && self::$translationSettingsSnapshot['writingStyle']) {
-            self::setCurrentWritingStyle(self::$translationSettingsSnapshot['writingStyle']);
+            static::setCurrentWritingStyle(self::$translationSettingsSnapshot['writingStyle']);
         }
         if (isset(self::$translationSettingsSnapshot['languageCode']) && self::$translationSettingsSnapshot['languageCode']) {
-            self::setCurrentLanguageCode(self::$translationSettingsSnapshot['languageCode']);
+            static::setCurrentLanguageCode(self::$translationSettingsSnapshot['languageCode']);
         }
         if (isset(self::$translationSettingsSnapshot['countryCode']) && self::$translationSettingsSnapshot['countryCode']) {
-            self::setCurrentCountryCode(self::$translationSettingsSnapshot['countryCode']);
+            static::setCurrentCountryCode(self::$translationSettingsSnapshot['countryCode']);
         }
         self::$translationSettingsSnapshot = null;
     }
@@ -136,7 +136,7 @@ class Translatable extends ValueObject
      */
     public static function isCurrentLanguageSet(): bool
     {
-        if (isset(static::$currentLanguageCode)) {
+        if (isset(self::$currentLanguageCode)) {
             return true;
         }
         return false;
@@ -149,16 +149,16 @@ class Translatable extends ValueObject
      */
     public static function fallbackToDefaultLanguageIfNoTranslationIsPresent(): bool
     {
-        if (isset(static::$fallbackToDefaultLanguageCode)) {
-            return static::$fallbackToDefaultLanguageCode;
+        if (isset(self::$fallbackToDefaultLanguageCode)) {
+            return self::$fallbackToDefaultLanguageCode;
         }
         $fallbackToDefaultLanguageCode = Config::getEnv('TRANSLATABLE_FALLBACK_TO_DEFAULT_LANGUAGE_CODE');
         if (isset($fallbackToDefaultLanguageCode)) {
-            static::$fallbackToDefaultLanguageCode = $fallbackToDefaultLanguageCode;
+            self::$fallbackToDefaultLanguageCode = $fallbackToDefaultLanguageCode;
         } else {
-            static::$fallbackToDefaultLanguageCode = false;
+            self::$fallbackToDefaultLanguageCode = false;
         }
-        return static::$fallbackToDefaultLanguageCode;
+        return self::$fallbackToDefaultLanguageCode;
     }
 
     /**
@@ -172,15 +172,15 @@ class Translatable extends ValueObject
      */
     public static function getDefaultLanguageCode(): string
     {
-        if (isset(static::$defaultLanguageCode)) {
-            return static::$defaultLanguageCode;
+        if (isset(self::$defaultLanguageCode)) {
+            return self::$defaultLanguageCode;
         }
         if ($defaultLanguageCode = Config::getEnv('TRANSLATABLE_DEFAULT_LANGUAGE_CODE')) {
-            static::$defaultLanguageCode = $defaultLanguageCode;
+            self::$defaultLanguageCode = $defaultLanguageCode;
         } else {
-            static::$defaultLanguageCode = static::DEFAULT_LANGUAGE_CODE;
+            self::$defaultLanguageCode = static::DEFAULT_LANGUAGE_CODE;
         }
-        return static::$defaultLanguageCode;
+        return self::$defaultLanguageCode;
     }
 
     /**
@@ -189,13 +189,13 @@ class Translatable extends ValueObject
      */
     public static function getActiveLanguageCodes(): array
     {
-        if (isset(static::$activeLanguageCodes)) {
-            return static::$activeLanguageCodes;
+        if (isset(self::$activeLanguageCodes)) {
+            return self::$activeLanguageCodes;
         }
         if ($activeLanguageCodes = Config::getEnv('TRANSLATABLE_ACTIVE_LANGUAGE_CODES')) {
-            static::$activeLanguageCodes = explode(',', $activeLanguageCodes);
+            self::$activeLanguageCodes = explode(',', $activeLanguageCodes);
         }
-        return static::$activeLanguageCodes;
+        return self::$activeLanguageCodes;
     }
 
     /**
@@ -204,13 +204,13 @@ class Translatable extends ValueObject
      */
     public static function getActiveLocales(): array
     {
-        if (isset(static::$activeLocales)) {
-            return static::$activeLocales;
+        if (isset(self::$activeLocales)) {
+            return self::$activeLocales;
         }
         if ($activeLocales = Config::getEnv('TRANSLATABLE_ACTIVE_LOCALES')) {
-            static::$activeLocales = explode(',', $activeLocales);
+            self::$activeLocales = explode(',', $activeLocales);
         }
-        return static::$activeLocales;
+        return self::$activeLocales;
     }
 
     /**
@@ -229,15 +229,15 @@ class Translatable extends ValueObject
      */
     public static function getDefaultWritingStyle(): string
     {
-        if (isset(static::$defaultWritingStyle)) {
-            return static::$defaultWritingStyle;
+        if (isset(self::$defaultWritingStyle)) {
+            return self::$defaultWritingStyle;
         }
         if ($defaultWritingStyle = Config::getEnv('TRANSLATABLE_DEFAULT_WRITING_STYLE')) {
-            static::$defaultWritingStyle = $defaultWritingStyle;
+            self::$defaultWritingStyle = $defaultWritingStyle;
         } else {
-            static::$defaultWritingStyle = static::DEFAULT_WRITING_STYLE;
+            self::$defaultWritingStyle = self::DEFAULT_WRITING_STYLE;
         }
-        return static::$defaultWritingStyle;
+        return self::$defaultWritingStyle;
     }
 
     /**
@@ -249,11 +249,11 @@ class Translatable extends ValueObject
      */
     public static function getCurrentLanguageCode(): string
     {
-        if (isset(static::$currentLanguageCode)) {
-            return static::$currentLanguageCode;
+        if (isset(self::$currentLanguageCode)) {
+            return self::$currentLanguageCode;
         }
-        static::$currentLanguageCode = static::getDefaultLanguageCode();
-        return static::$currentLanguageCode;
+        self::$currentLanguageCode = static::getDefaultLanguageCode();
+        return self::$currentLanguageCode;
     }
 
     /**
@@ -266,11 +266,11 @@ class Translatable extends ValueObject
      */
     public static function getCurrentWritingStyle(): string
     {
-        if (isset(static::$currentWritingStyle)) {
-            return static::$currentWritingStyle;
+        if (isset(self::$currentWritingStyle)) {
+            return self::$currentWritingStyle;
         }
-        static::$currentWritingStyle = static::getDefaultWritingStyle();
-        return static::$currentWritingStyle;
+        self::$currentWritingStyle = static::getDefaultWritingStyle();
+        return self::$currentWritingStyle;
     }
 
     /**
@@ -279,8 +279,8 @@ class Translatable extends ValueObject
      */
     public static function getCurrentCountryCode(): ?string
     {
-        if (isset(static::$currentCountryCode)) {
-            return static::$currentCountryCode;
+        if (isset(self::$currentCountryCode)) {
+            return self::$currentCountryCode;
         }
         return null;
     }
@@ -292,7 +292,7 @@ class Translatable extends ValueObject
      */
     public static function setCurrentLanguageCode(string $languageCode): void
     {
-        static::$currentLanguageCode = $languageCode;
+        self::$currentLanguageCode = $languageCode;
     }
 
     /**
@@ -302,7 +302,7 @@ class Translatable extends ValueObject
      */
     public static function setCurrentWritingStyle(string $writingStyle): void
     {
-        static::$currentWritingStyle = $writingStyle;
+        self::$currentWritingStyle = $writingStyle;
     }
 
     /**
@@ -312,7 +312,7 @@ class Translatable extends ValueObject
      */
     public static function setCurrentCountryCode(?string $countryCode): void
     {
-        static::$currentCountryCode = $countryCode;
+        self::$currentCountryCode = $countryCode;
     }
 
     /**
@@ -377,8 +377,8 @@ class Translatable extends ValueObject
                 // if writing style was given, we try without
                 if ($writingStyle) {
                     // try out switching writing style
-                    $writingStyle = $writingStyle == Translatable::WRITING_STYLE_INFORMAL ? Translatable::WRITING_STYLE_FORMAL : Translatable::WRITING_STYLE_INFORMAL;
-                    $index = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
+                    $writingStyle = $writingStyle == self::WRITING_STYLE_INFORMAL ? self::WRITING_STYLE_FORMAL : self::WRITING_STYLE_INFORMAL;
+                    $index = static::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
                         $languageCode,
                         '',
                         null
