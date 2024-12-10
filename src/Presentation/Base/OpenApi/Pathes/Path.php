@@ -148,9 +148,8 @@ class Path
                         . ' missing in Route Path Definition for Route ' . $route->getPath() . ':' . $httpMethod . ' (' . $controllerClass . '->' . $controllerReflectionMethod->getName() . ')'
                     );
                 }
-                // we add only non-body parameters as body parameters are described separately
-                if ($pathParameter->in != Parameter::BODY
-                    && $pathParameter->in != Parameter::POST
+                // we add only non-body, non-files, non-post parameters as body,post and files parameters are described separately
+                if (!in_array($pathParameter->in, [Parameter::BODY, Parameter::POST, Parameter::FILES])
                     && !$pathParameter->isToBeSkipped()
                 ) {
                     $this->addParamter($pathParameter);
