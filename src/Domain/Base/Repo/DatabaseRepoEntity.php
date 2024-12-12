@@ -437,8 +437,11 @@ abstract class DatabaseRepoEntity extends RepoEntity
                                     $entity->$propertyName = $value;
                                     if ($value instanceof DefaultObject) {
                                         $loadedChildPropertiesAfterUpdate[$propertyName] = $propertyName;
-                                        if ($value->getParent() == $updatedEntity) {
-                                            $entity->addChildren($updatedEntity);
+                                        if ($value->getParent() === $updatedEntity) {
+                                            // As $entity is used further it is critical to either add the $value as child
+                                            // and as well implicitely set $entity as parent of $value
+                                            // otherwise the parent or $value will remain $updatedEntity and stay in Nirvana
+                                            $entity->addChildren($value);
                                         }
                                     }
                                 }
