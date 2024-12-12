@@ -100,12 +100,12 @@ class TranslationInfos extends ValueObject
         }
         // We are operating in context of mapping the values for persistance, in this case also the value of the property is taken into consideration
         // Otherwise not, as we want to have the values "as they are" and understand if a translation is missing or not
+        if (isset($this->translationsStore[$propertyName])) {
+            $translations = array_merge($translations, $this->translationsStore[$propertyName]);
+        }
         if (isset($this->getParent()->$propertyName) && $this->getParent()->$propertyName !== null && $forPersistence) {
             $translations[Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
             )] = $this->getParent()->$propertyName;
-        }
-        if (isset($this->translationsStore[$propertyName])) {
-            $translations = array_merge($translations, $this->translationsStore[$propertyName]);
         }
         return $translations;
     }

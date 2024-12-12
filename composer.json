@@ -3,7 +3,7 @@
   "description": "A DDD Entity Framework on top of symfony and doctrine",
   "minimum-stability": "stable",
   "license": "MIT",
-  "version": "2.4.11",
+  "version": "2.4.12",
   "authors": [
     {
       "name": "Marius-Eugen Gerdan",
