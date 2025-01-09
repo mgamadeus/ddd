@@ -143,10 +143,12 @@ abstract class Cache
     {
         if (!$inverse) {
             $replace = str_replace('\\', '_.#.#._', $key);
+            $replace = str_replace(':', '_.aa.aa._', $key);
             $replace = str_replace('/', '**.-**', $replace);
             return $replace;
         } else {
             $replace = str_replace('_.#.#._', '\\', $key);
+            $replace = str_replace('_.aa.aa._', ':' , $key);
             $replace = str_replace('**.-**', '/', $replace);
             return $replace;
         }
