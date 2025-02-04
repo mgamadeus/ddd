@@ -9,6 +9,7 @@ use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\Arr;
+use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Libs\Datafilter;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
@@ -58,7 +59,8 @@ trait SerializerTrait
         bool $ignoreHideAttributes = false,
         bool $ignoreNullValues = true,
         bool $forPersistence = true
-    ): void {
+    ): void
+    {
     }
 
     /**
@@ -79,7 +81,8 @@ trait SerializerTrait
         bool $ignoreHideAttributes = false,
         bool $ignoreNullValues = true,
         bool $forPersistence = true
-    ): mixed {
+    ): mixed
+    {
         $this->onToObject(
             $cached,
             $returnUniqueKeyInsteadOfContent,
@@ -195,7 +198,8 @@ trait SerializerTrait
         bool $ignoreHideAttributes = false,
         bool $ignoreNullValues = true,
         bool $forPersistence = true
-    ): mixed {
+    ): mixed
+    {
         $propertyValueIsArray = is_array($propertyValue);
         $propertyValueIsObject = is_object($propertyValue);
 
@@ -452,7 +456,8 @@ trait SerializerTrait
         $throwErrors = true,
         bool $rootCall = true,
         bool $sanitizeInput = false
-    ): void {
+    ): void
+    {
         $reflectionClass = $this->getReflectionClass();
         foreach ($reflectionClass->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
             if ($property->isReadOnly()) {
@@ -504,7 +509,8 @@ trait SerializerTrait
         $throwErrors = true,
         ReflectionClass $reflectionClass = null,
         bool $sanitizeInput = false
-    ): void {
+    ): void
+    {
         $propertyName = $property->getName();
         if ($reflectionClass) {
             $reflectionClass = $this->getReflectionClass();
@@ -607,6 +613,9 @@ trait SerializerTrait
                 $typeToInstance = null;
                 if ($allowedTypes->allowedTypesCount > 1) {
                     // by convention we need an objectType in case of multiple types possible
+                    if (isset($value->objectType) && isset(ReflectionClass::getObjectTypeMigrations()[$value->objectType])) {
+                        $value->objectType = ReflectionClass::getObjectTypeMigrations()[$value->objectType];
+                    }
                     if (isset($value->objectType) && isset($allowedTypes->allowedTypes[$value->objectType])) {
                         $typeToInstance = $value->objectType;
                     } else {
@@ -644,6 +653,9 @@ trait SerializerTrait
                     $typeToInstance = array_key_first($allowedTypes->allowedTypes);
                     // we allow subclasses as well if the objectType is of a subclass
                     if (isset($value->objectType)) {
+                        if (isset(ReflectionClass::getObjectTypeMigrations()[$value->objectType])) {
+                            $value->objectType = ReflectionClass::getObjectTypeMigrations()[$value->objectType];
+                        }
                         if (is_a($value->objectType, $typeToInstance, true)) {
                             $typeToInstance = $value->objectType;
                         } else {
@@ -795,6 +807,9 @@ trait SerializerTrait
             $typeToInstance = null;
             if ($allowedTypes->allowedTypesCount > 1) {
                 // by convention we need an objectType property in case of multiple types possible
+                if (isset($value->objectType) && isset(ReflectionClass::getObjectTypeMigrations()[$value->objectType])) {
+                    $value->objectType = ReflectionClass::getObjectTypeMigrations()[$value->objectType];
+                }
                 if (isset($value->objectType) && isset($allowedTypes->allowedTypes[$value->objectType])) {
                     $typeToInstance = $value->objectType;
                 } else {
@@ -845,6 +860,9 @@ trait SerializerTrait
                 $typeToInstance = array_key_first($allowedTypes->allowedTypes);
                 // we allow subclasses as well if the objectType is of a subclass
                 if (isset($value->objectType)) {
+                    if (isset(ReflectionClass::getObjectTypeMigrations()[$value->objectType])) {
+                        $value->objectType = ReflectionClass::getObjectTypeMigrations()[$value->objectType];
+                    }
                     if (is_a($value->objectType, $typeToInstance, true)) {
                         $typeToInstance = $value->objectType;
                     } else {

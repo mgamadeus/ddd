@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Infrastructure\Reflection;
 
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
+use DDD\Infrastructure\Libs\Config;
 use ReflectionClassConstant;
 use ReflectionException;
 use RuntimeException;
@@ -84,10 +85,24 @@ class ReflectionClass extends \ReflectionClass
     /** @var UseStatement[] */
     protected $useStatements = [];
 
+    protected static ?array $objectTypeMigrations = null;
+
     public function getDocCommentInstance(): ReflectionDocComment
     {
         $reflectionDocComment = new ReflectionDocComment((string)$this->getDocComment());
         return $reflectionDocComment;
+    }
+
+    /**
+     * @return array|null Returns associative array with associations of
+     * old objectType => new objectType
+     */
+    public static function getObjectTypeMigrations(): ?array
+    {
+        if (!isset(self::$objectTypeMigrations)) {
+            self::$objectTypeMigrations = Config::get('Common.objectTypeMigrations') ?? [];
+        }
+        return self::$objectTypeMigrations;
     }
 
     /**

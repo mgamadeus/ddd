@@ -49,7 +49,8 @@ class DBEntity extends DatabaseRepoEntity
     public function mapToEntity(
         bool $useEntityRegistryCache = true,
         array $initiatorClasses = []
-    ): ?DefaultObject {
+    ): ?DefaultObject
+    {
         // on the highest level, we first clear ormInstanceToEntityAllocation
         if (empty($initiatorClasses)) {
             self::$ormInstanceToEntityAllocation = [];
@@ -131,7 +132,8 @@ class DBEntity extends DatabaseRepoEntity
         string $propertyName,
         array $initiatorClasses = [],
         bool $useEntityRegistryCache = true
-    ) {
+    )
+    {
         if (!isset($this->ormInstance->$propertyName)) {
             return;
         }
@@ -294,24 +296,39 @@ class DBEntity extends DatabaseRepoEntity
                     $possibleEntityTypeName,
                     ValueObject::class,
                     true
-                ) // exact match needed, for UnionTypes so the right type gets instantiated
-                && (count($possibleEntityTypes) == 1 || ((is_array(
+                )
+            ) {
+                // handle object type migrations
+                if (isset($this->ormInstance->$propertyName['objectType']) && isset(
+                        ReflectionClass::getObjectTypeMigrations()[$this->ormInstance->$propertyName['objectType']]
+                    )) {
+                    $this->ormInstance->$propertyName['objectType'] = ReflectionClass::getObjectTypeMigrations(
+                    )[$this->ormInstance->$propertyName['objectType']];
+                }
+                if (isset($this->ormInstance->$propertyName->objectType) && isset(
+                        ReflectionClass::getObjectTypeMigrations()[$this->ormInstance->$propertyName->objectType]
+                    )) {
+                    $this->ormInstance->$propertyName->objectType = ReflectionClass::getObjectTypeMigrations(
+                    )[$this->ormInstance->$propertyName->objectType];
+                }
+                // exact match needed, for UnionTypes so the right type gets instantiated
+                if (count($possibleEntityTypes) == 1 || ((is_array(
                                 $this->ormInstance->$propertyName
                             ) && ($this->ormInstance->$propertyName['objectType'] ?? null) == $possibleEntityTypeName) || (is_object(
                                 $this->ormInstance->$propertyName
-                            ) && ($this->ormInstance->$propertyName->objectType ?? null) == $possibleEntityTypeName)))
-            ) {
-                /** @var ValueObject $valueObject */
-                $valueObject = new $possibleEntityTypeName();
-                // Handling ValueObjects in case of encryption
-                $propertyValue = $this->ormInstance->$propertyName;
-                if ($encryptionScopePassword) {
-                    $propertyValue = Encrypt::decrypt($propertyValue, $encryptionScopePassword);
+                            ) && ($this->ormInstance->$propertyName->objectType ?? null) == $possibleEntityTypeName))) {
+                    /** @var ValueObject $valueObject */
+                    $valueObject = new $possibleEntityTypeName();
+                    // Handling ValueObjects in case of encryption
+                    $propertyValue = $this->ormInstance->$propertyName;
+                    if ($encryptionScopePassword) {
+                        $propertyValue = Encrypt::decrypt($propertyValue, $encryptionScopePassword);
+                    }
+                    $valueObject->mapFromRepository($propertyValue);
+                    $entity->$propertyName = $valueObject;
+                    $entity->addChildren($entity->$propertyName);
+                    $valueObject->setParent($entity);
                 }
-                $valueObject->mapFromRepository($propertyValue);
-                $entity->$propertyName = $valueObject;
-                $entity->addChildren($entity->$propertyName);
-                $valueObject->setParent($entity);
             }
             // in case that ormInstance contains initialized dependent Mode, we load it
             if (
