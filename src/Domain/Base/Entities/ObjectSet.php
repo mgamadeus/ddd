@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Entities;
 
-use App\Domain\Common\Entities\Colors\Color;
 use ArrayAccess;
 use Countable;
 use DDD\Domain\Base\Entities\Interfaces\IsEmptyInterface;
@@ -16,6 +15,7 @@ use DDD\Infrastructure\Reflection\ReflectionNamedType;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
 use DDD\Infrastructure\Reflection\ReflectionUnionType;
 use DDD\Infrastructure\Traits\Serializer\SerializerRegistry;
+use Exception;
 use Iterator;
 use ReflectionException;
 
@@ -208,7 +208,8 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
         $throwErrors = true,
         bool $rootCall = true,
         bool $sanitizeInput = false
-    ): void {
+    ): void
+    {
         if (isset($object->elements) && is_array($object->elements)) {
             $allowedTypes = [];
             $property = $this->getProperty('elements');
@@ -319,7 +320,6 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
                 $this->add($item);
             }
         }
-        unset($object->elements);
         parent::setPropertiesFromObject($object, $throwErrors, $rootCall, $sanitizeInput);
     }
 

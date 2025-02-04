@@ -6,10 +6,10 @@ namespace DDD\Infrastructure\Traits\Serializer;
 
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
+use DDD\Domain\Base\Entities\ObjectSet;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\Arr;
-use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Libs\Datafilter;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
@@ -464,6 +464,10 @@ trait SerializerTrait
                 continue;
             }
             $propertyName = $property->getName();
+            // We ignore elements property in ObjectSet as elements are handled by add() function there in their own setPropertiesFromObject function
+            if ($this instanceof ObjectSet && $propertyName == 'elements') {
+                continue;
+            }
             $setProperty = false;
             // we write the property if it is set, means it has a value or it is null
             // in case of null, we take care to check if the target value supports null
@@ -613,7 +617,9 @@ trait SerializerTrait
                 $typeToInstance = null;
                 if ($allowedTypes->allowedTypesCount > 1) {
                     // by convention we need an objectType in case of multiple types possible
-                    if (isset($value->objectType) && isset(ReflectionClass::getObjectTypeMigrations()[$value->objectType])) {
+                    if (isset($value->objectType) && isset(
+                            ReflectionClass::getObjectTypeMigrations()[$value->objectType]
+                        )) {
                         $value->objectType = ReflectionClass::getObjectTypeMigrations()[$value->objectType];
                     }
                     if (isset($value->objectType) && isset($allowedTypes->allowedTypes[$value->objectType])) {
@@ -807,7 +813,9 @@ trait SerializerTrait
             $typeToInstance = null;
             if ($allowedTypes->allowedTypesCount > 1) {
                 // by convention we need an objectType property in case of multiple types possible
-                if (isset($value->objectType) && isset(ReflectionClass::getObjectTypeMigrations()[$value->objectType])) {
+                if (isset($value->objectType) && isset(
+                        ReflectionClass::getObjectTypeMigrations()[$value->objectType]
+                    )) {
                     $value->objectType = ReflectionClass::getObjectTypeMigrations()[$value->objectType];
                 }
                 if (isset($value->objectType) && isset($allowedTypes->allowedTypes[$value->objectType])) {
