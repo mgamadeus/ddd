@@ -58,58 +58,59 @@ abstract class DefaultObject extends BaseObject
         return $selfJson == $otherJson;
     }
 
+
     /**
      * Recursively deep clones this object.
      *
-     * @param array<int, bool> $callPath An array of visited object IDs to prevent infinite recursion.
+     * @param array<int, object> $callPath A cache of visited objects (mapping spl_object_id to clone).
+     *
      * @return static
      * @throws ReflectionException
      */
-    public function clone(array $callPath = []): DefaultObject
+    public function clone(array &$callPath = []): DefaultObject
     {
-        if (isset($callPath[spl_object_id($this)])) {
-            return $this;
+        $objectId = spl_object_id($this);
+
+        // If we've already cloned this object, return the clone to avoid infinite recursion.
+        if (isset($callPath[$objectId])) {
+            return $callPath[$objectId];
         }
 
         // Properties that should not be cloned by default.
-        $propertyNamesToIgnore = ['parent' => true];
+        $ignoredProperties = ['parent' => true];
 
+        // Create a new instance of the current class.
         $clone = new static();
 
-        // Copy over the parent, if set.
+        // Immediately register this clone in the global cache.
+        $callPath[$objectId] = $clone;
+
+        // Optionally, copy over the parent, if set.
         $parent = $this->getParent();
-        if ($parent) {
+        if ($parent !== null) {
             $clone->setParent($parent);
         }
 
-        // This cache keeps track of which objects have been cloned so far.
-        $clonedObjects = [];
-
         // Consider both public and protected properties.
-        foreach ($this->getProperties(ReflectionProperty::IS_PUBLIC|ReflectionProperty::IS_PROTECTED) as $property) {
+        $properties = $this->getProperties(ReflectionProperty::IS_PUBLIC | ReflectionProperty::IS_PROTECTED);
+        foreach ($properties as $property) {
             $propertyName = $property->getName();
-            if (isset($propertyNamesToIgnore[$propertyName])) {
+            if (isset($ignoredProperties[$propertyName])) {
                 continue;
             }
             if (!isset($this->$propertyName)) {
                 continue;
             }
             $value = $this->$propertyName;
+
+            // If the value is an array, clone each element.
             if (is_array($value)) {
                 $clone->$propertyName = [];
-                foreach ($value as $arrayIndex => $arrayElement) {
-                    $clone->$propertyName[$arrayIndex] = $this->clonePropertyConsideringCache(
-                        $clonedObjects,
-                        $arrayElement,
-                        $callPath,
-                    );
+                foreach ($value as $key => $element) {
+                    $clone->$propertyName[$key] = $this->deepCloneValue($element, $callPath);
                 }
             } else {
-                $clone->$propertyName = $this->clonePropertyConsideringCache(
-                    $clonedObjects,
-                    $value,
-                    $callPath,
-                );
+                $clone->$propertyName = $this->deepCloneValue($value, $callPath);
             }
         }
 
@@ -117,33 +118,38 @@ abstract class DefaultObject extends BaseObject
     }
 
     /**
-     * Recursively clones a property value while using a cache to avoid cloning the same object twice.
+     * Recursively clones a property value while using the global visited cache.
      *
-     * @param array<int, mixed> &$clonedObjects A cache of objects already cloned (keyed by spl_object_id).
      * @param mixed $value The property value to clone.
-     * @param array<int, bool> $visited The array of visited object IDs.
+     * @param array<int, object> &$visited The global cache of visited objects.
      * @return mixed
      * @throws ReflectionException
      */
-    protected function clonePropertyConsideringCache(
-        array &$clonedObjects,
-        mixed $value,
-        array $visited,
-    ): mixed {
-        // Non-objects are returned as is.
+    protected function deepCloneValue(mixed &$value, array &$visited): mixed
+    {
+        // If it's not an object, just return it.
         if (!is_object($value)) {
             return $value;
         }
 
         $objectId = spl_object_id($value);
-        // Return the cached clone if we’ve already cloned this object.
-        if (isset($clonedObjects[$objectId])) {
-            return $clonedObjects[$objectId];
+
+        // If this object has already been cloned, return its clone.
+        if (isset($visited[$objectId])) {
+            return $visited[$objectId];
         }
 
-        // If the value is a DefaultObject (or a subclass) or an object, we clone it
-        $cloned = ($value instanceof self) ? $value->clone($visited) : clone $value;
-        $clonedObjects[$objectId] = $cloned;
+        // Otherwise, clone it.
+        if ($value instanceof self) {
+            // If it's one of our objects, use clone.
+            $cloned = $value->clone($visited);
+        } else {
+            // Otherwise, use PHP's built-in clone.
+            $cloned = clone $value;
+            // Register non-custom objects as well.
+            $visited[$objectId] = $cloned;
+        }
+
         return $cloned;
     }
 
