@@ -72,6 +72,9 @@ abstract class DefaultObject extends BaseObject
         $propertyNamesToIgnore = ['parent' => true];
         /** @var DefaultObject $clone */
         $clone = new (static::class)();
+        if(empty($clonedObjectCache) && $this->getParent()){
+            $clone->setParent($this->parent);
+        }
         $clonedObjectCache[spl_object_id($this)] = $clone;
 
         foreach ($this->getProperties(ReflectionProperty::IS_PUBLIC|ReflectionProperty::IS_PROTECTED) as $property) {
