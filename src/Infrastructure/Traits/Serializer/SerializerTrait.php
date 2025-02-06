@@ -911,7 +911,7 @@ trait SerializerTrait
             }
             if (isset($this->$propertyName) && $this->$propertyName) {
                 if (!$entityFromCache && method_exists($this->$propertyName, 'setPropertiesFromObject')) {
-                    // empty objects come as arrays and have to be converted
+                    // empty objects come as arrays and havde to be converted
                     if (is_array($value)) {
                         $value = (object)$value;
                     }

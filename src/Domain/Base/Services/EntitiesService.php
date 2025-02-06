@@ -15,7 +15,6 @@ use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\Service;
 use Doctrine\DBAL\Exception;
 use Doctrine\ORM\Exception\ORMException;
-use Doctrine\ORM\Mapping\MappingException;
 use Doctrine\ORM\NonUniqueResultException;
 use Doctrine\ORM\OptimisticLockException;
 use Psr\Cache\InvalidArgumentException;
@@ -69,7 +68,7 @@ class EntitiesService extends Service
      * @throws InvalidArgumentException
      * @throws ReflectionException
      */
-    public function findAll(?int $offset = null, $limit = null, bool $useEntityRegistrCache = true): ?EntitySet
+    public function findAll(?int $offset = null, ?int $limit = null, bool $useEntityRegistrCache = true): ?EntitySet
     {
         $repoClassInstance = $this->getEntitySetRepoClassInstance();
         if (!$repoClassInstance) {
