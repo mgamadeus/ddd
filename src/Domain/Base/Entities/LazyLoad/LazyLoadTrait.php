@@ -219,12 +219,16 @@ trait LazyLoadTrait
                         $instanceAddedToParent = false;
                         if ($propertyOfCurrentType = $lazyLoadedEntity->getPropertyOfType($this::class)) {
                             $propertyOfCurrentTypeName = $propertyOfCurrentType->getName();
-                            if (!isset($lazyLoadedEntity->$propertyOfCurrentTypeName) || is_null(
-                                    $lazyLoadedEntity->$propertyOfCurrentTypeName
-                                )) {
-                                $instanceAddedToParent = true;
-                                $lazyLoadedEntity->$propertyOfCurrentTypeName = $this;
-                                $lazyLoadedEntity->addChildren($this);
+                            // check if $propertyOfCurrentTypeName is not equal to propertyName
+                            // e.g. parentWorld, cause this way we mss up references, parent World would have as parentWorld put the Child World
+                            if ($propertyOfCurrentTypeName != $propertyName) {
+                                if (!isset($lazyLoadedEntity->$propertyOfCurrentTypeName) || is_null(
+                                        $lazyLoadedEntity->$propertyOfCurrentTypeName
+                                    )) {
+                                    $instanceAddedToParent = true;
+                                    $lazyLoadedEntity->$propertyOfCurrentTypeName = $this;
+                                    $lazyLoadedEntity->addChildren($this);
+                                }
                             }
                         }
                         // check if lazyloaded entities has current current entity within a EntitySet as property
