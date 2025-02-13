@@ -25,6 +25,42 @@ trait DefaultObjectTrait
     }
 
     /**
+     * Determines if the class name or object instance has the EntityTrait
+     * @param string|object $objectInstanceOrClassName
+     * @return bool
+     * @throws ReflectionException
+     */
+    public static function isEntity(mixed $objectInstanceOrClassName): bool
+    {
+        if (!(is_object($objectInstanceOrClassName) || is_string($objectInstanceOrClassName))) {
+            return false;
+        }
+        $class = is_object($objectInstanceOrClassName) ? $objectInstanceOrClassName::class : $objectInstanceOrClassName;
+        if (defined("{$class}::IS_ENTITY")) {
+            return $class::IS_ENTITY;
+        }
+        return false;
+    }
+
+    /**
+     * Determines if the class name or object instance has ValueObjectTrait and NOT the EntityTrait
+     * @param string|object $objectInstanceOrClassName
+     * @return bool
+     * @throws ReflectionException
+     */
+    public static function isValueObject(mixed $objectInstanceOrClassName): bool
+    {
+        if (!(is_object($objectInstanceOrClassName) || is_string($objectInstanceOrClassName))) {
+            return false;
+        }
+        $class = is_object($objectInstanceOrClassName) ? $objectInstanceOrClassName::class : $objectInstanceOrClassName;
+        if (defined("{$class}::IS_VALUE_OBJECT") && !defined("{$class}::IS_ENTITY")) {
+            return $class::IS_VALUE_OBJECT;
+        }
+        return false;
+    }
+
+    /**
      * @return static
      */
     public static function newInstance(): static

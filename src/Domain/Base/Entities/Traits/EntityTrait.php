@@ -28,6 +28,8 @@ trait EntityTrait
 {
     use DefaultObjectTrait;
 
+    public const bool IS_ENTITY = true;
+
     /** @var string|null The internal identifier of the entity */
     public ?int $id = null;
 
@@ -83,7 +85,7 @@ trait EntityTrait
         /** @var string $currentClassName */
         /** @var string $parentClassName */
         if (
-            $parentClass->hasTrait(EntityTrait::class) && !$$parentClass->isAbstract()
+            DefaultObject::isEntity($parentClassName) && !$parentClass->isAbstract()
         ) {
             if ($considerOnlyClassesFromSameRootNamespace) {
                 if (

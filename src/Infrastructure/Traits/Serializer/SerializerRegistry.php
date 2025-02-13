@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Traits\Serializer;
 
+use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Domain\Base\Entities\Entity;
 
@@ -37,7 +38,7 @@ class SerializerRegistry
      * @param Entity $entity
      * @return void
      */
-    public static function setInstanceForSetPropertiesFromObjectCache(Entity &$entity): void
+    public static function setInstanceForSetPropertiesFromObjectCache(DefaultObject &$entity): void
     {
         if (!isset(self::$setPropertiesFromObjectCache[$entity::class])) {
             self::$setPropertiesFromObjectCache[$entity::class] = [];

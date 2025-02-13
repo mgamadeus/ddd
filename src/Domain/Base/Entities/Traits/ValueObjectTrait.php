@@ -13,6 +13,8 @@ trait ValueObjectTrait
 {
     use DefaultObjectTrait;
 
+    public const bool IS_VALUE_OBJECT = true;
+
     public function equals(?BaseObject &$other = null): bool
     {
         if (!$other) {
