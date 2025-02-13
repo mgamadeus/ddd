@@ -232,7 +232,8 @@ trait LazyLoadTrait
                             }
                         }
                         // check if lazyloaded entities has current current entity within a EntitySet as property
-                        if (!$instanceAddedToParent && $this instanceof Entity) {
+                        if (!$instanceAddedToParent && DefaultObject::isEntity($this)) {
+                            /** @var Entity $this */
                             if ($entitySetClass = $this::getEntitySetClass()) {
                                 if ($propertyOfCurrentSetType = $lazyLoadedEntity->getPropertyOfType(
                                     $entitySetClass

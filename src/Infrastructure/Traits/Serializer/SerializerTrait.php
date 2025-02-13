@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Traits\Serializer;
 
+use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\ObjectSet;
@@ -97,7 +98,7 @@ trait SerializerTrait
             SerializerRegistry::clearToObjectCache();
         }*/
         $objectId = spl_object_id($this);
-        $entityId = is_a($this, Entity::class, true) && isset($this->id) ? static::class . '_' . $this->id : null;
+        $entityId = DefaultObject::isEntity($this) && isset($this->id) ? static::class . '_' . $this->id : null;
         if ($cached) {
             if ($cachedResult = SerializerRegistry::getToObjectCacheForObjectId($objectId)) {
                 return $cachedResult;
@@ -214,11 +215,7 @@ trait SerializerTrait
                 } elseif (isset($path[spl_object_id($propertyValue)])) {
                     // we had the object by its object hash already in the path, so we are in a recursion
                     return '*RECURSION*';
-                } elseif (is_a(
-                        $propertyValue,
-                        Entity::class,
-                        true
-                    ) && isset($propertyValue->id) && isset($path[$propertyValue::class . '_' . $propertyValue->id])) {
+                } elseif (DefaultObject::isEntity($propertyValue) && isset($propertyValue->id) && isset($path[$propertyValue::class . '_' . $propertyValue->id])) {
                     // we had the object (found by entity id) already in the path, so we are in a recursion
                     return '*RECURSION*';
                 } else {
@@ -488,7 +485,7 @@ trait SerializerTrait
                 );
             }
         }
-        if (is_a($this, Entity::class, true) && isset($this->id) && $this->id) {
+        if (DefaultObject::isEntity($this) && isset($this->id) && $this->id) {
             SerializerRegistry::setInstanceForSetPropertiesFromObjectCache($this);
         }
         if ($rootCall) {
@@ -679,11 +676,7 @@ trait SerializerTrait
                 // we first try to check if the type to instance is an entity and if we already have set it's properties
                 // in this case we can use the SerializerRegistry
                 $entityFromCache = false;
-                if (is_a(
-                        $typeToInstance,
-                        Entity::class,
-                        true
-                    ) && isset($arrayItem->id) && $arrayItem->id && $cachedEntityInstance = SerializerRegistry::getInstanceForSetPropertiesFromObjectCache(
+                if (DefaultObject::isEntity($typeToInstance) && isset($arrayItem->id) && $arrayItem->id && $cachedEntityInstance = SerializerRegistry::getInstanceForSetPropertiesFromObjectCache(
                         $typeToInstance,
                         $arrayItem->id
                     )) {
@@ -888,11 +881,7 @@ trait SerializerTrait
 
             try {
                 $entityFromCache = false;
-                if (is_a(
-                        $typeToInstance,
-                        Entity::class,
-                        true
-                    ) && isset($value->id) && $value->id && $cachedEntityInstance = SerializerRegistry::getInstanceForSetPropertiesFromObjectCache(
+                if (DefaultObject::isEntity($typeToInstance) && isset($value->id) && $value->id && $cachedEntityInstance = SerializerRegistry::getInstanceForSetPropertiesFromObjectCache(
                         $typeToInstance,
                         $value->id
                     )) {

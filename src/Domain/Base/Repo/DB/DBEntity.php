@@ -11,6 +11,8 @@ use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
+use DDD\Domain\Base\Entities\Traits\EntityTrait;
+use DDD\Domain\Base\Entities\Traits\ValueObjectTrait;
 use DDD\Domain\Base\Entities\Translatable\Translatable;
 use DDD\Domain\Base\Entities\Translatable\TranslatableTrait;
 use DDD\Domain\Base\Entities\ValueObject;
@@ -58,6 +60,7 @@ class DBEntity extends DatabaseRepoEntity
 
         /** @var ChangeHistoryTrait $entityClass */
         $entityClass = $this->ormInstance::ENTITY_CLASS;
+        /** @var EntityTrait $entityInstance */
         $entityInstance = new $entityClass();
         $entityReflectionClass = ReflectionClass::instance((string)$entityClass);
 
@@ -109,8 +112,8 @@ class DBEntity extends DatabaseRepoEntity
         self::$ormInstanceToEntityAllocation[spl_object_id($this->ormInstance)] = $entityInstance;
 
         // map all fields from ormInstance to Entity
+        /** @var DefaultObject $entityInstance */
         foreach ($this->ormInstance as $propertyName => $propertyValue) {
-            /** @var ENtity $entityInstance */
             $this->mapPropertyToEntity($entityInstance, $propertyName, $initiatorClasses, $useEntityRegistryCache);
         }
         return $entityInstance;
@@ -118,7 +121,7 @@ class DBEntity extends DatabaseRepoEntity
 
     /**
      * Maps single property from repository to Entity
-     * @param Entity $entity
+     * @param DefaultObject $entity
      * @param string $propertyName
      * @param array $initiatorClasses
      * @return void
@@ -128,7 +131,7 @@ class DBEntity extends DatabaseRepoEntity
      * @throws ReflectionException
      */
     public function mapPropertyToEntity(
-        Entity &$entity,
+        DefaultObject &$entity,
         string $propertyName,
         array $initiatorClasses = [],
         bool $useEntityRegistryCache = true
@@ -209,7 +212,9 @@ class DBEntity extends DatabaseRepoEntity
 
         foreach ($possibleEntityTypes as $possibleEntityType) {
             $possibleEntityTypeName = $possibleEntityType->getName();
+            {
 
+            }
             // Handling of simple types in case of encryption
             if ($encryptionScopePassword) {
                 $decryptedString = Encrypt::decrypt($this->ormInstance->$propertyName, $encryptionScopePassword);
@@ -292,11 +297,7 @@ class DBEntity extends DatabaseRepoEntity
                     }
                 }
             } elseif (
-                is_a(
-                    $possibleEntityTypeName,
-                    ValueObject::class,
-                    true
-                )
+                DefaultObject::isValueObject($possibleEntityTypeName)
             ) {
                 // handle object type migrations
                 if (isset($this->ormInstance->$propertyName['objectType']) && isset(
@@ -332,13 +333,7 @@ class DBEntity extends DatabaseRepoEntity
             }
             // in case that ormInstance contains initialized dependent Mode, we load it
             if (
-                is_a(
-                    $possibleEntityTypeName,
-                    Entity::class,
-                    true
-                ) /*&& $this->ormInstance->$propertyName instanceof DoctrineModel */ && $this->ormInstance->isLoaded(
-                    $propertyName
-                )
+                DefaultObject::isEntity($possibleEntityTypeName) && $this->ormInstance->isLoaded($propertyName)
             ) {
                 /** @var Entity $entityType */
                 $entityType = $possibleEntityTypeName;
@@ -372,7 +367,7 @@ class DBEntity extends DatabaseRepoEntity
         }
     }
 
-    public function mapCreatedAndUpdatedTime(Entity &$entity): void
+    public function mapCreatedAndUpdatedTime(DefaultObject &$entity): void
     {
         /** @var ChangeHistoryTrait $entityClass */
         $entityClass = $this->ormInstance::ENTITY_CLASS;
@@ -383,7 +378,7 @@ class DBEntity extends DatabaseRepoEntity
             $modifiedColumn = $changeHistoryAttributeInstance->getModifiedColumn();
             /** @var ChangeHistoryTrait $entity */
             $createdTime = null;
-            if (!$entity->id || (!isset($entity->changeHistory->createdTime)) || $entity->changeHistory->overwriteCreatedAndModifiedTime) {
+            if (!isset($entity->id) || (!isset($entity->changeHistory->createdTime)) || $entity->changeHistory->overwriteCreatedAndModifiedTime) {
                 /** @var DateTime $enityCreatedTime */
                 if (isset($entity->changeHistory->createdTime) && $entity->changeHistory->overwriteCreatedAndModifiedTime) {
                     $enityCreatedTime = $entity->changeHistory->createdTime;
@@ -422,7 +417,7 @@ class DBEntity extends DatabaseRepoEntity
                 $modifiedTime && ((!$createdTime && property_exists(
                             $this->ormInstance,
                             $modifiedColumn
-                        ) || ($entity->id && !isset($entity->changeHistory->createdTime))) || (isset($entity->changeHistory) && $entity->changeHistory->overwriteCreatedAndModifiedTime))
+                        ) || (isset($entity->id) && !isset($entity->changeHistory->createdTime))) || (isset($entity->changeHistory) && $entity->changeHistory->overwriteCreatedAndModifiedTime))
             ) {
                 $this->ormInstance->$modifiedColumn = $modifiedTime;
             }
@@ -435,8 +430,10 @@ class DBEntity extends DatabaseRepoEntity
      * @return bool
      * @throws ReflectionException
      */
-    public function mapToRepository(Entity &$entity): bool
+    public function mapToRepository(DefaultObject &$entity): bool
     {
+        if (!DefaultObject::isEntity($entity)) return false;
+
         $this->ormInstance = isset($this->ormInstance) && $this->ormInstance ? $this->ormInstance : new (static::getBaseModelNameForEntityInstance(
             $entity
         ))();
@@ -455,7 +452,7 @@ class DBEntity extends DatabaseRepoEntity
      * @return void
      * @throws ReflectionException
      */
-    public function mapPropertyToRepository(Entity &$entity, string $propertyName): void
+    public function mapPropertyToRepository(DefaultObject &$entity, string $propertyName): void
     {
         $ormModelReflectionClass = ReflectionClass::instance($this->ormInstance::class);
         if (!$ormModelReflectionClass->hasProperty($propertyName)) {
@@ -483,8 +480,14 @@ class DBEntity extends DatabaseRepoEntity
 
         // if attribute has lazyload on it, we do not map it to repository, it is then e.g. en EntitySet of dependent Entities
         $hasDBOrVirtualLazyloadRepo = false;
+        $propertyValueIsValueObject = false;
+        $propertyValueIsEntity = false;
+        $propertyValue = $entity->$propertyName;
+        $propertyValueIsValueObject = DefaultObject::isValueObject($propertyValue);
+        $propertyValueIsEntity = DefaultObject::isEntity($propertyValue);
+
         if (
-            $entity->$propertyName instanceof ValueObject && ($lazyloadAttributes = $entityReflectionProperty->getAttributes(
+            $propertyValueIsValueObject && ($lazyloadAttributes = $entityReflectionProperty->getAttributes(
                 LazyLoad::class
             ))
         ) {
@@ -511,8 +514,8 @@ class DBEntity extends DatabaseRepoEntity
         if ($entity->$propertyName === null) {
             $mappedValueSet = true;
         } else {
-            if ($entity->$propertyName instanceof ValueObject && !$hasDBOrVirtualLazyloadRepo) {
-                /** @var ValueObject $valueObject */
+            if ($propertyValueIsValueObject && !$hasDBOrVirtualLazyloadRepo) {
+                /** @var ValueObjectTrait $valueObject */
                 $valueObject = $entity->$propertyName;
                 $mappedValue = $valueObject->mapToRepository();
                 $mappedValueSet = true;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Services;
 
+use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Repo\DatabaseRepoEntity;
@@ -86,8 +87,8 @@ class EntitiesService extends Service
 
     /**
      * Updates entity
-     * @param Entity $entity
-     * @return Entity
+     * @param DefaultObject $entity
+     * @return DefaultObject
      * @throws BadRequestException
      * @throws InternalErrorException
      * @throws InvalidArgumentException
@@ -97,8 +98,8 @@ class EntitiesService extends Service
      * @throws ReflectionException
      */
     public function update(
-        Entity $entity
-    ): Entity {
+        DefaultObject $entity
+    ): DefaultObject {
         $repoClass = $entity::getRepoClassInstance();
         return $repoClass->update($entity);
     }

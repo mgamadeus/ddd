@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Entities\ChangeHistory;
 
+use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Infrastructure\Base\DateTime\DateTime;
@@ -38,7 +39,7 @@ trait ChangeHistoryTrait
     public static function getChangeHistoryAttribute(bool $entityOperationMode = true): ?ChangeHistory
     {
         if ($entityOperationMode) {
-            if (!(is_a(static::class, Entity::class, true) || is_a(static::class, ValueObject::class, true))) {
+            if (!(DefaultObject::isEntity(static::class) || DefaultObject::isValueObject(static::class))) {
                 return null;
             }
             try {

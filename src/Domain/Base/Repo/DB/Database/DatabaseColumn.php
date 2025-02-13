@@ -6,6 +6,7 @@ namespace DDD\Domain\Base\Repo\DB\Database;
 
 use Attribute;
 use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
+use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
@@ -288,7 +289,7 @@ class DatabaseColumn extends ValueObject
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[Date::class];
         } elseif (is_a($type->getName(), GeoPoint::class, true)) {
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[GeoPoint::class];
-        } elseif (is_a($type->getName(), ValueObject::class, true)) {
+        } elseif (DefaultObject::isValueObject($type->getName())) {
             // ignore Lazyload Repos ValueObject e.g. Virtual Repotype
             if ($lazyloadAttributes = $reflectionProperty->getAttributes(LazyLoad::class)) {
                 foreach ($lazyloadAttributes as $lazyloadAttribute) {
@@ -307,7 +308,7 @@ class DatabaseColumn extends ValueObject
             $databaseColum->hasIndex = false;
             $databaseColum->phpType = ValueObject::class;
             $databaseColum->isMergableJSONColumn = true;
-        } elseif (is_a($type->getName(), Entity::class, true)) {
+        } elseif (DefaultObject::isEntity($type->getName())) {
             return null;
         }
         if (is_a($type->getName(), EntitySet::class, true)) {
@@ -390,7 +391,7 @@ class DatabaseColumn extends ValueObject
         if ($this->isBuildinType || ($this->phpType == DateTime::class || $this->phpType == Date::class)) {
             return self::DOCTRINE_PHP_TYPE_ALLOCATIONS[$this->phpType];
         }
-        if (is_a($this->phpType, ValueObject::class, true)) {
+        if (DefaultObject::isValueObject($this->phpType)) {
             return self::DOCTRINE_PHP_TYPE_ALLOCATIONS[ValueObject::class];
         }
         return self::DOCTRINE_PHP_TYPE_ALLOCATIONS[$this->phpType];

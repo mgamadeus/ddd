@@ -6,6 +6,7 @@ namespace DDD\Domain\Base\Repo\DB\Attributes;
 
 use Attribute;
 use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
+use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Repo\DatabaseRepoEntity;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
@@ -192,21 +193,21 @@ class DatabaseTranslation
 
     /**
      * Updates or creates Translation
-     * @param Entity $entity
+     * @param DefaultObject $entity
      * @param DatabaseRepoEntity $databaseRepoEntity
      * @return void
      */
-    public function updateOrCreateTranslation(Entity $entity, DatabaseRepoEntity $databaseRepoEntity): void
+    public function updateOrCreateTranslation(DefaultObject $entity, DatabaseRepoEntity $databaseRepoEntity): void
     {
     }
 
     /**
      * Deletes translation
-     * @param Entity $entity
+     * @param DefaultObject $entity
      * @param DatabaseRepoEntity $databaseRepoEntity
      * @return bool
      */
-    public function deleteTranslation(Entity $entity, DatabaseRepoEntity $databaseRepoEntity): bool
+    public function deleteTranslation(DefaultObject $entity, DatabaseRepoEntity $databaseRepoEntity): bool
     {
         return false;
     }

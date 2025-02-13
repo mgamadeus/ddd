@@ -289,11 +289,7 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
                 }
                 $entityFromCache = false;
                 if (
-                    is_a(
-                        $typeToInstance,
-                        Entity::class,
-                        true
-                    ) && isset($value->id) && $value->id && $cachedEntityInstance = SerializerRegistry::getInstanceForSetPropertiesFromObjectCache(
+                    DefaultObject::isEntity($typeToInstance) && isset($value->id) && $value->id && $cachedEntityInstance = SerializerRegistry::getInstanceForSetPropertiesFromObjectCache(
                         $typeToInstance,
                         $value->id
                     )

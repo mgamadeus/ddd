@@ -201,11 +201,7 @@ class FiltersDefinitions extends ObjectSet
                         $allowedFilterProperties[$propertyPrefix . $modifiedColumn] = true;
                     }
                 }
-                elseif (is_a(
-                        $type->getName(),
-                        ValueObject::class,
-                        true
-                    ) && !is_a(
+                elseif (DefaultObject::isValueObject($type->getName()) && !is_a(
                         $type->getName(),
                         ObjectSet::class,
                         true
@@ -218,7 +214,7 @@ class FiltersDefinitions extends ObjectSet
                     if ($subObjectFilters == [1]) {
                         die($className);
                     }
-                } elseif (is_a($type->getName(), Entity::class, true)) {
+                } elseif (DefaultObject::isEntity($type)) {
                     // we do not add lazyloaded Entities as filters
                     if ($lazyloadAttribute = $reflectionProperty->getAttributes(LazyLoad::class)[0] ?? null) {
                         continue;

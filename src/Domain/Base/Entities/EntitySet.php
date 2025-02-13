@@ -153,7 +153,7 @@ class EntitySet extends ObjectSet
      * @param Entity|EntitySet $entityOrSet
      * @return void
      */
-    public static function dependsOn(Entity|EntitySet &$entityOrSet): bool
+    public static function dependsOn(DefaultObject|EntitySet &$entityOrSet): bool
     {
         /** @var Entity $entityClass */
         $entityClass = self::getEntityClass();
@@ -167,7 +167,7 @@ class EntitySet extends ObjectSet
      * @param string $propertyName
      * @return string|bool
      */
-    public static function getPropertyContainingIdForParentEntity(Entity|EntitySet &$entityOrSet): string|bool
+    public static function getPropertyContainingIdForParentEntity(DefaultObject|EntitySet &$entityOrSet): string|bool
     {
         if (!static::dependsOn($entityOrSet)) {
             return false;

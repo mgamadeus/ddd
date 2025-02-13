@@ -60,7 +60,7 @@ trait ValidatorTrait
             return false;
         }
         // if depth limit is applied and depth is reached, we do not validate entities recurisvely
-        if ($depth !== null && $depth < 1 && $this instanceof Entity) {
+        if ($depth !== null && $depth < 1 && DefaultObject::isEntity($this)) {
             return true;
         }
         $callPath[spl_object_id($this)] = true;

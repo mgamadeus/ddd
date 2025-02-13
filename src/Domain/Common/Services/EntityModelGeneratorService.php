@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Common\Services;
 
+use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
@@ -181,7 +182,7 @@ class EntityModelGeneratorService
             }
             if (strpos($class->namespace,'Entities') === false)
                 continue;
-            if (is_subclass_of($class->getNameWithNamespace(), Entity::class, true)) {
+            if (DefaultObject::isEntity($class->getNameWithNamespace())) {
                 if ($restrictToClasesWithLazyloadRepoType) {
                     $reflectionClass = ReflectionClass::instance($class->getNameWithNamespace());
                     if ($lazyloadRepoAttributes = $reflectionClass->getAttributes(LazyLoadRepo::class)) {

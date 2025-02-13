@@ -14,6 +14,7 @@ use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\StaticRegistry;
+use DDD\Domain\Base\Entities\Traits\EntityTrait;
 use DDD\Domain\Base\Repo\DB\Attributes\DatabaseTranslation;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
 use DDD\Domain\Base\Repo\DB\DBEntity;
@@ -94,7 +95,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
      * @param Entity $entity
      * @return string
      */
-    public static function getBaseModelNameForEntityInstance(Entity &$entity): string
+    public static function getBaseModelNameForEntityInstance(DefaultObject &$entity): string
     {
         if ($modelClassName = (StaticRegistry::$modelNamesForEntityClasses[$entity::class] ?? null)) {
             return $modelClassName;
@@ -350,7 +351,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
      * Kohana ORM. It will also update any entity that is contained in this entity.
      * The depth is used to specify how many levels you want to go down with the update of your entity.
      * E.g. If the depth is 1, the entity will also save the first depth entities inside
-     * @param Entity $entity
+     * @param DefaultObject $entity
      * @param int $depth
      * @return Entity|null
      * @throws BadRequestException
@@ -363,9 +364,13 @@ abstract class DatabaseRepoEntity extends RepoEntity
      * @throws JsonException
      */
     public function update(
-        Entity &$entity,
+        DefaultObject &$entity,
         int $depth = 1
-    ): ?Entity {
+    ): ?DefaultObject {
+        if (!DefaultObject::isEntity($entity)) {
+            return $entity;
+        }
+        /** @var Entity $entity */
         $validationResults = $entity->validate(depth: $depth);
         if ($validationResults !== true) {
             $badRequestException = new BadRequestException('Request contains invalid data');
@@ -520,7 +525,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
     /**
      * Updates dependent Entities, takes care to not update $properties, that depend on the main Entity to be persisted already
      * Considers alreaadyUpdatedChildProperties and skips them, returns all properties that have been updated
-     * @param Entity $entity
+     * @param DefaultObject $entity
      * @param int $depth
      * @param bool $entityAlreadyStored
      * @param array $alreaadyUpdatedChildProperties
@@ -529,7 +534,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
      * @throws ReflectionException
      */
     public function updateDependentEntities(
-        Entity &$entity,
+        DefaultObject &$entity,
         int $depth,
         bool $entityAlreadyStored,
         array $alreaadyUpdatedChildProperties = [],
@@ -539,7 +544,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
         // Update the objects in the main entity, only for one level
         if ($depth > 0) {
             foreach ($entity as $propertyName => $value) {
-                if (!$value || !(is_object($value) && ($value instanceof Entity || $value instanceof EntitySet))) {
+                if (!$value || !(is_object($value) && (DefaultObject::isEntity($value) || $value instanceof EntitySet))) {
                     continue;
                 }
                 if (isset($alreaadyUpdatedChildProperties[$propertyName])) {
@@ -568,7 +573,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
                     else {
                         $propertyContainingEntityId = $value::getPropertyContainingIdForParentEntity($entity);
                         if ($propertyContainingEntityId) {
-                            if ($value instanceof Entity) {
+                            if (DefaultObject::isEntity($value)) {
                                 $value->$propertyContainingEntityId = $entity->id;
                             } elseif ($value instanceof EntitySet) {
                                 foreach ($value->getElements() as $subEntity) {
@@ -595,7 +600,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
                             $entity->$propertyName = $updatedChild;
                             if ($updatedChild instanceof EntitySet) {
                                 $updatedChild->regenerateElementsByUniqueKey();
-                            } elseif ($updatedChild instanceof Entity && property_exists(
+                            } elseif (DefaultObject::isEntity($updatedChild) && property_exists(
                                     $entity,
                                     $propertyName . 'Id'
                                 ) && isset($updatedChild->id)) {
@@ -627,7 +632,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
      * @throws NonUniqueResultException
      * @throws ReflectionException
      */
-    public function delete(Entity &$entity): bool
+    public function delete(DefaultObject &$entity): bool
     {
         if (is_a($entity, $this::BASE_ENTITY_CLASS ?? '') && $entity->id) {
             $baseOrmModelAlias = (static::BASE_ORM_MODEL)::MODEL_ALIAS;

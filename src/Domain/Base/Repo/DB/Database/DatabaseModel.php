@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Repo\DB\Database;
 
 use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
+use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
@@ -191,16 +192,8 @@ class DatabaseModel extends ValueObject
         }
         // First we sort reflectionProperties so that we have Entities at the end, as Entities are mapped to Foreign Keys and we rely on some internal columns that have to be created first
         usort($reflectionProperties, function (ReflectionProperty $a, ReflectionProperty $b) {
-            $aRepresentsEntity = $a->getType() instanceof ReflectionNamedType && is_a(
-                    $a->getType()->getName(),
-                    Entity::class,
-                    true
-                );
-            $bRepresentsEntity = $b->getType() instanceof ReflectionNamedType && is_a(
-                    $b->getType()->getName(),
-                    Entity::class,
-                    true
-                );
+            $aRepresentsEntity = $a->getType() instanceof ReflectionNamedType && DefaultObject::isEntity($a->getType()->getName());
+            $bRepresentsEntity = $b->getType() instanceof ReflectionNamedType && DefaultObject::isEntity($b->getType()->getName());
             // Sort: non-entities ($aRepresentsEntity = false) before entities ($aRepresentsEntity = true)
             if ($aRepresentsEntity && !$bRepresentsEntity) {
                 return 1; // $a is an entity and should be after $b
@@ -316,11 +309,7 @@ class DatabaseModel extends ValueObject
 
             // Entities are translated to foreign keys, if they have a DB related Repo
             if (
-                $reflectionProperty->getType() instanceof ReflectionNamedType && is_a(
-                    $reflectionProperty->getType()->getName(),
-                    Entity::class,
-                    true
-                )
+                $reflectionProperty->getType() instanceof ReflectionNamedType && DefaultObject::isEntity($reflectionProperty->getType()->getName())
             ) {
                 $propertyLazyLoadAttributes = $reflectionProperty->getAttributes(LazyLoad::class);
                 $propertyDBRepoLazyloadAttribute = null;
