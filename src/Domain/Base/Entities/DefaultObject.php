@@ -18,48 +18,4 @@ use ReflectionException;
 abstract class DefaultObject extends BaseObject
 {
     use SerializerTrait, ValidatorTrait, ParentChildrenTrait, AfterConstructTrait, ParentChildrenTrait, LazyLoadTrait, ReflectorTrait, DefaultObjectTrait;
-
-    /**
-     * Determines if the class name or object instance has the EntityTrait
-     * @param string|object $objectInstanceOrClassName
-     * @return bool
-     * @throws ReflectionException
-     */
-    public static function isEntity(string|object|null $objectInstanceOrClassName): bool
-    {
-        if ($objectInstanceOrClassName === null) {
-            return false;
-        }
-        if (is_object($objectInstanceOrClassName)) {
-            $className = $objectInstanceOrClassName::class;
-        }
-
-        if (!is_a($objectInstanceOrClassName, self::class, true)) {
-            return false;
-        }
-        $reflectionClass = new ReflectionClass($objectInstanceOrClassName);
-        return $reflectionClass->hasTrait(EntityTrait::class);
-    }
-
-    /**
-     * Determines if the class name or object instance has ValueObjectTrait and NOT the EntityTrait
-     * @param string|object $objectInstanceOrClassName
-     * @return bool
-     * @throws ReflectionException
-     */
-    public static function isValueObject(string|object|null $objectInstanceOrClassName): bool
-    {
-        if ($objectInstanceOrClassName === null) {
-            return false;
-        }
-        if (is_object($objectInstanceOrClassName)) {
-            $className = $objectInstanceOrClassName::class;
-        }
-
-        if (!is_a($objectInstanceOrClassName, self::class, true)) {
-            return false;
-        }
-        $reflectionClass = new ReflectionClass($objectInstanceOrClassName);
-        return $reflectionClass->hasTrait(ValueObjectTrait::class) && !$reflectionClass->hasTrait(EntityTrait::class);
-    }
 }
