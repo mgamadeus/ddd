@@ -85,7 +85,7 @@ trait EntityTrait
         /** @var string $currentClassName */
         /** @var string $parentClassName */
         if (
-            DefaultObject::isEntity($parentClassName) && !$parentClass->isAbstract()
+            DefaultObject::isEntity($parentClassName) && !$parentClass->isAbstract() && $parentClassName != Entity::class
         ) {
             if ($considerOnlyClassesFromSameRootNamespace) {
                 if (
