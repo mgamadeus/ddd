@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo\DB\Database;
 
+use App\Domain\Presence\Entities\ListingServices\Google\Places\GooglePlace;
 use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
@@ -670,7 +671,12 @@ class DatabaseModel extends ValueObject
             }
             $modelClassContent .= "\t#[ORM\Column(type: '{$column->getDoctrineColumnAttributeType()}')]\n";
             // avoid Type mixed cannot be marked as nullable since mixed already includes null
-            $isNullable = $column->allowsNull && $column->getDoctrinePhpType() != 'mixed';
+            try {
+                $isNullable = $column->allowsNull && $column->getDoctrinePhpType() != 'mixed';
+            }
+            catch (InternalErrorException $e) {
+                throw new InternalErrorException("Could not determine Doctrine PHP type for column {$column->name} in Model {$this->modelClassWithNamespace->getNameWithNamespace()} ");
+            }
             $modelClassContent .= "\tpublic " . ($isNullable ? '?' : '') . $column->getDoctrinePhpType(
                 ) . ' $' . $column->name . (isset($column->phpDefaultValue) ? ' = ' . $column->getPhpDefaultValueAsString() : '') . ";\n";
             $modelClassContent .= "\n";

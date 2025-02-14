@@ -394,6 +394,9 @@ class DatabaseColumn extends ValueObject
         if (DefaultObject::isValueObject($this->phpType)) {
             return self::DOCTRINE_PHP_TYPE_ALLOCATIONS[ValueObject::class];
         }
+        if (!isset(self::DOCTRINE_PHP_TYPE_ALLOCATIONS[$this->phpType])){
+            throw new InternalErrorException("No Doctrine to PHP type allocation for php type {$this->phpType} found");
+        }
         return self::DOCTRINE_PHP_TYPE_ALLOCATIONS[$this->phpType];
     }
 
