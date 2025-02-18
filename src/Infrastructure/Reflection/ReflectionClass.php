@@ -656,7 +656,14 @@ class ReflectionClass extends \ReflectionClass
         if ($object instanceof \stdClass)
             return property_exists($object, $propertyName);
         $reflectionClass = ReflectionClass::instance($object::class);
-        $reflectionProperty = $reflectionClass->getProperty($propertyName);
-        return $reflectionProperty->isInitialized($object);
+        $isinitialized = false;
+        try {
+            $reflectionProperty = $reflectionClass->getProperty($propertyName);
+            return $reflectionProperty->isInitialized($object);
+        }
+        catch (\ReflectionException $e) {
+            // Property is e.g. non existent
+            return false;
+        }
     }
 }
