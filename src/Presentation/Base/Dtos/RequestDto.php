@@ -119,9 +119,6 @@ class RequestDto
             $badRequestException->validationErrors = $validationResults;
             throw $badRequestException;
         }
-        if ($this->noCache) {
-            DDDService::instance()->deactivateCaches();
-        }
     }
 
     /**

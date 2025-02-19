@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Entities\LazyLoad;
 
+use App\Infrastructure\Services\AppService;
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
@@ -156,13 +157,17 @@ trait LazyLoadTrait
                     }
                     // determine if caching is applicable
                     $repoClassReflection = ReflectionClass::instance($repoClass);
-                    if ($lazyloadAttributeInstance->useCache && $entityCacheAttributeInstance = $repoClassReflection->getAttributeInstance(
+                    if (DDDService::instance()::$noCache) {
+                        $lazyloadAttributeInstance->useCache = false;
+                    } elseif ($lazyloadAttributeInstance->useCache && $entityCacheAttributeInstance = $repoClassReflection->getAttributeInstance(
                             EntityCache::class
                         )) {
                         /** @var EntityCache $entityCacheAttributeInstance */
                         if ($entityCacheAttributeInstance->cacheScopes) {
                             /** @var CacheScopeInvalidationsService $cacheScopeServiceClass */
-                            $cacheScopeServiceClass = DDDService::instance()->getService(CacheScopeInvalidationsService::class);
+                            $cacheScopeServiceClass = DDDService::instance()->getService(
+                                CacheScopeInvalidationsService::class
+                            );
                             $lazyloadAttributeInstance->useCache = $cacheScopeServiceClass::canUseCachingForScopesAndLazyloadInitiatingEntity(
                                 $entityCacheAttributeInstance->cacheScopes,
                                 $this
@@ -315,7 +320,8 @@ trait LazyLoadTrait
      */
     public static function getRepoClass(
         string $repoType = null
-    ): ?string {
+    ): ?string
+    {
         $currentClassName = static::class;
         $defaultRepoType = LazyLoadRepo::getDafaultRepoType();
         if (!isset(StaticRegistry::$repoTypesForClasses[$currentClassName])) {
@@ -372,7 +378,8 @@ trait LazyLoadTrait
      * @return RepoEntity|DatabaseRepoEntity|null
      */
     public static function getRepoClassInstance(string $repoType = null
-    ): RepoEntity|DatabaseRepoEntity|DatabaseRepoEntitySet|null {
+    ): RepoEntity|DatabaseRepoEntity|DatabaseRepoEntitySet|null
+    {
         $repoClass = self::getRepoClass($repoType);
         if ($repoClass) {
             return new $repoClass();
@@ -406,7 +413,8 @@ trait LazyLoadTrait
     public function lazyLoadProperties(
         array $propertiesToBeLoaded,
         array $callStack = []
-    ): void {
+    ): void
+    {
         if (isset($callStack[spl_object_id($this)])) {
             return;
         }
