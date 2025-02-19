@@ -93,7 +93,8 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
         ?DoctrineQueryBuilder $queryBuilder = null,
         bool $useEntityRegistrCache = true,
         array $initiatorClasses = []
-    ): ?EntitySet {
+    ): ?EntitySet
+    {
         if (!$this::BASE_REPO_CLASS) {
             throw new InternalErrorException('No BASE_REPO_CLASS defined in ' . static::class);
         }
@@ -261,22 +262,23 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
         return $baseRepoClass::createQueryBuilder($includeModelSelectFromClause);
     }
 
-    /**
-     * lazy loads dependent entity by propertyName + Id
-     * @param DefaultObject $initiatingEntity
-     * @param LazyLoad $lazyloadAttributeInstance
-     * @return DefaultObject|null
-     */
-    public function lazyload(
+    public static function getQueryBuilderForLazyload(
+        string $baseRepoEntityOrEntitySetClassName,
         DefaultObject &$initiatingEntity,
-        LazyLoad &$lazyloadAttributeInstance
-    ): ?EntitySet {
-        // we determine if we have in our
-        /** @var DBEntity $baseRepoClass */
-        $baseRepoClass = static::BASE_REPO_CLASS;
+        LazyLoad $lazyloadAttributeInstance
+    ): ?QueryBuilder
+    {
+        /** @var DBEntity|DBEntitySet $baseRepoEntityOrEntitySetClassName */
+        if (!$baseRepoEntityOrEntitySetClassName) {
+            $baseRepoEntityOrEntitySetClassName = static::BASE_REPO_CLASS;
+        }
+        // this function can be called within a DBEntity or DBEntitySet, we need to handle both cases
+        $baseRepoClass = $baseRepoEntityOrEntitySetClassName instanceof DBEntitySet ? $baseRepoEntityOrEntitySetClassName::BASE_REPO_CLASS : $baseRepoEntityOrEntitySetClassName;
         $baseEntityClass = $baseRepoClass::BASE_ENTITY_CLASS;
         $baseEntityReflectionClass = ReflectionClass::instance($baseEntityClass);
-        $queryBuilder = self::createQueryBuilder(true);
+        $queryBuilder = $baseRepoEntityOrEntitySetClassName::createQueryBuilder(true);
+
+        $whereClausesApplied = false;
         // we load through an intermediary n-n table
         if ($lazyloadAttributeInstance->loadThrough) {
             /** @var EntitySet $loadThroughEntitySetClass */
@@ -318,9 +320,13 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
                     ) {
                         $foreignKey = $property->getName() . 'Id';
                         $queryBuilder->leftJoin(
-                            self::getBaseModelAlias() . '.' . $propertyReferencingJoinTable,
+                            $baseRepoEntityOrEntitySetClassName::getBaseModelAlias() . '.' . $propertyReferencingJoinTable,
                             $loadThroughBaseModelAlias
-                        )->andWhere("{$loadThroughBaseModelAlias}.$foreignKey = :foreign_key_id")->setParameter('foreign_key_id', $initiatingEntity->id);
+                        )->andWhere("{$loadThroughBaseModelAlias}.$foreignKey = :foreign_key_id")->setParameter(
+                            'foreign_key_id',
+                            $initiatingEntity->id
+                        );
+                        $whereClausesApplied = true;
                         break;
                     }
                 }
@@ -337,12 +343,34 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
                     ) && $baseEntityReflectionClass->hasProperty($property->getName() . 'Id')
                 ) {
                     $foreignKey = $property->getName() . 'Id';
-                    $baseModelAlias = static::getBaseModelAlias();
-                    $queryBuilder->andWhere("{$baseModelAlias}.$foreignKey = :foreign_key_id")->setParameter('foreign_key_id', $initiatingEntity->id);
+                    $baseModelAlias = $baseRepoEntityOrEntitySetClassName::getBaseModelAlias();
+                    $queryBuilder->andWhere("{$baseModelAlias}.$foreignKey = :foreign_key_id")->setParameter(
+                        'foreign_key_id',
+                        $initiatingEntity->id
+                    );
+                    $whereClausesApplied = true;
                     break;
                 }
             }
         }
+        if (!$whereClausesApplied) {
+            return null;
+        }
+        return $queryBuilder;
+    }
+
+    /**
+     * lazy loads dependent entity by propertyName + Id
+     * @param DefaultObject $initiatingEntity
+     * @param LazyLoad $lazyloadAttributeInstance
+     * @return DefaultObject|null
+     */
+    public function lazyload(
+        DefaultObject &$initiatingEntity,
+        LazyLoad &$lazyloadAttributeInstance
+    ): ?EntitySet
+    {
+        $queryBuilder = self::getQueryBuilderForLazyload(static::class, $initiatingEntity, $lazyloadAttributeInstance);
         return $this->find($queryBuilder, $lazyloadAttributeInstance->useCache);
     }
 }

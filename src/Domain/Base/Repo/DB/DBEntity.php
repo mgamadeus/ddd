@@ -44,6 +44,37 @@ class DBEntity extends DatabaseRepoEntity
     protected static $ormInstanceToEntityAllocation = [];
 
     /**
+     * lazy loads dependent entity by propertyName + Id
+     * @param DefaultObject $initiatingEntity
+     * @param LazyLoad $lazyloadAttributeInstance
+     * @return DefaultObject|null
+     * @throws BadRequestException
+     * @throws InternalErrorException
+     * @throws InvalidArgumentException
+     * @throws ReflectionException
+     */
+    public function lazyload(
+        DefaultObject &$initiatingEntity,
+        LazyLoad &$lazyloadAttributeInstance
+    ): ?DefaultObject {
+        $propertyContainingId = $lazyloadAttributeInstance->getPropertyContainingId();
+        if ($propertyContainingId) {
+            $selfID = $initiatingEntity->$propertyContainingId;
+            if (!$selfID) {
+                return null;
+            }
+            return $this->find($selfID, $lazyloadAttributeInstance->useCache);
+        }
+        else {
+            $queryBuilder = DBEntitySet::getQueryBuilderForLazyload(static::class, $initiatingEntity, $lazyloadAttributeInstance);
+            if (!$queryBuilder) {
+                return null;
+            }
+            return $this->find($queryBuilder, $lazyloadAttributeInstance->useCache);
+        }
+    }
+
+    /**
      * @param array $initiatorClasses
      * @return Entity|EntitySet|null
      * @throws ReflectionException
@@ -300,13 +331,13 @@ class DBEntity extends DatabaseRepoEntity
                 DefaultObject::isValueObject($possibleEntityTypeName)
             ) {
                 // handle object type migrations
-                if (is_array($this->ormInstance->$propertyName) && isset($this->ormInstance->$propertyName['objectType']) && isset(
+                if (isset($this->ormInstance->$propertyName['objectType']) && isset(
                         ReflectionClass::getObjectTypeMigrations()[$this->ormInstance->$propertyName['objectType']]
                     )) {
                     $this->ormInstance->$propertyName['objectType'] = ReflectionClass::getObjectTypeMigrations(
                     )[$this->ormInstance->$propertyName['objectType']];
                 }
-                elseif (isset($this->ormInstance->$propertyName->objectType) && isset(
+                if (isset($this->ormInstance->$propertyName->objectType) && isset(
                         ReflectionClass::getObjectTypeMigrations()[$this->ormInstance->$propertyName->objectType]
                     )) {
                     $this->ormInstance->$propertyName->objectType = ReflectionClass::getObjectTypeMigrations(
