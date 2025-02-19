@@ -141,17 +141,38 @@ class ExpandOptions extends ObjectSet
                 $targetPropertyHasQueryOptions = false;
                 foreach ($targetPropertyTypes as $propertyType) {
                     $targetPropertyClass = $propertyType->getName();
-                    if (is_a($targetPropertyClass, EntitySet::class, true)) {
-                        $targetPropertyClass = $targetPropertyClass::getEntityClass();
-                    }
                     $targetPropertyReflectionClass = ReflectionClass::instance((string)$targetPropertyClass);
-                    if ($targetPropertyReflectionClass->hasTrait(QueryOptionsTrait::class)) {
-                        $targetPropertyHasQueryOptions = true;
-                        /** @var QueryOptionsTrait $targetPropertyClass */
-                        $targetPropertyClass::setDefaultQueryOptions($targetPropertyClass::getDefaultQueryOptions());
-                        $expandOption->expandOptions->validateAgainstDefinitionsFromReferenceClass(
-                            $targetPropertyClass
-                        );
+                    $validationError = null;
+                    try {
+                        if ($targetPropertyReflectionClass->hasTrait(QueryOptionsTrait::class)) {
+                            $targetPropertyHasQueryOptions = true;
+                            /** @var QueryOptionsTrait $targetPropertyClass */
+                            $targetPropertyClass::setDefaultQueryOptions(
+                                $targetPropertyClass::getDefaultQueryOptions()
+                            );
+                            $expandOption->expandOptions->validateAgainstDefinitionsFromReferenceClass(
+                                $targetPropertyClass
+                            );
+                        }
+                    }
+                    catch (BadRequestException $e) {
+                        $validationError = $e;
+                    }
+                    // If we have an EntitySet, we also consider the particular Entity classes from its elements
+                    if ($validationError && is_a($targetPropertyClass, EntitySet::class, true)) {
+                        $targetPropertyClass = $targetPropertyClass::getEntityClass();
+                        $targetPropertyReflectionClass = ReflectionClass::instance((string)$targetPropertyClass);
+                        if ($targetPropertyReflectionClass->hasTrait(QueryOptionsTrait::class)) {
+                            $targetPropertyHasQueryOptions = true;
+                            /** @var QueryOptionsTrait $targetPropertyClass */
+                            $targetPropertyClass::setDefaultQueryOptions($targetPropertyClass::getDefaultQueryOptions());
+                            $expandOption->expandOptions->validateAgainstDefinitionsFromReferenceClass(
+                                $targetPropertyClass
+                            );
+                        }
+                    }
+                    elseif ($validationError) {
+                        throw $validationError;
                     }
                 }
                 if (!$targetPropertyHasQueryOptions) {
