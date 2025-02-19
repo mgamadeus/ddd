@@ -273,7 +273,7 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
             $baseRepoEntityOrEntitySetClassName = static::BASE_REPO_CLASS;
         }
         // this function can be called within a DBEntity or DBEntitySet, we need to handle both cases
-        $baseRepoClass = $baseRepoEntityOrEntitySetClassName instanceof DBEntitySet ? $baseRepoEntityOrEntitySetClassName::BASE_REPO_CLASS : $baseRepoEntityOrEntitySetClassName;
+        $baseRepoClass = is_a($baseRepoEntityOrEntitySetClassName, DBEntitySet::class, true) ? $baseRepoEntityOrEntitySetClassName::BASE_REPO_CLASS : $baseRepoEntityOrEntitySetClassName;
         $baseEntityClass = $baseRepoClass::BASE_ENTITY_CLASS;
         $baseEntityReflectionClass = ReflectionClass::instance($baseEntityClass);
         $queryBuilder = $baseRepoEntityOrEntitySetClassName::createQueryBuilder(true);
