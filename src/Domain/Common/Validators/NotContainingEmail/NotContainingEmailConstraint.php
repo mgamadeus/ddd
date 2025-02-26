@@ -20,7 +20,7 @@ class NotContainingEmailConstraint extends Constraint
     
     public string $containsEmailMessage = 'This field is not allowed to contain an e-mail.';
 
-    public function __construct(array $groups = null, mixed $payload = null)
+    public function __construct(?array $groups = null, mixed $payload = null)
     {
         parent::__construct([], $groups, $payload);
     }

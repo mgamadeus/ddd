@@ -244,7 +244,7 @@ class PhotoUtils
     /**
      * @throws Exception
      */
-    public static function generateUniqueMediaItemIdentifier(string|int $locationId, string $photoName = null): string
+    public static function generateUniqueMediaItemIdentifier(string|int $locationId, ?string $photoName = null): string
     {
         $currentTime = microtime(true);
         $randomNumber = random_int(0, 1000000);

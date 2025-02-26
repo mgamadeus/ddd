@@ -47,7 +47,7 @@ class PhoneNumber extends ContactInfo
     #[Choice(choices: [self::VALIDATION_EXACT, self::VALIDATION_POSSIBLE])]
     public ?string $validationLevel = self::VALIDATION_POSSIBLE;
 
-    public function __construct(?string $phoneNumber = null, string $countryShortCode = null, $scope = self::SCOPE_PHONE)
+    public function __construct(?string $phoneNumber = null, ?string $countryShortCode = null, $scope = self::SCOPE_PHONE)
     {
         if ($phoneNumber)
             $this->setAndNormalizePhoneNumber($phoneNumber, countryShortCode: $countryShortCode);
@@ -66,7 +66,7 @@ class PhoneNumber extends ContactInfo
      * @return void
      * @throws NumberParseException
      */
-    public function setAndNormalizePhoneNumber(string $number, string $scope = self::SCOPE_PHONE, string $countryShortCode = null): void
+    public function setAndNormalizePhoneNumber(string $number, string $scope = self::SCOPE_PHONE, ?string $countryShortCode = null): void
     {
         $phoneUtil = PhoneNumberUtil::getInstance();
         $this->countryShortCode = $countryShortCode;
@@ -123,7 +123,7 @@ class PhoneNumber extends ContactInfo
      * @return void
      * @throws NumberParseException
      */
-    public function normalizeAndSetValue(string $value, string $countryShortCode = null): void
+    public function normalizeAndSetValue(string $value, ?string $countryShortCode = null): void
     {
         $this->setAndNormalizePhoneNumber($value, countryShortCode: $countryShortCode);
     }

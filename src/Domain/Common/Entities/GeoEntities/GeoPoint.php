@@ -22,7 +22,7 @@ class GeoPoint extends ValueObject
     #[LessThanOrEqual(180)]
     public float $lng = 0;
 
-    public function __construct(float $lat = 0, float $lng = 0, string $language = null)
+    public function __construct(float $lat = 0, float $lng = 0, ?string $language = null)
     {
         $this->lat = max(-90, min(90, $lat));
         $this->lng = max(-180, min(180, $lng));

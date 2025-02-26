@@ -45,12 +45,12 @@ trait ValidatorTrait
      * @throws ReflectionException
      */
     public function validate(
-        ValidationErrors &$validationErrors = null,
+        ?ValidationErrors &$validationErrors = null,
         string $jsonPath = '.',
         array $callPath = [],
         ?int $depth = null,
         bool $customValidation = false,
-        CustomValidationInputs $customValidationInputs = null
+        ?CustomValidationInputs $customValidationInputs = null
     ): bool|ValidationErrors {
         // check for recursion
         if (!$this->toBeValidated) {

@@ -508,7 +508,7 @@ trait SerializerTrait
         \ReflectionProperty|ReflectionProperty &$property,
         mixed &$value,
         $throwErrors = true,
-        ReflectionClass $reflectionClass = null,
+        ?ReflectionClass $reflectionClass = null,
         bool $sanitizeInput = false
     ): void
     {

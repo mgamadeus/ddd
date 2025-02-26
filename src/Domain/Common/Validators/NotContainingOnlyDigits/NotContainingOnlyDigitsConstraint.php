@@ -20,7 +20,7 @@ class NotContainingOnlyDigitsConstraint extends Constraint
 
     public string $containsOnlyDigitsMessage = 'This field is not allowed to contain only digits.';
 
-    public function __construct(array $groups = null, mixed $payload = null)
+    public function __construct(?array $groups = null, mixed $payload = null)
     {
         parent::__construct([], $groups, $payload);
     }

@@ -23,7 +23,7 @@ class HttpController extends BaseController
     /**
      * Renders a view.
      */
-    protected function render(string $view, array $parameters = [], Response $response = null): HtmlResponseDto
+    protected function render(string $view, array $parameters = [], ?Response $response = null): HtmlResponseDto
     {
         $content = $this->renderView($view, $parameters);
 
@@ -36,7 +36,7 @@ class HttpController extends BaseController
         return $response;
     }
 
-    public function getResponse(string $content, HtmlResponseDto $responseDto = null): HtmlResponseDto{
+    public function getResponse(string $content, ?HtmlResponseDto $responseDto = null): HtmlResponseDto{
         if (null === $responseDto) {
             $responseDto = new HtmlResponseDto();
         }

@@ -18,7 +18,7 @@ class FilterOptionsConstraint extends Constraint
 
     public string $message = 'The given FilterOptions are invalid.';
 
-    public function __construct(array $groups = null, mixed $payload = null)
+    public function __construct(?array $groups = null, mixed $payload = null)
     {
         parent::__construct([], $groups, $payload);
     }

@@ -348,9 +348,9 @@ class Translatable extends ValueObject
      */
     public static function translateKey(
         string $translationKey,
-        string $languageCode = null,
-        string $countryCode = null,
-        string $writingStyle = null,
+        ?string $languageCode = null,
+        ?string $countryCode = null,
+        ?string $writingStyle = null,
         bool $useFallBack = false,
         array $placeholders = []
     ): string {

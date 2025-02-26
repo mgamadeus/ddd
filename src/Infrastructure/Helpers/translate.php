@@ -18,9 +18,9 @@ if (!function_exists('__')) {
      */
     function __(
         string $translationKey,
-        string $languageCode = null,
-        string $countryCode = null,
-        string $writingStyle = null,
+        ?string $languageCode = null,
+        ?string $countryCode = null,
+        ?string $writingStyle = null,
         bool $useFallBack = false,
         array $placeholders = []
     ) {

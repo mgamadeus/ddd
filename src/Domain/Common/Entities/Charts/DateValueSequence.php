@@ -18,7 +18,7 @@ class DateValueSequence extends ObjectSet
     /** @var string The name of the DateValue Sequence / Series */
     public string $name;
 
-    public function __construct(string $name = null)
+    public function __construct(?string $name = null)
     {
         if ($name) {
             $this->name = $name;

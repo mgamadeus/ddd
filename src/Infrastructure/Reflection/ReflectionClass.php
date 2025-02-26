@@ -64,6 +64,8 @@ class ReflectionClass extends \ReflectionClass
         self::BOOLEAN
     ];
 
+    public const NO_REFLECTION = 'no_reflection';
+
     public static $getPropertiesCache = [];
 
     public static $getPropertiesOfCurrentClassCache = [];
@@ -213,20 +215,19 @@ class ReflectionClass extends \ReflectionClass
      */
     public static function instance(string $className): ?ReflectionClass
     {
-        // Check if the class name is already cached
-        if (array_key_exists($className, self::$relectionClassCache)) {
-            return self::$relectionClassCache[$className];
+        if (isset(self::$relectionClassCache[$className])) {
+            $cached = self::$relectionClassCache[$className];
+            return $cached === self::NO_REFLECTION ? null : $cached;
         }
 
         try {
-            // Try to create a new ReflectionClass instance
-            self::$relectionClassCache[$className] = new ReflectionClass($className);
+            $reflection = new ReflectionClass($className);
+            self::$relectionClassCache[$className] = $reflection;
+            return $reflection;
         } catch (ReflectionException $e) {
-            // If the class doesn't exist, cache null
-            self::$relectionClassCache[$className] = null;
+            self::$relectionClassCache[$className] = self::NO_REFLECTION;
+            return null;
         }
-
-        return self::$relectionClassCache[$className];
     }
 
     public function getProperty(string $propertyName): ReflectionProperty
@@ -656,14 +657,7 @@ class ReflectionClass extends \ReflectionClass
         if ($object instanceof \stdClass)
             return property_exists($object, $propertyName);
         $reflectionClass = ReflectionClass::instance($object::class);
-        $isinitialized = false;
-        try {
-            $reflectionProperty = $reflectionClass->getProperty($propertyName);
-            return $reflectionProperty->isInitialized($object);
-        }
-        catch (\ReflectionException $e) {
-            // Property is e.g. non existent
-            return false;
-        }
+        $reflectionProperty = $reflectionClass->getProperty($propertyName);
+        return $reflectionProperty->isInitialized($object);
     }
 }

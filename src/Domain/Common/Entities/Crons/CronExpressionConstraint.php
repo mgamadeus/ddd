@@ -19,7 +19,7 @@ class CronExpressionConstraint extends Constraint
 
     public $message = 'The value "{{ value }}" is not a valid cron expression.';
 
-    public function __construct(array $groups = null, mixed $payload = null)
+    public function __construct(?array $groups = null, mixed $payload = null)
     {
         parent::__construct([], $groups, $payload);
     }

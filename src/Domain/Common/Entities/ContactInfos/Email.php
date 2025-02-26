@@ -28,7 +28,7 @@ class Email extends ContactInfo
     #[Assert\Email]
     public ?string $value;
 
-    public function __construct(string $email = null)
+    public function __construct(?string $email = null)
     {
         parent::__construct();
         if ($email) {

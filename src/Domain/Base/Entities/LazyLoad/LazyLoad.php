@@ -63,16 +63,16 @@ class LazyLoad
      * @param bool $createInstanceWithoutLoading If true, no loading is performed, but only an instance is created
      */
     public function __construct(
-        string $repoType = null,
-        string $loadMethod = null,
-        string $propertyContainingId = null,
-        bool $addAsChild = null,
-        bool $addAsParent = null,
+        ?string $repoType = null,
+        ?string $loadMethod = null,
+        ?string $propertyContainingId = null,
+        ?bool $addAsChild = null,
+        ?bool $addAsParent = null,
         public bool $useCache = true,
-        string $repoClass = null,
+        ?string $repoClass = null,
         bool $createInstanceWithoutLoading = false,
-        string $loadThrough = null,
-        string $entityClassName = null
+        ?string $loadThrough = null,
+        ?string $entityClassName = null
     ) {
         $this->repoType = $repoType ? $repoType : LazyLoadRepo::getDafaultRepoType();
         $this->loadMethod = $loadMethod ? $loadMethod : self::DEFAULT_LAZYLOAD_METHOD;

@@ -20,7 +20,7 @@ class NotContainingUrlConstraint extends Constraint
 
     public string $containsUrlMessage = 'This field is not allowed to contain an URL.';
 
-    public function __construct(array $groups = null, mixed $payload = null)
+    public function __construct(?array $groups = null, mixed $payload = null)
     {
         parent::__construct([], $groups, $payload);
     }

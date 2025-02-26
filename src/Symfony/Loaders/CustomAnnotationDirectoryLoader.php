@@ -10,7 +10,7 @@ class CustomAnnotationDirectoryLoader extends CustomAnnotationFileLoader
     /**
      * @throws \InvalidArgumentException When the directory does not exist or its routes cannot be parsed
      */
-    public function load(mixed $path, string $type = null): ?RouteCollection
+    public function load(mixed $path, ?string $type = null): ?RouteCollection
     {
         if (!is_dir($dir = $this->locator->locate($path))) {
             return parent::supports($path, $type) ? parent::load($path, $type) : new RouteCollection();
@@ -52,7 +52,7 @@ class CustomAnnotationDirectoryLoader extends CustomAnnotationFileLoader
     /**
      * {@inheritdoc}
      */
-    public function supports(mixed $resource, string $type = null): bool
+    public function supports(mixed $resource, ?string $type = null): bool
     {
         if ('annotation' === $type) {
             return true;

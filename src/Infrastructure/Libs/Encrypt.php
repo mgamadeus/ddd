@@ -30,7 +30,7 @@ class Encrypt
      * @param string|null $password
      * @return string|bool
      */
-    public static function encrypt(string $data, string $password = null): string|bool
+    public static function encrypt(string $data, ?string $password = null): string|bool
     {
         if (!$password && self::$password) {
             $password = self::$password;
@@ -51,7 +51,7 @@ class Encrypt
      * @param string|null $password
      * @return string
      */
-    public static function decrypt(string $encryptedData, string $password = null): string|bool
+    public static function decrypt(string $encryptedData, ?string $password = null): string|bool
     {
         if (!$password && self::$password) {
             $password = self::$password;

@@ -16,7 +16,7 @@ class CustomAnnotationFileLoader extends AttributeFileLoader
         parent::__construct($locator, $loader);
     }
 
-    public function load(mixed $file, string $type = null): ?RouteCollection
+    public function load(mixed $file, ?string $type = null): ?RouteCollection
     {
         $path = $this->locator->locate($file);
 

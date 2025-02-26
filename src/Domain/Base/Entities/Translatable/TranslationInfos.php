@@ -148,9 +148,9 @@ class TranslationInfos extends ValueObject
     public function setTranslationForProperty(
         string $propertyName,
         string $translation,
-        string $languageCode = null,
-        string $countryCode = null,
-        string $writingStyle = null
+        ?string $languageCode = null,
+        ?string $countryCode = null,
+        ?string $writingStyle = null
     ): void {
         if (!property_exists($this->getParent(), $propertyName)) {
             return;
@@ -184,9 +184,9 @@ class TranslationInfos extends ValueObject
      */
     public function getTranslationForProperty(
         string $propertyName,
-        string $languageCode = null,
-        string $countryCode = null,
-        string $writingStyle = null,
+        ?string $languageCode = null,
+        ?string $countryCode = null,
+        ?string $writingStyle = null,
         bool $useFallBack = false
     ): ?string {
         if (!property_exists($this->getParent(), $propertyName)) {

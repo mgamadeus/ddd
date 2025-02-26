@@ -70,9 +70,9 @@ trait TranslatableTrait
     public function setTranslationForProperty(
         string $propertyName,
         string $translation,
-        string $languageCode = null,
-        string $countryCode = null,
-        string $writingStyle = null
+        ?string $languageCode = null,
+        ?string $countryCode = null,
+        ?string $writingStyle = null
     ): void {
         $this->getTranslationInfos()->setTranslationForProperty($propertyName, $translation, $languageCode, $countryCode, $writingStyle);
     }
@@ -89,9 +89,9 @@ trait TranslatableTrait
      */
     public function getTranslationForProperty(
         string $propertyName,
-        string $languageCode = null,
-        string $countryCode = null,
-        string $writingStyle = null,
+        ?string $languageCode = null,
+        ?string $countryCode = null,
+        ?string $writingStyle = null,
         bool $useFallBack = false
     ): ?string {
         return $this->getTranslationInfos()->getTranslationForProperty($propertyName, $languageCode, $countryCode, $writingStyle);

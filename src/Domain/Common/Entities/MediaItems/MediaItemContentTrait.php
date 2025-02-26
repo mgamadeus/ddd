@@ -134,7 +134,7 @@ trait MediaItemContentTrait
      * @throws NotFoundException
      * @throws ImagickException
      */
-    public function loadFromSource(string $source = null): void
+    public function loadFromSource(?string $source = null): void
     {
         if (!$source) {
             $source = $this->getParent()->publicUrl ?? null;

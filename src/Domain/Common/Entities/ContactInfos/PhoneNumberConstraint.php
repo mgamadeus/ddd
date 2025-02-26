@@ -18,7 +18,7 @@ class PhoneNumberConstraint extends Constraint
 
     public string $message = 'The given value is not a valid phone number.';
 
-    public function __construct(array $groups = null, mixed $payload = null)
+    public function __construct(?array $groups = null, mixed $payload = null)
     {
         parent::__construct([], $groups, $payload);
     }

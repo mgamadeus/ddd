@@ -39,7 +39,7 @@ class CustomAnnotationClassLoader extends AttributeRouteControllerLoader
      *
      * @throws InvalidArgumentException When route can't be parsed
      */
-    public function load(mixed $class, string $type = null): RouteCollection
+    public function load(mixed $class, ?string $type = null): RouteCollection
     {
         if (!class_exists($class)) {
             throw new InvalidArgumentException(sprintf('Class "%s" does not exist.', $class));
@@ -64,7 +64,8 @@ class CustomAnnotationClassLoader extends AttributeRouteControllerLoader
                 $this->defaultRouteIndex = 0;
                 foreach ($this->getAnnotations($method) as $annot) {
                     if (!$annot->getName()) {
-                        $annot->setName(implode(',', $annot->getMethods()) . ':' . $globals['path'] . $annot->getPath());
+                        //$annot->setName(implode(',', $annot->getMethods()) . ':' . $globals['path'] . $annot->getPath());
+                        $annot->setName($class->getName() . ':'.$method->getName());
                     }
                     $this->addRoute($collection, $annot, $globals, $class, $method);
                 }

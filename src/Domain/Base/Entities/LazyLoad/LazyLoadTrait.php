@@ -319,7 +319,7 @@ trait LazyLoadTrait
      * @return string|null
      */
     public static function getRepoClass(
-        string $repoType = null
+        ?string $repoType = null
     ): ?string
     {
         $currentClassName = static::class;
@@ -377,7 +377,7 @@ trait LazyLoadTrait
      * @param string|null $repoType
      * @return RepoEntity|DatabaseRepoEntity|null
      */
-    public static function getRepoClassInstance(string $repoType = null
+    public static function getRepoClassInstance(?string $repoType = null
     ): RepoEntity|DatabaseRepoEntity|DatabaseRepoEntitySet|null
     {
         $repoClass = self::getRepoClass($repoType);

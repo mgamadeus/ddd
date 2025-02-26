@@ -6,7 +6,7 @@ namespace DDD\Domain\Base\Entities;
 
 abstract class BaseObject
 {
-    public static function uniqueKeyStatic(string|int $id = null): string
+    public static function uniqueKeyStatic(string|int|null $id = null): string
     {
         return static::class . ($id ? '_' . $id : '');
     }

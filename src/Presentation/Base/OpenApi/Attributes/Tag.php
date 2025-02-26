@@ -46,7 +46,7 @@ class Tag extends Base
         parent::__construct();
     }
 
-    public function setExternalDoc(string $externalDocs = null)
+    public function setExternalDoc(?string $externalDocs = null)
     {
         if (!$externalDocs) {
             return;

@@ -82,7 +82,7 @@ trait ReflectorTrait
      * @return ReflectionProperty[]|\ReflectionProperty[]
      * @throws ReflectionException
      */
-    public function getProperties(int $filter = null, $forSerialization = false): array
+    public function getProperties(?int $filter = null, bool $forSerialization = false): array
     {
         return $forSerialization ? $this->getReflectionClass()->getPropertiesForSerialization(
             $filter

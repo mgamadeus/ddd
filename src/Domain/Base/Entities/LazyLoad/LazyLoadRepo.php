@@ -41,7 +41,7 @@ class LazyLoadRepo
     public static string $defaultRepoType;
 
     public function __construct(
-        string $repoType = null,
+        ?string $repoType = null,
         string $repoClass = '',
         bool $forceDBEntityModelCreation = false,
         bool $isDefault = false
