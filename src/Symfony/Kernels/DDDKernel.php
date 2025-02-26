@@ -17,8 +17,8 @@ class DDDKernel extends BaseKernel
     public static Container $ontainer;
 
     protected string $projectDir;
-    protected string $kernelPrefix;
-    protected string $baseConfigDir;
+    protected ?string $kernelPrefix = null;
+    protected ?string $baseConfigDir = null;
 
     public function getProjectDir(): string
     {
@@ -30,24 +30,32 @@ class DDDKernel extends BaseKernel
         $this->projectDir = $projectDir;
     }
 
-    public function setKernelPrefix(string $kernelPrefix): void
+    public function setKernelPrefix(?string $kernelPrefix = null): void
     {
         $this->kernelPrefix = $kernelPrefix;
     }
 
-    public function getKernelPrefix(): string
+    public function getKernelPrefix(): ?string
     {
         return $this->kernelPrefix;
     }
 
     public function getCacheDir(): string
     {
-        return $this->getProjectDir() . '/var/cache/' . $this->getKernelPrefix() . '/' . $this->environment;
+        if ($this->getKernelPrefix()) {
+            return $this->getProjectDir() . '/var/cache/' . $this->getKernelPrefix() . '/' . $this->environment;
+        } else {
+            return $this->getProjectDir() . '/var/cache/' . $this->environment;
+        }
     }
 
     public function getConfigDir(): string
     {
-        return $this->getProjectDir() . '/config/symfony/' . $this->getKernelPrefix();
+        if ($this->getKernelPrefix()) {
+            return $this->getProjectDir() . '/config/symfony/' . $this->getKernelPrefix();
+        } else {
+            return $this->getDefaultonfigDir();
+        }
     }
 
     public function getDefaultonfigDir(): string
@@ -57,7 +65,7 @@ class DDDKernel extends BaseKernel
 
     public function getLogDir(): string
     {
-        return $this->getProjectDir() . '/var/log/' . $this->getKernelPrefix();
+        return $this->getProjectDir() . '/var/log/' . ($this->getKernelPrefix() ?? 'default');
     }
 
     /**
@@ -77,13 +85,20 @@ class DDDKernel extends BaseKernel
         $routes->import($defaultConfigDir . '/{routes}/' . $this->environment . '/*.yaml');
         $routes->import($defaultConfigDir . '/{routes}/*.yaml');
 
-        $routes->import($configDir . '/{routes}/' . $this->environment . '/*.yaml');
-        $routes->import($configDir . '/{routes}/*.yaml');
-
-        if (is_file($configDir . '/routes.yaml')) {
-            $routes->import($configDir . '/routes.yaml');
+        if ($configDir != $defaultConfigDir) {
+            $routes->import($configDir . '/{routes}/' . $this->environment . '/*.yaml');
+            $routes->import($configDir . '/{routes}/*.yaml');
+            if (is_file($configDir . '/routes.yaml')) {
+                $routes->import($configDir . '/routes.yaml');
+            } elseif (is_file($configDir . '/{routes}.php')) {
+                $routes->import($defaultConfigDir . '/{routes}.php');
+            }
         } else {
-            $routes->import($defaultConfigDir . '/{routes}.php');
+            if (is_file($defaultConfigDir . '/routes.yaml')) {
+                $routes->import($defaultConfigDir . '/routes.yaml');
+            } elseif (is_file($defaultConfigDir . '/{routes}.php')) {
+                $routes->import($defaultConfigDir . '/{routes}.php');
+            }
         }
     }
 
@@ -92,23 +107,26 @@ class DDDKernel extends BaseKernel
         $configDir = $this->getConfigDir();
         $defaultConfigDir = $this->getDefaultonfigDir();
 
-        $container->import($configDir . '/{packages}/*.yaml');
-        if ($configDir != $defaultConfigDir) {
-            $container->import($defaultConfigDir . '/{packages}/*.yaml');
+        // Import common package configuration
+        $container->import("$configDir/{packages}/*.yaml");
+        if ($configDir !== $defaultConfigDir) {
+            $container->import("$defaultConfigDir/{packages}/*.yaml");
         }
 
-        $container->import($configDir . '/{packages}/' . $this->environment . '/*.yaml');
-        if ($configDir != $defaultConfigDir) {
-            $container->import($defaultConfigDir . '/{packages}/' . $this->environment . '/*.yaml');
+        // Import environment-specific package configuration
+        $container->import("$configDir/{packages}/{$this->environment}/*.yaml");
+        if ($configDir !== $defaultConfigDir) {
+            $container->import("$defaultConfigDir/{packages}/{$this->environment}/*.yaml");
         }
 
-        if (is_file($configDir . '/services.yaml')) {
-            $container->import($configDir . '/services.yaml');
-            $container->import($configDir . '/{services}_' . $this->environment . '.yaml');
+        // Import services configuration if present
+        if (is_file("$configDir/services.yaml")) {
+            $container->import("$configDir/services.yaml");
+            $container->import("$configDir/{services}_{$this->environment}.yaml");
         }
-        if ($configDir != $defaultConfigDir && is_file($defaultConfigDir . '/services.yaml')) {
-            $container->import($defaultConfigDir . '/services.yaml');
-            $container->import($defaultConfigDir . '/{services}_' . $this->environment . '.yaml');
+        if ($configDir !== $defaultConfigDir && is_file("$defaultConfigDir/services.yaml")) {
+            $container->import("$defaultConfigDir/services.yaml");
+            $container->import("$defaultConfigDir/{services}_{$this->environment}.yaml");
         }
     }
 
