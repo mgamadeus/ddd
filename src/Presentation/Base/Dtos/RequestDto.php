@@ -28,14 +28,16 @@ class RequestDto
     #[Parameter(in: Parameter::QUERY, required: false)]
     public bool $noCache = false;
 
-    protected RequestStack $requestStack;
+    protected ?RequestStack $requestStack = null;
 
     protected array $propertiesSetFromBody = [];
 
-    public function __construct(RequestStack $requestStack)
+    public function __construct(?RequestStack $requestStack = null)
     {
         $this->requestStack = $requestStack;
-        $this->setPropertiesFromRequest($this->requestStack->getCurrentRequest());
+        if ($this->requestStack) {
+            $this->setPropertiesFromRequest($this->requestStack->getMainRequest());
+        }
     }
 
 
