@@ -25,5 +25,5 @@ abstract class RepoEntity
      * This method has to map an Entity representation to repository and either update or create rows
      * @return Entity|null
      */
-    abstract protected function mapToRepository(Entity &$entity): bool;
+    abstract protected function mapToRepository(DefaultObject &$entity): bool;
 }
