@@ -104,10 +104,11 @@ class DoctrineEntityRegistry
         }
         $registryIndex = $repoClass . '_' . ($idOrQuery instanceof DoctrineQueryBuilder ? $idOrQuery->getQueryHash(
             ) : $idOrQuery);
+        /** @var DefaultObject $return */
         $return = isset(self::$entityRegistry[$registryIndex]) ? self::$entityRegistry[$registryIndex] : false;
         if ($return){
             // by cloning we want to avoid issues when reference is returned and the reference is manipulated somewhere else
-            return clone $return;
+            return $return->clone();
         }
 
         if ($return === false) {

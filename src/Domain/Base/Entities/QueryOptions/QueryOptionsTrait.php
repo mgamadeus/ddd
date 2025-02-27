@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Entities\QueryOptions;
 
+use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\ObjectSet;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionUnionType;
@@ -94,11 +95,37 @@ trait QueryOptionsTrait
         if (isset($this->queryOptions->expand)) {
             if ($this instanceof ObjectSet) {
                 // in case of obejct set, we iterate through children and expand these
-                foreach ($this->getElements() as $element) {
-                    if (method_exists($element::class, 'getDefaultQueryOptions')) {
-                        /** @var QueryOptionsTrait $element */
-                        $element->setQueryOptions($this->queryOptions);
-                        $element->expand();
+                // first we determine the possible Element types and check if there are expand properties suited to possible ELement expand Options
+                $reflectionClass = $this->getReflectionClass();
+                $elementsReflectionProperty = $reflectionClass->getProperty('elements');
+                $elementsReflectionPropertyType = $elementsReflectionProperty->getType()->getArrayType();
+                $elementsPossibleLazyLoadProperties = [];
+                $elementPropertyTypes = [];
+                if ($elementsReflectionPropertyType instanceof ReflectionNamedType) {
+                    $elementPropertyTypes[] = $elementsReflectionPropertyType->getName();
+                } elseif ($elementsReflectionPropertyType instanceof ReflectionUnionType) {
+                    foreach ($elementsReflectionPropertyType->getTypes() as $propertyType) {
+                        $elementPropertyTypes[] = $propertyType->getName();
+                    }
+                }
+                foreach($elementPropertyTypes as $elementPropertyType){
+                    /** @var DefaultObject $elementClassName */
+                    $elementsPossibleLazyLoadProperties += $elementPropertyType::getPropertiesToLazyLoad();
+                }
+                $hasPropertyToExpand = false;
+                foreach ($this->queryOptions->expand->getElements() as $expandOption) {
+                    if (isset($elementsPossibleLazyLoadProperties[$expandOption->propertyName])) {
+                        $hasPropertyToExpand = true;
+                        break;
+                    }
+                }
+                if ($hasPropertyToExpand) {
+                    foreach ($this->getElements() as $element) {
+                        if (method_exists($element::class, 'getDefaultQueryOptions')) {
+                            /** @var QueryOptionsTrait $element */
+                            $element->setQueryOptions($this->queryOptions);
+                            $element->expand();
+                        }
                     }
                 }
             }
@@ -136,6 +163,17 @@ trait QueryOptionsTrait
                 }
                 $propertyAlreadyLoaded = isset($this->$propertyName);
                 $loadedProperty = $this->$propertyName;
+                // if property has been loaded from cache, we need to apply expand options to it
+                if (isset($loadedProperty)){
+                    $targetPropertyReflectionClass = ReflectionClass::instance($loadedProperty::class);
+                    if ($targetPropertyReflectionClass && $targetPropertyReflectionClass->hasTrait(
+                            QueryOptionsTrait::class
+                        )) {
+                        /** @var QueryOptionsTrait $loadedProperty */
+                        $loadedProperty->getQueryOptions()->setQueryOptionsFromExpandOption($expandOption);
+                    }
+                }
+
                 // if the property has been already loaeded, we check if the expand option would influente the items,
                 // e.g. if filters, orderBy or top and skip is set in the expand option, it is highly probable that the resulting object(set) is not the same
                 // examples of this happening wihtout intention is, expand on Account with filter on subscriptions, and lazyloading ->settings before (which results in laoding subscriptions)

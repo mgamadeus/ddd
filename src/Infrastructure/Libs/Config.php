@@ -7,7 +7,7 @@ namespace DDD\Infrastructure\Libs;
 use DDD\Infrastructure\Traits\SingletonTrait;
 use RuntimeException;
 
-final class Config
+class Config
 {
     use SingletonTrait;
 
@@ -15,8 +15,9 @@ final class Config
      * Array containing the configuration root folders
      * @var string[]
      */
-    private static array $rootDirectories;
-    private static array $configTree;
+    protected static array $rootDirectories;
+    protected static array $configTree;
+    protected static ?array $env = null;
 
     /**
      * Add new config directory in which we can search for values
@@ -25,7 +26,7 @@ final class Config
      * @param string $configRootDirectory
      * @return void
      */
-    private function addConfigRootDirectory(string $configRootDirectory): void
+    protected function addConfigRootDirectory(string $configRootDirectory): void
     {
         if (!isset(self::$rootDirectories)) {
             self::$rootDirectories = [];
@@ -74,7 +75,7 @@ final class Config
      * @param bool $prioritizeDirectorySearch
      * @return mixed
      */
-    private function searchInConfig(
+    protected function searchInConfig(
         string $searchString,
         bool $prioritizeDirectorySearch
     ): mixed {
@@ -104,7 +105,7 @@ final class Config
      * @param bool $prioritizeDirectorySearch
      * @return array|null
      */
-    private function searchForFileInRootDirectories(
+    protected function searchForFileInRootDirectories(
         string $searchString,
         bool $prioritizeDirectorySearch
     ): array|null {
@@ -126,7 +127,7 @@ final class Config
      * @param bool $prioritizeDirectorySearch
      * @return string|null
      */
-    private function searchForFileInRootDirectory(
+    protected function searchForFileInRootDirectory(
         string $configPath,
         string $searchString,
         bool $prioritizeDirectorySearch,
@@ -205,6 +206,11 @@ final class Config
         return explode('.', $searchString);
     }
 
+    public static function setEnv(array $env): void
+    {
+        self::$env = $env;
+    }
+
     /**
      * Returns Environment Variable
      * @param string $varname
@@ -212,7 +218,12 @@ final class Config
      */
     public static function getEnv(string $varname): bool|int|float|string|null
     {
-        $value = $_ENV[$varname] ?? null;
+        if (isset(self::$env) && isset(self::$env[$varname])) {
+            $value = self::$env[$varname] ?? null;
+        }
+        else {
+            $value = $_ENV[$varname] ?? null;
+        }
         // Check and return boolean values
         if ($value !== null) {
             if (strtolower($value) === 'true') {

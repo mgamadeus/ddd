@@ -383,8 +383,8 @@ class Kernel extends BaseKernel
         $cachePath = $cache->getPath();
 
         // Silence E_WARNING to ignore "include" failures - don't use "@" to prevent silencing fatal errors
-        $initialErrorLEvel = error_reporting(\E_ALL ^ \E_WARNING);
-        error_reporting($initialErrorLEvel ^ \E_WARNING);
+        $initialErrorLevel = error_reporting();
+        error_reporting($initialErrorLevel & ~E_WARNING);
 
         try {
             if (is_file($cachePath) && \is_object($this->container = include $cachePath)
@@ -392,7 +392,7 @@ class Kernel extends BaseKernel
             ) {
                 self::$freshCache[$cachePath] = true;
                 $this->container->set('kernel', $this);
-                error_reporting($initialErrorLEvel);
+                error_reporting($initialErrorLevel);
 
                 return;
             }
@@ -420,7 +420,7 @@ class Kernel extends BaseKernel
             }
         } catch (\Throwable $e) {
         } finally {
-            error_reporting($initialErrorLEvel);
+            error_reporting($initialErrorLevel);
         }
 
         if ($collectDeprecations = $this->debug && !\defined('PHPUNIT_COMPOSER_INSTALL')) {

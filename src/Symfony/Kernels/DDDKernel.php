@@ -7,10 +7,13 @@ use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
+use Symfony\Component\HttpKernel\TerminableInterface;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
-class DDDKernel extends BaseKernel
+class DDDKernel extends Kernel
 {
     use MicroKernelTrait;
 
@@ -154,5 +157,4 @@ class DDDKernel extends BaseKernel
         // In the ServiceClassCollectorPass we register all class / service name associations
         $container->addCompilerPass(new ServiceClassCollectorPass());
     }
-
 }
