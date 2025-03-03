@@ -277,10 +277,52 @@ class SchemaProperty
                     }
                 }
             } else {
+                $typeName = $type->getName();
+
                 //DateTime and Date are handled custom
-                if ($type->getName() == DateTime::class || $type->getName() == Date::class) {
+                if ($typeName == DateTime::class || $typeName == Date::class) {
                     $this->type = 'string';
-                    $this->format = $type->getName() == Date::class ? self::FORMAT_DATE : self::FORMAT_DATE_TIME;
+                    $this->format = $typeName == Date::class ? self::FORMAT_DATE : self::FORMAT_DATE_TIME;
+                    continue;
+                }
+
+                // Enum handling
+                if (class_exists($typeName) && enum_exists($typeName)) {
+                    if ($unionType) {
+                        throw new TypeDefinitionMissingOrWrong(
+                            'Declared type ' . $typeName . ' in ' . $schemaReflectionClass->getName(
+                            ) . '->$' . $schemaClassReflectionProperty->getName(
+                            ) . ' not allowed. Union Types are not allowed for Enums.'
+                        );
+                    }
+
+                    $reflection = new \ReflectionEnum($typeName);
+                    $cases = $reflection->getCases();
+                    $isBacked = $reflection->isBacked();
+                    $this->enum = [];
+                    $enumDescription = '';
+                    foreach ($cases as $case) {
+                        $this->enum[] = $isBacked ? $case->getBackingValue() : $case->getName();
+                        $docComment = $case->getDocComment();
+                        $description = '';
+                        if ($docComment) {
+                            $docCommentObj = new ReflectionDocComment($docComment);
+                            $description = $docCommentObj->getDescription(true);
+                        }
+                        $enumDescription .= "-   `{$case->getName()}`" . $description . "\n";
+                    }
+                    if ($enumDescription) {
+                        $this->description .= "  \nAllowed Values:  \n" . $enumDescription;
+                    }
+                    if ($isBacked) {
+                        $backingType = $reflection->getBackingType();
+                        if ($backingType) {
+                            $typeName = $backingType->getName();
+                            $this->type = $this->typeNameAllocation[$typeName] ?? 'string';
+                        }
+                    } else {
+                        $this->type = 'string';
+                    }
                     continue;
                 }
 
