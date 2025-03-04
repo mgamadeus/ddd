@@ -50,7 +50,11 @@ class DatabaseVirtualColumn extends ValueObject
 
     public function getName(): string
     {
-        return self::VIRTUAL_COLUMN_PREFIX . ucfirst($this->referenceColumn->name);
+        return self::getVirtualColumnName($this->referenceColumn->name);
+    }
+
+    public static function getVirtualColumnName(string $columnName): string {
+        return self::VIRTUAL_COLUMN_PREFIX . ucfirst($columnName);
     }
 
     public function uniqueKey(): string

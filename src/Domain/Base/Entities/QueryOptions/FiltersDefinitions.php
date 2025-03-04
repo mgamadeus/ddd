@@ -11,7 +11,8 @@ use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Entities\ObjectSet;
-use DDD\Domain\Base\Entities\ValueObject;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseVirtualColumn;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionNamedType;
@@ -61,7 +62,8 @@ class FiltersDefinitions extends ObjectSet
      */
     public static function getFiltersDefinitionsForReferenceClass(
         string $referenceClassName,
-    ): ?FiltersDefinitions {
+    ): ?FiltersDefinitions
+    {
         if (self::$filtersDefinitionsForClass[$referenceClassName] ?? null) {
             return self::$filtersDefinitionsForClass[$referenceClassName];
         }
@@ -120,7 +122,8 @@ class FiltersDefinitions extends ObjectSet
         string $className,
         string $propertyPrefix = '',
         array $callPath = []
-    ): array {
+    ): array
+    {
         if (isset($callPath[$className])) {
             return [];
         }
@@ -140,11 +143,18 @@ class FiltersDefinitions extends ObjectSet
             // e.g. in case of an EntitySet containing classes involved in single table inheritance scheme
             // like Post, Event, etc. we need to include all properties from all possible classes
             elseif ($arrayType instanceof ReflectionUnionType) {
-                foreach ($arrayType->getTypes() as $possibleType){
+                foreach ($arrayType->getTypes() as $possibleType) {
                     $elementTypeClass = $possibleType->getName();
                     if (is_a($elementTypeClass, DefaultObject::class, true)) {
-                        $allowedFilterPropertiesForPossibleType = self::getFilterPropertiesForClass($elementTypeClass, $propertyPrefix, $callPath);
-                        $allowedFilterProperties = array_merge($allowedFilterProperties, $allowedFilterPropertiesForPossibleType);
+                        $allowedFilterPropertiesForPossibleType = self::getFilterPropertiesForClass(
+                            $elementTypeClass,
+                            $propertyPrefix,
+                            $callPath
+                        );
+                        $allowedFilterProperties = array_merge(
+                            $allowedFilterProperties,
+                            $allowedFilterPropertiesForPossibleType
+                        );
                     }
                 }
                 return $allowedFilterPropertiesForPossibleType;
@@ -170,17 +180,27 @@ class FiltersDefinitions extends ObjectSet
                 continue;
             }
             if ($type->isBuiltin() || (is_a($type->getName(), DateTime::class, true))) {
-                if ($choiceAttribute = $reflectionProperty->getAttributes(
-                    Choice::class,
-                    ReflectionAttribute::IS_INSTANCEOF
-                )[0] ?? null) {
-                    /** @var Choice $choiceAttributeInstance */
-                    $choiceAttributeInstance = $choiceAttribute->newInstance();
-                    $allowedFilterProperties[$propertyPrefix . $reflectionProperty->getName(
-                    )] = $choiceAttributeInstance->choices;
-                } else {
-                    $allowedFilterProperties[$propertyPrefix . $reflectionProperty->getName()] = true;
+                /** @var DatabaseColumn $databaseColumnAttribute */
+                $databaseColumnAttribute = $reflectionProperty->getAttributeInstance(DatabaseColumn::class);
+                /** @var DatabaseVirtualColumn $databaseVirtualColumnAttribute */
+                $databaseVirtualColumnAttribute = $reflectionProperty->getAttributeInstance(
+                    DatabaseVirtualColumn::class
+                );
+                /** @var Choice $choiceAttribute */
+                $choiceAttribute = $reflectionProperty->getAttributeInstance(Choice::class);
+                $propertyName = $propertyPrefix . $reflectionProperty->getName();
+                $allowedPropertyValue = $choiceAttribute ? $choiceAttribute->choices : true;
+
+                if ($databaseVirtualColumnAttribute) {
+                    $allowedFilterProperties[$propertyPrefix . DatabaseVirtualColumn::getVirtualColumnName(
+                        $reflectionProperty->getName()
+                    )] = $allowedPropertyValue;
                 }
+
+                if ($databaseColumnAttribute && $databaseColumnAttribute->ignoreProperty) {
+                    continue;
+                }
+                $allowedFilterProperties[$propertyPrefix . $reflectionProperty->getName()] = $allowedPropertyValue;
             }
             $subObjectFilters = [];
             // for properties, we do not include ObjectSets in filter options
@@ -200,8 +220,7 @@ class FiltersDefinitions extends ObjectSet
                     if ($modifiedColumn) {
                         $allowedFilterProperties[$propertyPrefix . $modifiedColumn] = true;
                     }
-                }
-                elseif (DefaultObject::isValueObject($type->getName()) && !is_a(
+                } elseif (DefaultObject::isValueObject($type->getName()) && !is_a(
                         $type->getName(),
                         ObjectSet::class,
                         true
