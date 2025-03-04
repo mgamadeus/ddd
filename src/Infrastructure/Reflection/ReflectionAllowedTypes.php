@@ -47,28 +47,27 @@ class ReflectionAllowedTypes
         }
         $this->allowedTypesCount++;
 
-        if (!$type->isBuiltin()) {
-            // Handle Enum Types
-            if (enum_exists($typeName)) {
-                $enumReflection = ReflectionEnum::instance($typeName);
-                $this->isEnum = true;
-                $this->allowsScalar = true;
-                if ($enumReflection->isBacked()){
-                    $backingType = (string) $enumReflection->getBackingType();
-                }
-                else
-                    $backingType = ReflectionClass::STRING;
-
-                $this->allowedTypes[$backingType] = $type;
-                $this->allowedValues = $enumReflection->getEnumValues();
-                $this->enumType = $typeName;
-            }
-            else {
-                $this->allowsObject = true;
-                $this->allowedTypes[$typeName] = $type;
-            }
-        } elseif (isset(ReflectionClass::SCALAR_BASE_TYPES[$typeName])) {
+        if (enum_exists($typeName)) {
+            $enumReflection = ReflectionEnum::instance($typeName);
+            $this->isEnum = true;
             $this->allowsScalar = true;
+            if ($enumReflection->isBacked()) {
+                $backingType = (string)$enumReflection->getBackingType();
+            } else {
+                $backingType = ReflectionClass::STRING;
+            }
+
+            $this->allowedTypes[$backingType] = $type;
+            $this->allowedValues = $enumReflection->getEnumValues();
+            $this->enumType = $typeName;
+        }
+        else {
+            if (!$type->isBuiltin()) {
+                $this->allowsObject = true;
+            }
+            if (isset(ReflectionClass::SCALAR_BASE_TYPES[$typeName])) {
+                $this->allowsScalar = true;
+            }
             $this->allowedTypes[$typeName] = $type;
         }
     }

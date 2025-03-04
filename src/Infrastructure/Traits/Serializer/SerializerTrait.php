@@ -625,14 +625,6 @@ trait SerializerTrait
                         ) . ', but ' . $valueTypeAllocated . ' provided on index ' . $index
                     );
                 }
-                if (!$allowedTypes->allowsScalar && $valueIsScalar) {
-                    throw new BadRequestException(
-                        'Property ' . static::class . '->' . $propertyName . ' needs to be of type ' . implode(
-                            '|',
-                            array_keys($allowedTypes->allowedTypes)
-                        ) . ', but ' . $valueTypeAllocated . ' provided on index ' . $index
-                    );
-                }
 
                 $typeToInstance = null;
                 if ($allowedTypes->allowedTypesCount > 1) {
