@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Traits\Serializer;
 
+use App\Presentation\Api\Client\Presence\Locations\Dtos\LocationGetRequestDto;
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
@@ -203,7 +204,6 @@ trait SerializerTrait
     {
         $propertyValueIsArray = is_array($propertyValue);
         $propertyValueIsObject = is_object($propertyValue);
-
         if (!$propertyValueIsArray && !$propertyValueIsObject) {
             //simple type e.g. string
             return $propertyValue;
@@ -233,6 +233,11 @@ trait SerializerTrait
         } elseif (
             $propertyValueIsArray || ($propertyValueIsObject && !method_exists($propertyValue, 'jsonSerialize'))
         ) {
+            // Handle Enums
+            if ($propertyValueIsObject && enum_exists($propertyValue::class)) {
+                return isset($propertyValue->value)?$propertyValue->value:$propertyValue->name;
+            }
+
             // we have an unkown object which has a toString function, return string number
             if ($propertyValueIsObject && method_exists($propertyValue, '__toString')) {
                 return (string)$propertyValue;
@@ -558,7 +563,25 @@ trait SerializerTrait
                     if ($sanitizeInput) {
                         $arrayItem = Datafilter::sanitizeInput($arrayItem);
                     }
-                    $this->$propertyName[] = $arrayItem;
+                    // Handle Enums
+                    if ($allowedTypes->isEnum){
+                        if (!isset($allowedTypes->allowedValues[$arrayItem])){
+                            if ($throwErrors) {
+                                throw new BadRequestException(
+                                    'Property ' . static::class . '->' . $propertyName . ' is an Enum type ('.$allowedTypes->enumType. ') and provided value "' . $arrayItem . '" at index '. $index .' is not one of the allowed values (' . implode(
+                                        ', ', array_keys($allowedTypes->allowedValues)
+                                    ).')'
+                                );
+                            }
+                        }
+                        else {
+                            $enumCase = $allowedTypes->allowedValues[$arrayItem];
+                            $this->$propertyName[] = $enumCase;
+                        }
+                    }
+                    else {
+                        $this->$propertyName[] = $arrayItem;
+                    }
                     continue;
                 }
                 if (!$allowedTypes->allowsObject && $valueIsScalar) {
@@ -722,7 +745,25 @@ trait SerializerTrait
                 if ($sanitizeInput) {
                     $value = Datafilter::sanitizeInput($value);
                 }
-                $this->$propertyName = $value;
+                // Handle Enums
+                if ($allowedTypes->isEnum){
+                    if (!isset($allowedTypes->allowedValues[$value])){
+                        if ($throwErrors) {
+                            throw new BadRequestException(
+                                'Property ' . static::class . '->' . $propertyName . ' is an Enum type ('.$allowedTypes->enumType. ') and provided value "' . $value . '" is not one of the allowed values (' . implode(
+                                    ', ', array_keys($allowedTypes->allowedValues)
+                                ).')'
+                            );
+                        }
+                    }
+                    else {
+                        $enumCase = $allowedTypes->allowedValues[$value];
+                        $this->$propertyName = $enumCase;
+                    }
+                }
+                else {
+                    $this->$propertyName = $value;
+                }
                 return;
             }
             if (!$allowedTypes->allowsObject && $valueIsScalar) {

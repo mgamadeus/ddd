@@ -9,8 +9,11 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
 class ReflectionAllowedTypes
 {
     public array $allowedTypes = [];
+    public ?array $allowedValues = null;
     public bool $allowsScalar = false;
     public bool $allowsObject = false;
+    public bool $isEnum = false;
+    public ?string $enumType = null;
     public bool $isArrayType = false;
     public bool $allowsNull = false;
     public int $allowedTypesCount = 0;
@@ -29,29 +32,44 @@ class ReflectionAllowedTypes
 
         if ($propertyType instanceof ReflectionUnionType || $propertyType instanceof \ReflectionUnionType) {
             foreach ($propertyType->getTypes() as $type) {
-                $typeName = $type->getName();
-                if (!$type->isBuiltin()) {
-                    $this->allowsObject = true;
-                }
-                if ($typeName) {
-                    if (isset(ReflectionClass::SCALAR_BASE_TYPES[$typeName])) {
-                        $this->allowsScalar = true;
-                    }
-                    $this->allowedTypes[$typeName] = $type;
-                    $this->allowedTypesCount++;
-                }
+                $this->processType($type);
             }
         } else {
-            $this->allowedTypesCount++;
-            $typeName = $propertyType->getName();
-            $this->allowedTypes[$typeName] = $propertyType;
-            if (!$propertyType->isBuiltin()) {
-                $this->allowsObject = true;
-            }
-            if (isset(ReflectionClass::SCALAR_BASE_TYPES[$typeName])) {
+            $this->processType($propertyType);
+        }
+    }
+
+    protected function processType(\ReflectionNamedType $type): void
+    {
+        $typeName = $type->getName();
+        if (!$typeName) {
+            return;
+        }
+        $this->allowedTypesCount++;
+
+        if (!$type->isBuiltin()) {
+            // Handle Enum Types
+            if (enum_exists($typeName)) {
+                $enumReflection = ReflectionEnum::instance($typeName);
+                $this->isEnum = true;
                 $this->allowsScalar = true;
+                if ($enumReflection->isBacked()){
+                    $backingType = (string) $enumReflection->getBackingType();
+                }
+                else
+                    $backingType = ReflectionClass::STRING;
+
+                $this->allowedTypes[$backingType] = $type;
+                $this->allowedValues = $enumReflection->getEnumValues();
+                $this->enumType = $typeName;
             }
-            $this->allowedTypes[$typeName] = $propertyType;
+            else {
+                $this->allowsObject = true;
+                $this->allowedTypes[$typeName] = $type;
+            }
+        } elseif (isset(ReflectionClass::SCALAR_BASE_TYPES[$typeName])) {
+            $this->allowsScalar = true;
+            $this->allowedTypes[$typeName] = $type;
         }
     }
 }

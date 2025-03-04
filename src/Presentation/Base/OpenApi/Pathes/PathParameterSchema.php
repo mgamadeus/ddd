@@ -12,6 +12,7 @@ use DDD\Domain\Base\Entities\QueryOptions\QueryOptions;
 use DDD\Infrastructure\Base\DateTime\Date;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Reflection\ReflectionClass;
+use DDD\Infrastructure\Reflection\ReflectionDocComment;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 use DDD\Presentation\Base\OpenApi\Components\SchemaProperty;
@@ -53,7 +54,8 @@ class PathParameterSchema
         PathParameter &$parameter,
         ReflectionClass &$requestDtoReflectionClass,
         ReflectionProperty &$requestDtoReflectionProperty
-    ) {
+    )
+    {
         if (!$requestDtoReflectionProperty->getType()) {
             throw new TypeDefinitionMissingOrWrong(
                 'Type Definition Missing in ' . $requestDtoReflectionClass->getName(
@@ -78,7 +80,8 @@ class PathParameterSchema
                     if ($typeNameAllocated == 'array') {
                         throw new TypeDefinitionMissingOrWrong(
                             'Declared type array in ' . $requestDtoReflectionClass->getName(
-                            ) . '->$' . $requestDtoReflectionProperty->getName() . ' allowed only for BODY or FILES parameters'
+                            ) . '->$' . $requestDtoReflectionProperty->getName(
+                            ) . ' allowed only for BODY or FILES parameters'
                         );
                     }
                     if ($typeNameAllocated == 'object') {
@@ -212,7 +215,9 @@ class PathParameterSchema
                                 $parameter->description .= "\n- `{$expandDefinition->propertyName}`";
                                 if ($expandDefinition->getFiltersDefinitions()) {
                                     $parameter->description .= "\n  - Allowed filter properties are:";
-                                    foreach ($expandDefinition->getFiltersDefinitions()->getElements() as $allowedField) {
+                                    foreach (
+                                        $expandDefinition->getFiltersDefinitions()->getElements() as $allowedField
+                                    ) {
                                         $parameter->description .= "\n    - `{$allowedField->propertyName}`";
                                         if ($allowedField->options) {
                                             $parameter->description .= ': one of [';
@@ -233,6 +238,46 @@ class PathParameterSchema
                                 }
                             }
                             $parameter->description .= "</details>";
+                        }
+                        continue;
+                    } // Enum handling
+                    elseif (class_exists($typeName) && enum_exists($typeName)) {
+                        if ($unionType) {
+                            throw new TypeDefinitionMissingOrWrong(
+                                'Declared type ' . $typeName . ' in ' . $requestDtoReflectionClass->getName(
+                                ) . '->$' . $requestDtoReflectionProperty->getName(
+                                ) . ' not allowed. Union Types are not allowed for Enums.'
+                            );
+                        }
+
+                        $reflection = new \ReflectionEnum($typeName);
+                        $cases = $reflection->getCases();
+                        $isBacked = $reflection->isBacked();
+                        $this->enum = [];
+                        $enumDescription = '';
+                        foreach ($cases as $case) {
+                            $value = $isBacked ? $case->getBackingValue() : $case->getName();
+                            $this->enum[] = $isBacked ? $case->getBackingValue() : $case->getName();
+                            $docComment = $case->getDocComment();
+                            $description = '';
+                            if ($docComment) {
+                                $docCommentObj = new ReflectionDocComment($docComment);
+                                $description = ' ' . ($isBacked ? "({$case->getName()}) " : '') . $docCommentObj->getDescription(
+                                        true
+                                    );
+                            }
+                            $enumDescription .= "-   `$value`" . $description . "\n";
+                        }
+                        if ($enumDescription) {
+                            $parameter->description .= "  \nAllowed Values:  \n" . $enumDescription;
+                        }
+                        if ($isBacked) {
+                            $backingType = $reflection->getBackingType();
+                            if ($backingType) {
+                                $this->type = $this->typeNameAllocation[$backingType->getName()] ?? 'string';
+                            }
+                        } else {
+                            $this->type = 'string';
                         }
                         continue;
                     }
