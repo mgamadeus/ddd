@@ -99,9 +99,10 @@ trait SerializerTrait
             SerializerRegistry::clearToObjectCache();
         }*/
         $objectId = spl_object_id($this);
+        $cacheKey = $objectId . '_' . $ignoreHideAttributes . '_' . $ignoreNullValues . '_' . $forPersistence;
         $entityId = DefaultObject::isEntity($this) && isset($this->id) ? static::class . '_' . $this->id : null;
         if ($cached) {
-            if ($cachedResult = SerializerRegistry::getToObjectCacheForObjectId($objectId)) {
+            if ($cachedResult = SerializerRegistry::getToObjectCacheForObjectId($cacheKey)) {
                 return $cachedResult;
             }
             /* This creates problems
@@ -169,7 +170,7 @@ trait SerializerTrait
             }
         }
         if ($cached) {
-            SerializerRegistry::setToObjectCacheForObjectId($objectId, $resultArray);
+            SerializerRegistry::setToObjectCacheForObjectId($cacheKey, $resultArray);
             /*
             if ($entityId) {
                 SerializerRegistry::setToObjectCacheForObjectId($entityId, $resultArray);
@@ -618,6 +619,14 @@ trait SerializerTrait
                     }
                 }
                 if (!$allowedTypes->allowsObject && !$valueIsScalar) {
+                    throw new BadRequestException(
+                        'Property ' . static::class . '->' . $propertyName . ' needs to be of type ' . implode(
+                            '|',
+                            array_keys($allowedTypes->allowedTypes)
+                        ) . ', but ' . $valueTypeAllocated . ' provided on index ' . $index
+                    );
+                }
+                if (!$allowedTypes->allowsScalar && $valueIsScalar) {
                     throw new BadRequestException(
                         'Property ' . static::class . '->' . $propertyName . ' needs to be of type ' . implode(
                             '|',

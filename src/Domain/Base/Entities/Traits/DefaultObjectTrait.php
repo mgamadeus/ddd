@@ -7,6 +7,7 @@ use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\ObjectSet;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
 use DDD\Infrastructure\Services\DDDService;
+use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
 use DDD\Presentation\Base\OpenApi\Attributes\ClassName;
 use ReflectionException;
 
@@ -16,6 +17,7 @@ trait DefaultObjectTrait
      * @var string|null The fully qualified class name of the object
      */
     #[ClassName]
+    #[HideProperty]
     public ?string $objectType;
 
     public function __construct()
