@@ -65,7 +65,7 @@ class CustomAnnotationClassLoader extends AttributeRouteControllerLoader
                 foreach ($this->getAnnotations($method) as $annot) {
                     if (!$annot->getName()) {
                         //$annot->setName(implode(',', $annot->getMethods()) . ':' . $globals['path'] . $annot->getPath());
-                        $annot->setName($class->getName() . ':'.$method->getName());
+                        $annot->setName($class->getName() . ':'.$method->getName() . '__' . implode(',', $annot->getMethods()) . ':' . $globals['path'] . $annot->getPath());
                     }
                     $this->addRoute($collection, $annot, $globals, $class, $method);
                 }
