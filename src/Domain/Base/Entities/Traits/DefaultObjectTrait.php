@@ -17,7 +17,6 @@ trait DefaultObjectTrait
      * @var string|null The fully qualified class name of the object
      */
     #[ClassName]
-    #[HideProperty]
     public ?string $objectType;
 
     public function __construct()
