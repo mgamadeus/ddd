@@ -68,15 +68,18 @@ class Document
     /** @var bool[] */
     protected array $controllersToIgnore = [];
 
+    protected string $routePrefix = '';
+
     /**
      * @param RouteCollection $routeCollection
      * @throws ReflectionException
      * @throws TypeDefinitionMissingOrWrong
      */
-    public function __construct(RouteCollection &$routeCollection)
+    public function __construct(RouteCollection &$routeCollection, string $routePrefix = '')
     {
         $this->routeCollection = $routeCollection;
         $this->components = new Components($this);
+        $this->routePrefix = $routePrefix;
         self::$instance = $this;
         $this->buildDocumentation();
     }
@@ -92,6 +95,9 @@ class Document
         // extract general information from current route
 
         foreach ($this->routeCollection as $route) {
+            if (!empty($this->routePrefix) && !str_starts_with($route->getPath(), $this->routePrefix)) {
+                continue;
+            }
             /** @var Route $route */
             $ignoreController = false;
             $reflectionMethodOrClass = null;
