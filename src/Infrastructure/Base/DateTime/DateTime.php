@@ -24,6 +24,8 @@ class DateTime extends \DateTime
 
     public const string DATE_RFC3339_MICROSECONDS_ZULU = 'Y-m-d\TH:i:s.u\Z';
 
+    public const string DATE_RFC3339_ZULU = 'Y-m-d\TH:i:s\Z';
+
     public const string UNIX = 'U';
 
     /**

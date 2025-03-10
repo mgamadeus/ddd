@@ -3,7 +3,7 @@
   "description": "A DDD Entity Framework on top of symfony and doctrine",
   "minimum-stability": "stable",
   "license": "MIT",
-  "version": "2.5.10",
+  "version": "2.5.11",
   "authors": [
     {
       "name": "Marius-Eugen Gerdan",
@@ -11,7 +11,7 @@
     }
   ],
   "require": {
-    "php": ">=8.2",
+    "php": ">=8.3",
     "ext-ctype": "*",
     "ext-dom": "*",
     "ext-gd": "*",
@@ -50,7 +50,8 @@
     "firebase/php-jwt": "^6.10",
     "dompdf/dompdf": "^2.0",
     "giggsey/libphonenumber-for-php": "^8.13",
-    "brick/geo-doctrine": "^0.3.1"
+    "brick/geo-doctrine": "^0.3.1",
+    "kamermans/guzzle-oauth2-subscriber": "^1.1"
   },
   "autoload": {
     "psr-4": {
