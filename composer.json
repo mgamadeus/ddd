@@ -3,7 +3,7 @@
   "description": "A DDD Entity Framework on top of symfony and doctrine",
   "minimum-stability": "stable",
   "license": "MIT",
-  "version": "2.5.13",
+  "version": "2.5.14",
   "authors": [
     {
       "name": "Marius-Eugen Gerdan",
@@ -65,13 +65,5 @@
     "allow-plugins": {
       "symfony/runtime": false
     }
-  },
-  "scripts": {
-    "post-install-cmd": [
-      "php bin/console app:generate-doctrine-models-for-entities"
-    ],
-    "post-update-cmd": [
-      "php bin/console app:generate-doctrine-models-for-entities"
-    ]
   }
 }
