@@ -97,7 +97,6 @@ class GeoPoint extends ValueObject
     {
         $this->lng = $repoObject->x();
         $this->lat = $repoObject->y();
-        parent::mapFromRepository($repoObject);
     }
 
     /**

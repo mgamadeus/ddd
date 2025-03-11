@@ -164,7 +164,7 @@ trait QueryOptionsTrait
                 $propertyAlreadyLoaded = isset($this->$propertyName);
                 $loadedProperty = $this->$propertyName;
                 // if property has been loaded from cache, we need to apply expand options to it
-                if (isset($loadedProperty)){
+                if (isset($loadedProperty) && is_object($loadedProperty)){
                     $targetPropertyReflectionClass = ReflectionClass::instance($loadedProperty::class);
                     if ($targetPropertyReflectionClass && $targetPropertyReflectionClass->hasTrait(
                             QueryOptionsTrait::class

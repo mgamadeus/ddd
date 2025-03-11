@@ -331,13 +331,13 @@ class DBEntity extends DatabaseRepoEntity
                 DefaultObject::isValueObject($possibleEntityTypeName)
             ) {
                 // handle object type migrations
-                if (isset($this->ormInstance->$propertyName['objectType']) && isset(
+                if (is_array($this->ormInstance->$propertyName) && isset($this->ormInstance->$propertyName['objectType']) && isset(
                         ReflectionClass::getObjectTypeMigrations()[$this->ormInstance->$propertyName['objectType']]
                     )) {
                     $this->ormInstance->$propertyName['objectType'] = ReflectionClass::getObjectTypeMigrations(
                     )[$this->ormInstance->$propertyName['objectType']];
                 }
-                if (isset($this->ormInstance->$propertyName->objectType) && isset(
+                elseif (is_object($this->ormInstance->$propertyName) && isset($this->ormInstance->$propertyName->objectType) && isset(
                         ReflectionClass::getObjectTypeMigrations()[$this->ormInstance->$propertyName->objectType]
                     )) {
                     $this->ormInstance->$propertyName->objectType = ReflectionClass::getObjectTypeMigrations(
