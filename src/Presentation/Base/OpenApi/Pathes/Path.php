@@ -142,16 +142,20 @@ class Path
                 // for paramters of type path, validate if the path of the route contains the parameter definition
                 $routePathParamer = $route->compile()->getPathVariables() ?? [];
 
-                if ($pathParameter->in == Parameter::PATH && $pathParameter->required && !in_array($pathParameter->name, $routePathParamer)) {
+                if (
+                    $pathParameter->in == Parameter::PATH && $pathParameter->required && !in_array(
+                        $pathParameter->name,
+                        $routePathParamer
+                    )
+                ) {
                     throw new TypeDefinitionMissingOrWrong(
-                        'Route Param {' . $pathParameter->name . '} defined in ' . $requestDtoReflectionClass->getName()
-                        . ' missing in Route Path Definition for Route ' . $route->getPath() . ':' . $httpMethod . ' (' . $controllerClass . '->' . $controllerReflectionMethod->getName() . ')'
+                        'Route Param {' . $pathParameter->name . '} defined in ' . $requestDtoReflectionClass->getName(
+                        ) . ' missing in Route Path Definition for Route ' . $route->getPath(
+                        ) . ':' . $httpMethod . ' (' . $controllerClass . '->' . $controllerReflectionMethod->getName() . ')'
                     );
                 }
                 // we add only non-body, non-files, non-post parameters as body,post and files parameters are described separately
-                if (!in_array($pathParameter->in, [Parameter::BODY, Parameter::POST, Parameter::FILES])
-                    && !$pathParameter->isToBeSkipped()
-                ) {
+                if (!in_array($pathParameter->in, [Parameter::BODY, Parameter::POST, Parameter::FILES]) && !$pathParameter->isToBeSkipped()) {
                     $this->addParamter($pathParameter);
                     $acceptsParameterOrBody = true;
                 }
@@ -191,9 +195,12 @@ class Path
         if ($controllerReflectionMethod->getReturnType()) {
             $responseDtoReflectionClass = new ReflectionClass($controllerReflectionMethod->getReturnType()->getName());
             if (is_a($responseDtoReflectionClass->getName(), RedirectResponseDto::class, true)) {
-                $this->responses = [RedirectResponseDto::DEFAULT_HTTP_CODE => new PathResponse($responseDtoReflectionClass)];
-            }
-            else {
+                $this->responses = [
+                    RedirectResponseDto::DEFAULT_HTTP_CODE => new PathResponse(
+                        $responseDtoReflectionClass
+                    )
+                ];
+            } else {
                 $this->responses = [200 => new PathResponse($responseDtoReflectionClass)];
             }
             // if route requires authentication, we also provide a Unauthorized response
@@ -223,7 +230,8 @@ class Path
             // if we have throw clauses on the controller method, that extend Exception, we preovide the corresponding error responses
         } else {
             throw new TypeDefinitionMissingOrWrong(
-                'No ResponeDto defined for Route ' . $route->getPath() . ':' . $httpMethod . ' (Controller: ' . $controllerClass . '->' . $controllerReflectionMethod->getName() . ')'
+                'No ResponeDto defined for Route ' . $route->getPath(
+                ) . ':' . $httpMethod . ' (Controller: ' . $controllerClass . '->' . $controllerReflectionMethod->getName() . ')'
             );
         }
 
@@ -258,7 +266,7 @@ class Path
      * @param Tag $tag
      * @return void
      */
-    public function addTag(Tag &$tag)
+    public function addTag(Tag &$tag): void
     {
         if (!$this->tags) {
             $this->tags = [];
@@ -268,8 +276,11 @@ class Path
         $documentInstance->addGlobalTag($tag);
     }
 
-    public function addParamter(PathParameter &$paramter)
+    public function addParamter(PathParameter &$paramter): void
     {
+        if (isset($this->parametersByName[$paramter->name])) {
+            return;
+        }
         $this->parameters[] = $paramter;
         $this->parametersByName[$paramter->name] = $paramter;
     }
