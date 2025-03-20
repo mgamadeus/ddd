@@ -3,11 +3,11 @@
 namespace DDD\Domain\Base\Entities\Traits;
 
 use DDD\Domain\Base\Entities\BaseObject;
+use DDD\Domain\Base\Entities\ChildrenSet;
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\ObjectSet;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
 use DDD\Infrastructure\Services\DDDService;
-use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
 use DDD\Presentation\Base\OpenApi\Attributes\ClassName;
 use ReflectionException;
 
@@ -149,7 +149,7 @@ trait DefaultObjectTrait
                         if (isset($clonedObjectCache[$objectId])) {
                             $clonedArrayValue = $clonedObjectCache[$objectId];
                         } else {
-                            if ($arrayValue instanceof self) {
+                            if ($arrayValue instanceof DefaultObject) {
                                 $clonedArrayValue = $arrayValue->clone($clonedObjectCache);
                                 // if there is a parent - child relationship between $this and $arrayValue
                                 // we create it as well between the $clone and $clonedArrayValue
@@ -171,12 +171,18 @@ trait DefaultObjectTrait
                 if (isset($clonedObjectCache[$objectId])) {
                     $clonedPropertyValue = $clonedObjectCache[$objectId];
                 } else {
-                    if ($propertyValue instanceof self) {
+                    if ($propertyValue instanceof DefaultObject) {
                         $clonedPropertyValue = $propertyValue->clone($clonedObjectCache);
                         // if there is a parent - child relationship between $this and $propertyValue
                         // we create it as well between the $clone and $clonedPropertyValue
                         if ($propertyValue->getParent() === $this) {
                             $clonedPropertyValue->setParent($clone);
+                        }
+                        // Special Case for ChildrenSet, we need to set parent to each Child
+                        if ($clonedPropertyValue instanceof ChildrenSet) {
+                            foreach ($clonedPropertyValue->getElements() as $child) {
+                                $child->setParent($clone);
+                            }
                         }
                     } else {
                         $clonedPropertyValue = clone $propertyValue;
