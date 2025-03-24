@@ -67,7 +67,8 @@ trait MediaItemContentTrait
     /**
      * @return bool Returns true, if all relevant content infos are available
      */
-    public function isMediaItemContentInfoGenerated():bool {
+    public function isMediaItemContentInfoGenerated(): bool
+    {
         return isset($this->width, $this->height, $this->fileSize, $this->fileFormat);
     }
 
@@ -107,7 +108,9 @@ trait MediaItemContentTrait
 
         // Get the image blob and calculate its size
         $this->body = $imagickInstance->getImageBlob();
-
+        if (isset($this->body)) {
+            $this->base64EncodedContent = base64_encode($this->body);
+        }
         $this->fileSize = strlen($this->body); // File size in bytes
     }
 
