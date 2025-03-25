@@ -34,6 +34,20 @@ class FiltersDefinitions extends ObjectSet
     protected static ?array $filtersDefinitionsForClass = [];
 
     /**
+     * @var bool If true, current FiltersDefinitions have been set based on allowedPropertyNames in Filters Attribute e.g.
+     * #[QueryOptions(filters: [[Post::FILTER_REPOTYPE, LazyLoadRepo::DB, LazyLoadRepo::ARGUS]])]
+     * This property is needed in order to be aware if later on filters based on reference class have to be added
+     */
+    public bool $filtersSetFromAttribute = false;
+
+    /**
+     * @var bool If true, current FiltersDefinitions have been set based on referenceClassName
+     * This property is needed in order to know if filters from reference class have already been added as if not,
+     * we need to add them and merge these with filters from Attribute
+     */
+    public bool $filtersSetFromReferenceClass = false;
+
+    /**
      * Allowed filters either as string representing allowed property name or
      * array representing on it's first index the property name and following allwed options to be used as value
      * @param string|array ...$allowedPropertyNames

@@ -23,7 +23,7 @@ class AppliedQueryOptions extends ValueObject
     /** @var int The number of results to be returned */
     public ?int $top;
 
-    public ?string $rerenceClass;
+    public ?string $referenceClass;
 
     /** @var FiltersDefinitions Allowed filtering property definitions */
     protected ?FiltersDefinitions $filtersDefinitions;
@@ -55,12 +55,13 @@ class AppliedQueryOptions extends ValueObject
         }
         if (isset($queryOptions->filters) && !empty($queryOptions->filters)) {
             $this->filtersDefinitions = new FiltersDefinitions(...$queryOptions->filters);
+            $this->filtersDefinitions->filtersSetFromAttribute = true;
         }
         if (isset($queryOptions->orderBy) && !empty($queryOptions->orderBy)) {
             $this->orderByDefinitions = $queryOptions->orderBy;
         }
         if ($referenceClass) {
-            $this->rerenceClass = $referenceClass;
+            $this->referenceClass = $referenceClass;
         }
         parent::__construct();
     }
@@ -231,11 +232,17 @@ class AppliedQueryOptions extends ValueObject
     public function getFiltersDefinitions(): ?FiltersDefinitions
     {
         if (isset($this->filtersDefinitions)) {
+            if (isset($this->referenceClass) && !$this->filtersDefinitions->filtersSetFromReferenceClass){
+                $filtersFromReferenceClass = FiltersDefinitions::getFiltersDefinitionsForReferenceClass($this->referenceClass);
+                $this->filtersDefinitions->mergeFromOtherSet($filtersFromReferenceClass);
+                $this->filtersDefinitions->filtersSetFromReferenceClass = true;
+            }
             return $this->filtersDefinitions;
-        } elseif (isset($this->rerenceClass)) {
+        } elseif (isset($this->referenceClass)) {
             $this->filtersDefinitions = FiltersDefinitions::getFiltersDefinitionsForReferenceClass(
-                $this->rerenceClass
+                $this->referenceClass
             );
+            $this->filtersDefinitions->filtersSetFromReferenceClass = true;
             return $this->filtersDefinitions;
         }
         return null;
