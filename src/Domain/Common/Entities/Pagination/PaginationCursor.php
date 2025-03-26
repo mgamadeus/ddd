@@ -10,11 +10,11 @@ use DDD\Domain\Common\Entities\Persons\PersonGender;
 class PaginationCursor extends ValueObject
 {
     /** @var string Cursor of current / requested result set */
-    public ?string $requestedCursor;
+    public ?string $current;
 
     /** @var string Cursor of previous result set */
-    public ?string $currentCursor;
+    public ?string $previous;
 
     /** @var string Cursor of next result set */
-    public ?string $nextCursor;
+    public ?string $next;
 }
