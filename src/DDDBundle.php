@@ -13,8 +13,12 @@ class DDDBundle extends Bundle
 {
     protected static ContainerInterface $defaultContainer;
 
-    public function boot()
+    public function boot(): void
     {
+        // Entferne die Umgebungsvariable APP_RUNTIME_OPTIONS
+        unset($_ENV['APP_RUNTIME_OPTIONS']);
+        putenv('APP_RUNTIME_OPTIONS');
+
         $projectDirectory = $this->container->getParameterBag()->get('kernel.project_dir');
         if (!defined('APP_ROOT_DIR')) {
             define('APP_ROOT_DIR', $projectDirectory);
@@ -29,6 +33,4 @@ class DDDBundle extends Bundle
     {
         return self::$defaultContainer;
     }
-
-
 }
