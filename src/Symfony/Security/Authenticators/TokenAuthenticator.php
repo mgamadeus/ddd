@@ -36,6 +36,7 @@ class TokenAuthenticator extends AbstractAuthenticator
     public function isPublicAccess(Request $request): bool
     {
         [$config, $context] = $this->accessMap->getPatterns($request);
+        $config = $config ?? [];
         return in_array(AuthenticatedVoter::PUBLIC_ACCESS, $config);
     }
 
