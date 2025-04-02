@@ -9,6 +9,7 @@ use DDD\Domain\Base\Entities\QueryOptions\FiltersDefinitions;
 use DDD\Domain\Base\Entities\QueryOptions\FiltersOptions;
 use DDD\Domain\Base\Entities\QueryOptions\OrderByOptions;
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptions;
+use DDD\Domain\Base\Entities\QueryOptions\SelectOptions;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
@@ -30,52 +31,40 @@ trait DtoQueryOptionsTrait
     public ?int $top = null;
 
     /**
-     * @var string Definition of orderBy follwing the syntax:
+     * @var string Definition of orderBy following the syntax:
      * <details><summary>Definitions and examples:</summary>
      *
-     * `<property> <direction>?, <property> <direction>? ... ]?`
+     * `<property> <direction>?, <property> <direction>? ...`
      *
      * **Examples:**
-     * - `priority asc, creationDate desc, price?`
-     * Direction one of: [`asc`, `desc`]
+     * - `priority asc, creationDate desc, price`
      * </details>
      */
     #[Parameter(in: Parameter::QUERY, required: false)]
     public OrderByOptions $orderBy;
 
     /**
-     * @var string Definition of filters follwing the syntax:
+     * @var string Definition of filters following the syntax:
      * <details><summary>Definitions and examples:</summary>
      *
      * `<property> <operator> <value> [ <and|or> <property> <operator> <value> ... ]`
-     * Value can be either `numeric`, (e.g. 10 or 10.4231) or `string` (e.g. 'active') or a JSON `array` format (e.g. ['ACTIVE','DELETED']) or `null` (null or 'null')
      *
      * **Examples:**
      * - `price lt 10`
-     * - `price ge 10.8 and price le 20 or categoryId eq 12`
      * - `city eq 'Berlin'`
-     * - `city in ['Berlin','Paris']`
-     * Strings have to be put in quotes `'` If values contain single quotes, they need to be escaped. E.g. `location eq 'llocnou d\'en fenollet'`
-     * Supported operators: `lt` lower then, `gt` greater then, `le` lower equal, `ge` greater equal, `eq` equal, `ne` not equal, `in` in and `bw` between.
-     * `null`-value supports only `eq` and `ne`, `array`-value supports only `in` and `bw` operators.
      * </details>
      */
     #[Parameter(in: Parameter::QUERY, required: false)]
     public FiltersOptions $filters;
 
     /**
-     * @var string Definition of expanding options (properties to be loaded alongside with entity) follwing the syntax:
+     * @var string Definition of expanding options following the syntax:
      * <details><summary>Definitions and examples:</summary>
      *
-     * `<property> (<expandDefinitions>)?, <property> (<expandDefinitions)? ... ]`
-     *   `<expandDefinitions>` is defined as:
-     *     `<expandDefinition>,<expandDefinition>, ...`
-     *      `<expandDefinition>` is defined as:
-     *         `<filterDefinitions>` or `<orderByDefinitions>` or `<topDefinition>` or `<skipDefinition>` or `<expandDefinition>`
+     * `<property> (<expandDefinitions>)?, <property> (<expandDefinitions>)? ...`
      *
-     * *Examples:*
+     * **Examples:**
      * - `openingHours, competitors`
-     * - `openingHours, competitors(filters=type eq 'GOOGLE';orderBy=KWS desc;top=10;skip=20)`
      * - `projects(expand=business(expand=locations(expand=website)))`
      * </details>
      */
@@ -83,7 +72,20 @@ trait DtoQueryOptionsTrait
     public ExpandOptions $expand;
 
     /**
-     * Populates data from current request to dto
+     * @var string Definition of select options following the syntax:
+     * <details><summary>Definitions and examples:</summary>
+     *
+     * `<property>, <property>, ...`
+     *
+     * **Examples:**
+     * - `name, email, phone`
+     * </details>
+     */
+    #[Parameter(in: Parameter::QUERY, required: false)]
+    public SelectOptions $select;
+
+    /**
+     * Populates data from current request to dto.
      * @param Request $request
      * @return void
      * @throws BadRequestException
@@ -93,11 +95,11 @@ trait DtoQueryOptionsTrait
     public function setPropertiesFromRequest(Request $request): void
     {
         parent::setPropertiesFromRequest($request);
-        $dtoQueryOptionsAttributeInstane = static::getDtoQueryOptions();
-        $queryOptions = $dtoQueryOptionsAttributeInstane->getQueryOptions();
+        $dtoQueryOptionsAttributeInstance = static::getDtoQueryOptions();
+        $queryOptions = $dtoQueryOptionsAttributeInstance->getQueryOptions();
 
         if (isset($this->expand)) {
-            $this->expand->validateAgainstDefinitionsFromReferenceClass($dtoQueryOptionsAttributeInstane->baseEntity);
+            $this->expand->validateAgainstDefinitionsFromReferenceClass($dtoQueryOptionsAttributeInstance->baseEntity);
         }
         if (isset($this->filters)) {
             if ($queryOptions && $queryOptions->getFiltersDefinitions()) {
@@ -108,8 +110,7 @@ trait DtoQueryOptionsTrait
         if (isset($this->orderBy)) {
             if ($queryOptions) {
                 $this->orderBy->validateAgainstDefinitions($queryOptions->getOrderByDefinitions());
-                // set filters definitions for OrderBy options that are based on filters
-                // this is relevant for knowning that no alias is needed when we apply orderBy option to query builder
+                // Set filters definitions for OrderBy options based on filters.
                 if ($queryOptions->getFiltersDefinitions()) {
                     foreach ($this->orderBy->getElements() as $orderByOption) {
                         if ($filterDefinition = $queryOptions->getFiltersDefinitions()->getFilterDefinitionForPropertyName(
@@ -121,26 +122,38 @@ trait DtoQueryOptionsTrait
                 }
             }
         }
+        if (isset($this->select)) {
+            if ($queryOptions && $queryOptions->getFiltersDefinitions()) {
+                // Set filters definitions for Select options based on filters.
+                foreach ($this->select->getElements() as $selectOption) {
+                    if ($filterDefinition = $queryOptions->getFiltersDefinitions()->getFilterDefinitionForPropertyName(
+                        $selectOption->propertyName
+                    )) {
+                        $selectOption->setFiltersDefinition($filterDefinition);
+                    }
+                }
+            }
+        }
     }
 
     /**
-     * Returns instance of DtoQueryOptions Attribute
+     * Returns instance of DtoQueryOptions Attribute.
      * @return DtoQueryOptions
      * @throws ReflectionException
      */
     public static function getDtoQueryOptions(): DtoQueryOptions
     {
         $reflectionClass = ReflectionClass::instance(static::class);
-        /** @var DtoQueryOptions|null $dtoQueryOptionsAttributeInstane */
-        $dtoQueryOptionsAttributeInstane = $reflectionClass->getAttributeInstance(
+        /** @var DtoQueryOptions|null $dtoQueryOptionsAttributeInstance */
+        $dtoQueryOptionsAttributeInstance = $reflectionClass->getAttributeInstance(
             DtoQueryOptions::class
         );
-        return $dtoQueryOptionsAttributeInstane;
+        return $dtoQueryOptionsAttributeInstance;
     }
 
     /**
-     * Returns instance of QueryOptions Attribute
-     * @return FiltersDefinitions|null
+     * Returns instance of QueryOptions Attribute.
+     * @return QueryOptions|null
      * @throws ReflectionException
      */
     public static function getQueryOptions(): ?QueryOptions
@@ -149,7 +162,7 @@ trait DtoQueryOptionsTrait
     }
 
     /**
-     * Returns filters if present
+     * Returns filters if present.
      * @return FiltersOptions|null
      */
     public function getFilters(): ?FiltersOptions
@@ -158,12 +171,12 @@ trait DtoQueryOptionsTrait
     }
 
     /**
-     * Returns pagination limimt
-     * @return int
+     * Returns pagination limit.
+     * @return int|null
      */
     public function getTop(): ?int
     {
-        if (isset($this->top) && $this->top <= 0 ){
+        if (isset($this->top) && $this->top <= 0) {
             $this->top = null;
         }
         return $this->top ?? null;

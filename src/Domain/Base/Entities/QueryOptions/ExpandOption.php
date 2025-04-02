@@ -9,7 +9,7 @@ use DDD\Infrastructure\Exceptions\BadRequestException;
 
 class ExpandOption extends ValueObject
 {
-    /** @var string The proeprty name to expand */
+    /** @var string The property name to expand */
     public ?string $propertyName;
 
     protected ?string $uniqueKey = null;
@@ -23,15 +23,18 @@ class ExpandOption extends ValueObject
     /** @var ExpandOptions Expand options can be recursive */
     public ExpandOptions $expandOptions;
 
-    /** @var int Number of results to be skipped / offsetted */
+    /** @var SelectOptions|null Select options to be applied on expansion */
+    public ?SelectOptions $selectOptions = null;
+
+    /** @var int Number of results to be skipped / offset */
     public int $skip = 0;
 
     /** @var int The number of results to be returned */
     public ?int $top = null;
 
     /**
-     * @param string $propertyName
-     * @param string $direction
+     * @param string|null $propertyName
+     * @param string|null $expandParameters
      * @throws BadRequestException
      */
     public function __construct(string $propertyName = null, string $expandParameters = null)
@@ -44,14 +47,15 @@ class ExpandOption extends ValueObject
     }
 
     /**
-     * Parses expand parameters
+     * Parses expand parameters including select clauses.
+     *
      * @param string $expandParameters
      * @return void
      * @throws BadRequestException
      */
     public function parseExpandParameters(string $expandParameters)
     {
-        // first we detect expand options
+        // Detect expand options.
         $expandPattern = '/expand\s*=\s*(?P<expandOptions>((\s*\w+\s*(?P<expandParameters>\((?:[^()]+|(?&expandParameters))*\))?)+,?)+)/mi';
         preg_match_all($expandPattern, $expandParameters, $matches);
         if (isset($matches['expandOptions'])) {
@@ -64,8 +68,9 @@ class ExpandOption extends ValueObject
                 $expandParameters
             );
         }
+        // Parse filters, orderBy, top, skip, and select.
         preg_match_all(
-            '/filters\s*=\s*(?P<filters>[^;]+)|orderBy\s*=\s*(?P<orderBy>[^;]+)|top\s*=\s*(?P<top>[^;]+)|skip\s*=\s*(?P<skip>[^;]+)/mi',
+            '/filters\s*=\s*(?P<filters>[^;]+)|orderBy\s*=\s*(?P<orderBy>[^;]+)|top\s*=\s*(?P<top>[^;]+)|skip\s*=\s*(?P<skip>[^;]+)|select\s*=\s*(?P<select>[^;]+)/mi',
             $expandParameters,
             $matches
         );
@@ -94,6 +99,13 @@ class ExpandOption extends ValueObject
             foreach ($matches['filters'] as $currentMatch) {
                 if ($currentMatch) {
                     $this->filters = FiltersOptions::fromString($currentMatch);
+                }
+            }
+        }
+        if (isset($matches['select'])) {
+            foreach ($matches['select'] as $currentMatch) {
+                if ($currentMatch) {
+                    $this->selectOptions = SelectOptions::fromString($currentMatch);
                 }
             }
         }

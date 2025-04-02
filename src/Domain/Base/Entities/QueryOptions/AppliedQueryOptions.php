@@ -14,6 +14,7 @@ use DDD\Presentation\Base\Dtos\RequestDto;
  * - limit
  * - offset
  * - expand
+ * - select
  */
 class AppliedQueryOptions extends ValueObject
 {
@@ -39,6 +40,9 @@ class AppliedQueryOptions extends ValueObject
 
     /** @var OrderByOptions Applied orderBy definitions */
     public ?OrderByOptions $orderBy;
+
+    /** @var SelectOptions|null Applied select options */
+    public ?SelectOptions $select = null;
 
     /** @var int|null The total results, will be populated if available */
     public ?int $totalResults;
@@ -67,7 +71,7 @@ class AppliedQueryOptions extends ValueObject
     }
 
     /**
-     * Sets the current offset and takes care possible limitations
+     * Sets the current offset and takes care possible limitations.
      * @param int $skip
      * @return AppliedQueryOptions
      */
@@ -78,7 +82,7 @@ class AppliedQueryOptions extends ValueObject
     }
 
     /**
-     * Sets limit for number of results returned
+     * Sets limit for number of results returned.
      * @param int $top
      * @return AppliedQueryOptions
      */
@@ -89,7 +93,7 @@ class AppliedQueryOptions extends ValueObject
     }
 
     /**
-     * Sets filters options to be applied
+     * Sets filters options to be applied.
      * @param FiltersOptions $filters
      * @return AppliedQueryOptions
      */
@@ -105,8 +109,8 @@ class AppliedQueryOptions extends ValueObject
     }
 
     /**
-     * Sets expand options to be applied
-     * @param ExpandOptions $filters
+     * Sets expand options to be applied.
+     * @param ExpandOptions $expand
      * @return AppliedQueryOptions
      */
     public function setExpand(?ExpandOptions &$expand = null): AppliedQueryOptions
@@ -116,13 +120,24 @@ class AppliedQueryOptions extends ValueObject
     }
 
     /**
-     * Sets orderBy options to be applied
+     * Sets orderBy options to be applied.
      * @param OrderByOptions $orderBy
      * @return AppliedQueryOptions
      */
     public function setOrderBy(?OrderByOptions &$orderBy = null): AppliedQueryOptions
     {
         $this->orderBy = $orderBy;
+        return $this;
+    }
+
+    /**
+     * Sets select options to be applied.
+     * @param SelectOptions $select
+     * @return AppliedQueryOptions
+     */
+    public function setSelect(?SelectOptions &$select = null): AppliedQueryOptions
+    {
+        $this->select = $select;
         return $this;
     }
 
@@ -166,6 +181,11 @@ class AppliedQueryOptions extends ValueObject
         return $this->expand;
     }
 
+    public function getSelect(): ?SelectOptions
+    {
+        return $this->select;
+    }
+
     /**
      * Sets all query options from requestDto such as:
      * - filters
@@ -173,6 +193,7 @@ class AppliedQueryOptions extends ValueObject
      * - limit
      * - offset
      * - expand
+     * - select
      * @param RequestDto $requestDto
      * @return AppliedQueryOptions
      */
@@ -193,11 +214,14 @@ class AppliedQueryOptions extends ValueObject
         if (isset($requestDto->expand)) {
             $this->setExpand($requestDto->expand);
         }
+        if (isset($requestDto->select)) {
+            $this->setSelect($requestDto->select);
+        }
         return $this;
     }
 
     /**
-     * Sets query options from expand option
+     * Sets query options from expand option.
      * @param ExpandOption $expandOption
      * @return void
      */
@@ -218,13 +242,18 @@ class AppliedQueryOptions extends ValueObject
         if (isset($expandOption->expandOptions)) {
             $this->setExpand($expandOption->expandOptions);
         }
+        if (isset($expandOption->selectOptions)) {
+            $this->setSelect($expandOption->selectOptions);
+        }
     }
 
     public function uniqueKey(): string
     {
-        $key = ($this->getTop()) . '_' . ($this->getSkip(
-            )) . '_' . (isset($this->orderBy) ? ($this->orderBy?->uniqueKey(
-            ) ?? '') : '') . '_' . (isset($this->filters) ? ($this->filters->uniqueKey() ?? '') : '');
+        $key = ($this->getTop()) . '_' .
+            ($this->getSkip()) . '_' .
+            (isset($this->orderBy) ? ($this->orderBy?->uniqueKey() ?? '') : '') . '_' .
+            (isset($this->filters) ? ($this->filters->uniqueKey() ?? '') : '') . '_' .
+            (isset($this->select) ? ($this->select->uniqueKey() ?? '') : '');
         $key = md5($key);
         return self::uniqueKeyStatic($key);
     }
@@ -232,7 +261,7 @@ class AppliedQueryOptions extends ValueObject
     public function getFiltersDefinitions(): ?FiltersDefinitions
     {
         if (isset($this->filtersDefinitions)) {
-            if (isset($this->referenceClass) && !$this->filtersDefinitions->filtersSetFromReferenceClass){
+            if (isset($this->referenceClass) && !$this->filtersDefinitions->filtersSetFromReferenceClass) {
                 $filtersFromReferenceClass = FiltersDefinitions::getFiltersDefinitionsForReferenceClass($this->referenceClass);
                 $this->filtersDefinitions->mergeFromOtherSet($filtersFromReferenceClass);
                 $this->filtersDefinitions->filtersSetFromReferenceClass = true;
@@ -256,7 +285,6 @@ class AppliedQueryOptions extends ValueObject
             $filtersDefinitions = $this->getFiltersDefinitions();
             $this->orderByDefinitions = [];
             if ($filtersDefinitions) {
-                $this->orderByDefinitions = [];
                 foreach ($this->filtersDefinitions->getElements() as $filtersDefinition) {
                     $this->orderByDefinitions[] = $filtersDefinition->propertyName;
                 }

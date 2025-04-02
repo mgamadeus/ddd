@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo;
 
-use App\Infrastructure\Services\AppService;
 use DDD\Domain\Base\Entities\Attributes\NoRecursiveUpdate;
 use DDD\Domain\Base\Entities\Attributes\RolesRequiredForUpdate;
 use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
@@ -13,8 +12,8 @@ use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
+use DDD\Domain\Base\Entities\QueryOptions\QueryOptionsTrait;
 use DDD\Domain\Base\Entities\StaticRegistry;
-use DDD\Domain\Base\Entities\Traits\EntityTrait;
 use DDD\Domain\Base\Repo\DB\Attributes\DatabaseTranslation;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
 use DDD\Domain\Base\Repo\DB\DBEntity;
@@ -147,7 +146,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
         bool $useEntityRegistrCache = true,
         ?DoctrineModel &$loadedOrmInstance = null,
         bool $deferredCaching = false,
-        array $initiatorClasses = [],
+        array $initiatorClasses = []
     ): ?DefaultObject {
         if (!$this::BASE_ENTITY_CLASS) {
             throw new InternalErrorException('No BASE_ENTITY_CLASS defined in ' . static::class);
@@ -179,18 +178,33 @@ abstract class DatabaseRepoEntity extends RepoEntity
             }
         }
         if (!$skipSelectFrom) {
-            // we apply the select and from clause based on model and alias definitions
+            // Apply the select and from clause based on model and alias definitions.
             $queryBuilder->addSelect($baseOrmModelAlias)->from($this::BASE_ORM_MODEL, $baseOrmModelAlias);
         }
 
-        // We apply the restrictions of the readRightsQuery
+        // Apply read rights restrictions.
         static::applyReadRightsQuery($queryBuilder);
 
-        //handle translations
+        // Handle translations.
         $queryBuilder = static::applyTranslationJoinToQueryBuilder($queryBuilder);
 
+        // --- APPLY SELECT OPTIONS ---
+        $baseEntityClass = $this::BASE_ENTITY_CLASS;
+        $baseEntityReflection = ReflectionClass::instance($baseEntityClass);
+        if ($baseEntityReflection->hasTrait(QueryOptionsTrait::class)) {
+            /** @var QueryOptionsTrait $baseEntityClass */
+            $defaultQueryOptions = $baseEntityClass::getDefaultQueryOptions();
+            if ($defaultQueryOptions && $select = $defaultQueryOptions->getSelect()) {
+                $select->applySelectToDoctrineQueryBuilder(
+                    queryBuilder: $queryBuilder,
+                    baseModelClass: $this::BASE_ORM_MODEL
+                );
+            }
+        }
+        // --- END APPLY SELECT OPTIONS ---
+
         if ($useEntityRegistrCache) {
-            // we check if an element exists in the registry
+            // Check if an element exists in the registry.
             $entityInstance = $entityRegistry->get(static::class, $queryBuilder);
             if ($entityInstance) {
                 return $this->postProcessAfterMapping($entityInstance);
@@ -232,7 +246,6 @@ abstract class DatabaseRepoEntity extends RepoEntity
 
         $this->ormInstance = $ormInstance;
         $entityInstance = $this->mapToEntity($useEntityRegistrCache, $initiatorClasses);
-        //if ($useEntityRegistrCache) {
         $entityRegistry->add($entityInstance, static::class, $queryBuilder, $deferredCaching);
         //}
         // Entity Manager's unit of work cache of various types especially loaded DoctrineModels can end up using
@@ -278,9 +291,9 @@ abstract class DatabaseRepoEntity extends RepoEntity
      * @throws ReflectionException
      */
     public static function applyTranslationJoinToQueryBuilder(
-        QueryBuilder &$queryBuilder,
+        DoctrineQueryBuilder &$queryBuilder,
         $doctrineModel = null
-    ): QueryBuilder {
+    ): DoctrineQueryBuilder {
         // if no attribute is found, the query builder is returned untouched
         if (!($translationAttributeInstance = static::getTranslationAttributeInstance())) {
             return $queryBuilder;
@@ -405,10 +418,8 @@ abstract class DatabaseRepoEntity extends RepoEntity
             $reflectionClass = ReflectionClass::instance(static::class);
 
             $entityId = $entity->id ?? null;
-            $hasTranslations = $translationAttributeInstance && $translationAttributeInstance->hasPropertiesToTranslate(
-                );
-            $translationIsInDefaultLanguage = $translationAttributeInstance && $translationAttributeInstance::isCurrentLanguageCodeDefaultLanguage(
-                );
+            $hasTranslations = $translationAttributeInstance && $translationAttributeInstance->hasPropertiesToTranslate();
+            $translationIsInDefaultLanguage = $translationAttributeInstance && $translationAttributeInstance::isCurrentLanguageCodeDefaultLanguage();
 
             $modelName = static::BASE_ORM_MODEL;
             if (self::$applyRightsRestrictions) {
@@ -464,8 +475,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
                     // in this case we need to upate the created and updated time and persist the main entity anyway, indifferent from translation
 
                     // we load current data and update created and updated columns
-                    $this->ormInstance = isset($this->ormInstance) && $this->ormInstance ? $this->ormInstance : new (static::BASE_ORM_MODEL)(
-                    );
+                    $this->ormInstance = isset($this->ormInstance) && $this->ormInstance ? $this->ormInstance : new (static::BASE_ORM_MODEL)();
                     $this->ormInstance->id = $entityId;
                     $this->mapCreatedAndUpdatedTime($entity);
                     $entityManager->upsert(
@@ -600,10 +610,12 @@ abstract class DatabaseRepoEntity extends RepoEntity
                             $entity->$propertyName = $updatedChild;
                             if ($updatedChild instanceof EntitySet) {
                                 $updatedChild->regenerateElementsByUniqueKey();
-                            } elseif (DefaultObject::isEntity($updatedChild) && property_exists(
+                            } elseif (
+                                DefaultObject::isEntity($updatedChild) && property_exists(
                                     $entity,
                                     $propertyName . 'Id'
-                                ) && isset($updatedChild->id)) {
+                                ) && isset($updatedChild->id)
+                            ) {
                                 $entity->{$propertyName . 'Id'} = $updatedChild->id;
                             }
                         }
