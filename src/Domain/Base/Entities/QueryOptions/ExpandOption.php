@@ -6,6 +6,7 @@ namespace DDD\Domain\Base\Entities\QueryOptions;
 
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Infrastructure\Exceptions\BadRequestException;
+use DDD\Presentation\Base\OpenApi\Attributes\Parameter;
 
 class ExpandOption extends ValueObject
 {
@@ -31,6 +32,9 @@ class ExpandOption extends ValueObject
 
     /** @var int The number of results to be returned */
     public ?int $top = null;
+
+    /** @var string|null Cursor for point to a resultset that was previously provided */
+    public ?string $skiptoken = null;
 
     /**
      * @param string|null $propertyName
@@ -70,7 +74,7 @@ class ExpandOption extends ValueObject
         }
         // Parse filters, orderBy, top, skip, and select.
         preg_match_all(
-            '/filters\s*=\s*(?P<filters>[^;]+)|orderBy\s*=\s*(?P<orderBy>[^;]+)|top\s*=\s*(?P<top>[^;]+)|skip\s*=\s*(?P<skip>[^;]+)|select\s*=\s*(?P<select>[^;]+)/mi',
+            '/filters\s*=\s*(?P<filters>[^;]+)|orderBy\s*=\s*(?P<orderBy>[^;]+)|top\s*=\s*(?P<top>[^;]+)|skip\s*=\s*(?P<skip>[^;]+)|skiptoken\s*=\s*(?P<skiptoken>[^;]+)|select\s*=\s*(?P<select>[^;]+)/mi',
             $expandParameters,
             $matches
         );
@@ -78,6 +82,13 @@ class ExpandOption extends ValueObject
             foreach ($matches['skip'] as $currentMatch) {
                 if ($currentMatch) {
                     $this->skip = (int)$currentMatch;
+                }
+            }
+        }
+        if (isset($matches['skiptoken'])) {
+            foreach ($matches['skiptoken'] as $currentMatch) {
+                if ($currentMatch) {
+                    $this->skiptoken = $currentMatch;
                 }
             }
         }

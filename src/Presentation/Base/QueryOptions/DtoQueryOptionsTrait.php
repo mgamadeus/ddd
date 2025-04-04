@@ -30,6 +30,10 @@ trait DtoQueryOptionsTrait
     #[Parameter(in: Parameter::QUERY, required: false)]
     public ?int $top = null;
 
+    /** @var string|null Cursor for point to a resultset that was previously provided */
+    #[Parameter(in: Parameter::QUERY, required: false)]
+    public ?string $skiptoken = null;
+
     /**
      * @var string Definition of orderBy following the syntax:
      * <details><summary>Definitions and examples:</summary>
@@ -185,5 +189,10 @@ trait DtoQueryOptionsTrait
     public function getSkip(): ?int
     {
         return $this->skip ?? null;
+    }
+
+    public function getSkiptoken(): ?int
+    {
+        return $this->skiptoken ?? null;
     }
 }

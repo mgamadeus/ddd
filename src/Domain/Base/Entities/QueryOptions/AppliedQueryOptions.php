@@ -6,6 +6,7 @@ namespace DDD\Domain\Base\Entities\QueryOptions;
 
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Presentation\Base\Dtos\RequestDto;
+use DDD\Presentation\Base\QueryOptions\DtoQueryOptionsTrait;
 
 /**
  * Definitions for Query Options Definitions and applied Options such as
@@ -24,6 +25,10 @@ class AppliedQueryOptions extends ValueObject
     /** @var int The number of results to be returned */
     public ?int $top;
 
+    /** @var string|null Cursor for point to a resultset that was previously provided */
+    public ?string $skiptoken;
+
+    /** @var string|null The class on which the current QueryOptions are derived from */
     public ?string $referenceClass;
 
     /** @var FiltersDefinitions Allowed filtering property definitions */
@@ -78,6 +83,17 @@ class AppliedQueryOptions extends ValueObject
     public function setSkip(int $skip): AppliedQueryOptions
     {
         $this->skip = max(0, $skip);
+        return $this;
+    }
+
+    /**
+     * Sets the current skiptoken.
+     * @param string $skiptoken
+     * @return AppliedQueryOptions
+     */
+    public function setSkiptoken(string $skiptoken): AppliedQueryOptions
+    {
+        $this->skiptoken = $skiptoken;
         return $this;
     }
 
@@ -173,6 +189,14 @@ class AppliedQueryOptions extends ValueObject
         return $this->skip;
     }
 
+    public function getSkiptoken(): ?string
+    {
+        if (!isset($this->skiptoken)) {
+            return null;
+        }
+        return $this->skiptoken;
+    }
+
     public function getExpandOptions(): ?ExpandOptions
     {
         if (!isset($this->expand)) {
@@ -194,7 +218,7 @@ class AppliedQueryOptions extends ValueObject
      * - offset
      * - expand
      * - select
-     * @param RequestDto $requestDto
+     * @param RequestDto|DtoQueryOptionsTrait $requestDto
      * @return AppliedQueryOptions
      */
     public function setQueryOptionsFromRequestDto(RequestDto &$requestDto): AppliedQueryOptions
@@ -204,6 +228,9 @@ class AppliedQueryOptions extends ValueObject
         }
         if (isset($requestDto->top)) {
             $this->setTop($requestDto->top);
+        }
+        if (isset($requestDto->skiptoken)) {
+            $this->setSkiptoken($requestDto->skiptoken);
         }
         if (isset($requestDto->filters)) {
             $this->setFilters($requestDto->filters);
