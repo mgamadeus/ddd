@@ -20,11 +20,16 @@ class CacheScope extends ValueObject
      * @return array
      * @throws ReflectionException
      */
-    public static function getCacheScopes()
+    public static function getCacheScopes(): array
     {
         $className = DDDService::instance()->getContainerServiceClassNameForClass(static::class);
         $reflectionClass = ReflectionClass::instance($className);
-        $featureFlagNames = [];
-        return array_values($reflectionClass->getConstants(ReflectionClassConstant::IS_PUBLIC));
+        $featureFlagNames = array_values($reflectionClass->getConstants(ReflectionClassConstant::IS_PUBLIC));
+        foreach ($featureFlagNames as $key => $featureFlagName) {
+            if (!is_string($featureFlagName)) {
+                unset($featureFlagNames[$key]);
+            }
+        }
+        return $featureFlagNames;
     }
 }
