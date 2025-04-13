@@ -6,7 +6,6 @@ namespace DDD\Infrastructure\Traits\Serializer;
 
 use App\Presentation\Api\Client\Presence\Locations\Dtos\LocationGetRequestDto;
 use DDD\Domain\Base\Entities\DefaultObject;
-use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\ObjectSet;
 use DDD\Infrastructure\Exceptions\BadRequestException;
@@ -30,8 +29,30 @@ trait SerializerTrait
 {
     use ReflectorTrait;
 
-    /** @var array Tracks usnet properties */
+    /** @var array Tracks unset properties */
     protected $unsetProperties = [];
+
+    /**
+     * @var array Properties that will not be exposed to frontend, allows dynamically remove
+     * properties vivibility instead of applying HideProperty attribute
+     */
+    protected $propertiesToHide = [];
+
+    public function addPropertiesToHide(string ...$properties): void
+    {
+        foreach ($properties as $property) {
+            $this->propertiesToHide[$property] = true;
+        }
+    }
+
+    public function removePropertiesToHide(string ...$properties): void
+    {
+        foreach ($properties as $property) {
+            if (isset($this->propertiesToHide[$property])) {
+                unset($this->propertiesToHide[$property]);
+            }
+        }
+    }
 
     public function unset(string $propertyName)
     {
@@ -61,9 +82,7 @@ trait SerializerTrait
         bool $ignoreHideAttributes = false,
         bool $ignoreNullValues = true,
         bool $forPersistence = true
-    ): void
-    {
-    }
+    ): void {}
 
     /**
      * recusively converts current entity to a stdClass object: top level entry function,
@@ -83,8 +102,7 @@ trait SerializerTrait
         bool $ignoreHideAttributes = false,
         bool $ignoreNullValues = true,
         bool $forPersistence = true
-    ): mixed
-    {
+    ): mixed {
         $this->onToObject(
             $cached,
             $returnUniqueKeyInsteadOfContent,
@@ -140,9 +158,11 @@ trait SerializerTrait
                 $attributeInstance = $attribute->newInstance();
                 $visiblePropertyName = $attributeInstance->name;
             }
-            if ((!$ignoreNullValues && $property->isInitialized($this) && $property->isPublic() && !$property->isStatic(
-                    )) || ($ignoreNullValues && isset($this->$propertyName))) { // we process only properties that are initialized
-                if (!$ignoreHideAttributes && $property->getAttributes(HideProperty::class)) {
+            if (
+                (!$ignoreNullValues && $property->isInitialized($this) && $property->isPublic() && !$property->isStatic(
+                    )) || ($ignoreNullValues && isset($this->$propertyName))
+            ) { // we process only properties that are initialized
+                if (!$ignoreHideAttributes && $property->getAttributes(HideProperty::class) || isset($this->propertiesToHide[$propertyName])) {
                     continue;
                 }
                 if (!$forPersistence && $property->getAttributes(DontPersistProperty::class)) {
@@ -201,8 +221,7 @@ trait SerializerTrait
         bool $ignoreHideAttributes = false,
         bool $ignoreNullValues = true,
         bool $forPersistence = true
-    ): mixed
-    {
+    ): mixed {
         $propertyValueIsArray = is_array($propertyValue);
         $propertyValueIsObject = is_object($propertyValue);
         if (!$propertyValueIsArray && !$propertyValueIsObject) {
@@ -216,7 +235,11 @@ trait SerializerTrait
                 } elseif (isset($path[spl_object_id($propertyValue)])) {
                     // we had the object by its object hash already in the path, so we are in a recursion
                     return '*RECURSION*';
-                } elseif (DefaultObject::isEntity($propertyValue) && isset($propertyValue->id) && isset($path[$propertyValue::class . '_' . $propertyValue->id])) {
+                } elseif (
+                    DefaultObject::isEntity(
+                        $propertyValue
+                    ) && isset($propertyValue->id) && isset($path[$propertyValue::class . '_' . $propertyValue->id])
+                ) {
                     // we had the object (found by entity id) already in the path, so we are in a recursion
                     return '*RECURSION*';
                 } else {
@@ -236,7 +259,7 @@ trait SerializerTrait
         ) {
             // Handle Enums
             if ($propertyValueIsObject && enum_exists($propertyValue::class)) {
-                return isset($propertyValue->value)?$propertyValue->value:$propertyValue->name;
+                return isset($propertyValue->value) ? $propertyValue->value : $propertyValue->name;
             }
 
             // we have an unkown object which has a toString function, return string number
@@ -459,8 +482,7 @@ trait SerializerTrait
         $throwErrors = true,
         bool $rootCall = true,
         bool $sanitizeInput = false
-    ): void
-    {
+    ): void {
         $reflectionClass = $this->getReflectionClass();
         foreach ($reflectionClass->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
             if ($property->isReadOnly()) {
@@ -516,8 +538,7 @@ trait SerializerTrait
         $throwErrors = true,
         ?ReflectionClass $reflectionClass = null,
         bool $sanitizeInput = false
-    ): void
-    {
+    ): void {
         $propertyName = $property->getName();
         if ($reflectionClass) {
             $reflectionClass = $this->getReflectionClass();
@@ -565,22 +586,21 @@ trait SerializerTrait
                         $arrayItem = Datafilter::sanitizeInput($arrayItem);
                     }
                     // Handle Enums
-                    if ($allowedTypes->isEnum){
-                        if (!isset($allowedTypes->allowedValues[$arrayItem])){
+                    if ($allowedTypes->isEnum) {
+                        if (!isset($allowedTypes->allowedValues[$arrayItem])) {
                             if ($throwErrors) {
                                 throw new BadRequestException(
-                                    'Property ' . static::class . '->' . $propertyName . ' is an Enum type ('.$allowedTypes->enumType. ') and provided value "' . $arrayItem . '" at index '. $index .' is not one of the allowed values (' . implode(
-                                        ', ', array_keys($allowedTypes->allowedValues)
-                                    ).')'
+                                    'Property ' . static::class . '->' . $propertyName . ' is an Enum type (' . $allowedTypes->enumType . ') and provided value "' . $arrayItem . '" at index ' . $index . ' is not one of the allowed values (' . implode(
+                                        ', ',
+                                        array_keys($allowedTypes->allowedValues)
+                                    ) . ')'
                                 );
                             }
-                        }
-                        else {
+                        } else {
                             $enumCase = $allowedTypes->allowedValues[$arrayItem];
                             $this->$propertyName[] = $enumCase;
                         }
-                    }
-                    else {
+                    } else {
                         $this->$propertyName[] = $arrayItem;
                     }
                     continue;
@@ -600,9 +620,11 @@ trait SerializerTrait
                             continue;
                         }
                     }
-                    if (isset($allowedTypes->allowedTypes[ReflectionClass::STRING]) && (is_string(
+                    if (
+                        isset($allowedTypes->allowedTypes[ReflectionClass::STRING]) && (is_string(
                                 $arrayItem
-                            ) || is_numeric($arrayItem))) {
+                            ) || is_numeric($arrayItem))
+                    ) {
                         if ($sanitizeInput) {
                             $arrayItem = Datafilter::sanitizeInput($arrayItem);
                         }
@@ -638,9 +660,11 @@ trait SerializerTrait
                 $typeToInstance = null;
                 if ($allowedTypes->allowedTypesCount > 1) {
                     // by convention we need an objectType in case of multiple types possible
-                    if (isset($value->objectType) && isset(
+                    if (
+                        isset($value->objectType) && isset(
                             ReflectionClass::getObjectTypeMigrations()[$value->objectType]
-                        )) {
+                        )
+                    ) {
                         $value->objectType = ReflectionClass::getObjectTypeMigrations()[$value->objectType];
                     }
                     if (isset($value->objectType) && isset($allowedTypes->allowedTypes[$value->objectType])) {
@@ -700,10 +724,14 @@ trait SerializerTrait
                 // we first try to check if the type to instance is an entity and if we already have set it's properties
                 // in this case we can use the SerializerRegistry
                 $entityFromCache = false;
-                if (DefaultObject::isEntity($typeToInstance) && isset($arrayItem->id) && $arrayItem->id && $cachedEntityInstance = SerializerRegistry::getInstanceForSetPropertiesFromObjectCache(
+                if (
+                    DefaultObject::isEntity(
+                        $typeToInstance
+                    ) && isset($arrayItem->id) && $arrayItem->id && $cachedEntityInstance = SerializerRegistry::getInstanceForSetPropertiesFromObjectCache(
                         $typeToInstance,
                         $arrayItem->id
-                    )) {
+                    )
+                ) {
                     $item = $cachedEntityInstance;
                     $entityFromCache = true;
                 } elseif (!$typeToInstance) {
@@ -747,22 +775,21 @@ trait SerializerTrait
                     $value = Datafilter::sanitizeInput($value);
                 }
                 // Handle Enums
-                if ($allowedTypes->isEnum){
-                    if (!isset($allowedTypes->allowedValues[$value])){
+                if ($allowedTypes->isEnum) {
+                    if (!isset($allowedTypes->allowedValues[$value])) {
                         if ($throwErrors) {
                             throw new BadRequestException(
-                                'Property ' . static::class . '->' . $propertyName . ' is an Enum type ('.$allowedTypes->enumType. ') and provided value "' . $value . '" is not one of the allowed values (' . implode(
-                                    ', ', array_keys($allowedTypes->allowedValues)
-                                ).')'
+                                'Property ' . static::class . '->' . $propertyName . ' is an Enum type (' . $allowedTypes->enumType . ') and provided value "' . $value . '" is not one of the allowed values (' . implode(
+                                    ', ',
+                                    array_keys($allowedTypes->allowedValues)
+                                ) . ')'
                             );
                         }
-                    }
-                    else {
+                    } else {
                         $enumCase = $allowedTypes->allowedValues[$value];
                         $this->$propertyName = $enumCase;
                     }
-                }
-                else {
+                } else {
                     $this->$propertyName = $value;
                 }
                 return;
@@ -782,9 +809,11 @@ trait SerializerTrait
                         return;
                     }
                 }
-                if (isset($allowedTypes->allowedTypes[ReflectionClass::STRING]) && (is_string($value) || is_numeric(
+                if (
+                    isset($allowedTypes->allowedTypes[ReflectionClass::STRING]) && (is_string($value) || is_numeric(
                             $value
-                        ))) {
+                        ))
+                ) {
                     if ($sanitizeInput) {
                         $value = Datafilter::sanitizeInput($value);
                     }
@@ -848,9 +877,11 @@ trait SerializerTrait
             $typeToInstance = null;
             if ($allowedTypes->allowedTypesCount > 1) {
                 // by convention we need an objectType property in case of multiple types possible
-                if (isset($value->objectType) && isset(
+                if (
+                    isset($value->objectType) && isset(
                         ReflectionClass::getObjectTypeMigrations()[$value->objectType]
-                    )) {
+                    )
+                ) {
                     $value->objectType = ReflectionClass::getObjectTypeMigrations()[$value->objectType];
                 }
                 if (isset($value->objectType) && isset($allowedTypes->allowedTypes[$value->objectType])) {
@@ -867,11 +898,13 @@ trait SerializerTrait
                             $invalidClass = true;
                         }
 
-                        if (!$invalidClass && isset($value->objectType) && is_a(
+                        if (
+                            !$invalidClass && isset($value->objectType) && is_a(
                                 $value->objectType,
                                 $allowedType,
                                 true
-                            )) {
+                            )
+                        ) {
                             $typeToInstance = $value->objectType;
                             $validType = true;
                             break;
@@ -923,10 +956,14 @@ trait SerializerTrait
 
             try {
                 $entityFromCache = false;
-                if (DefaultObject::isEntity($typeToInstance) && isset($value->id) && $value->id && $cachedEntityInstance = SerializerRegistry::getInstanceForSetPropertiesFromObjectCache(
+                if (
+                    DefaultObject::isEntity(
+                        $typeToInstance
+                    ) && isset($value->id) && $value->id && $cachedEntityInstance = SerializerRegistry::getInstanceForSetPropertiesFromObjectCache(
                         $typeToInstance,
                         $value->id
-                    )) {
+                    )
+                ) {
                     $this->$propertyName = $cachedEntityInstance;
                     $entityFromCache = true;
                 } elseif ($typeToInstance) {
