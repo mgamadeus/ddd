@@ -157,6 +157,9 @@ class EntitySet extends ObjectSet
     {
         /** @var Entity $entityClass */
         $entityClass = self::getEntityClass();
+        if (!DefaultObject::isEntity($entityClass)){
+            return false;
+        }
         return $entityClass::dependsOn($entityOrSet);
     }
 

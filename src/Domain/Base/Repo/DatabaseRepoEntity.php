@@ -12,6 +12,7 @@ use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
+use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptionsTrait;
 use DDD\Domain\Base\Entities\StaticRegistry;
 use DDD\Domain\Base\Repo\DB\Attributes\DatabaseTranslation;
@@ -24,6 +25,7 @@ use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\ForbiddenException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
+use DDD\Infrastructure\Reflection\ReflectionAttribute;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Services\AuthService;
 use DDD\Infrastructure\Services\DDDService;
@@ -575,6 +577,25 @@ abstract class DatabaseRepoEntity extends RepoEntity
                 if ($propertyIsParent) {
                     continue;
                 }
+                $propertyReflectionClass = ReflectionClass::instance($value::class);
+                /** @var ReflectionAttribute[] $lazyloadRepoAttributes */
+                $lazyloadRepoAttributes = $propertyReflectionClass->getAttributes(LazyLoadRepo::class);
+                $propertyHasDBRepo = false;
+                foreach ($lazyloadRepoAttributes as $lazyloadRepoAttribute) {
+                    /** @var LazyLoadRepo $attributeInstance */
+                    $attributeInstance = $lazyloadRepoAttribute->newInstance();
+                    if (in_array(
+                        $attributeInstance->repoType,
+                        LazyLoadRepo::DATABASE_REPOS
+                    )){
+                        $propertyHasDBRepo = true;
+                        break;
+                    }
+                }
+                if (!$propertyHasDBRepo) {
+                    continue;
+                }
+                // We check if property has Database
                 // we cannot store an entity that depends on the current entity which is not yet stored
                 if ($value::dependsOn($entity)) {
                     if (!$entityAlreadyStored) {
@@ -599,11 +620,11 @@ abstract class DatabaseRepoEntity extends RepoEntity
                 $databaseRepoCLasses = $value::getDatabaseRelatedRepoClasses();
                 foreach ($databaseRepoCLasses as $repoClass) {
                     $repoInstance = $repoClass && class_exists($repoClass) ? new $repoClass() : null;
-                    $reflectionEntityAttribute = (ReflectionClass::instance($value::class))->getAttributes(
+                    $noRecursiveUpdateAttribute = $propertyReflectionClass->getAttributes(
                         NoRecursiveUpdate::class
                     );
 
-                    if ($repoInstance && empty($reflectionEntityAttribute)) {
+                    if ($repoInstance && empty($noRecursiveUpdateAttribute)) {
                         if (method_exists($repoInstance, 'update')) {
                             $updatedChildProperties[$propertyName] = true;
                             $updatedChild = $repoInstance->update($value, --$depth);
