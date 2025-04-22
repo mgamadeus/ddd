@@ -15,7 +15,7 @@ use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
 
-final class CorsListener implements EventSubscriberInterface
+class CorsListener implements EventSubscriberInterface
 {
     public static function getSubscribedEvents(): array
     {
@@ -38,7 +38,7 @@ final class CorsListener implements EventSubscriberInterface
         if ($response) {
             $response->headers->set('Access-Control-Allow-Origin', '*');
             $response->headers->set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-            $response->headers->set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+            $response->headers->set('Access-Control-Allow-Headers', '*');
         }
     }
 
@@ -69,7 +69,7 @@ final class CorsListener implements EventSubscriberInterface
         if ($response) {
             $response->headers->set('Access-Control-Allow-Origin', '*');
             $response->headers->set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-            $response->headers->set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+            $response->headers->set('Access-Control-Allow-Headers', '*');
         }
     }
 }
