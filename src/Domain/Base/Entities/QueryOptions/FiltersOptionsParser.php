@@ -290,7 +290,7 @@ class FiltersOptionsParser
         }
 
         // If the substring matches the token...
-        if ($substring === $token) {
+        if (strtolower($substring) === strtolower($token)) {
             // if we find a bracket, it is irrelevant what comes after
             $tIndex += $tokenLength;
             if (in_array($token, self::BRACKETS)) {
