@@ -4,11 +4,10 @@ declare (strict_types=1);
 
 namespace DDD\Symfony\EventListeners;
 
+use DDD\Infrastructure\Services\AuthService;
 use DDD\Domain\Base\Entities\BaseObject;
 use DDD\Infrastructure\Cache\Cache;
 use DDD\Infrastructure\Reflection\ReflectionClass;
-use DDD\Infrastructure\Reflection\ReflectionNamedType;
-use DDD\Infrastructure\Reflection\ReflectionUnionType;
 use DDD\Presentation\Base\Router\RouteAttributes\RequestCache;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -60,7 +59,7 @@ class RequestCacheSubscriber implements EventSubscriberInterface
         /** @var RequestCache $requestCacheAttributeInstance */
         $requestCacheAttributeInstance = $attrs[0]->newInstance();
         $ttl = $requestCacheAttributeInstance->ttl;
-        $key = $this->makeCacheKey($request, $requestCacheAttributeInstance->headersToConsiderForCacheKey);
+        $key = $this->makeCacheKey($request, $requestCacheAttributeInstance);
 
         // Check for 'noCache' query parameter: skip cache read when true
         $skipRead = filter_var($request->query->get('noCache'), FILTER_VALIDATE_BOOLEAN);
@@ -112,8 +111,7 @@ class RequestCacheSubscriber implements EventSubscriberInterface
                 if (is_a($property->getType()->getName(), BaseObject::class, true)) {
                     unset($response->{$property->getName()});
                 }
-            }
-            elseif ($property->getType() instanceof \ReflectionUnionType) {
+            } elseif ($property->getType() instanceof \ReflectionUnionType) {
                 $types = $property->getType()->getTypes();
                 foreach ($types as $type) {
                     if (is_a($type->getName(), BaseObject::class, true)) {
@@ -125,7 +123,7 @@ class RequestCacheSubscriber implements EventSubscriberInterface
         Cache::instance()->set($key, $response, $ttl);
     }
 
-    private function makeCacheKey(Request $req, array $headers): string
+    private function makeCacheKey(Request $req, RequestCache $requestCacheAttributeInstance): string
     {
         $method = $req->getMethod();
         $path = $req->getPathInfo();
@@ -138,16 +136,21 @@ class RequestCacheSubscriber implements EventSubscriberInterface
         }
 
         // Append whitelisted header values to the key
-        if ($headers) {
+        if ($requestCacheAttributeInstance->headersToConsiderForCacheKey) {
             $vals = [];
-            foreach ($headers as $h) {
-                if ($req->headers->has($h)) {
-                    $vals[$h] = $req->headers->get($h);
+            foreach ($requestCacheAttributeInstance->headersToConsiderForCacheKey as $header) {
+                if ($req->headers->has($header)) {
+                    $vals[$header] = $req->headers->get($header);
                 }
             }
             if ($vals) {
                 ksort($vals);
                 $path .= '|hdr:' . http_build_query($vals, '', ';');
+            }
+        }
+        if ($requestCacheAttributeInstance->considerCurrentAuthAccountForCacheKey) {
+            if ($authAccount = AuthService::instance()->getAccount()) {
+                $path .= '|account:' . $authAccount->id;
             }
         }
         // Use a hash to ensure a safe cache key
