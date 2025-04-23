@@ -108,7 +108,7 @@ class DoctrineEntityRegistry
         $return = isset(self::$entityRegistry[$registryIndex]) ? self::$entityRegistry[$registryIndex] : false;
         if ($return){
             // by cloning we want to avoid issues when reference is returned and the reference is manipulated somewhere else
-            return $return->clone();
+            return $return;
         }
 
         if ($return === false) {
