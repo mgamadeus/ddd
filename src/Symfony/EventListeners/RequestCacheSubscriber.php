@@ -150,7 +150,7 @@ class RequestCacheSubscriber implements EventSubscriberInterface
         }
         if ($requestCacheAttributeInstance->considerCurrentAuthAccountForCacheKey) {
             if ($authAccount = AuthService::instance()->getAccount()) {
-                $path .= '|account:' . $authAccount->id;
+                $path .= '|account:' . $authAccount;
             }
         }
         // Use a hash to ensure a safe cache key
