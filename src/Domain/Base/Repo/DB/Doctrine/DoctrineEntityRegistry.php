@@ -83,7 +83,7 @@ class DoctrineEntityRegistry
             }
         }
         // by cloning we want to avoid issues when reference is returned and the reference is manipulated somewhere else
-        self::$entityRegistry[$registryIndex] = $entity ? clone $entity: $entity;
+        self::$entityRegistry[$registryIndex] = $entity;
     }
 
     /**
