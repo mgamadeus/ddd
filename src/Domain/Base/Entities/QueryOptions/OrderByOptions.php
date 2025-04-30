@@ -114,7 +114,7 @@ class OrderByOptions extends ObjectSet
             $baseAlias = $orderBy?->getFiltersDefinition()?->getExpandDefinition() ? '' : $baseAlias;
             $orderByExpression = ($baseAlias ? $baseAlias . '.' : '') . $propertyName;
             if ($baseModelClass::isValidDatabaseExpression($orderByExpression, $baseModelClass)) {
-                $queryBuilder->orderBy($orderByExpression, $orderBy->direction);
+                $queryBuilder->addOrderBy($orderByExpression, $orderBy->direction);
             }
         }
         return $queryBuilder;
