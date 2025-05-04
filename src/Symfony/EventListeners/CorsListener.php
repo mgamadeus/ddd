@@ -36,9 +36,12 @@ class CorsListener implements EventSubscriberInterface
         }
         $response = $event->getResponse();
         if ($response) {
-            $response->headers->set('Access-Control-Allow-Origin', '*');
+            $origin = $event->getRequest()->headers->get('Origin') ?: '*';
+            $allowed = $event->getRequest()->headers->get('Access-Control-Request-Headers', '*');
+            $response->headers->set('Access-Control-Allow-Origin', $origin);
             $response->headers->set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-            $response->headers->set('Access-Control-Allow-Headers', '*');
+            $response->headers->set('Access-Control-Allow-Credentials', 'true');
+            $response->headers->set('Access-Control-Allow-Headers', $allowed);
         }
     }
 
@@ -54,6 +57,12 @@ class CorsListener implements EventSubscriberInterface
 
         if (Request::METHOD_OPTIONS === $method) {
             $response = new Response();
+            $origin = $request->headers->get('Origin') ?: '*';
+            $requestedHeaders = $request->headers->get('Access-Control-Request-Headers', '*');
+            $response->headers->set('Access-Control-Allow-Origin', $origin);
+            $response->headers->set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+            $response->headers->set('Access-Control-Allow-Credentials', 'true');
+            $response->headers->set('Access-Control-Allow-Headers', $requestedHeaders);
             $event->setResponse($response);
         }
     }
@@ -67,9 +76,12 @@ class CorsListener implements EventSubscriberInterface
 
         $response = $event->getResponse();
         if ($response) {
-            $response->headers->set('Access-Control-Allow-Origin', '*');
+            $origin = $event->getRequest()->headers->get('Origin') ?: '*';
+            $allowed = $event->getRequest()->headers->get('Access-Control-Request-Headers', '*');
+            $response->headers->set('Access-Control-Allow-Origin', $origin);
             $response->headers->set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-            $response->headers->set('Access-Control-Allow-Headers', '*');
+            $response->headers->set('Access-Control-Allow-Credentials', 'true');
+            $response->headers->set('Access-Control-Allow-Headers', $allowed);
         }
     }
 }
