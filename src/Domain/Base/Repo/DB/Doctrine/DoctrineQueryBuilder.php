@@ -229,6 +229,8 @@ class DoctrineQueryBuilder extends QueryBuilder
         // Duplicate the main query to create a subquery
         $mainQueryDQL = $this->getDQL();
         $query = $this->getQuery();
+        $query->setHint(\Doctrine\ORM\Query::HINT_FORCE_PARTIAL_LOAD, true);
+        $query->setHint(\Doctrine\ORM\Query::HINT_INCLUDE_META_COLUMNS, false);
         $mainQuerySQL = $query->getSQL();
 
         // We require parameterMapping to know the exact order of paramters

@@ -7,6 +7,7 @@ namespace DDD\Domain\Base\Entities\QueryOptions;
 use DDD\Domain\Base\Entities\ObjectSet;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Infrastructure\Exceptions\BadRequestException;
+use Doctrine\ORM\Query\Expr\Select;
 
 /**
  * @property SelectOption[] $elements
@@ -63,16 +64,24 @@ class SelectOptions extends ObjectSet
     public function applySelectToDoctrineQueryBuilder(
         DoctrineQueryBuilder &$queryBuilder,
         string $baseModelClass = '',
-        callable $mappingFunction = null
+        callable $mappingFunction = null,
+        ?string $baseModelAlias = null
     ): DoctrineQueryBuilder {
-        $alias = $baseModelClass::MODEL_ALIAS;
+        // if a baseModelAlias is provided, we are usually applying select options within expand options of of the following kind:
+        // expand=worldMembers(expand=world(select=id,name))
+        // these are applied in ExpandOptions->applyExpandOptionsToDoctrineQueryBuilder on the alias of the expanded entity, e.g.
+        // $join = "{$modelAlias}.$expandOption->propertyName";
+        // $queryBuilder->addSelect($expandOption->propertyName); // => here we need to get rid of the full entity on expansion and apply desired columns
+
+
+        $alias = $baseModelAlias ?? $baseModelClass::MODEL_ALIAS;
         $selectParts = $queryBuilder->getDQLPart('select');
 
         // Remove main alias selections from existing select parts
         if ($selectParts) {
             $filteredSelects = [];
             foreach ($selectParts as $exprSelect) {
-                if ($exprSelect instanceof \Doctrine\ORM\Query\Expr\Select) {
+                if ($exprSelect instanceof Select) {
                     $parts = $exprSelect->getParts();
                     $newParts = [];
                     foreach ($parts as $p) {
@@ -83,7 +92,7 @@ class SelectOptions extends ObjectSet
                         $newParts[] = $p;
                     }
                     if (!empty($newParts)) {
-                        $filteredSelects[] = new \Doctrine\ORM\Query\Expr\Select($newParts);
+                        $filteredSelects[] = new Select($newParts);
                     }
                 } else {
                     // For non-Select objects, if it's exactly the alias, skip it.
@@ -108,7 +117,17 @@ class SelectOptions extends ObjectSet
                 $propertyName = $mapping->propertyName;
             }
             // Build the fully qualified expression to validate it
-            $selectExpression = ($alias ? $alias . '.' : '') . $propertyName;
+            if (!$baseModelAlias) {
+                $selectExpression = ($alias ? $alias . '.' : '') . $propertyName;
+            }
+            else {
+                // in case we apply select options to a join $baseModelAlias is passed and usually does not correspond to
+                // the $baseModelClass::MODEL_ALIAS anymore
+                // e.g. left join Worlds world, alias: 'world' vs MODEL_ALIAS: 'World'
+                // so in this case we use the $baseModelClass::MODEL_ALIAS to contruct the select expression to check.
+                $tAlias = $baseModelClass ? $baseModelClass::MODEL_ALIAS : '';
+                $selectExpression = ($tAlias ? $tAlias . '.' : '') . $propertyName;
+            }
             if ($baseModelClass::isValidDatabaseExpression($selectExpression, $baseModelClass)) {
                 // In the partial clause, we only need the field name.
                 $selectFields[] = $propertyName;

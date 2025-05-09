@@ -238,6 +238,14 @@ class ExpandOptions extends ObjectSet
                 if (!$joinAlreadyExists) {
                     $queryBuilder->leftJoin("{$modelAlias}.$expandOption->propertyName", $expandOption->propertyName);
                 }
+                // Apply nested select options to the joined entity, if provided
+                if (isset($expandOption->selectOptions)) {
+                    $expandOption->selectOptions->applySelectToDoctrineQueryBuilder(
+                        queryBuilder: $queryBuilder,
+                        baseModelClass: $baseModelClass::getTargetModelClassForProperty($expandReflectionProperty),
+                        baseModelAlias: $expandOption->propertyName
+                    );
+                }
                 if (isset($expandOption->expandOptions)) {
                     // when property is a Collection, we need its Model class
                     $targetModel = $baseModelClass::getTargetModelClassForProperty($expandReflectionProperty);
