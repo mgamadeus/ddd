@@ -26,7 +26,8 @@ class GeoPoint extends ValueObject
     {
         $this->lat = max(-90, min(90, $lat));
         $this->lng = max(-180, min(180, $lng));
-        parent::__construct();
+        // intentionally leave out parent constructor call for performance reasons
+        //parent::__construct();
     }
 
     public function __toString(): string
@@ -34,7 +35,8 @@ class GeoPoint extends ValueObject
         return $this->lat . ',' . $this->lng;
     }
 
-    public static function fromString(string $lnglat): ?GeoPoint {
+    public static function fromString(string $lnglat): ?GeoPoint
+    {
         return self::fromLatLngString($lnglat);
     }
 
@@ -108,4 +110,29 @@ class GeoPoint extends ValueObject
         $point = Point::xy($this->lng, $this->lat);
         return $point;
     }
+
+    /**
+     * Method is custom implemented for efficiency
+     * @param $cached
+     * @param bool $returnUniqueKeyInsteadOfContent
+     * @param array $path
+     * @param bool $ignoreHideAttributes
+     * @param bool $ignoreNullValues
+     * @param bool $forPersistence
+     * @return mixed
+     */
+    public function toObject(
+        $cached = true,
+        bool $returnUniqueKeyInsteadOfContent = false,
+        array $path = [],
+        bool $ignoreHideAttributes = false,
+        bool $ignoreNullValues = true,
+        bool $forPersistence = true
+    ): mixed {
+        return [
+            'lat' => $this->lat,
+            'lng' => $this->lng,
+        ];
+    }
+
 }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Entities\LazyLoad;
 
-use App\Infrastructure\Services\AppService;
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
@@ -58,8 +57,12 @@ trait LazyLoadTrait
      */
     public function getRepoClassForProperty(string $repoType, string $propertyName): ?string
     {
-        if (isset(StaticRegistry::$repoClassesForProperties[static::class][$propertyName]) &&
-            array_key_exists($repoType, StaticRegistry::$repoClassesForProperties[static::class][$propertyName])) {
+        if (
+            isset(StaticRegistry::$repoClassesForProperties[static::class][$propertyName]) && array_key_exists(
+                $repoType,
+                StaticRegistry::$repoClassesForProperties[static::class][$propertyName]
+            )
+        ) {
             $t = StaticRegistry::$repoClassesForProperties;
             return StaticRegistry::$repoClassesForProperties[static::class][$propertyName][$repoType];
         }
@@ -72,10 +75,12 @@ trait LazyLoadTrait
         } elseif ($lazyloadAttributeInstance) {
             // get property type and try to get repo class from getRepoClass function, if property type has this function
             if ($targetPropertyEntityClassName = $lazyloadAttributeInstance->entityClassName) {
-                if ($targetPropertyEntityClassName && method_exists(
+                if (
+                    $targetPropertyEntityClassName && method_exists(
                         $targetPropertyEntityClassName,
                         'getRepoClass'
-                    )) {
+                    )
+                ) {
                     /** @var LazyLoadTrait $targetPropertyEntityClassName */
                     $repoClass = $targetPropertyEntityClassName::getRepoClass($repoType);
                 }
@@ -84,8 +89,7 @@ trait LazyLoadTrait
             $property = new ReflectionProperty($this, $propertyName);
             $propertyType = $property->getType();
             if (
-                $propertyType && !$propertyType->isBuiltin(
-                ) && $propertyType instanceof ReflectionNamedType && method_exists(
+                $propertyType && !$propertyType->isBuiltin() && $propertyType instanceof ReflectionNamedType && method_exists(
                     $propertyType->getName(),
                     'getRepoClass'
                 )
@@ -113,8 +117,7 @@ trait LazyLoadTrait
             $property = new ReflectionProperty($this, $propertyName);
             $propertyType = $property->getType();
             if (
-                $propertyType && !$propertyType->isBuiltin() &&
-                $propertyType instanceof ReflectionNamedType
+                $propertyType && !$propertyType->isBuiltin() && $propertyType instanceof ReflectionNamedType
             ) {
                 $lazyInstancePropertyClass = $propertyType->getName();
                 $instance = new $lazyInstancePropertyClass();
@@ -159,9 +162,11 @@ trait LazyLoadTrait
                     $repoClassReflection = ReflectionClass::instance($repoClass);
                     if (DDDService::instance()::$noCache) {
                         $lazyloadAttributeInstance->useCache = false;
-                    } elseif ($lazyloadAttributeInstance->useCache && $entityCacheAttributeInstance = $repoClassReflection->getAttributeInstance(
+                    } elseif (
+                        $lazyloadAttributeInstance->useCache && $entityCacheAttributeInstance = $repoClassReflection->getAttributeInstance(
                             EntityCache::class
-                        )) {
+                        )
+                    ) {
                         /** @var EntityCache $entityCacheAttributeInstance */
                         if ($entityCacheAttributeInstance->cacheScopes) {
                             /** @var CacheScopeInvalidationsService $cacheScopeServiceClass */
@@ -227,9 +232,11 @@ trait LazyLoadTrait
                             // check if $propertyOfCurrentTypeName is not equal to propertyName
                             // e.g. parentWorld, cause this way we mss up references, parent World would have as parentWorld put the Child World
                             if ($propertyOfCurrentTypeName != $propertyName) {
-                                if (!isset($lazyLoadedEntity->$propertyOfCurrentTypeName) || is_null(
+                                if (
+                                    !isset($lazyLoadedEntity->$propertyOfCurrentTypeName) || is_null(
                                         $lazyLoadedEntity->$propertyOfCurrentTypeName
-                                    )) {
+                                    )
+                                ) {
                                     $instanceAddedToParent = true;
                                     $lazyLoadedEntity->$propertyOfCurrentTypeName = $this;
                                     $lazyLoadedEntity->addChildren($this);
@@ -240,14 +247,18 @@ trait LazyLoadTrait
                         if (!$instanceAddedToParent && DefaultObject::isEntity($this)) {
                             /** @var Entity $this */
                             if ($entitySetClass = $this::getEntitySetClass()) {
-                                if ($propertyOfCurrentSetType = $lazyLoadedEntity->getPropertyOfType(
-                                    $entitySetClass
-                                )) {
+                                if (
+                                    $propertyOfCurrentSetType = $lazyLoadedEntity->getPropertyOfType(
+                                        $entitySetClass
+                                    )
+                                ) {
                                     $propertyOfCurrentSetTypeName = $propertyOfCurrentSetType->getName();
                                     // property of current EntitySet type exists but is not instantiated
-                                    if (!isset($lazyLoadedEntity->$propertyOfCurrentSetTypeName) || is_null(
+                                    if (
+                                        !isset($lazyLoadedEntity->$propertyOfCurrentSetTypeName) || is_null(
                                             $lazyLoadedEntity->$propertyOfCurrentSetTypeName
-                                        )) {
+                                        )
+                                    ) {
                                         /** @var EntitySet $entitySetInstance */
                                         $entitySetInstance = new $entitySetClass();
                                         $lazyLoadedEntity->$propertyOfCurrentSetTypeName = $entitySetInstance;
@@ -277,13 +288,12 @@ trait LazyLoadTrait
      */
     public static function getPropertiesToLazyLoad(): array
     {
-        $currentClassName = DDDService::instance()->getContainerServiceClassNameForClass(static::class);
-
-        $propertiesToLazyLoad = StaticRegistry::$propertiesToLazyLoadForClasses[$currentClassName] ?? null;
-        if ($propertiesToLazyLoad) {
-            return $propertiesToLazyLoad;
+        if (isset(StaticRegistry::$propertiesToLazyLoadForClasses[static::class])) {
+            return StaticRegistry::$propertiesToLazyLoadForClasses[static::class];
         }
-        StaticRegistry::$propertiesToLazyLoadForClasses[$currentClassName] = [];
+        StaticRegistry::$propertiesToLazyLoadForClasses[static::class] = [];
+
+        $currentClassName = DDDService::instance()->getContainerServiceClassNameForClass(static::class);
         $reflectionClass = ReflectionClass::instance($currentClassName);
         $properties = $reflectionClass->getProperties(ReflectionProperty::IS_PUBLIC);
         foreach ($properties as $property) {
@@ -292,8 +302,8 @@ trait LazyLoadTrait
             foreach ($property->getAttributes(LazyLoad::class) as $attribute) {
                 /** @var LazyLoad $lazyloadAttributeInstance */
                 $lazyloadAttributeInstance = $attribute->newInstance();
-                if (!isset(StaticRegistry::$propertiesToLazyLoadForClasses[$currentClassName][$propertyName])) {
-                    StaticRegistry::$propertiesToLazyLoadForClasses[$currentClassName][$propertyName] = [];
+                if (!isset(StaticRegistry::$propertiesToLazyLoadForClasses[static::class][$propertyName])) {
+                    StaticRegistry::$propertiesToLazyLoadForClasses[static::class][$propertyName] = [];
                 }
 
                 // if we have a repository defined that matches the Autoloading Definition, and the property is not already set,
@@ -302,14 +312,14 @@ trait LazyLoadTrait
                 if (!($property->hasDefaultValue() && $property->getDefaultValue() !== null)) {
                     if ($lazyloadAttributeInstance->createInstanceWithoutLoading) {
                         // we dont need a repository, as we only create an instance in a lazy fashion
-                        StaticRegistry::$propertiesToLazyLoadForClasses[$currentClassName][$propertyName]['lazyInstance'] = $lazyloadAttributeInstance;
+                        StaticRegistry::$propertiesToLazyLoadForClasses[static::class][$propertyName]['lazyInstance'] = $lazyloadAttributeInstance;
                     } else {
-                        StaticRegistry::$propertiesToLazyLoadForClasses[$currentClassName][$propertyName][$lazyloadAttributeInstance->repoType] = $lazyloadAttributeInstance;
+                        StaticRegistry::$propertiesToLazyLoadForClasses[static::class][$propertyName][$lazyloadAttributeInstance->repoType] = $lazyloadAttributeInstance;
                     }
                 }
             }
         }
-        return StaticRegistry::$propertiesToLazyLoadForClasses[$currentClassName];
+        return StaticRegistry::$propertiesToLazyLoadForClasses[static::class];
     }
 
     /**
@@ -320,8 +330,7 @@ trait LazyLoadTrait
      */
     public static function getRepoClass(
         ?string $repoType = null
-    ): ?string
-    {
+    ): ?string {
         $currentClassName = static::class;
         $defaultRepoType = LazyLoadRepo::getDafaultRepoType();
         if (!isset(StaticRegistry::$repoTypesForClasses[$currentClassName])) {
@@ -377,8 +386,7 @@ trait LazyLoadTrait
      * @param string|null $repoType
      * @return RepoEntity|DatabaseRepoEntity|null
      */
-    public static function getRepoClassInstance(?string $repoType = null
-    ): RepoEntity|DatabaseRepoEntity|DatabaseRepoEntitySet|null
+    public static function getRepoClassInstance(?string $repoType = null): RepoEntity|DatabaseRepoEntity|DatabaseRepoEntitySet|null
     {
         $repoClass = self::getRepoClass($repoType);
         if ($repoClass) {
@@ -413,8 +421,7 @@ trait LazyLoadTrait
     public function lazyLoadProperties(
         array $propertiesToBeLoaded,
         array $callStack = []
-    ): void
-    {
+    ): void {
         if (isset($callStack[spl_object_id($this)])) {
             return;
         }
@@ -487,10 +494,12 @@ trait LazyLoadTrait
         if ($propertiesToBeLoadedIteratively) {
             foreach ($this->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
                 $propertyName = $property->getName();
-                if (isset($this->$propertyName) && is_object($this->$propertyName) && method_exists(
+                if (
+                    isset($this->$propertyName) && is_object($this->$propertyName) && method_exists(
                         $this->$propertyName,
                         'lazyLoadProperties'
-                    )) {
+                    )
+                ) {
                     $this->$propertyName->lazyLoadProperties($propertiesToBeLoadedIteratively, $callStack);
                 }
             }
