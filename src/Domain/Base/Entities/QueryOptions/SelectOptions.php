@@ -74,37 +74,33 @@ class SelectOptions extends ObjectSet
         // $queryBuilder->addSelect($expandOption->propertyName); // => here we need to get rid of the full entity on expansion and apply desired columns
 
 
+        // Determine the alias to filter out using the provided baseModelAlias or the default MODEL_ALIAS.
         $alias = $baseModelAlias ?? $baseModelClass::MODEL_ALIAS;
+        // Retrieve existing SELECT parts from the query builder
         $selectParts = $queryBuilder->getDQLPart('select');
-
-        // Remove main alias selections from existing select parts
         if ($selectParts) {
-            $filteredSelects = [];
+            // Initialize an array to hold filtered select expressions
+            $filteredParts = [];
+            // Iterate through each select expression
             foreach ($selectParts as $exprSelect) {
+                // If this is a Select object, process its parts
                 if ($exprSelect instanceof Select) {
-                    $parts = $exprSelect->getParts();
-                    $newParts = [];
-                    foreach ($parts as $p) {
-                        // Remove parts that exactly equal the main alias (e.g. "Track")
-                        if ($p === $alias) {
-                            continue;
+                    foreach ($exprSelect->getParts() as $part) {
+                        // Exclude the main alias to avoid selecting the entire entity
+                        if ($part !== $alias) {
+                            $filteredParts[] = $part;
                         }
-                        $newParts[] = $p;
                     }
-                    if (!empty($newParts)) {
-                        $filteredSelects[] = new Select($newParts);
-                    }
-                } else {
-                    // For non-Select objects, if it's exactly the alias, skip it.
-                    if (is_string($exprSelect) && $exprSelect === $alias) {
-                        continue;
-                    }
-                    $filteredSelects[] = $exprSelect;
+                } elseif (is_string($exprSelect) && $exprSelect !== $alias) {
+                    // For plain string expressions, exclude the alias and keep the rest
+                    $filteredParts[] = $exprSelect;
                 }
             }
+            // Reset the SELECT clause to clear existing selections
             $queryBuilder->resetDQLPart('select');
-            foreach ($filteredSelects as $fs) {
-                $queryBuilder->add('select', $fs);
+            // Re-add filtered parts using addSelect(), preserving multiple selection expressions
+            foreach ($filteredParts as $part) {
+                $queryBuilder->addSelect($part);
             }
         }
 
