@@ -6,6 +6,7 @@ namespace DDD\Domain\Base\Entities\Translatable;
 
 use Attribute;
 use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
+use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Validation\Constraints\Choice;
@@ -421,5 +422,21 @@ class Translatable extends ValueObject
             $input = str_replace("%$placeholder%", (string)$value, $input);
         }
         return $input;
+    }
+
+    /**
+     * Sets the visibility of the translation information.
+     *
+     * @param bool $visible Determines whether the translation information should be visible.
+     *                      If true, the translation info will be shown; otherwise, it will be hidden.
+     * @return void
+     */
+    public static function setTranslationInfosVisibility(bool $visible): void
+    {
+        if ($visible) {
+            DefaultObject::removeStaticPropertiesToHide(false, 'translationInfos');
+        } else {
+            DefaultObject::addStaticPropertiesToHide(false, 'translationInfos');
+        }
     }
 }

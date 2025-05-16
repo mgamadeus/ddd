@@ -88,6 +88,9 @@ class TranslationInfos extends ValueObject
      */
     public function getTranslationsForProperty(string $propertyName, bool $forPersistence = false): ?array
     {
+        if (!$this->getParent()) {
+            return null;
+        }
         if (!property_exists($this->getParent(), $propertyName)) {
             return null;
         }
@@ -104,8 +107,7 @@ class TranslationInfos extends ValueObject
             $translations = array_merge($translations, $this->translationsStore[$propertyName]);
         }
         if (isset($this->getParent()->$propertyName) && $this->getParent()->$propertyName !== null && $forPersistence) {
-            $translations[Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
-            )] = $this->getParent()->$propertyName;
+            $translations[Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle()] = $this->getParent()->$propertyName;
         }
         return $translations;
     }
@@ -119,6 +121,9 @@ class TranslationInfos extends ValueObject
      */
     public function setTranslationsForProperty(string $propertyName, array $translations): void
     {
+        if (!$this->getParent()) {
+            return;
+        }
         if (!property_exists($this->getParent(), $propertyName)) {
             return;
         }
@@ -152,6 +157,9 @@ class TranslationInfos extends ValueObject
         ?string $countryCode = null,
         ?string $writingStyle = null
     ): void {
+        if (!$this->getParent()) {
+            return;
+        }
         if (!property_exists($this->getParent(), $propertyName)) {
             return;
         }
@@ -189,7 +197,7 @@ class TranslationInfos extends ValueObject
         ?string $writingStyle = null,
         bool $useFallBack = false
     ): ?string {
-        if (!property_exists($this->getParent(), $propertyName)) {
+        if (!($this->getParent() && property_exists($this->getParent(), $propertyName))) {
             return null;
         }
         $key = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(

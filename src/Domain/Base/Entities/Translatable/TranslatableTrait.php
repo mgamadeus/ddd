@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Entities\Translatable;
 
+use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\ParentChildrenTrait;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
-use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
+use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 
 trait TranslatableTrait
 {
@@ -16,7 +17,6 @@ trait TranslatableTrait
      * @var TranslationInfos|null Holds information about translations
      */
     #[DatabaseColumn(ignoreProperty: true)]
-    #[HideProperty]
     public ?TranslationInfos $translationInfos;
 
     public function getTranslationInfos(): TranslationInfos

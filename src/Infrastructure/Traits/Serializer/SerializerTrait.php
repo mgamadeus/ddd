@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Traits\Serializer;
 
-use App\Presentation\Api\Client\Presence\Locations\Dtos\LocationGetRequestDto;
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\ObjectSet;
+use DDD\Domain\Base\Entities\StaticRegistry;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\Arr;
@@ -38,6 +38,12 @@ trait SerializerTrait
      */
     protected $propertiesToHide = [];
 
+    /**
+     * @var array Properties that will not be exposed to frontend, allows dynamically remove
+     * properties vivibility instead of applying HideProperty attribute
+     */
+    protected static $staticPropertiesToHide = [];
+
     public function addPropertiesToHide(string ...$properties): void
     {
         foreach ($properties as $property) {
@@ -52,6 +58,45 @@ trait SerializerTrait
                 unset($this->propertiesToHide[$property]);
             }
         }
+    }
+
+    public static function addStaticPropertiesToHide(bool $forCurrentClass = true, string ...$properties): void
+    {
+        $className = $forCurrentClass ? static::class : self::class;
+        foreach ($properties as $property) {
+            StaticRegistry::$propertiesToHideOnSerialization[$className . '_' . $property] = true;
+        }
+    }
+
+    public static function removeStaticPropertiesToHide(bool $forCurrentClass = true, string ...$properties): void
+    {
+        $className = $forCurrentClass ? static::class : self::class;
+        foreach ($properties as $property) {
+            if (isset(StaticRegistry::$propertiesToHideOnSerialization[$className . '_' . $property])) {
+                unset(StaticRegistry::$propertiesToHideOnSerialization[$className . '_' . $property]);
+            }
+        }
+    }
+
+    /**
+     * Returns false if propertyName is hidden based on class properties and static properties
+     * @param string $propertyName
+     * @return bool
+     */
+    public function isPropertyVisible(string $propertyName): bool
+    {
+        if (isset($this->propertiesToHide[$propertyName])) {
+            return false;
+        }
+        // handle current class
+        if (isset(StaticRegistry::$propertiesToHideOnSerialization[static::class . '_' . $propertyName])) {
+            return false;
+        }
+        // handle all inheritants of base class using trait
+        if (isset(StaticRegistry::$propertiesToHideOnSerialization[self::class . '_' . $propertyName])) {
+            return false;
+        }
+        return true;
     }
 
     public function unset(string $propertyName)
@@ -162,7 +207,11 @@ trait SerializerTrait
                 (!$ignoreNullValues && $property->isInitialized($this) && $property->isPublic() && !$property->isStatic(
                     )) || ($ignoreNullValues && isset($this->$propertyName))
             ) { // we process only properties that are initialized
-                if (!$ignoreHideAttributes && $property->getAttributes(HideProperty::class) || isset($this->propertiesToHide[$propertyName])) {
+                if (
+                    !$ignoreHideAttributes && $property->getAttributes(
+                        HideProperty::class
+                    ) || !$this->isPropertyVisible($propertyName)
+                ) {
                     continue;
                 }
                 if (!$forPersistence && $property->getAttributes(DontPersistProperty::class)) {
@@ -412,7 +461,7 @@ trait SerializerTrait
         return $return;
     }
 
-    public function __unserialize($data)
+    public function __unserialize($data): void
     {
         $unserialized = $data;//unserialize($data);
         foreach ($unserialized['properties'] as $key => $value) {
