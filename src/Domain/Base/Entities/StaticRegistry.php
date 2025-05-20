@@ -61,4 +61,9 @@ class StaticRegistry
      * @var array <className>_<spropertyName>, properties stored here are not exposed on SerializerTrait toObejct method
      */
     public static $propertiesToHideOnSerialization = [];
+
+    /**
+     * @var array <className> => array of properties, properties that have Translatable attribute
+     */
+    public static $translatableProperties = [];
 }

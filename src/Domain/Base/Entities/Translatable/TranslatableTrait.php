@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Entities\Translatable;
 
-use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\ParentChildrenTrait;
+use DDD\Domain\Base\Entities\StaticRegistry;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
-use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
+use DDD\Infrastructure\Reflection\ReflectionClass;
+use DDD\Infrastructure\Reflection\ReflectionProperty;
+use ReflectionException;
 
 trait TranslatableTrait
 {
@@ -95,5 +97,26 @@ trait TranslatableTrait
         bool $useFallBack = false
     ): ?string {
         return $this->getTranslationInfos()->getTranslationForProperty($propertyName, $languageCode, $countryCode, $writingStyle);
+    }
+
+    /**
+     * Returns all properties with Translatable attribute
+     * @return ReflectionProperty[]
+     * @throws ReflectionException
+     */
+    public function getTranslatableProperties(): array
+    {
+        if (isset(StaticRegistry::$translatableProperties[static::class])) {
+            return StaticRegistry::$translatableProperties[static::class];
+        }
+        $refectionClass = ReflectionClass::instance(static::class);
+        $translatableProperties = [];
+        foreach ($refectionClass->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
+            if ($property->hasAttribute(Translatable::class)) {
+                $translatableProperties[] = $property;
+            }
+        }
+        StaticRegistry::$translatableProperties[static::class] = $translatableProperties;
+        return StaticRegistry::$translatableProperties[static::class];
     }
 }
