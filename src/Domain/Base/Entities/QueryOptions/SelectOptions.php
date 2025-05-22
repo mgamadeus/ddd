@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Entities\QueryOptions;
 
 use DDD\Domain\Base\Entities\ObjectSet;
+use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use Doctrine\ORM\Query\Expr\Select;
@@ -124,6 +125,7 @@ class SelectOptions extends ObjectSet
                 $tAlias = $baseModelClass ? $baseModelClass::MODEL_ALIAS : '';
                 $selectExpression = ($tAlias ? $tAlias . '.' : '') . $propertyName;
             }
+            /** @var DoctrineModel $baseModelClass */
             if ($baseModelClass::isValidDatabaseExpression($selectExpression, $baseModelClass)) {
                 // In the partial clause, we only need the field name.
                 $selectFields[] = $propertyName;

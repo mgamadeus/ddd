@@ -154,8 +154,7 @@ class ExpandOptions extends ObjectSet
                                 $targetPropertyClass
                             );
                         }
-                    }
-                    catch (BadRequestException $e) {
+                    } catch (BadRequestException $e) {
                         $validationError = $e;
                     }
                     // If we have an EntitySet, we also consider the particular Entity classes from its elements
@@ -170,8 +169,7 @@ class ExpandOptions extends ObjectSet
                                 $targetPropertyClass
                             );
                         }
-                    }
-                    elseif ($validationError) {
+                    } elseif ($validationError) {
                         throw $validationError;
                     }
                 }
@@ -241,6 +239,13 @@ class ExpandOptions extends ObjectSet
                 // Apply nested select options to the joined entity, if provided
                 if (isset($expandOption->selectOptions)) {
                     $expandOption->selectOptions->applySelectToDoctrineQueryBuilder(
+                        queryBuilder: $queryBuilder,
+                        baseModelClass: $baseModelClass::getTargetModelClassForProperty($expandReflectionProperty),
+                        baseModelAlias: $expandOption->propertyName
+                    );
+                }
+                if (isset($expandOption->filters)) {
+                    $expandOption->filters->applyFiltersToDoctrineQueryBuilder(
                         queryBuilder: $queryBuilder,
                         baseModelClass: $baseModelClass::getTargetModelClassForProperty($expandReflectionProperty),
                         baseModelAlias: $expandOption->propertyName

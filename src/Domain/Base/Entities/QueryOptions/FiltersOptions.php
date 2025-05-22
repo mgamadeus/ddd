@@ -425,13 +425,15 @@ class FiltersOptions extends ObjectSet
     public function applyFiltersToDoctrineQueryBuilder(
         DoctrineQueryBuilder &$queryBuilder,
         string $baseModelClass,
-        callable $mappingFunction = null
+        callable $mappingFunction = null,
+        ?string $baseModelAlias = null
     ): DoctrineQueryBuilder {
         /** @var DoctrineModel $baseModelClass */
         $expression = $this->getFiltersExpressionForDoctrineQueryBuilder(
             $queryBuilder,
             (string)$baseModelClass,
-            $mappingFunction
+            $mappingFunction,
+            $baseModelAlias
         );
         $queryBuilder->andWhere($expression);
         return $queryBuilder;
@@ -440,10 +442,9 @@ class FiltersOptions extends ObjectSet
     protected function getFiltersExpressionForDoctrineQueryBuilder(
         DoctrineQueryBuilder &$queryBuilder,
         string $baseModelClass,
-        callable $mappingFunction = null
+        callable $mappingFunction = null,
+        ?string $baseModelAlias = null
     ): Expr\Orx|Expr\Andx|Expr\Comparison|Expr\Func|string|null {
-        /** @var DoctrineModel $baseModelClass */
-        $baseAlias = $baseModelClass::MODEL_ALIAS;
         if ($this->type == self::TYPE_OPERATION) {
             $operator = $this->joinOperator == self::JOIN_OPERATOR_AND ? 'andX' : 'orX';
             $epxressions = [];
@@ -454,7 +455,8 @@ class FiltersOptions extends ObjectSet
                 $childExpression = $filtersOptions->getFiltersExpressionForDoctrineQueryBuilder(
                     $queryBuilder,
                     $baseModelClass,
-                    $mappingFunction
+                    $mappingFunction,
+                    $baseModelAlias
                 );
                 if ($childExpression) {
                     $childExpressions[] = $childExpression;
@@ -475,10 +477,15 @@ class FiltersOptions extends ObjectSet
                     $operator = 'notLike';
                 }
             }
-
-            // if filter is based on a expand property, alias has to be empty as otherwise the base alias would be
-            // added to the query, e.g. filter is 'expandProperty.name' => then no alias is needed
-            $baseAlias = $this?->getFiltersDefinition()?->getExpandDefinition() ? '' : $baseAlias;
+            /** @var DoctrineModel $baseModelClass */
+            if ($this?->getFiltersDefinition()?->getExpandDefinition()){
+                // if filter is based on a expand property, alias has to be empty as otherwise the base alias would be
+                // added to the query, e.g. filter is 'expandProperty.name' => then no alias is needed
+                $baseAlias = '';
+            }
+            else {
+                $baseAlias = $baseModelAlias ?? $baseModelClass::MODEL_ALIAS;
+            }
 
             // avoid putting '.' if baseAlias is ''
             $baseAliasApplied = $baseAlias ? $baseAlias . '.' : '';
@@ -498,9 +505,22 @@ class FiltersOptions extends ObjectSet
                 return $queryBuilder->expr()->$operator("{$baseAliasApplied}{$propertyName}");
             }
             // if filter is not based on expand definition, we check if expression is valid for Model
+            // Build the fully qualified expression to validate it
+            if (!$baseModelAlias) {
+                $filterExpression = $baseAliasApplied . $propertyName;
+            }
+            else {
+                // in case we apply filter options to an expand, $baseModelAlias is passed and usually does not correspond to
+                // the $baseModelClass::MODEL_ALIAS anymore
+                // e.g. left join Worlds world, alias: 'world' vs MODEL_ALIAS: 'World'
+                // so in this case we use the $baseModelClass::MODEL_ALIAS to contruct the select expression to check.
+                $tAlias = $baseModelClass ? $baseModelClass::MODEL_ALIAS : '';
+                $filterExpression = ($tAlias ? $tAlias . '.' : '') . $propertyName;
+            }
+            /** @var DoctrineModel $baseModelClass */
             if (
                 !$this?->getFiltersDefinition()?->getExpandDefinition() && !$baseModelClass::isValidDatabaseExpression(
-                    $baseAliasApplied . $propertyName
+                    $filterExpression
                 )
             ) {
                 return null;

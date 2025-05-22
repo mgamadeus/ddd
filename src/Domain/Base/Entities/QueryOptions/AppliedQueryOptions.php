@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Entities\QueryOptions;
 
 use DDD\Domain\Base\Entities\ValueObject;
+use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Presentation\Base\Dtos\RequestDto;
 use DDD\Presentation\Base\QueryOptions\DtoQueryOptionsTrait;
 
@@ -113,47 +114,87 @@ class AppliedQueryOptions extends ValueObject
      * @param FiltersOptions $filters
      * @return AppliedQueryOptions
      */
-    public function setFilters(?FiltersOptions &$filters = null): AppliedQueryOptions
+    /**
+     * @param FiltersOptions|null $filters
+     * @param bool $validateAgainstDefinitions if true, validates against definitions and sets FiltersDefinitions recursively
+     * @return $this
+     * @throws BadRequestException
+     */
+    public function setFilters(?FiltersOptions &$filters = null, bool $validateAgainstDefinitions = true): AppliedQueryOptions
     {
         $this->filters = $filters;
         // filters need filter definitions also attached to them
         $filtersDefinitions = $this->getFiltersDefinitions();
         if ($filtersDefinitions) {
             $this->filters?->setFiltersDefinitionsForAllFilterOptions($filtersDefinitions);
+            if ($this->filters && $validateAgainstDefinitions) {
+                $expandOptions = isset($this->expand) ? $this->expand : null;
+                $this->filters->validateAgainstDefinitions($filtersDefinitions, $expandOptions);
+            }
         }
         return $this;
     }
 
     /**
-     * Sets expand options to be applied.
-     * @param ExpandOptions $expand
-     * @return AppliedQueryOptions
+     * @param ExpandOptions|null $expand
+     * @param bool $validateAgainstDefinitions if true, validates against definitions and sets FiltersDefinitions recursively
+     * @return $this
+     * @throws BadRequestException
      */
-    public function setExpand(?ExpandOptions &$expand = null): AppliedQueryOptions
+    public function setExpand(?ExpandOptions &$expand = null, bool $validateAgainstDefinitions = true): AppliedQueryOptions
     {
         $this->expand = $expand;
+        if ($this->expand && $validateAgainstDefinitions) {
+            $this->expand->validateAgainstDefinitionsFromReferenceClass($this->referenceClass);
+        }
         return $this;
     }
 
     /**
-     * Sets orderBy options to be applied.
-     * @param OrderByOptions $orderBy
-     * @return AppliedQueryOptions
+     * @param OrderByOptions|null $orderBy
+     * @param bool $validateAgainstDefinitions if true, validates against definitions and sets FiltersDefinitions recursively
+     * @return $this
+     * @throws BadRequestException
      */
-    public function setOrderBy(?OrderByOptions &$orderBy = null): AppliedQueryOptions
+    public function setOrderBy(?OrderByOptions &$orderBy = null, bool $validateAgainstDefinitions = true): AppliedQueryOptions
     {
         $this->orderBy = $orderBy;
+        if ($this->orderBy && $validateAgainstDefinitions) {
+            $this->orderBy->validateAgainstDefinitions($this->getOrderByDefinitions());
+            // Set filters definitions for OrderBy options based on filters.
+            if ($this->getFiltersDefinitions()) {
+                foreach ($this->orderBy->getElements() as $orderByOption) {
+                    if ($filterDefinition = $this->getFiltersDefinitions()->getFilterDefinitionForPropertyName(
+                        $orderByOption->propertyName
+                    )) {
+                        $orderByOption->setFiltersDefinition($filterDefinition);
+                    }
+                }
+            }
+        }
         return $this;
     }
 
     /**
-     * Sets select options to be applied.
-     * @param SelectOptions $select
-     * @return AppliedQueryOptions
+     * @param SelectOptions|null $select
+     * @param bool $validateAgainstDefinitions if true, validates against definitions and sets FiltersDefinitions recursively
+     * @return $this
      */
-    public function setSelect(?SelectOptions &$select = null): AppliedQueryOptions
+    public function setSelect(?SelectOptions &$select = null, bool $validateAgainstDefinitions = true): AppliedQueryOptions
     {
         $this->select = $select;
+        if ($this->select && $validateAgainstDefinitions) {
+            if ($this->getFiltersDefinitions()) {
+                // Set filters definitions for Select options based on filters.
+                foreach ($this->select->getElements() as $selectOption) {
+                    if ($filterDefinition = $this->getFiltersDefinitions()->getFilterDefinitionForPropertyName(
+                        $selectOption->propertyName
+                    )) {
+                        $selectOption->setFiltersDefinition($filterDefinition);
+                    }
+                }
+            }
+        }
         return $this;
     }
 
@@ -232,17 +273,19 @@ class AppliedQueryOptions extends ValueObject
         if (isset($requestDto->skiptoken)) {
             $this->setSkiptoken($requestDto->skiptoken);
         }
+        // on filters, orderBy, epand and select we set validateAgainstDefinitions to false here, as in the DtoQueryOptionsTrait
+        // this is already done
         if (isset($requestDto->filters)) {
-            $this->setFilters($requestDto->filters);
+            $this->setFilters($requestDto->filters, false);
         }
         if (isset($requestDto->orderBy)) {
-            $this->setOrderBy($requestDto->orderBy);
+            $this->setOrderBy($requestDto->orderBy, false);
         }
         if (isset($requestDto->expand)) {
-            $this->setExpand($requestDto->expand);
+            $this->setExpand($requestDto->expand, false);
         }
         if (isset($requestDto->select)) {
-            $this->setSelect($requestDto->select);
+            $this->setSelect($requestDto->select, false);
         }
         return $this;
     }
@@ -276,11 +319,9 @@ class AppliedQueryOptions extends ValueObject
 
     public function uniqueKey(): string
     {
-        $key = ($this->getTop()) . '_' .
-            ($this->getSkip()) . '_' .
-            (isset($this->orderBy) ? ($this->orderBy?->uniqueKey() ?? '') : '') . '_' .
-            (isset($this->filters) ? ($this->filters->uniqueKey() ?? '') : '') . '_' .
-            (isset($this->select) ? ($this->select->uniqueKey() ?? '') : '');
+        $key = ($this->getTop()) . '_' . ($this->getSkip()) . '_' . (isset($this->orderBy) ? ($this->orderBy?->uniqueKey(
+            ) ?? '') : '') . '_' . (isset($this->filters) ? ($this->filters->uniqueKey() ?? '') : '') . '_' . (isset($this->select) ? ($this->select->uniqueKey(
+            ) ?? '') : '');
         $key = md5($key);
         return self::uniqueKeyStatic($key);
     }
