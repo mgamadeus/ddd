@@ -32,7 +32,8 @@ class CronsExecute extends Command
         ]);
         Crons::getService()->cleanupCronExecutions();
         $crons = Crons::getService()->getCronsScheduledForExecution();
-        $cronExecutions = $crons->execute();
+
+        $cronExecutions = $crons->execute(360);
 
 
         $table = new Table($output);

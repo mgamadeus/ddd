@@ -31,17 +31,18 @@ class Crons extends EntitySet
 
     /**
      * Executes all Crons and returns CronExecutions
+     * @param int $timeoutPerCronInSeconds
      * @return CronExecutions
      * @throws BadRequestException
      * @throws InternalErrorException
      * @throws InvalidArgumentException
      * @throws ReflectionException
      */
-    public function execute(): CronExecutions
+    public function execute(int $timeoutPerCronInSeconds = 60): CronExecutions
     {
         $cronExecutions = new CronExecutions();
         foreach ($this->getElements() as $cron) {
-            $cronExecution = $cron->execute();
+            $cronExecution = $cron->execute($timeoutPerCronInSeconds);
             if ($cronExecution) {
                 $cronExecutions->add($cronExecution);
             }
