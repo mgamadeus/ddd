@@ -64,8 +64,7 @@ class DBEntity extends DatabaseRepoEntity
                 return null;
             }
             return $this->find($selfID, $lazyloadAttributeInstance->useCache);
-        }
-        else {
+        } else {
             $queryBuilder = DBEntitySet::getQueryBuilderForLazyload(static::class, $initiatingEntity, $lazyloadAttributeInstance);
             if (!$queryBuilder) {
                 return null;
@@ -82,8 +81,7 @@ class DBEntity extends DatabaseRepoEntity
     public function mapToEntity(
         bool $useEntityRegistryCache = true,
         array $initiatorClasses = []
-    ): ?DefaultObject
-    {
+    ): ?DefaultObject {
         // on the highest level, we first clear ormInstanceToEntityAllocation
         if (empty($initiatorClasses)) {
             self::$ormInstanceToEntityAllocation = [];
@@ -166,8 +164,7 @@ class DBEntity extends DatabaseRepoEntity
         string $propertyName,
         array $initiatorClasses = [],
         bool $useEntityRegistryCache = true
-    )
-    {
+    ) {
         if (!isset($this->ormInstance->$propertyName)) {
             return;
         }
@@ -243,9 +240,6 @@ class DBEntity extends DatabaseRepoEntity
 
         foreach ($possibleEntityTypes as $possibleEntityType) {
             $possibleEntityTypeName = $possibleEntityType->getName();
-            {
-
-            }
             // Handling of simple types in case of encryption
             if ($encryptionScopePassword) {
                 $decryptedString = Encrypt::decrypt($this->ormInstance->$propertyName, $encryptionScopePassword);
@@ -287,12 +281,14 @@ class DBEntity extends DatabaseRepoEntity
                 $entity->$propertyName = $this->ormInstance->$propertyName;
                 return;
             }
-            if ($possibleEntityTypeName == DateTime::class && $ormModelReflectionProperty->getType()->getName(
-                ) == \DateTime::class) {
+            if (
+                $possibleEntityTypeName == DateTime::class && $ormModelReflectionProperty->getType()->getName() == \DateTime::class
+            ) {
                 $entity->$propertyName = DateTime::fromTimestamp($this->ormInstance->$propertyName->getTimestamp());
             }
-            if ($possibleEntityTypeName == Date::class && $ormModelReflectionProperty->getType()->getName(
-                ) == \DateTime::class) {
+            if (
+                $possibleEntityTypeName == Date::class && $ormModelReflectionProperty->getType()->getName() == \DateTime::class
+            ) {
                 $entity->$propertyName = Date::fromTimestamp($this->ormInstance->$propertyName->getTimestamp());
             }
             // one to many relations implicitly loaded
@@ -331,24 +327,28 @@ class DBEntity extends DatabaseRepoEntity
                 DefaultObject::isValueObject($possibleEntityTypeName)
             ) {
                 // handle object type migrations
-                if (is_array($this->ormInstance->$propertyName) && isset($this->ormInstance->$propertyName['objectType']) && isset(
+                if (
+                    is_array($this->ormInstance->$propertyName) && isset($this->ormInstance->$propertyName['objectType']) && isset(
                         ReflectionClass::getObjectTypeMigrations()[$this->ormInstance->$propertyName['objectType']]
-                    )) {
+                    )
+                ) {
                     $this->ormInstance->$propertyName['objectType'] = ReflectionClass::getObjectTypeMigrations(
                     )[$this->ormInstance->$propertyName['objectType']];
-                }
-                elseif (is_object($this->ormInstance->$propertyName) && isset($this->ormInstance->$propertyName->objectType) && isset(
+                } elseif (
+                    is_object($this->ormInstance->$propertyName) && isset($this->ormInstance->$propertyName->objectType) && isset(
                         ReflectionClass::getObjectTypeMigrations()[$this->ormInstance->$propertyName->objectType]
-                    )) {
-                    $this->ormInstance->$propertyName->objectType = ReflectionClass::getObjectTypeMigrations(
-                    )[$this->ormInstance->$propertyName->objectType];
+                    )
+                ) {
+                    $this->ormInstance->$propertyName->objectType = ReflectionClass::getObjectTypeMigrations()[$this->ormInstance->$propertyName->objectType];
                 }
                 // exact match needed, for UnionTypes so the right type gets instantiated
-                if (count($possibleEntityTypes) == 1 || ((is_array(
+                if (
+                    count($possibleEntityTypes) == 1 || ((is_array(
                                 $this->ormInstance->$propertyName
                             ) && ($this->ormInstance->$propertyName['objectType'] ?? null) == $possibleEntityTypeName) || (is_object(
                                 $this->ormInstance->$propertyName
-                            ) && ($this->ormInstance->$propertyName->objectType ?? null) == $possibleEntityTypeName))) {
+                            ) && ($this->ormInstance->$propertyName->objectType ?? null) == $possibleEntityTypeName))
+                ) {
                     /** @var ValueObject $valueObject */
                     $valueObject = new $possibleEntityTypeName();
                     // Handling ValueObjects in case of encryption
@@ -396,6 +396,29 @@ class DBEntity extends DatabaseRepoEntity
                 }
             }
         }
+    }
+
+    /**
+     * Maps the Entity to the Repository orm instance
+     * @param Entity $entity
+     * @return bool
+     * @throws ReflectionException
+     */
+    public function mapToRepository(DefaultObject &$entity): bool
+    {
+        if (!DefaultObject::isEntity($entity)) {
+            return false;
+        }
+
+        $this->ormInstance = isset($this->ormInstance) && $this->ormInstance ? $this->ormInstance : new (static::getBaseModelNameForEntityInstance(
+            $entity
+        ))();
+        $this->mapCreatedAndUpdatedTime($entity);
+        // map all fields from Entity to ormInstance to
+        foreach ($entity as $propertyName => $propertyValue) {
+            $this->mapPropertyToRepository($entity, $propertyName);
+        }
+        return true;
     }
 
     public function mapCreatedAndUpdatedTime(DefaultObject &$entity): void
@@ -453,27 +476,6 @@ class DBEntity extends DatabaseRepoEntity
                 $this->ormInstance->$modifiedColumn = $modifiedTime;
             }
         }
-    }
-
-    /**
-     * Maps the Entity to the Repository orm instance
-     * @param Entity $entity
-     * @return bool
-     * @throws ReflectionException
-     */
-    public function mapToRepository(DefaultObject &$entity): bool
-    {
-        if (!DefaultObject::isEntity($entity)) return false;
-
-        $this->ormInstance = isset($this->ormInstance) && $this->ormInstance ? $this->ormInstance : new (static::getBaseModelNameForEntityInstance(
-            $entity
-        ))();
-        $this->mapCreatedAndUpdatedTime($entity);
-        // map all fields from Entity to ormInstance to
-        foreach ($entity as $propertyName => $propertyValue) {
-            $this->mapPropertyToRepository($entity, $propertyName);
-        }
-        return true;
     }
 
     /**

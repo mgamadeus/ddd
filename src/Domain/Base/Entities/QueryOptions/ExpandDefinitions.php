@@ -25,6 +25,9 @@ class ExpandDefinitions extends ObjectSet
     /** @var ExpandDefinitions[] */
     protected static array $expandDefinitionsForClass = [];
 
+    /** @var string Reference class on which Definitions are based on */
+    public string $referenceClassName;
+
     /**
      * Returns LazyLoad Properties of reference Class name as Expand options
      * @param string $referenceClassName
@@ -45,6 +48,7 @@ class ExpandDefinitions extends ObjectSet
 
         $expandOnParentElements = Config::getEnv('QUERY_OPTIONS_EXPAND_ON_PARENT_ELEMENTS') ?? false;
         $expandDefinitions = new ExpandDefinitions();
+        $expandDefinitions->referenceClassName = $referenceClassName;
         $referenceClassName = $reflectionClass->getName();
 
         /** @var Entity $referenceClassName */

@@ -61,12 +61,11 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
         }
         // for expand options on entities in set (we want to load them with a join implicitly)
         if ($expandOptions = $defaultQueryOptions->getExpandOptions()) {
-            $expandOptions->applyExpandOptionsToDoctrineQueryBuilder($queryBuilder, static::getBaseModel());
+            $expandOptions->applyExpandOptionsToDoctrineQueryBuilder($queryBuilder);
         }
         if ($filters = $defaultQueryOptions->getFilters()) {
             $filters->applyFiltersToDoctrineQueryBuilder(
                 queryBuilder: $queryBuilder,
-                baseModelClass: self::getBaseModel()
             );
         }
         if ($orderBy = $defaultQueryOptions->getOrderBy()) {

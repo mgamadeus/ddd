@@ -17,10 +17,9 @@ trait QueryOptionsTrait
 {
     use ReflectorTrait;
 
+    protected static $defaultQueryOptions = [];
     /** @var AppliedQueryOptions Applied Query Options */
     protected AppliedQueryOptions $queryOptions;
-
-    protected static $defaultQueryOptions = [];
 
     #[AfterConstruct]
     public function initQueryOptions()
@@ -83,7 +82,6 @@ trait QueryOptionsTrait
         self::$defaultQueryOptions[$className] = $queryOptions;
     }
 
-
     /**
      * Expands current instance by options set in QueryOptions expand definitions
      * @return void
@@ -108,7 +106,7 @@ trait QueryOptionsTrait
                         $elementPropertyTypes[] = $propertyType->getName();
                     }
                 }
-                foreach($elementPropertyTypes as $elementPropertyType){
+                foreach ($elementPropertyTypes as $elementPropertyType) {
                     /** @var DefaultObject $elementClassName */
                     $elementsPossibleLazyLoadProperties += $elementPropertyType::getPropertiesToLazyLoad();
                 }
@@ -148,12 +146,13 @@ trait QueryOptionsTrait
                     /** @var QueryOptionsTrait $targetPropertyClass */
                     $targetPropertyClass = $propertyType->getName();
                     $targetPropertyReflectionClass = ReflectionClass::instance((string)$targetPropertyClass);
-                    if ($targetPropertyReflectionClass && $targetPropertyReflectionClass->hasTrait(
+                    if (
+                        $targetPropertyReflectionClass && $targetPropertyReflectionClass->hasTrait(
                             QueryOptionsTrait::class
-                        )) {
+                        )
+                    ) {
                         $targetPropertyHasQueryOptions = true;
-                        /** @var AppliedQueryOptions $defaultQueryOptions */
-                        // it can be that property is already loaded, in this case we still want to pass query options as it can be that we apply a recusrive expand and
+                        /** @var AppliedQueryOptions $defaultQueryOptions */ // it can be that property is already loaded, in this case we still want to pass query options as it can be that we apply a recusrive expand and
                         // a subproperty of the property needs to be expanded.
                         $defaultQueryOptions = isset($this->$propertyName) ? $this?->$propertyName?->getQueryOptions(
                         ) : $targetPropertyClass::getDefaultQueryOptions();
@@ -164,11 +163,13 @@ trait QueryOptionsTrait
                 $propertyAlreadyLoaded = isset($this->$propertyName);
                 $loadedProperty = $this->$propertyName;
                 // if property has been loaded from cache, we need to apply expand options to it
-                if (isset($loadedProperty) && is_object($loadedProperty)){
+                if (isset($loadedProperty) && is_object($loadedProperty)) {
                     $targetPropertyReflectionClass = ReflectionClass::instance($loadedProperty::class);
-                    if ($targetPropertyReflectionClass && $targetPropertyReflectionClass->hasTrait(
+                    if (
+                        $targetPropertyReflectionClass && $targetPropertyReflectionClass->hasTrait(
                             QueryOptionsTrait::class
-                        )) {
+                        )
+                    ) {
                         /** @var QueryOptionsTrait $loadedProperty */
                         $loadedProperty->getQueryOptions()->setQueryOptionsFromExpandOption($expandOption);
                     }

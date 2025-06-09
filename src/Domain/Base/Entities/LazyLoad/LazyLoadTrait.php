@@ -31,76 +31,32 @@ trait LazyLoadTrait
     protected static string $lazyLoadDefaultRepo = LazyLoadRepo::DB;
 
     /**
-     * Checks all Properties of curent instance for defined Lazyloading Attributes
-     * Lazyloading is executed based on property $lazyloadDefaultRepo, e.g. ORM
-     * If a lazyload Attribute definition with the coresponding Repository exists and the to-be loaded property
-     * is not already set/defined, than it will be automatically loaded when the property is accessed
-     * In order to be able to do so, the property is unset, so the magic method __get is executed on accessing the property.
-     * @throws ReflectionException
+     * Returns a instance of the RepoClass
+     * @param string|null $repoType
+     * @return RepoEntity|DatabaseRepoEntity|null
      */
-    #[AfterConstruct]
-    protected function prepareLazyLoad(): void
+    public static function getRepoClassInstance(?string $repoType = null): RepoEntity|DatabaseRepoEntity|DatabaseRepoEntitySet|null
     {
-        $propertiesToLazyLoad = static::getPropertiesToLazyLoad();
-        foreach ($propertiesToLazyLoad as $propertyName => $lazyLoadDefinitions) {
-            $this->unset($propertyName);
+        $repoClass = self::getRepoClass($repoType);
+        if ($repoClass) {
+            return new $repoClass();
         }
+        return null;
     }
 
     /**
-     * Returns the defined repo class for the given repoType and PropertName
-     * either by checking if an individual repositoryClass definition is set in the Lazyload instance
-     * or by using ::getRepoClass($repoType) function
-     * @param string $repoType
-     * @param string $propertyName
-     * @return string|null
+     * @return string[] Returns Repo classes refering to database related Repos, if existent
      */
-    public function getRepoClassForProperty(string $repoType, string $propertyName): ?string
+    public static function getDatabaseRelatedRepoClasses(): array
     {
-        if (
-            isset(StaticRegistry::$repoClassesForProperties[static::class][$propertyName]) && array_key_exists(
-                $repoType,
-                StaticRegistry::$repoClassesForProperties[static::class][$propertyName]
-            )
-        ) {
-            $t = StaticRegistry::$repoClassesForProperties;
-            return StaticRegistry::$repoClassesForProperties[static::class][$propertyName][$repoType];
-        }
-        $repoClass = null;
-        $propertiesToLazyLoad = static::getPropertiesToLazyLoad();
-        $lazyloadAttributeInstance = $propertiesToLazyLoad[$propertyName][$repoType] ?? null;
-        if ($lazyloadAttributeInstance && $lazyloadAttributeInstance->repoClass) {
-            // first check if repoClass is defined on lazyLoadattribute instance
-            $repoClass = $lazyloadAttributeInstance->repoClass;
-        } elseif ($lazyloadAttributeInstance) {
-            // get property type and try to get repo class from getRepoClass function, if property type has this function
-            if ($targetPropertyEntityClassName = $lazyloadAttributeInstance->entityClassName) {
-                if (
-                    $targetPropertyEntityClassName && method_exists(
-                        $targetPropertyEntityClassName,
-                        'getRepoClass'
-                    )
-                ) {
-                    /** @var LazyLoadTrait $targetPropertyEntityClassName */
-                    $repoClass = $targetPropertyEntityClassName::getRepoClass($repoType);
-                }
-                return $repoClass;
-            }
-            $property = new ReflectionProperty($this, $propertyName);
-            $propertyType = $property->getType();
-            if (
-                $propertyType && !$propertyType->isBuiltin() && $propertyType instanceof ReflectionNamedType && method_exists(
-                    $propertyType->getName(),
-                    'getRepoClass'
-                )
-            ) {
-                /** @var LazyLoadTrait $lazyLoadPropertyClass */
-                $lazyLoadPropertyClass = $propertyType->getName();
-                $repoClass = $lazyLoadPropertyClass::getRepoClass($repoType);
+        $repoClasses = [];
+        foreach (LazyLoadRepo::DATABASE_REPOS as $repoType) {
+            $repoClass = static::getRepoClass($repoType);
+            if ($repoClass) {
+                $repoClasses[] = $repoClass;
             }
         }
-        StaticRegistry::$repoClassesForProperties[static::class][$propertyName][$repoType] = $repoClass;
-        return $repoClass;
+        return $repoClasses;
     }
 
     /**
@@ -283,43 +239,61 @@ trait LazyLoadTrait
     }
 
     /**
-     * Returns LazyLoad Properties and Lazyload Definitions
-     * @return LazyLoad[][]
+     * Returns the defined repo class for the given repoType and PropertName
+     * either by checking if an individual repositoryClass definition is set in the Lazyload instance
+     * or by using ::getRepoClass($repoType) function
+     * @param string $repoType
+     * @param string $propertyName
+     * @return string|null
+     * @throws ReflectionException
      */
-    public static function getPropertiesToLazyLoad(): array
+    public static function getRepoClassForProperty(string $repoType, string $propertyName): ?string
     {
-        if (isset(StaticRegistry::$propertiesToLazyLoadForClasses[static::class])) {
-            return StaticRegistry::$propertiesToLazyLoadForClasses[static::class];
+        if (
+            isset(StaticRegistry::$repoClassesForProperties[static::class][$propertyName]) && array_key_exists(
+                $repoType,
+                StaticRegistry::$repoClassesForProperties[static::class][$propertyName]
+            )
+        ) {
+            $t = StaticRegistry::$repoClassesForProperties;
+            return StaticRegistry::$repoClassesForProperties[static::class][$propertyName][$repoType];
         }
-        StaticRegistry::$propertiesToLazyLoadForClasses[static::class] = [];
-
-        $currentClassName = DDDService::instance()->getContainerServiceClassNameForClass(static::class);
-        $reflectionClass = ReflectionClass::instance($currentClassName);
-        $properties = $reflectionClass->getProperties(ReflectionProperty::IS_PUBLIC);
-        foreach ($properties as $property) {
-            $propertyName = $property->getName();
-            // LazyLoad preparation
-            foreach ($property->getAttributes(LazyLoad::class) as $attribute) {
-                /** @var LazyLoad $lazyloadAttributeInstance */
-                $lazyloadAttributeInstance = $attribute->newInstance();
-                if (!isset(StaticRegistry::$propertiesToLazyLoadForClasses[static::class][$propertyName])) {
-                    StaticRegistry::$propertiesToLazyLoadForClasses[static::class][$propertyName] = [];
+        $repoClass = null;
+        $propertiesToLazyLoad = static::getPropertiesToLazyLoad();
+        $lazyloadAttributeInstance = $propertiesToLazyLoad[$propertyName][$repoType] ?? null;
+        if ($lazyloadAttributeInstance && $lazyloadAttributeInstance->repoClass) {
+            // first check if repoClass is defined on lazyLoadattribute instance
+            $repoClass = $lazyloadAttributeInstance->repoClass;
+        } elseif ($lazyloadAttributeInstance) {
+            // get property type and try to get repo class from getRepoClass function, if property type has this function
+            if ($targetPropertyEntityClassName = $lazyloadAttributeInstance->entityClassName) {
+                if (
+                    $targetPropertyEntityClassName && method_exists(
+                        $targetPropertyEntityClassName,
+                        'getRepoClass'
+                    )
+                ) {
+                    /** @var LazyLoadTrait $targetPropertyEntityClassName */
+                    $repoClass = $targetPropertyEntityClassName::getRepoClass($repoType);
                 }
-
-                // if we have a repository defined that matches the Autoloading Definition, and the property is not already set,
-                // we unset the property name in the current instance so magic method __get access to the property can execute the
-                // lazyload defined function
-                if (!($property->hasDefaultValue() && $property->getDefaultValue() !== null)) {
-                    if ($lazyloadAttributeInstance->createInstanceWithoutLoading) {
-                        // we dont need a repository, as we only create an instance in a lazy fashion
-                        StaticRegistry::$propertiesToLazyLoadForClasses[static::class][$propertyName]['lazyInstance'] = $lazyloadAttributeInstance;
-                    } else {
-                        StaticRegistry::$propertiesToLazyLoadForClasses[static::class][$propertyName][$lazyloadAttributeInstance->repoType] = $lazyloadAttributeInstance;
-                    }
-                }
+                return $repoClass;
+            }
+            $reflectionClass = ReflectionClass::instance(static::class);
+            $reflectionProperty = $reflectionClass->getProperty($propertyName);
+            $propertyType = $reflectionProperty->getType();
+            if (
+                $propertyType && !$propertyType->isBuiltin() && $propertyType instanceof ReflectionNamedType && method_exists(
+                    $propertyType->getName(),
+                    'getRepoClass'
+                )
+            ) {
+                /** @var LazyLoadTrait $lazyLoadPropertyClass */
+                $lazyLoadPropertyClass = $propertyType->getName();
+                $repoClass = $lazyLoadPropertyClass::getRepoClass($repoType);
             }
         }
-        return StaticRegistry::$propertiesToLazyLoadForClasses[static::class];
+        StaticRegistry::$repoClassesForProperties[static::class][$propertyName][$repoType] = $repoClass;
+        return $repoClass;
     }
 
     /**
@@ -379,35 +353,6 @@ trait LazyLoadTrait
         return DDDService::instance()->getContainerServiceClassNameForClass(
             StaticRegistry::$repoTypesForClasses[$currentClassName][$repoType]->repoClass
         );
-    }
-
-    /**
-     * Returns a instance of the RepoClass
-     * @param string|null $repoType
-     * @return RepoEntity|DatabaseRepoEntity|null
-     */
-    public static function getRepoClassInstance(?string $repoType = null): RepoEntity|DatabaseRepoEntity|DatabaseRepoEntitySet|null
-    {
-        $repoClass = self::getRepoClass($repoType);
-        if ($repoClass) {
-            return new $repoClass();
-        }
-        return null;
-    }
-
-    /**
-     * @return string[] Returns Repo classes refering to database related Repos, if existent
-     */
-    public static function getDatabaseRelatedRepoClasses(): array
-    {
-        $repoClasses = [];
-        foreach (LazyLoadRepo::DATABASE_REPOS as $repoType) {
-            $repoClass = static::getRepoClass($repoType);
-            if ($repoClass) {
-                $repoClasses[] = $repoClass;
-            }
-        }
-        return $repoClasses;
     }
 
     /**
@@ -518,5 +463,62 @@ trait LazyLoadTrait
                 }
             }
         }
+    }
+
+    /**
+     * Checks all Properties of curent instance for defined Lazyloading Attributes
+     * Lazyloading is executed based on property $lazyloadDefaultRepo, e.g. ORM
+     * If a lazyload Attribute definition with the coresponding Repository exists and the to-be loaded property
+     * is not already set/defined, than it will be automatically loaded when the property is accessed
+     * In order to be able to do so, the property is unset, so the magic method __get is executed on accessing the property.
+     * @throws ReflectionException
+     */
+    #[AfterConstruct]
+    protected function prepareLazyLoad(): void
+    {
+        $propertiesToLazyLoad = static::getPropertiesToLazyLoad();
+        foreach ($propertiesToLazyLoad as $propertyName => $lazyLoadDefinitions) {
+            $this->unset($propertyName);
+        }
+    }
+
+    /**
+     * Returns LazyLoad Properties and Lazyload Definitions
+     * @return LazyLoad[][]
+     */
+    public static function getPropertiesToLazyLoad(): array
+    {
+        if (isset(StaticRegistry::$propertiesToLazyLoadForClasses[static::class])) {
+            return StaticRegistry::$propertiesToLazyLoadForClasses[static::class];
+        }
+        StaticRegistry::$propertiesToLazyLoadForClasses[static::class] = [];
+
+        $currentClassName = DDDService::instance()->getContainerServiceClassNameForClass(static::class);
+        $reflectionClass = ReflectionClass::instance($currentClassName);
+        $properties = $reflectionClass->getProperties(ReflectionProperty::IS_PUBLIC);
+        foreach ($properties as $property) {
+            $propertyName = $property->getName();
+            // LazyLoad preparation
+            foreach ($property->getAttributes(LazyLoad::class) as $attribute) {
+                /** @var LazyLoad $lazyloadAttributeInstance */
+                $lazyloadAttributeInstance = $attribute->newInstance();
+                if (!isset(StaticRegistry::$propertiesToLazyLoadForClasses[static::class][$propertyName])) {
+                    StaticRegistry::$propertiesToLazyLoadForClasses[static::class][$propertyName] = [];
+                }
+
+                // if we have a repository defined that matches the Autoloading Definition, and the property is not already set,
+                // we unset the property name in the current instance so magic method __get access to the property can execute the
+                // lazyload defined function
+                if (!($property->hasDefaultValue() && $property->getDefaultValue() !== null)) {
+                    if ($lazyloadAttributeInstance->createInstanceWithoutLoading) {
+                        // we dont need a repository, as we only create an instance in a lazy fashion
+                        StaticRegistry::$propertiesToLazyLoadForClasses[static::class][$propertyName]['lazyInstance'] = $lazyloadAttributeInstance;
+                    } else {
+                        StaticRegistry::$propertiesToLazyLoadForClasses[static::class][$propertyName][$lazyloadAttributeInstance->repoType] = $lazyloadAttributeInstance;
+                    }
+                }
+            }
+        }
+        return StaticRegistry::$propertiesToLazyLoadForClasses[static::class];
     }
 }

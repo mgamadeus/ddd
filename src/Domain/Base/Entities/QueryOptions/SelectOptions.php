@@ -44,6 +44,16 @@ class SelectOptions extends ObjectSet
         return $selectOptions;
     }
 
+    /**
+     * Returns OpenApi schema definition regex.
+     *
+     * @return string
+     */
+    public static function getRegexForOpenApi(): string
+    {
+        return '^(?:(?:\s*,\s*)?(?<property>[a-z]+))+$';
+    }
+
     public function getSelectOptionByName(string $selectOptionName): ?SelectOption
     {
         foreach ($this->getElements() as $selectOption) {
@@ -73,7 +83,6 @@ class SelectOptions extends ObjectSet
         // these are applied in ExpandOptions->applyExpandOptionsToDoctrineQueryBuilder on the alias of the expanded entity, e.g.
         // $join = "{$modelAlias}.$expandOption->propertyName";
         // $queryBuilder->addSelect($expandOption->propertyName); // => here we need to get rid of the full entity on expansion and apply desired columns
-
 
         // Determine the alias to filter out using the provided baseModelAlias or the default MODEL_ALIAS.
         $alias = $baseModelAlias ?? $baseModelClass::MODEL_ALIAS;
@@ -116,8 +125,7 @@ class SelectOptions extends ObjectSet
             // Build the fully qualified expression to validate it
             if (!$baseModelAlias) {
                 $selectExpression = ($alias ? $alias . '.' : '') . $propertyName;
-            }
-            else {
+            } else {
                 // in case we apply select options to a join $baseModelAlias is passed and usually does not correspond to
                 // the $baseModelClass::MODEL_ALIAS anymore
                 // e.g. left join Worlds world, alias: 'world' vs MODEL_ALIAS: 'World'
@@ -149,15 +157,5 @@ class SelectOptions extends ObjectSet
     {
         $key = md5(json_encode($this->toObject(true, true)));
         return self::uniqueKeyStatic($key);
-    }
-
-    /**
-     * Returns OpenApi schema definition regex.
-     *
-     * @return string
-     */
-    public static function getRegexForOpenApi(): string
-    {
-        return '^(?:(?:\s*,\s*)?(?<property>[a-z]+))+$';
     }
 }

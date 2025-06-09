@@ -275,14 +275,14 @@ class AppliedQueryOptions extends ValueObject
         }
         // on filters, orderBy, epand and select we set validateAgainstDefinitions to false here, as in the DtoQueryOptionsTrait
         // this is already done
+        if (isset($requestDto->expand)) {
+            $this->setExpand($requestDto->expand, false);
+        }
         if (isset($requestDto->filters)) {
             $this->setFilters($requestDto->filters, false);
         }
         if (isset($requestDto->orderBy)) {
             $this->setOrderBy($requestDto->orderBy, false);
-        }
-        if (isset($requestDto->expand)) {
-            $this->setExpand($requestDto->expand, false);
         }
         if (isset($requestDto->select)) {
             $this->setSelect($requestDto->select, false);
@@ -292,6 +292,8 @@ class AppliedQueryOptions extends ValueObject
 
     /**
      * Sets query options from expand option.
+     * This method is used in QueryOptionsTrait in expand() function to apply QueryOptions from expand option
+     * On a property that is not loaded before
      * @param ExpandOption $expandOption
      * @return void
      */
@@ -303,14 +305,24 @@ class AppliedQueryOptions extends ValueObject
         if (isset($expandOption->skip)) {
             $this->setSkip($expandOption->skip);
         }
-        if (isset($expandOption->filters)) {
-            $this->setFilters($expandOption->filters);
-        }
         if (isset($expandOption->orderByOptions)) {
             $this->setOrderBy($expandOption->orderByOptions);
         }
+        $childExpand = null;
         if (isset($expandOption->expandOptions)) {
-            $this->setExpand($expandOption->expandOptions);
+            // As the queryOption will create joins and joinAliases recursively goint to any of it's parents,
+            // We need to clone it beforehand and remove it's parent, otherwise in the conetallation that a sinlge entity
+            // is loaded beforehand with find(), and then expanded with expand(), the aliases would contain the main
+            // entity that is loaded on expand()
+            // e.g. challenges/campaigns/24?expand=challenges(expand=goal)
+            // first expand executes findAll() on Challenges and wants to expand goal, but the join alias is including also challenges
+            $childExpand = $expandOption->expandOptions->clone();
+            $null = null;
+            $childExpand->setParent($null);
+            $this->setExpand($childExpand);
+        }
+        if (isset($expandOption->filters)) {
+            $this->setFilters($expandOption->filters);
         }
         if (isset($expandOption->selectOptions)) {
             $this->setSelect($expandOption->selectOptions);

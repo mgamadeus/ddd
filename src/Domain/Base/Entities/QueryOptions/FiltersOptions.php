@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Entities\QueryOptions;
 
 use DDD\Domain\Base\Entities\ObjectSet;
+use DDD\Domain\Base\Repo\DB\DBEntity;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Infrastructure\Exceptions\BadRequestException;
+use DDD\Infrastructure\Exceptions\MethodNotAllowedException;
 use DDD\Infrastructure\Validation\Constraints\Choice;
 use Doctrine\ORM\Query\Expr;
+use Doctrine\ORM\Query\Expr\Join;
 use JsonException;
 use ReflectionException;
 
@@ -110,41 +113,17 @@ class FiltersOptions extends ObjectSet
     /** @var string|int|float|array|null The value to filter for, applies only to expression */
     public string|int|float|array|null $value;
 
+    /**
+     * @var string|null Base alias used for Filters on expanded properties such as
+     * account.id  => property will be id, alias will be expanded alias "account"
+     */
+    public ?string $baseAlias;
+
     /** @var FiltersDefinition The definition the filter is based on */
     protected ?FiltersDefinition $filtersDefinition = null;
 
-    /**
-     * @return FiltersDefinition
-     */
-    public function getFiltersDefinition(): FiltersDefinition
-    {
-        return $this->filtersDefinition;
-    }
-
-    /**
-     * @param FiltersDefinition $filtersDefinition
-     */
-    public function setFiltersDefinition(FiltersDefinition $filtersDefinition): void
-    {
-        $this->filtersDefinition = $filtersDefinition;
-    }
-
-    /**
-     * Recursively sets definitions to FilterOptions so earch FilterOption has access to it's corresponding definition
-     * @param FiltersDefinition $filtersDefinition
-     */
-    public function setFiltersDefinitionsForAllFilterOptions(FiltersDefinitions $filtersDefinitions): void
-    {
-        if ($this->type == self::TYPE_EXPRESSION && ($this->property ?? null)) {
-            $filtersDefinition = $filtersDefinitions->getFilterDefinitionForPropertyName($this->property);
-            if ($filtersDefinition) {
-                $this->setFiltersDefinition($filtersDefinition);
-            }
-        }
-        foreach ($this->getElements() as $filtersOptions) {
-            $filtersOptions->setFiltersDefinitionsForAllFilterOptions($filtersDefinitions);
-        }
-    }
+    /** @var ExpandOption The expandOption the filter refers to in case of expanded properties */
+    protected ?ExpandOption $expandOption = null;
 
     /**
      * Parses FiltersOptions from string
@@ -173,32 +152,50 @@ class FiltersOptions extends ObjectSet
     }
 
     /**
-     * Returns the FiltersOptions instance of type expression, that contains the property name given or null if no expression is found
-     * If $operators is set, it returns the first property that has the corresponding operator, e.g. lt, gt
-     * @param string $property
-     * @param array|null $operators
-     * @return FiltersOptions|$this|null
+     * Returns OpenApi schmea definition regex
+     * @return string
      */
-    public function getExpressionForProperty(string $property, ?array $operators = null): ?FiltersOptions
+    public static function getRegexForOpenApi(): string
     {
-        if (!isset($this->type)) {
-            return null;
-        }
-        if ($this->type == self::TYPE_EXPRESSION && $this->property == $property) {
-            if (!$operators || (in_array($this->operator, $operators))) {
-                return $this;
-            }
-        }
+        $regExps = [
+            '(\s+and\s+|\s+or\s+)',
+            '(\s+eq\s+|\s+ne\s+|\s+gt\s+|\s+lt\s+|\s+ge\s+|\s+le\s+)',
+            '([a-zA-Z\._]+)',
+            "(-?\d+(?:\.\d+)?|[^\\\\]{0}\'(?:(?![^\\\\]\').)*[^\\\\]?\')",
+        ];
+        return '^' . join('|', $regExps) . '|\s*$';
+    }
 
-        if ($this->type == self::TYPE_OPERATION) {
-            foreach ($this->getElements() as $element) {
-                $result = $element->getExpressionForProperty($property, $operators);
-                if ($result) {
-                    return $result;
-                }
+    /**
+     * Recursively sets definitions to FilterOptions so earch FilterOption has access to it's corresponding definition
+     * @param FiltersDefinition $filtersDefinition
+     */
+    public function setFiltersDefinitionsForAllFilterOptions(FiltersDefinitions $filtersDefinitions): void
+    {
+        if ($this->type == self::TYPE_EXPRESSION && ($this->property ?? null)) {
+            $filtersDefinition = $filtersDefinitions->getFilterDefinitionForPropertyName($this->property);
+            if ($filtersDefinition) {
+                $this->setFiltersDefinition($filtersDefinition);
             }
         }
-        return null;
+        foreach ($this->getElements() as $filtersOptions) {
+            $filtersOptions->setFiltersDefinitionsForAllFilterOptions($filtersDefinitions);
+        }
+    }
+
+    /**
+     * Recursively sets ExpandOption reference to FilterOptions so earch FilterOption has access to the ExpandOption is is referring to
+     * @param ExpandOption $expandOption
+     */
+    public function setExpandOptionForAllFilterOptions(ExpandOption $expandOption): void
+    {
+        if ($this->type == self::TYPE_EXPRESSION && ($this->property ?? null)) {
+            $this->expandOption = $expandOption;
+        } else {
+            foreach ($this->getElements() as $filtersOptions) {
+                $filtersOptions->setExpandOptionForAllFilterOptions($expandOption);
+            }
+        }
     }
 
     /**
@@ -241,21 +238,33 @@ class FiltersOptions extends ObjectSet
         return $minOrMaxPropertyValue;
     }
 
-    protected function isValueAllowedByOperator(string $operator, mixed $value): bool
+    /**
+     * Returns the FiltersOptions instance of type expression, that contains the property name given or null if no expression is found
+     * If $operators is set, it returns the first property that has the corresponding operator, e.g. lt, gt
+     * @param string $property
+     * @param array|null $operators
+     * @return FiltersOptions|$this|null
+     */
+    public function getExpressionForProperty(string $property, ?array $operators = null): ?FiltersOptions
     {
-        return match ($operator) {
-            self::OPERATOR_EQUAL => $value === $this->value,
-            self::OPERATOR_GREATER_OR_EQUAL => is_numeric($value) && $value >= $this->value,
-            self::OPERATOR_NOT_EQUAL => $value !== $this->value,
-            self::OPERATOR_GREATER_THAN => is_numeric($value) && $value > $this->value,
-            self::OPERATOR_LESS_THAN => is_numeric($value) && $value < $this->value,
-            self::OPERATOR_LESS_OR_EQUAL => is_numeric($value) && $value <= $this->value,
-            self::OPERATOR_IN => is_array($this->value) && in_array($value, $this->value),
-            self::OPERATOR_BETWEEN => is_array($this->value) && count(
-                    $this->value
-                ) == 2 && $value >= $this->value[0] && $value <= $this->value[1],
-            default => false,
-        };
+        if (!isset($this->type)) {
+            return null;
+        }
+        if ($this->type == self::TYPE_EXPRESSION && $this->property == $property) {
+            if (!$operators || (in_array($this->operator, $operators))) {
+                return $this;
+            }
+        }
+
+        if ($this->type == self::TYPE_OPERATION) {
+            foreach ($this->getElements() as $element) {
+                $result = $element->getExpressionForProperty($property, $operators);
+                if ($result) {
+                    return $result;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -293,6 +302,23 @@ class FiltersOptions extends ObjectSet
         return false;
     }
 
+    protected function isValueAllowedByOperator(string $operator, mixed $value): bool
+    {
+        return match ($operator) {
+            self::OPERATOR_EQUAL => $value === $this->value,
+            self::OPERATOR_GREATER_OR_EQUAL => is_numeric($value) && $value >= $this->value,
+            self::OPERATOR_NOT_EQUAL => $value !== $this->value,
+            self::OPERATOR_GREATER_THAN => is_numeric($value) && $value > $this->value,
+            self::OPERATOR_LESS_THAN => is_numeric($value) && $value < $this->value,
+            self::OPERATOR_LESS_OR_EQUAL => is_numeric($value) && $value <= $this->value,
+            self::OPERATOR_IN => is_array($this->value) && in_array($value, $this->value),
+            self::OPERATOR_BETWEEN => is_array($this->value) && count(
+                    $this->value
+                ) == 2 && $value >= $this->value[0] && $value <= $this->value[1],
+            default => false,
+        };
+    }
+
     /**
      * Returns FiltersOptions array of instances that contain the property name given or null if none is found
      * @param string $property
@@ -322,8 +348,10 @@ class FiltersOptions extends ObjectSet
 
     /**
      * Validates recursively the filters against allowed property definitions and throws Error if invalid property names or options for values are used.
-     * returns true if validation finds no issues
+     * returns true if validation finds no issues.
+     * ExpandOptions are are required for recursive validation
      * @param FiltersDefinitions $filtersDefinitions
+     * @param ExpandOptions|null $expandOptions
      * @return bool
      * @throws BadRequestException
      */
@@ -339,6 +367,39 @@ class FiltersOptions extends ObjectSet
             return $result;
         }
         if (!($filterDefinition = $filtersDefinitions->getFilterDefinitionForPropertyName($this->property))) {
+            // First check if we have a nested filter, e.g. account.email eq ...
+            $filterPropertyExploded = explode('.', $this->property);
+            $valid = false;
+            if (count($filterPropertyExploded) > 1) {
+                $firstPropertyComponent = $filterPropertyExploded[0];
+                if ($expandOptions && $expandOption = $expandOptions->getExpandOptionByPropertyName($firstPropertyComponent)) {
+                    if (isset($expandOption->expandDefinition)) {
+                        if ($filtersDefinitionsForTargetProperty = $expandOption->expandDefinition->getFiltersDefinitions()) {
+                            $remainingFiltersOptions = new self();
+                            $remainingFiltersOptions->type = self::TYPE_EXPRESSION;
+                            $remainingFilterPropertyExploded = array_slice($filterPropertyExploded, 1);
+                            $remainingFiltersOptions->property = implode('.', $remainingFilterPropertyExploded);
+                            $remainingFiltersOptions->value = $this->value;
+                            $subExpandOptions = isset($expandOption->expandOptions) ? $expandOption->expandOptions : null;
+                            $valid = $remainingFiltersOptions->validateAgainstDefinitions($filtersDefinitionsForTargetProperty, $subExpandOptions);
+                            if (count($remainingFilterPropertyExploded) == 1) {
+                                // we are on the second deepest lavel of a account.world.id => currrent level = world and remaining is id
+                                // the recurive call $remainingFiltersOptions->validateAgainstDefinitions will execute in the root level of this function
+                                // outside of this if statement as the remaining property has no "."
+                                // in this case, we have to store the expand option
+                                $this->expandOption = $expandOption;
+                            } else {
+                                // we are not in the deepest recursion level but also not at the bottom, as the deepest iteration
+                                // will run code outside of this if and expand option as been stored on a deeper level, we need to pass it up
+                                $this->expandOption = $remainingFiltersOptions->expandOption;
+                            }
+                            if ($valid) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
             $allowedPropertyNames = [];
             foreach ($filtersDefinitions->getElements() as $filterDefinition) {
                 $allowedPropertyNames[] = $filterDefinition->propertyName;
@@ -388,21 +449,6 @@ class FiltersOptions extends ObjectSet
         return true;
     }
 
-    /**
-     * Returns OpenApi schmea definition regex
-     * @return string
-     */
-    public static function getRegexForOpenApi(): string
-    {
-        $regExps = [
-            '(\s+and\s+|\s+or\s+)',
-            '(\s+eq\s+|\s+ne\s+|\s+gt\s+|\s+lt\s+|\s+ge\s+|\s+le\s+)',
-            '([a-zA-Z\._]+)',
-            "(-?\d+(?:\.\d+)?|[^\\\\]{0}\'(?:(?![^\\\\]\').)*[^\\\\]?\')",
-        ];
-        return '^' . join('|', $regExps) . '|\s*$';
-    }
-
     public function uniqueKey(): string
     {
         $key = '';
@@ -422,28 +468,95 @@ class FiltersOptions extends ObjectSet
         return self::uniqueKeyStatic($key);
     }
 
-    public function applyFiltersToDoctrineQueryBuilder(
+    /**
+     * Searches for a Join matching the given join path and alias in the QueryBuilder,
+     * augments its ON/WITH condition by AND’ing the filter Expression generated by
+     * getFiltersExpressionForDoctrineQueryBuilder(), and replaces that Join entry in the DQL parts.
+     *
+     * @param DoctrineQueryBuilder $queryBuilder The QueryBuilder containing the joins.
+     * @param string $joinString The join path (e.g. "push.world").
+     * @param string $joinAlias The alias of the join (e.g. "world").
+     * @param string $baseModelClass Fully qualified model class for filter logic.
+     * @param callable|null $mappingFunction Optional callback to transform property/value.
+     * @param string|null $baseModelAlias Alias of the root entity under which the join lives.
+     *
+     * @throws ReflectionException
+     */
+    public function applyFiltersToJoin(
         DoctrineQueryBuilder &$queryBuilder,
-        string $baseModelClass,
-        callable $mappingFunction = null,
-        ?string $baseModelAlias = null
-    ): DoctrineQueryBuilder {
-        /** @var DoctrineModel $baseModelClass */
-        $expression = $this->getFiltersExpressionForDoctrineQueryBuilder(
+        string $rootModelAlias,
+        string $joinString,
+        string $joinAlias,
+        ?callable $mappingFunction = null,
+    ): void {
+        // Build the filter expression. If it’s empty, do nothing.
+        $filterExpr = $this->getFiltersExpressionForDoctrineQueryBuilder(
             $queryBuilder,
-            (string)$baseModelClass,
             $mappingFunction,
-            $baseModelAlias
         );
-        $queryBuilder->andWhere($expression);
-        return $queryBuilder;
+        if ($filterExpr === null || (is_string($filterExpr) && trim($filterExpr) === '')) {
+            return;
+        }
+
+        // Retrieve all existing Join objects organized by the root alias.
+        $allJoins = $queryBuilder->getDQLPart('join');
+        if (empty($allJoins[$rootModelAlias])) {
+            return;
+        }
+
+        $joinsForAlias = $allJoins[$rootModelAlias];
+        $newJoins = [];
+
+        foreach ($joinsForAlias as $existingJoin) {
+            /** @var Join $existingJoin */
+            if (!($existingJoin instanceof Join)) {
+                $newJoins[] = $existingJoin;
+                continue;
+            }
+
+            // Identify the Join matching both path and alias.
+            if (
+                $existingJoin->getJoin() === $joinString && $existingJoin->getAlias() === $joinAlias
+            ) {
+                // Retrieve existing ON/WITH condition, which may be null, a string, or an Expr.
+                $existingCondition = $existingJoin->getCondition();
+
+                // Combine existing condition with the filter expression using AND.
+                if ($existingCondition === null || (is_string($existingCondition) && trim($existingCondition) === '')) {
+                    $combinedCondition = $filterExpr;
+                } else {
+                    $andX = new Expr\Andx();
+                    $andX->add($existingCondition);
+                    $andX->add($filterExpr);
+                    $combinedCondition = $andX;
+                }
+
+                // Create a new Join object with the same join type, path, and alias,
+                // but with the merged ON/WITH condition.
+                $newJoins[] = new Join(
+                    $existingJoin->getJoinType(), $existingJoin->getJoin(), $existingJoin->getAlias(), Join::WITH, $combinedCondition
+                );
+            } else {
+                // For joins that do not match, keep them unchanged.
+                $newJoins[] = $existingJoin;
+            }
+        }
+
+        // Replace the join list under the same base alias with the updated array.
+        $allJoins[$rootModelAlias] = $newJoins;
+        $queryBuilder->resetDQLPart('join');
+        // Re-add every Join under each alias using add('join', …, true).  [oai_citation:70‡stackoverflow.com](https://stackoverflow.com/questions/17471884/doctrine2-how-to-remove-leftjoin-part-of-querybuilder?utm_source=chatgpt.com) [oai_citation:71‡stackoverflow.com](https://stackoverflow.com/questions/17471884/doctrine2-how-to-remove-leftjoin-part-of-querybuilder?utm_source=chatgpt.com) [oai_citation:72‡github.com](https://github.com/doctrine/doctrine2/issues/5079?utm_source=chatgpt.com)
+        foreach ($allJoins as $rootAlias => $joinsArray) {
+            foreach ($joinsArray as $joinObj) {
+                /** @var Join $joinObj */
+                $queryBuilder->add('join', [$rootAlias => $joinObj], true);
+            }
+        }
     }
 
     protected function getFiltersExpressionForDoctrineQueryBuilder(
         DoctrineQueryBuilder &$queryBuilder,
-        string $baseModelClass,
         callable $mappingFunction = null,
-        ?string $baseModelAlias = null
     ): Expr\Orx|Expr\Andx|Expr\Comparison|Expr\Func|string|null {
         if ($this->type == self::TYPE_OPERATION) {
             $operator = $this->joinOperator == self::JOIN_OPERATOR_AND ? 'andX' : 'orX';
@@ -454,9 +567,7 @@ class FiltersOptions extends ObjectSet
                 // we collect recursively generated child expressions
                 $childExpression = $filtersOptions->getFiltersExpressionForDoctrineQueryBuilder(
                     $queryBuilder,
-                    $baseModelClass,
                     $mappingFunction,
-                    $baseModelAlias
                 );
                 if ($childExpression) {
                     $childExpressions[] = $childExpression;
@@ -477,56 +588,47 @@ class FiltersOptions extends ObjectSet
                     $operator = 'notLike';
                 }
             }
-            /** @var DoctrineModel $baseModelClass */
-            if ($this?->getFiltersDefinition()?->getExpandDefinition()){
-                // if filter is based on a expand property, alias has to be empty as otherwise the base alias would be
-                // added to the query, e.g. filter is 'expandProperty.name' => then no alias is needed
-                $baseAlias = '';
-            }
-            else {
-                $baseAlias = $baseModelAlias ?? $baseModelClass::MODEL_ALIAS;
-            }
 
-            // avoid putting '.' if baseAlias is ''
-            $baseAliasApplied = $baseAlias ? $baseAlias . '.' : '';
-            $propertyName = $this->property;
+            $propertyName = $this->getApplicablePropertyNameConsideringExpandJoinAlias();
+
             if ($mappingFunction) {
                 /** @var QueryOptionsPropertyMapping $queryOptionPropertyMapping */
                 $queryOptionPropertyMapping = $mappingFunction($propertyName, $value);
                 $propertyName = $queryOptionPropertyMapping->propertyName;
                 $value = $queryOptionPropertyMapping->value;
             }
+
+            // Validate expression
+            if ($this->expandOption && $this->expandOption->joinAlias) {
+                $baseModelAlias = $this->expandOption->joinAlias;
+                // validate expression
+                /** @var DoctrineModel $verifyModelClass */
+                $verifyModelClass = $this->expandOption->getTargetPropertyModelClass();
+                $verifyModelAlias = $verifyModelClass::MODEL_ALIAS;
+                if (!$verifyModelClass::isValidDatabaseExpression("$verifyModelAlias.$propertyName")) {
+                    return null;
+                }
+            } else {
+                $baseModelClass = $this->getBaseModelClass();
+                $baseModelAlias = $baseModelClass::MODEL_ALIAS;
+                /** @var DoctrineModel $baseModelClass */
+                if (!$baseModelClass::isValidDatabaseExpression("$baseModelAlias.$propertyName")) {
+                    return null;
+                }
+            }
+
+            $baseModelAliasApplied = $baseModelAlias ? $baseModelAlias . '.' : '';
             if (is_string($this->value) && (strtoupper($this->value) == 'NULL' || $value === null)) {
                 if ($this->operator == self::OPERATOR_EQUAL) {
                     $operator = 'isNull';
                 } elseif ($this->operator == self::OPERATOR_NOT_EQUAL) {
                     $operator = 'isNotNull';
                 }
-                return $queryBuilder->expr()->$operator("{$baseAliasApplied}{$propertyName}");
+                return $queryBuilder->expr()->$operator("{$baseModelAliasApplied}{$propertyName}");
             }
-            // if filter is not based on expand definition, we check if expression is valid for Model
-            // Build the fully qualified expression to validate it
-            if (!$baseModelAlias) {
-                $filterExpression = $baseAliasApplied . $propertyName;
-            }
-            else {
-                // in case we apply filter options to an expand, $baseModelAlias is passed and usually does not correspond to
-                // the $baseModelClass::MODEL_ALIAS anymore
-                // e.g. left join Worlds world, alias: 'world' vs MODEL_ALIAS: 'World'
-                // so in this case we use the $baseModelClass::MODEL_ALIAS to contruct the select expression to check.
-                $tAlias = $baseModelClass ? $baseModelClass::MODEL_ALIAS : '';
-                $filterExpression = ($tAlias ? $tAlias . '.' : '') . $propertyName;
-            }
-            /** @var DoctrineModel $baseModelClass */
-            if (
-                !$this?->getFiltersDefinition()?->getExpandDefinition() && !$baseModelClass::isValidDatabaseExpression(
-                    $filterExpression
-                )
-            ) {
-                return null;
-            }
+
             $parameterCount = $queryBuilder->getParameters()->count() + 1;
-            $operatorParams = ["{$baseAliasApplied}{$propertyName}", '?' . $parameterCount];
+            $operatorParams = ["{$baseModelAliasApplied}{$propertyName}", '?' . $parameterCount];
             $parameters = [$parameterCount => $value];
             if ($this->operator == self::OPERATOR_BETWEEN) {
                 $operatorParams[] = '?' . $parameterCount + 1;
@@ -541,24 +643,88 @@ class FiltersOptions extends ObjectSet
     }
 
     /**
-     * Returns flat array of all expressions, especially usefull in cases where no logical operations are possible,
-     * e.g. with some external APIs
-     * @return FiltersOptions[] array
+     * Returns property name that can be applied considering the expand join alias
+     * If no expand is present, returns property name
+     * e.g. account.world.id => returns id
+     * @return string|null
      */
-    public function getExpressions(): array
+    public function getApplicablePropertyNameConsideringExpandJoinAlias(): ?string
     {
-        $return = [];
-        if (!isset($this->type)) {
-            return $return;
+        if ($this->type != self::TYPE_EXPRESSION) {
+            return null;
         }
-        if ($this->type == self::TYPE_OPERATION) {
-            foreach ($this->getElements() as $filtersOptions) {
-                $return = array_merge($return, $filtersOptions->getExpressions());
-            }
-        } else {
-            $return[] = $this;
+        if (!(isset($this->expandOption) && $this->expandOption && $this->expandOption->joinAlias)) {
+            return $this->property;
         }
-        return $return;
+        $filterPropertyExploded = explode('.', $this->property);
+        if (count($filterPropertyExploded) <= 1) {
+            return $this->property;
+        }
+        return end($filterPropertyExploded);
+    }
+
+    /**
+     * Returns Doctrine Model class for reference class
+     * @return string|null
+     * @throws MethodNotAllowedException
+     */
+    public function getBaseModelClass(): ?string
+    {
+        $referenceRepoClass = $this->getReferenceClassRepo();
+        if ($referenceRepoClass) {
+            /** @var DBEntity $referenceRepoClass */
+            return $referenceRepoClass::BASE_ORM_MODEL;
+        }
+        return null;
+    }
+
+    /**
+     * Returns reference class of the FitlersDefinition
+     * @return string|null
+     * @throws MethodNotAllowedException
+     */
+    public function getReferenceClassRepo(): ?string
+    {
+        return $this->filtersDefinition->getReferenceClassRepo();
+    }
+
+    public function applyFiltersToDoctrineQueryBuilder(
+        DoctrineQueryBuilder &$queryBuilder,
+        callable $mappingFunction = null,
+    ): DoctrineQueryBuilder {
+        /** @var DoctrineModel $baseModelClass */
+        $expression = $this->getFiltersExpressionForDoctrineQueryBuilder(
+            $queryBuilder,
+            $mappingFunction,
+        );
+        $queryBuilder->andWhere($expression);
+        return $queryBuilder;
+    }
+
+    /**
+     * Returns reference class of the FitlersDefinition
+     * @return string|null
+     * @throws MethodNotAllowedException
+     */
+    public function getReferenceClass(): ?string
+    {
+        return $this->filtersDefinition->getReferenceClass();
+    }
+
+    /**
+     * @return FiltersDefinition
+     */
+    public function getFiltersDefinition(): FiltersDefinition
+    {
+        return $this->filtersDefinition;
+    }
+
+    /**
+     * @param FiltersDefinition $filtersDefinition
+     */
+    public function setFiltersDefinition(FiltersDefinition $filtersDefinition): void
+    {
+        $this->filtersDefinition = $filtersDefinition;
     }
 
     /**
@@ -598,5 +764,26 @@ class FiltersOptions extends ObjectSet
             unset($this->operator);
             $this->add($filtersOptions);
         }
+    }
+
+    /**
+     * Returns flat array of all expressions, especially usefull in cases where no logical operations are possible,
+     * e.g. with some external APIs
+     * @return FiltersOptions[] array
+     */
+    public function getExpressions(): array
+    {
+        $return = [];
+        if (!isset($this->type)) {
+            return $return;
+        }
+        if ($this->type == self::TYPE_OPERATION) {
+            foreach ($this->getElements() as $filtersOptions) {
+                $return = array_merge($return, $filtersOptions->getExpressions());
+            }
+        } else {
+            $return[] = $this;
+        }
+        return $return;
     }
 }

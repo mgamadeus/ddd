@@ -18,7 +18,6 @@ use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionNamedType;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
 use PHPUnit\TextUI\ReflectionException;
-use ReflectionAttribute;
 use ReflectionUnionType;
 use Symfony\Component\Validator\Constraints\Choice;
 
@@ -32,6 +31,9 @@ class FiltersDefinitions extends ObjectSet
 {
     /** @var FiltersDefinitions[] */
     protected static ?array $filtersDefinitionsForClass = [];
+
+    /** @var string Reference class on which Definitions are based on */
+    public string $referenceClassName;
 
     /**
      * @var bool If true, current FiltersDefinitions have been set based on allowedPropertyNames in Filters Attribute e.g.
@@ -57,8 +59,7 @@ class FiltersDefinitions extends ObjectSet
         foreach ($allowedPropertyNames as $allowedPropertyName) {
             if (is_array($allowedPropertyName)) {
                 $allowedPropertyName = new FiltersDefinition(
-                    $allowedPropertyName[0],
-                    array_slice($allowedPropertyName, 1)
+                    $allowedPropertyName[0], array_slice($allowedPropertyName, 1)
                 );
                 $this->add($allowedPropertyName);
             } else {
@@ -76,8 +77,7 @@ class FiltersDefinitions extends ObjectSet
      */
     public static function getFiltersDefinitionsForReferenceClass(
         string $referenceClassName,
-    ): ?FiltersDefinitions
-    {
+    ): ?FiltersDefinitions {
         if (self::$filtersDefinitionsForClass[$referenceClassName] ?? null) {
             return self::$filtersDefinitionsForClass[$referenceClassName];
         }
@@ -87,12 +87,12 @@ class FiltersDefinitions extends ObjectSet
         $repoClass = $referenceClassName::getRepoClass(LazyLoadRepo::DB);
         $reflectionClass = ReflectionClass::instance($referenceClassName);
         if ($repoClass) {
+            $filtersDefinitions->referenceClassName = $referenceClassName;
             $filtersProperties = self::getFilterPropertiesForClass($referenceClassName);
             if ($filtersProperties) {
                 foreach ($filtersProperties as $filterPropertyName => $options) {
                     $filterDefinition = new FiltersDefinition(
-                        $filterPropertyName,
-                        is_array($options) ? $options : null
+                        $filterPropertyName, is_array($options) ? $options : null
                     );
                     $filtersDefinitions->add($filterDefinition);
                 }
@@ -136,8 +136,7 @@ class FiltersDefinitions extends ObjectSet
         string $className,
         string $propertyPrefix = '',
         array $callPath = []
-    ): array
-    {
+    ): array {
         if (isset($callPath[$className])) {
             return [];
         }
@@ -219,11 +218,13 @@ class FiltersDefinitions extends ObjectSet
             $subObjectFilters = [];
             // for properties, we do not include ObjectSets in filter options
             if ($type instanceof \ReflectionNamedType) {
-                if (is_a(
-                    $type->getName(),
-                    ChangeHistory::class,
-                    true
-                )) {
+                if (
+                    is_a(
+                        $type->getName(),
+                        ChangeHistory::class,
+                        true
+                    )
+                ) {
                     /** @var ChangeHistory $changeHistoryAttributeInstance */
                     $changeHistoryAttributeInstance = $className::getChangeHistoryAttribute(true);
                     $createdColumn = $changeHistoryAttributeInstance?->getCreatedColumn();
@@ -234,11 +235,13 @@ class FiltersDefinitions extends ObjectSet
                     if ($modifiedColumn) {
                         $allowedFilterProperties[$propertyPrefix . $modifiedColumn] = true;
                     }
-                } elseif (DefaultObject::isValueObject($type->getName()) && !is_a(
+                } elseif (
+                    DefaultObject::isValueObject($type->getName()) && !is_a(
                         $type->getName(),
                         ObjectSet::class,
                         true
-                    )) {
+                    )
+                ) {
                     $subObjectFilters = self::getFilterPropertiesForClass(
                         $type->getName(),
                         $propertyPrefix . $reflectionProperty->getName() . '.',

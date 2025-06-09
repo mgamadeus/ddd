@@ -18,7 +18,7 @@ class DtoValueResolver implements ValueResolverInterface
 {
     public function resolve(Request $request, ArgumentMetadata $argument): array
     {
-        if (is_a($argument->getType(),RequestDto::class,true) === false) {
+        if (is_a($argument->getType(), RequestDto::class, true) === false) {
             return [];
         }
         /** @var RequestDto $dto */

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace DDD\Presentation\Base\QueryOptions;
 
 use DDD\Domain\Base\Entities\QueryOptions\ExpandOptions;
-use DDD\Domain\Base\Entities\QueryOptions\FiltersDefinitions;
 use DDD\Domain\Base\Entities\QueryOptions\FiltersOptions;
 use DDD\Domain\Base\Entities\QueryOptions\OrderByOptions;
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptions;
@@ -117,9 +116,11 @@ trait DtoQueryOptionsTrait
                 // Set filters definitions for OrderBy options based on filters.
                 if ($queryOptions->getFiltersDefinitions()) {
                     foreach ($this->orderBy->getElements() as $orderByOption) {
-                        if ($filterDefinition = $queryOptions->getFiltersDefinitions()->getFilterDefinitionForPropertyName(
-                            $orderByOption->propertyName
-                        )) {
+                        if (
+                            $filterDefinition = $queryOptions->getFiltersDefinitions()->getFilterDefinitionForPropertyName(
+                                $orderByOption->propertyName
+                            )
+                        ) {
                             $orderByOption->setFiltersDefinition($filterDefinition);
                         }
                     }
@@ -130,9 +131,11 @@ trait DtoQueryOptionsTrait
             if ($queryOptions && $queryOptions->getFiltersDefinitions()) {
                 // Set filters definitions for Select options based on filters.
                 foreach ($this->select->getElements() as $selectOption) {
-                    if ($filterDefinition = $queryOptions->getFiltersDefinitions()->getFilterDefinitionForPropertyName(
-                        $selectOption->propertyName
-                    )) {
+                    if (
+                        $filterDefinition = $queryOptions->getFiltersDefinitions()->getFilterDefinitionForPropertyName(
+                            $selectOption->propertyName
+                        )
+                    ) {
                         $selectOption->setFiltersDefinition($filterDefinition);
                     }
                 }

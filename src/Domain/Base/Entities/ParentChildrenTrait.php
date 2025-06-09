@@ -41,11 +41,6 @@ trait ParentChildrenTrait
         $this->children->remove(...$children);
     }
 
-    public function getParent(): ?DefaultObject
-    {
-        return $this->parent;
-    }
-
     public function hasObjectInParents(object &$parentObject, array $callPath = []): bool
     {
         if (isset($callPath[spl_object_id($this)])) {
@@ -64,12 +59,17 @@ trait ParentChildrenTrait
         return false;
     }
 
+    public function getParent(): ?DefaultObject
+    {
+        return $this->parent;
+    }
+
     /**
      * Sets parent of this Instance
      * @param DefaultObject $parent
      * @return void
      */
-    public function setParent(DefaultObject &$parent)
+    public function setParent(DefaultObject &$parent = null)
     {
         $this->parent = $parent;
     }

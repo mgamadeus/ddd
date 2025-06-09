@@ -67,16 +67,6 @@ abstract class DatabaseRepoEntity extends RepoEntity
         self::$applyRightsRestrictions = $applyRightsRestrictions;
     }
 
-    /**
-     * @return string Returns base model table alias
-     */
-    public static function getBaseModelAlias(): string
-    {
-        /** @var DoctrineModel $baseModelClass */
-        $baseModelClass = static::BASE_ORM_MODEL;
-        return $baseModelClass::MODEL_ALIAS;
-    }
-
     public static function extractBool(mixed $value): bool
     {
         if (is_string($value)) {
@@ -322,6 +312,16 @@ abstract class DatabaseRepoEntity extends RepoEntity
     public static function getTranslationAttributeInstance(): DatabaseTranslation|false
     {
         return DatabaseTranslation::getInstance(static::class);
+    }
+
+    /**
+     * @return string Returns base model table alias
+     */
+    public static function getBaseModelAlias(): string
+    {
+        /** @var DoctrineModel $baseModelClass */
+        $baseModelClass = static::BASE_ORM_MODEL;
+        return $baseModelClass::MODEL_ALIAS;
     }
 
     /**
@@ -584,10 +584,12 @@ abstract class DatabaseRepoEntity extends RepoEntity
                 foreach ($lazyloadRepoAttributes as $lazyloadRepoAttribute) {
                     /** @var LazyLoadRepo $attributeInstance */
                     $attributeInstance = $lazyloadRepoAttribute->newInstance();
-                    if (in_array(
-                        $attributeInstance->repoType,
-                        LazyLoadRepo::DATABASE_REPOS
-                    )){
+                    if (
+                        in_array(
+                            $attributeInstance->repoType,
+                            LazyLoadRepo::DATABASE_REPOS
+                        )
+                    ) {
                         $propertyHasDBRepo = true;
                         break;
                     }
