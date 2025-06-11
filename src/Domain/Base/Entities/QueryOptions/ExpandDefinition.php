@@ -54,9 +54,7 @@ class ExpandDefinition extends ValueObject
                     /** @var string $targetPropertyClass */
                     return $targetPropertyClass;
                 }
-                throw new MethodNotAllowedException(
-                    "Cannot use target property class {$targetPropertyReflectionClass->getName()} of property {$this->propertyName} as target property class of ExpandOption as it has no QueryOptions trait."
-                );
+                return null;
             }
         }
         return null;
