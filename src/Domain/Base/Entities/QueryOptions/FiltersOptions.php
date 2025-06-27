@@ -554,13 +554,20 @@ class FiltersOptions extends ObjectSet
         }
     }
 
+    /**
+     * @param DoctrineQueryBuilder $queryBuilder
+     * @param callable|null $mappingFunction
+     * @return Expr\Orx|Expr\Andx|Expr\Comparison|Expr\Func|string|null
+     *
+     * @throws MethodNotAllowedException
+     * @throws ReflectionException
+     */
     protected function getFiltersExpressionForDoctrineQueryBuilder(
         DoctrineQueryBuilder &$queryBuilder,
         callable $mappingFunction = null,
     ): Expr\Orx|Expr\Andx|Expr\Comparison|Expr\Func|string|null {
         if ($this->type == self::TYPE_OPERATION) {
             $operator = $this->joinOperator == self::JOIN_OPERATOR_AND ? 'andX' : 'orX';
-            $epxressions = [];
 
             $childExpressions = [];
             foreach ($this->getElements() as $filtersOptions) {
@@ -604,12 +611,18 @@ class FiltersOptions extends ObjectSet
                 // validate expression
                 /** @var DoctrineModel $verifyModelClass */
                 $verifyModelClass = $this->expandOption->getTargetPropertyModelClass();
+                if ($verifyModelClass === null) {
+                    return null;
+                }
                 $verifyModelAlias = $verifyModelClass::MODEL_ALIAS;
                 if (!$verifyModelClass::isValidDatabaseExpression("$verifyModelAlias.$propertyName")) {
                     return null;
                 }
             } else {
                 $baseModelClass = $this->getBaseModelClass();
+                if ($baseModelClass === null) {
+                    return null;
+                }
                 $baseModelAlias = $baseModelClass::MODEL_ALIAS;
                 /** @var DoctrineModel $baseModelClass */
                 if (!$baseModelClass::isValidDatabaseExpression("$baseModelAlias.$propertyName")) {
@@ -702,7 +715,7 @@ class FiltersOptions extends ObjectSet
     }
 
     /**
-     * Returns reference class of the FitlersDefinition
+     * Returns reference class of the FiltersDefinition
      * @return string|null
      * @throws MethodNotAllowedException
      */
