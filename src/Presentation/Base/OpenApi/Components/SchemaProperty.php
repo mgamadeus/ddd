@@ -34,6 +34,7 @@ class SchemaProperty
     public ?string $type = null;
     public ?array $enum = null;
     public ?string $format = null;
+    public ?bool $nullable = null;
     public ?string $example = null;
     public ?int $minLength;
     public ?int $maxLength;
@@ -106,8 +107,12 @@ class SchemaProperty
         foreach ($types as $type) {
             /** @var ReflectionNamedType $type */
             // null type is ignored
-            if ($type->getName() == 'null') {
+            if ($type->getName() === 'null') {
+                $this->nullable = true;
                 continue;
+            }
+            if ($type->allowsNull()){
+                $this->nullable = true;
             }
             $required = false;
 
