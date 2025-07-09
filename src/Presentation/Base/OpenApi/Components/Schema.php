@@ -52,7 +52,7 @@ class Schema
             $schemReflectionClass = new ReflectionClass($this->schemaClass->getNameWithNamespace());
             foreach ($schemReflectionClass->getProperties(ReflectionProperty::IS_PUBLIC) as $reflectionProperty) {
                 // we skip properties that are ment to be hidden and static properties as well
-                if ($reflectionProperty->getAttributes(HideProperty::class) || $reflectionProperty->isStatic()) {
+                if ($reflectionProperty->isStatic()) {
                     continue;
                 }
                 //we document entities, entityDtos and request / response DTO classes in the same way
