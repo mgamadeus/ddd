@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo\DB\Database;
 
-use App\Domain\Presence\Entities\ListingServices\Google\Places\GooglePlace;
 use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
@@ -404,7 +403,7 @@ class DatabaseModel extends ValueObject
                     ) ?? new DatabaseForeignKey(onDeleteAction: $defaultOnDeleteAction);
 
                     if (
-                        $foreignKey->onUpdateAction == $foreignKey::ACTION_SET_NULL || $foreignKey->onDeleteAction == $foreignKey::ACTION_SET_NULL && !$internalColumnProperty->getType(
+                        ($foreignKey->onUpdateAction == $foreignKey::ACTION_SET_NULL || $foreignKey->onDeleteAction == $foreignKey::ACTION_SET_NULL) && !$internalColumnProperty->getType(
                         )->allowsNull()
                     ) {
                         throw new InternalErrorException(
