@@ -13,10 +13,22 @@ use ReflectionUnionType;
 
 trait ReflectorTrait
 {
-    public static function getClassWithNamespace():ClassWithNamespace {
+    public static function getClassWithNamespace(): ClassWithNamespace
+    {
         $reflectionClass = static::getReflectionClass();
         return $reflectionClass->getClassWithNamespace();
     }
+
+    /**
+     * returns an reflectionclass for current Class
+     * @return ReflectionClass
+     * @throws ReflectionException
+     */
+    public static function getReflectionClass(): ReflectionClass
+    {
+        return ReflectionClass::instance(static::class);
+    }
+
     /**
      * Returns the instance of the first found class attribute of the given name
      * @param string|null $name
@@ -28,16 +40,6 @@ trait ReflectorTrait
     {
         $reflectionClass = static::getReflectionClass();
         return $reflectionClass->getAttributeInstance($name);
-    }
-
-    /**
-     * returns an reflectionclass for current Class
-     * @return ReflectionClass
-     * @throws ReflectionException
-     */
-    public static function getReflectionClass(): ReflectionClass
-    {
-        return ReflectionClass::instance(static::class);
     }
 
     /**
@@ -87,6 +89,20 @@ trait ReflectorTrait
         return $forSerialization ? $this->getReflectionClass()->getPropertiesForSerialization(
             $filter
         ) : $this->getReflectionClass()->getProperties($filter);
+    }
+
+    /**
+     * Returns true if property exists in current object and is initialized
+     * @param string $propertyName
+     * @return bool
+     */
+    public function hasInitializedProp(string $propertyName): bool
+    {
+        $property = $this->getProperty($propertyName);
+        if (!$property) {
+            return false;
+        }
+        return $property->isInitialized($this);
     }
 
     /**
