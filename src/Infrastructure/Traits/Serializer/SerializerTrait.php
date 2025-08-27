@@ -14,6 +14,7 @@ use DDD\Infrastructure\Libs\Arr;
 use DDD\Infrastructure\Libs\Datafilter;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Traits\ReflectorTrait;
 use DDD\Infrastructure\Traits\Serializer\Attributes\DontPersistProperty;
 use DDD\Infrastructure\Traits\Serializer\Attributes\ExposePropertyInsteadOfClass;
@@ -24,6 +25,7 @@ use Error;
 use Exception;
 use ReflectionException;
 use stdClass;
+use Throwable;
 
 trait SerializerTrait
 {
@@ -416,9 +418,60 @@ trait SerializerTrait
         unset(SerializerRegistry::$marks[$index][spl_object_id($this)]);
     }
 
-    public function __toString()
+    public function __toString(): string
     {
-        return $this->toJSON();
+        try {
+            $json = $this->toJSON();
+            if ($json === false) {
+                $this->logSerializationIssue('json_encode returned false');
+                return '{"error":"json_encode failed"}';
+            }
+            return $json;
+        } catch (Throwable $e) {
+            $this->logSerializationIssue('Exception in __toString()', $e);
+            return sprintf('{"error":"__toString failed: %s"}', $e->getMessage());
+        }
+
+    }
+
+
+    protected function logSerializationIssue(string $message, ?Throwable $t = null): void
+    {
+        try {
+            $logger = DDDService::instance()->getLogger();
+
+            //dump raw properties
+            $rawState = [];
+            try {
+                $rawState = get_object_vars($this);
+            } catch (Throwable $ignored) {
+                $rawState = ['error' => 'get_object_vars failed'];
+            }
+
+            if ($t) {
+                \DDD\Infrastructure\Exceptions\Exception::logShortException(
+                    $logger,
+                    $message . ' in ' . static::class,
+                    $t,
+                    5
+                );
+                $logger->error('Object state (raw) for failed serialization', [
+                    'class' => static::class,
+                    'rawState' => $rawState,
+                ]);
+            } else {
+                $logger->error(
+                    'Serialization issue in ' . static::class . ': ' . $message,
+                    [
+                        'class' => static::class,
+                        'rawState' => $rawState,
+                    ]
+                );
+            }
+        } catch (Throwable $inner) {
+            // __toString must never explode
+            error_log('Logger unavailable in __toString: ' . $inner->getMessage());
+        }
     }
 
     public function toJSON(bool $ignoreHideAttributes = false)
