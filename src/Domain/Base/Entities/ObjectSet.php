@@ -330,19 +330,23 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
             if (!$element) {
                 continue;
             }
+            // Check if the element already exists in the ObjectSet
+            if ($this->contains($element)) {
+                continue;
+            }
             if ($element instanceof DefaultObject) {
                 $element->setParent($this);
             }
 
-            // BaseObject does not have ParentChildrenTrait and therefore we restrict this to DefaultObject
+            // BaseObject does not have ParentChildrenTrait, and therefore we restrict this to DefaultObject
             if ($this->addAsChild && $element instanceof DefaultObject) {
                 $this->addChildren($element);
             }
-            if (!$this->contains($element)) {
-                $this->elements[] = $element;
-                $this->elementCount++;
-                $this->elementsByUniqueKey[$element->uniqueKey()] = $element;
-            }
+
+            // Add the element to the ObjectSet's internal list of elements
+            $this->elements[] = $element;
+            $this->elementCount++;
+            $this->elementsByUniqueKey[$element->uniqueKey()] = $element;
         }
     }
 
@@ -425,8 +429,11 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
     /**
      * Sets all public properties from other set, that are not defined or set in current set
      * and adds all elements
+     *
      * @param ObjectSet $otherSet
+     *
      * @return void
+     * @throws ReflectionException
      */
     public function mergeFromOtherSet(ObjectSet &$otherSet): void
     {
