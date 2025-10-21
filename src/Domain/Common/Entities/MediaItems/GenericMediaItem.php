@@ -50,6 +50,9 @@ class GenericMediaItem extends ValueObject
         if (isset($this->publicUrl)) {
             $id = $this->publicUrl;
         }
+        if (!$id) {
+            $id = spl_object_id($this);
+        }
         return self::uniqueKeyStatic($id);
     }
 
