@@ -63,6 +63,9 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
                 $selectedProperties[$selectOption->propertyName] = true;
             }
         }
+        if (!$selectOptions) {
+            return false;
+        }
         /** @var DBEntity $baseRepoClass */
         $baseRepoClass = static::BASE_REPO_CLASS;
         $baseEntityClass = $baseRepoClass::BASE_ENTITY_CLASS;
