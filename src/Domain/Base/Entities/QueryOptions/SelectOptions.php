@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Entities\QueryOptions;
 
+use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
 use DDD\Domain\Base\Entities\ObjectSet;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Infrastructure\Exceptions\BadRequestException;
+use DDD\Infrastructure\Reflection\ReflectionClass;
 use Doctrine\ORM\Query\Expr\Select;
+use ReflectionException;
+use ReflectionProperty;
 
 /**
  * @property SelectOption[] $elements
@@ -18,6 +22,8 @@ use Doctrine\ORM\Query\Expr\Select;
  */
 class SelectOptions extends ObjectSet
 {
+    public static $propertiesToHideByJoinPath = [];
+
     public static function fromString(string $selectQuery): ?SelectOptions
     {
         if (empty($selectQuery)) {
@@ -70,13 +76,15 @@ class SelectOptions extends ObjectSet
      * @param DoctrineQueryBuilder $queryBuilder
      * @param string $baseModelClass
      * @param callable|null $mappingFunction
+     * @param string|null $baseModelAlias
      * @return DoctrineQueryBuilder
+     * @throws ReflectionException
      */
     public function applySelectToDoctrineQueryBuilder(
         DoctrineQueryBuilder &$queryBuilder,
         string $baseModelClass = '',
         callable $mappingFunction = null,
-        ?string $baseModelAlias = null
+        ?string $baseModelAlias = null,
     ): DoctrineQueryBuilder {
         // if a baseModelAlias is provided, we are usually applying select options within expand options of of the following kind:
         // expand=worldMembers(expand=world(select=id,name))
@@ -108,7 +116,8 @@ class SelectOptions extends ObjectSet
             }
             // Reset the SELECT clause to clear existing selections
             $queryBuilder->resetDQLPart('select');
-            // Re-add filtered parts using addSelect(), preserving multiple selection expressions
+            // Re-add filtered parts using addSelect(), pres
+            //erving multiple selection expressions
             foreach ($filteredParts as $part) {
                 $queryBuilder->addSelect($part);
             }
@@ -148,9 +157,83 @@ class SelectOptions extends ObjectSet
             // Build a partial select clause for the main entity.
             $partialClause = sprintf('partial %s.{%s}', $alias, implode(', ', $selectFields));
             $queryBuilder->addSelect($partialClause);
+            self::addPropertiesToHideByByJoinPath($baseModelClass::ENTITY_CLASS, self::extractJoinPathFromJoinAlias($alias ?? ''), $selectFields);
         }
 
         return $queryBuilder;
+    }
+
+    public static function addPropertiesToHideByByJoinPath(string $baseEntityClass, string $joinPath, array $selectedProperties): void
+    {
+        if (isset(self::$propertiesToHideByJoinPath[$joinPath])) {
+            return;
+        }
+        $selectedPropertiesAssoc = [];
+        foreach ($selectedProperties as $propertyName) {
+            $selectedPropertiesAssoc[$propertyName] = true;
+        }
+        $baseEntityReflectionClass = ReflectionClass::instance($baseEntityClass);
+        if (!$baseEntityReflectionClass) {
+            return;
+        }
+        $publicProperties = $baseEntityReflectionClass->getProperties(ReflectionProperty::IS_PUBLIC);
+        $propertiesToHide = [];
+        foreach ($publicProperties as $publicProperty) {
+            if ($publicProperty->getName() == 'id') {
+                continue;
+            }
+            if (!isset($selectedPropertiesAssoc[$publicProperty->getName()])) {
+                $propertiesToHide[$publicProperty->getName()] = true;
+            }
+        }
+        // handle ChangeHistory
+        if (isset($propertiesToHide['changeHistory']) && (isset($selectedProperties[ChangeHistory::DEFAULT_CREATED_COLUMN_NAME]) || isset($selectedProperties[ChangeHistory::DEFAULT_MODIFIED_COLUMN_NAME]))) {
+            unset($propertiesToHide['changeHistory']);
+        }
+        self::$propertiesToHideByJoinPath[$joinPath] = array_keys($propertiesToHide);
+    }
+
+    /**
+     * Extracts the full property path from a recursive join alias.
+     * Examples:
+     *   "RouteProblem_account__Account_world.partner" => "account.world.partner"
+     *   "Root_foo__Foo_bar.baz__Baz_qux"             => "foo.bar.baz.qux"
+     *   "RouteProblem"                               => ""
+     */
+    public static function extractJoinPathFromJoinAlias(string $alias): string
+    {
+        // If there’s no "__" and no "_" at all, it’s just the root alias
+        if (strpos($alias, '__') === false && strpos($alias, '_') === false) {
+            return '';
+        }
+
+        // Split recursive segments by "__"
+        $segments = explode('__', $alias);
+        $pathParts = [];
+
+        foreach ($segments as $seg) {
+            // Find first "_" separating model alias from the path part
+            $pos = strpos($seg, '_');
+
+            if ($pos === false) {
+                // No "_" found -> skip, likely a root alias segment
+                continue;
+            }
+
+            // Everything after the first "_" is the (possibly dotted) path
+            $path = substr($seg, $pos + 1);
+
+            if ($path !== '' && $path !== false) {
+                // Split by "." to normalize, then append
+                foreach (explode('.', $path) as $p) {
+                    if ($p !== '') {
+                        $pathParts[] = $p;
+                    }
+                }
+            }
+        }
+
+        return implode('.', $pathParts);
     }
 
     public function uniqueKey(): string

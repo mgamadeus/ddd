@@ -254,7 +254,7 @@ class ExpandOptions extends ObjectSet
                 $expandOption->selectOptions->applySelectToDoctrineQueryBuilder(
                     queryBuilder: $queryBuilder,
                     baseModelClass: $targetPropertyModelClass,
-                    baseModelAlias: $expandOption->joinAlias
+                    baseModelAlias: $expandOption->joinAlias,
                 );
             }
             if (isset($expandOption->filters)) {

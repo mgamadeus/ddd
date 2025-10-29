@@ -13,6 +13,7 @@ use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Entities\QueryOptions\AppliedQueryOptions;
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptionsTrait;
+use DDD\Domain\Base\Entities\QueryOptions\SelectOptions;
 use DDD\Domain\Base\Repo\DatabaseRepoEntitySet;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityRegistry;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
@@ -221,6 +222,7 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
         $memoryUsage = memory_get_usage();
 
         $propertiesToHideBasedOnSelectOptions = static::getPropertiesToHideBasedOnSelectOptions();
+        $propertiesToHideBasedOnSelectOptions = SelectOptions::$propertiesToHideByJoinPath;
         foreach ($ormInstances as $ormInstance) {
             /** @var DBEntity $baseRepoInstance */
             $baseRepoInstance = new $baseRepoClass();
@@ -243,9 +245,8 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
                 // in order to avoid implicit display of automatically loaded properties, such as
                 // loading account.projects => each project has an .account => if account was not explicitely selected with select options,
                 // it should be hidden.
-                $entityInstance->addPropertiesToHide();
                 if ($propertiesToHideBasedOnSelectOptions) {
-                    $entityInstance->addPropertiesToHide(...$propertiesToHideBasedOnSelectOptions);
+                    $entityInstance->addPropertiesToHideRecursively($propertiesToHideBasedOnSelectOptions);
                 }
                 $entitySetInstance->add($entityInstance);
             }

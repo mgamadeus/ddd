@@ -53,6 +53,42 @@ trait SerializerTrait
         }
     }
 
+    /**
+     * Applies hiding spec to this object and delegates to nested objects found via dot-paths.
+     *
+     * @param array<string, array<int, string>> $map
+     */
+    public function addPropertiesToHideRecursively(array $map): void
+    {
+        foreach ($map as $path => $props) {
+            // Apply to current object (root of the map)
+            if ($path === '') {
+                if (!empty($props)) {
+                    $this->addPropertiesToHide(...$props);
+                }
+                continue;
+            }
+
+            // Inline path resolution (no helper method)
+            $cursor = $this;
+            $segments = array_filter(explode('.', $path), static fn($s) => $s !== '');
+            foreach ($segments as $seg) {
+                // Property must exist and be non-null object to continue descending
+                if (!isset($cursor->{$seg}) || !is_object($cursor->{$seg})) {
+                    // Stop delegating for this path
+                    $cursor = null;
+                    break;
+                }
+                $cursor = $cursor->{$seg};
+            }
+
+            // Delegate if the final target supports the same API
+            if ($cursor !== null && method_exists($cursor, 'addPropertiesToHideRecursively')) {
+                $cursor->addPropertiesToHideRecursively(['' => $props]);
+            }
+        }
+    }
+
     public function removePropertiesToHide(string ...$properties): void
     {
         foreach ($properties as $property) {
