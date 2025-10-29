@@ -31,6 +31,12 @@ trait SerializerTrait
 {
     use ReflectorTrait;
 
+    /**
+     * @var array Properties that will not be exposed to frontend, allows dynamically remove
+     * properties vivibility instead of applying HideProperty attribute
+     */
+    protected static $staticPropertiesToHide = [];
+
     /** @var array Tracks unset properties */
     protected $unsetProperties = [];
 
@@ -40,16 +46,33 @@ trait SerializerTrait
      */
     protected $propertiesToHide = [];
 
-    /**
-     * @var array Properties that will not be exposed to frontend, allows dynamically remove
-     * properties vivibility instead of applying HideProperty attribute
-     */
-    protected static $staticPropertiesToHide = [];
-
-    public function addPropertiesToHide(string ...$properties): void
+    public static function addStaticPropertiesToHide(bool $forCurrentClass = true, string ...$properties): void
     {
+        $className = $forCurrentClass ? static::class : self::class;
         foreach ($properties as $property) {
-            $this->propertiesToHide[$property] = true;
+            StaticRegistry::$propertiesToHideOnSerialization[$className . '_' . $property] = true;
+        }
+    }
+
+    public static function removeStaticPropertiesToHide(bool $forCurrentClass = true, string ...$properties): void
+    {
+        $className = $forCurrentClass ? static::class : self::class;
+        foreach ($properties as $property) {
+            if (isset(StaticRegistry::$propertiesToHideOnSerialization[$className . '_' . $property])) {
+                unset(StaticRegistry::$propertiesToHideOnSerialization[$className . '_' . $property]);
+            }
+        }
+    }
+
+    /**
+     * clears all marks for given index
+     * @param $index
+     * @return void
+     */
+    public static function clearAllMarksForIndex(string $index)
+    {
+        if (isset(SerializerRegistry::$marks[$index])) {
+            unset(SerializerRegistry::$marks[$index]);
         }
     }
 
@@ -89,6 +112,13 @@ trait SerializerTrait
         }
     }
 
+    public function addPropertiesToHide(string ...$properties): void
+    {
+        foreach ($properties as $property) {
+            $this->propertiesToHide[$property] = true;
+        }
+    }
+
     public function removePropertiesToHide(string ...$properties): void
     {
         foreach ($properties as $property) {
@@ -97,75 +127,6 @@ trait SerializerTrait
             }
         }
     }
-
-    public static function addStaticPropertiesToHide(bool $forCurrentClass = true, string ...$properties): void
-    {
-        $className = $forCurrentClass ? static::class : self::class;
-        foreach ($properties as $property) {
-            StaticRegistry::$propertiesToHideOnSerialization[$className . '_' . $property] = true;
-        }
-    }
-
-    public static function removeStaticPropertiesToHide(bool $forCurrentClass = true, string ...$properties): void
-    {
-        $className = $forCurrentClass ? static::class : self::class;
-        foreach ($properties as $property) {
-            if (isset(StaticRegistry::$propertiesToHideOnSerialization[$className . '_' . $property])) {
-                unset(StaticRegistry::$propertiesToHideOnSerialization[$className . '_' . $property]);
-            }
-        }
-    }
-
-    /**
-     * Returns false if propertyName is hidden based on class properties and static properties
-     * @param string $propertyName
-     * @return bool
-     */
-    public function isPropertyVisible(string $propertyName): bool
-    {
-        if (isset($this->propertiesToHide[$propertyName])) {
-            return false;
-        }
-        // handle current class
-        if (isset(StaticRegistry::$propertiesToHideOnSerialization[static::class . '_' . $propertyName])) {
-            return false;
-        }
-        // handle all inheritants of base class using trait
-        if (isset(StaticRegistry::$propertiesToHideOnSerialization[self::class . '_' . $propertyName])) {
-            return false;
-        }
-        return true;
-    }
-
-    public function unset(string $propertyName)
-    {
-        unset($this->$propertyName);
-        $this->unsetProperties[$propertyName] = true;
-    }
-
-    /**
-     * clears all marks for given index
-     * @param $index
-     * @return void
-     */
-    public static function clearAllMarksForIndex(string $index)
-    {
-        if (isset(SerializerRegistry::$marks[$index])) {
-            unset(SerializerRegistry::$marks[$index]);
-        }
-    }
-
-    /**
-     * @return void Implement this method if object rewquires modifications, such as media item body needs to be nulled due to non utf8 chars
-     */
-    public function onToObject(
-        $cached = true,
-        bool $returnUniqueKeyInsteadOfContent = false,
-        array $path = [],
-        bool $ignoreHideAttributes = false,
-        bool $ignoreNullValues = true,
-        bool $forPersistence = true
-    ): void {}
 
     /**
      * recusively converts current entity to a stdClass object: top level entry function,
@@ -200,7 +161,10 @@ trait SerializerTrait
             SerializerRegistry::clearToObjectCache();
         }*/
         $objectId = spl_object_id($this);
-        $cacheKey = $objectId . '_' . $ignoreHideAttributes . '_' . $ignoreNullValues . '_' . $forPersistence;
+        $cacheKey = $objectId . '_' . $ignoreHideAttributes . '_' . $ignoreNullValues . '_' . $forPersistence . '_(' . implode(
+                '_',
+                array_keys($this->propertiesToHide)
+            ) . ')';
         $entityId = DefaultObject::isEntity($this) && isset($this->id) ? static::class . '_' . $this->id : null;
         if ($cached) {
             if ($cachedResult = SerializerRegistry::getToObjectCacheForObjectId($cacheKey)) {
@@ -288,6 +252,39 @@ trait SerializerTrait
         }
 
         return $resultArray;
+    }
+
+    /**
+     * @return void Implement this method if object rewquires modifications, such as media item body needs to be nulled due to non utf8 chars
+     */
+    public function onToObject(
+        $cached = true,
+        bool $returnUniqueKeyInsteadOfContent = false,
+        array $path = [],
+        bool $ignoreHideAttributes = false,
+        bool $ignoreNullValues = true,
+        bool $forPersistence = true
+    ): void {}
+
+    /**
+     * Returns false if propertyName is hidden based on class properties and static properties
+     * @param string $propertyName
+     * @return bool
+     */
+    public function isPropertyVisible(string $propertyName): bool
+    {
+        if (isset($this->propertiesToHide[$propertyName])) {
+            return false;
+        }
+        // handle current class
+        if (isset(StaticRegistry::$propertiesToHideOnSerialization[static::class . '_' . $propertyName])) {
+            return false;
+        }
+        // handle all inheritants of base class using trait
+        if (isset(StaticRegistry::$propertiesToHideOnSerialization[self::class . '_' . $propertyName])) {
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -467,9 +464,15 @@ trait SerializerTrait
             $this->logSerializationIssue('Exception in __toString()', $e);
             return sprintf('{"error":"__toString failed: %s"}', $e->getMessage());
         }
-
     }
 
+    public function toJSON(bool $ignoreHideAttributes = false)
+    {
+        return json_encode(
+            $this->jsonSerialize($ignoreHideAttributes),
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+        );
+    }
 
     protected function logSerializationIssue(string $message, ?Throwable $t = null): void
     {
@@ -508,14 +511,6 @@ trait SerializerTrait
             // __toString must never explode
             error_log('Logger unavailable in __toString: ' . $inner->getMessage());
         }
-    }
-
-    public function toJSON(bool $ignoreHideAttributes = false)
-    {
-        return json_encode(
-            $this->jsonSerialize($ignoreHideAttributes),
-            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
-        );
     }
 
     /**
@@ -563,6 +558,12 @@ trait SerializerTrait
         foreach ($unserialized['unset'] as $key => $true) {
             $this->unset($key);
         }
+    }
+
+    public function unset(string $propertyName)
+    {
+        unset($this->$propertyName);
+        $this->unsetProperties[$propertyName] = true;
     }
 
     /**
