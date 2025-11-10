@@ -86,7 +86,7 @@ class FiltersOptions extends ObjectSet
         self::OPERATOR_BETWEEN => 'between',
     ];
 
-    /** @var string Can be either epression or operation, an operation holds other operations or expressions */
+    /** @var string Can be either expression or operation, an operation holds other operations or expressions */
     #[Choice(choices: [self::TYPE_EXPRESSION, self::TYPE_OPERATION, null])]
     public string $type;
 

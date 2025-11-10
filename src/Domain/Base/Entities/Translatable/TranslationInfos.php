@@ -238,7 +238,7 @@ class TranslationInfos extends ValueObject
         // If not translation is found and we have set fallback to default language, returns default language
         if (!$translation && Translatable::fallbackToDefaultLanguageIfNoTranslationIsPresent()) {
             $key = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
-                Translatable::getDefaultLanguageCode()
+                Translatable::getDefaultLanguageCode(), '',
             );
             $translation = $this->translationsStore[$propertyName][$key] ?? null;
             if ($translation) {
