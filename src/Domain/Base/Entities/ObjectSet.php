@@ -204,7 +204,7 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
     }
 
     public function setPropertiesFromObject(
-        &$object,
+        object &$object,
         $throwErrors = true,
         bool $rootCall = true,
         bool $sanitizeInput = false

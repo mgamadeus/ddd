@@ -103,6 +103,14 @@ trait LazyLoadTrait
                     $repoClass = $this->getRepoClassForProperty($repoType, $propertyName);
                     $repoClassInstance = new $repoClass();
 
+                    // handling in case of Argus Repo Entities => we do not perform lazyloading on them but instead lazy instance them
+                    // this is done in order to be able to perform all loading operations at once at the end
+                    if ($repoType == LazyLoadRepo::ARGUS && property_exists($this, 'isArgusEntity')) {
+                        $this->$propertyName = $repoClassInstance;
+                        //set parent / child relationsship
+                        $this->addChildren($repoClassInstance);
+                        return $this->$propertyName;
+                    }
                     $propertyContainingId = $lazyloadAttributeInstance->getPropertyContainingId();
                     if ($propertyContainingId && !isset($this->$propertyContainingId)) {
                         return null;
@@ -346,6 +354,116 @@ trait LazyLoadTrait
         return DDDService::instance()->getContainerServiceClassNameForClass(
             StaticRegistry::$repoTypesForClasses[$currentClassName][$repoType]->repoClass
         );
+    }
+
+    /**
+     * All non argus properties are loaded instantly by accessing them (recursively)
+     * properties with argus load repo, are loaded at once, if possible
+     * @param PropertyToBeLoaded[] $propertiesToBeLoaded
+     * @param array $callStack
+     * @return void
+     * @throws ReflectionException
+     */
+    public function lazyLoadProperties(
+        array $propertiesToBeLoaded,
+        array $callStack = []
+    ): void {
+        if (isset($callStack[spl_object_id($this)])) {
+            return;
+        }
+        if (!$propertiesToBeLoaded || !count($propertiesToBeLoaded)) {
+            return;
+        }
+        $callStack[spl_object_id($this)] = true;
+
+        /** @var LazyLoadTrait $currentClassName */
+        $currentClassName = DDDService::instance()->getContainerServiceClassNameForClass(static::class);
+
+        /** @var string[] $propertiesToBeArgusLoaded */
+        $propertiesToBeArgusLoaded = [];
+        /** @var PropertyToBeLoaded[] $propertiesToBeLoadedIteratively */
+        $propertiesToBeLoadedIteratively = [];
+
+        // if current class has a Argus Repo Class, all desendent classes should be Argus loadable
+        $argusClass = $currentClassName::getRepoClass(LazyLoadRepo::ARGUS);
+
+        foreach ($propertiesToBeLoaded as $propertyToBeLoaded) {
+            $reflectioncClass = ReflectionClass::instance($propertyToBeLoaded->className);
+            $propertyName = $propertyToBeLoaded->propertyName;
+
+            $reflectioncProperty = $reflectioncClass->getProperty($propertyToBeLoaded->propertyName);
+            if (!$reflectioncProperty) {
+                // class property combination does not exist, we ignore it
+                continue;
+            }
+
+            foreach ($reflectioncProperty->getAttributes(LazyLoad::class, \ReflectionAttribute::IS_INSTANCEOF) as $lazyLoadAttribute) {
+                /** @var LazyLoad $lazyLoadAttributeInstance */
+                $lazyLoadAttributeInstance = $lazyLoadAttribute->newInstance();
+                if ($lazyLoadAttributeInstance->repoType != LazyLoadRepo::ARGUS) {
+                    // we have property that is loaded iteratively
+                    if ($propertyToBeLoaded->className == $currentClassName) {
+                        // property is from current class, try to laod it instant
+                        if (!isset($this->$propertyName)) {
+                            $this->$propertyName;
+                        }
+                    } else {
+                        // put property to recursive stack
+                        $propertiesToBeLoadedIteratively[] = $propertyToBeLoaded;
+                    }
+                } elseif ($propertyToBeLoaded->className == $currentClassName) {
+                    // we have a class with an argus repo and property is to be argus loaded
+                    if ($argusClass) {
+                        // load later with argus call
+                        /** @var LazyLoadTrait $propertyName */
+                        $propertyName = $reflectioncProperty->getType()->getName();
+                        $argusRepoClass = $propertyName::getRepoClass(LazyLoadRepo::ARGUS);
+                        $propertiesToBeArgusLoaded[] = $argusRepoClass;
+                    } elseif (!isset($this->$propertyName)) {
+                        // as current class has no argus repo, we need to load property instantly
+                        $this->$propertyName;
+                    }
+                } elseif ($argusClass) {
+                    // as current class supports argus loading, we cann load argus properties later at once
+                    /** @var LazyLoadTrait $propertyName */
+                    $propertyName = $reflectioncProperty->getType()->getName();
+                    $argusRepoClass = $propertyName::getRepoClass(LazyLoadRepo::ARGUS);
+                    $propertiesToBeArgusLoaded[] = $argusRepoClass;
+                } else {
+                    // current class does not support argus loading, we need to pass argus properties to children
+                    $propertiesToBeLoadedIteratively[] = $propertyToBeLoaded;
+                }
+            }
+        }
+
+        // recursively pass parameter to children and load non argus properties instantly
+        if ($propertiesToBeLoadedIteratively) {
+            foreach ($this->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
+                $propertyName = $property->getName();
+                if (
+                    isset($this->$propertyName) && is_object($this->$propertyName) && method_exists(
+                        $this->$propertyName,
+                        'lazyLoadProperties'
+                    )
+                ) {
+                    $this->$propertyName->lazyLoadProperties($propertiesToBeLoadedIteratively, $callStack);
+                }
+            }
+        }
+
+        if ($propertiesToBeArgusLoaded) {
+            $argusRepoClass = $currentClassName::getRepoClass(LazyLoadRepo::ARGUS);
+            /** var ArgusTrait $argusRepo */
+            if ($argusRepoClass) {
+                $argusRepo = new $argusRepoClass();
+                if (method_exists($argusRepo, 'fromEntity')) {
+                    $argusRepo->fromEntity($this);
+                    $argusRepo->setPropertiesToLoad(...$propertiesToBeArgusLoaded);
+                    $argusRepo->argusLoad(autoloadCurrentObject: false);
+                    $argusRepo->toEntity(entityInstance: $this);
+                }
+            }
+        }
     }
 
     /**

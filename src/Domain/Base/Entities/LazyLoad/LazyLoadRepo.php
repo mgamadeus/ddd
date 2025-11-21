@@ -19,6 +19,9 @@ class LazyLoadRepo
     public bool $forceDBEntityModelCreation = false;
     public bool $isDefault = false;
 
+    /** @var string ARGUS API */
+    public const ARGUS = 'ARGUS';
+
     /** @var string Legacy Database Repos */
     public const  LEGACY_DB = 'LEGACY_DB';
 
