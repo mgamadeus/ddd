@@ -169,7 +169,7 @@ class DatabaseModel extends ValueObject
             foreach ($reflectionProperties as $reflectionProperty) {
                 // if we have a SubclassIndicator, we attach the property name and and the SubclassIndicator to the DatabaseModel
                 if (
-                    $subclassIndicatorAttibuteInstance = $reflectionProperty->getAttributes(
+                    $subclassIndicatorAttibuteInstance = $reflectionProperty->getAttributeInstance(
                         SubclassIndicator::class,
                         ReflectionAttribute::IS_INSTANCEOF
                     )
