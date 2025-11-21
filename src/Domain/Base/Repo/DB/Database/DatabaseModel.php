@@ -21,12 +21,14 @@ use DDD\Infrastructure\Reflection\ClassWithNamespace;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
 use Doctrine\ORM\Mapping\Table;
+use ReflectionAttribute;
 use ReflectionException;
 use ReflectionNamedType;
 
 class DatabaseModel extends ValueObject
 {
     public const DEFAULT_COLLATION = 'utf8mb4_unicode_ci';
+
     public const MODEL_SUFFIX = 'Model';
 
     /**
@@ -144,13 +146,13 @@ class DatabaseModel extends ValueObject
                 ) as $parentClassReflectionProperty
             ) {
                 if (
-                    $subclassIndicatorAttibute = $parentClassReflectionProperty->getAttributes(
-                        SubclassIndicator::class
-                    )[0] ?? null
+                    $subclassIndicatorAttibuteInstance = $parentClassReflectionProperty->getAttributeInstance(
+                        SubclassIndicator::class,
+                        ReflectionAttribute::IS_INSTANCEOF
+                    )
                 ) {
                     $reflectionProperties[] = $parentClassReflectionProperty;
                     /** @var SubclassIndicator $subclassIndicatorAttibuteInstance */
-                    $subclassIndicatorAttibuteInstance = $subclassIndicatorAttibute->newInstance();
                     $subclassIndicatorAttibuteInstance->indicatorPropertyName = $parentClassReflectionProperty->getName();
                     $databaseModel->subclassIndicator = $subclassIndicatorAttibuteInstance;
                     // if one of the subclass indicator model classes has a different namespace than current model, we need to add it as import
@@ -167,12 +169,12 @@ class DatabaseModel extends ValueObject
             foreach ($reflectionProperties as $reflectionProperty) {
                 // if we have a SubclassIndicator, we attach the property name and and the SubclassIndicator to the DatabaseModel
                 if (
-                    $subclassIndicatorAttibute = $reflectionProperty->getAttributes(
-                        SubclassIndicator::class
-                    )[0] ?? null
+                    $subclassIndicatorAttibuteInstance = $reflectionProperty->getAttributes(
+                        SubclassIndicator::class,
+                        ReflectionAttribute::IS_INSTANCEOF
+                    )
                 ) {
                     /** @var SubclassIndicator $subclassIndicatorAttibuteInstance */
-                    $subclassIndicatorAttibuteInstance = $subclassIndicatorAttibute->newInstance();
                     $subclassIndicatorAttibuteInstance->indicatorPropertyName = $reflectionProperty->getName();
                     $databaseModel->subclassIndicator = $subclassIndicatorAttibuteInstance;
                 }
@@ -212,7 +214,7 @@ class DatabaseModel extends ValueObject
             $virtualColumnsForProperty = null;
             if ($databaseColumn) {
                 $databaseModel->columns->add($databaseColumn);
-                if ($virtualColumnAttributes = $reflectionProperty->getAttributes(DatabaseVirtualColumn::class)) {
+                if ($virtualColumnAttributes = $reflectionProperty->getAttributes(DatabaseVirtualColumn::class, ReflectionAttribute::IS_INSTANCEOF)) {
                     foreach ($virtualColumnAttributes as $virtualColumnAttribute) {
                         /** @var DatabaseVirtualColumn $virtualColumnAttributeInstance */
                         $virtualColumnAttributeInstance = $virtualColumnAttribute->newInstance();
@@ -226,7 +228,7 @@ class DatabaseModel extends ValueObject
                             continue;
                         }
                         // Handle DB Indexes for Virtual Columns:
-                        $indexAttributes = $reflectionProperty->getAttributes(DatabaseIndex::class);
+                        $indexAttributes = $reflectionProperty->getAttributes(DatabaseIndex::class, ReflectionAttribute::IS_INSTANCEOF);
                         if (count($indexAttributes)) {
                             foreach ($indexAttributes as $indexAttribute) {
                                 /** @var DatabaseIndex $indexAttributeInstance */
@@ -268,7 +270,7 @@ class DatabaseModel extends ValueObject
             }
             if ($databaseColumn && !$databaseColumn->isPrimaryKey) {
                 // handle indexes
-                $indexAttributes = $reflectionProperty->getAttributes(DatabaseIndex::class);
+                $indexAttributes = $reflectionProperty->getAttributes(DatabaseIndex::class, ReflectionAttribute::IS_INSTANCEOF);
                 if (count($indexAttributes)) {
                     foreach ($indexAttributes as $indexAttribute) {
                         /** @var DatabaseIndex $indexAttributeInstance */
@@ -295,7 +297,7 @@ class DatabaseModel extends ValueObject
                     $reflectionProperty->getType()->getName(),
                     EntitySet::class,
                     true
-                ) && $lazyLoadAttributes = $reflectionProperty->getAttributes(LazyLoad::class)
+                ) && $lazyLoadAttributes = $reflectionProperty->getAttributes(LazyLoad::class, ReflectionAttribute::IS_INSTANCEOF)
             ) {
                 foreach ($lazyLoadAttributes as $lazyLoadAttribute) {
                     /** @var LazyLoad $lazyLoadAttributeInstance */
@@ -311,7 +313,7 @@ class DatabaseModel extends ValueObject
             if (
                 $reflectionProperty->getType() instanceof ReflectionNamedType && DefaultObject::isEntity($reflectionProperty->getType()->getName())
             ) {
-                $propertyLazyLoadAttributes = $reflectionProperty->getAttributes(LazyLoad::class);
+                $propertyLazyLoadAttributes = $reflectionProperty->getAttributes(LazyLoad::class, ReflectionAttribute::IS_INSTANCEOF);
                 $propertyDBRepoLazyloadAttribute = null;
                 $propertyRepresentsParentClass = false;
                 foreach ($propertyLazyLoadAttributes as $propertyLazyLoadAttribute) {
@@ -328,7 +330,7 @@ class DatabaseModel extends ValueObject
                 $foreignClassName = $reflectionProperty->getType()->getName();
                 $foreignClassReflectionClass = ReflectionClass::instance((string)$foreignClassName);
                 $hasDBRelatedRepo = false;
-                foreach ($foreignClassReflectionClass->getAttributes(LazyLoadRepo::class) as $repoAttribute) {
+                foreach ($foreignClassReflectionClass->getAttributes(LazyLoadRepo::class, ReflectionAttribute::IS_INSTANCEOF) as $repoAttribute) {
                     /** @var LazyLoadRepo $repoAttributeInstance */
                     $repoAttributeInstance = $repoAttribute->newInstance();
                     if (in_array($repoAttributeInstance->repoType, LazyLoadRepo::DATABASE_REPOS)) {
@@ -366,14 +368,13 @@ class DatabaseModel extends ValueObject
                             $foreignModelClassWithNamespace, $databaseModel->modelClassWithNamespace->namespace
                         );
                         $databaseModel->modelImports->add($modelImport);
-                        $tableAttribute = $foreignModelReflectionClass->getAttributes(Table::class)[0] ?? null;
-                        if (!$tableAttribute) {
+                        $tableAttributeInstance = $foreignModelReflectionClass->getAttributeInstance(Table::class, ReflectionAttribute::IS_INSTANCEOF);
+                        if (!$tableAttributeInstance) {
                             throw new InternalErrorException(
                                 "Model {$foreignModelClassName} has no ORM\Table attribute"
                             );
                         }
                         /** @var Table $tableAttributeInstance */
-                        $tableAttributeInstance = $tableAttribute->newInstance();
                         $foreignTableName = $tableAttributeInstance->name;
                     } else {
                         $foreignModelClassWithNamespace = self::getModelClassWithNamespaceForEntityClassWithNamespace(
@@ -452,19 +453,60 @@ class DatabaseModel extends ValueObject
         }
 
         // handle indexes over multiple columns
-        foreach ($entityReflectionClass->getAttributes(DatabaseIndex::class) as $indexAttribute) {
+        foreach ($entityReflectionClass->getAttributes(DatabaseIndex::class, ReflectionAttribute::IS_INSTANCEOF) as $indexAttribute) {
             /** @var DatabaseIndex $indexAttributeInstance */
             $indexAttributeInstance = $indexAttribute->newInstance();
             $databaseModel->indexes->add($indexAttributeInstance);
         }
 
         // handle triggers
-        foreach ($entityReflectionClass->getAttributes(DatabaseTrigger::class) as $triggerAttribute) {
+        foreach ($entityReflectionClass->getAttributes(DatabaseTrigger::class, ReflectionAttribute::IS_INSTANCEOF) as $triggerAttribute) {
             /** @var DatabaseTrigger $triggerAttributeInstance */
             $triggerAttributeInstance = $triggerAttribute->newInstance();
             $databaseModel->triggers->add($triggerAttributeInstance);
         }
         return $databaseModel;
+    }
+
+    /**
+     * @return ClassWithNamespace Returns Model ClassWithNamespace
+     */
+    public function getModelClassNameWithNameSpace(): ClassWithNamespace
+    {
+        if (isset($this->modelClassWithNamespace)) {
+            return $this->modelClassWithNamespace;
+        }
+        $this->modelClassWithNamespace = self::getModelClassWithNamespaceForEntityClassWithNamespace(
+            $this->entityClassWithNamespace
+        );
+        return $this->modelClassWithNamespace;
+    }
+
+    /**
+     * Returns new ModelClassWithNamespace based on Entity ClassWithNamespace
+     * @param ClassWithNamespace $entityClassWithNamespace
+     * @return ClassWithNamespace
+     */
+    public static function getModelClassWithNamespaceForEntityClassWithNamespace(
+        ClassWithNamespace $entityClassWithNamespace
+    ): ClassWithNamespace {
+        $namespace = str_replace('\\Entities\\', '\\Repo\\DB\\', $entityClassWithNamespace->namespace);
+        $className = 'DB' . $entityClassWithNamespace->name . 'Model';
+        $pathParts = explode('/', $entityClassWithNamespace->filename);
+        $filenamePart = array_pop($pathParts); // Get the last part which is the filename
+        $filenameWithoutExtension = explode('.', $filenamePart)[0];
+        $newFilename = 'DB' . $filenameWithoutExtension . 'Model.php';
+        // Replace the filename part in the path
+        $pathParts[] = $newFilename;
+
+        // Rebuild the path with the new filename
+        $newFullFileName = implode('/', $pathParts);
+
+        // Special handling for subfolders/subnamespaces if needed
+        $newFullFileName = str_replace('/Entities/', '/Repo/DB/', $newFullFileName);
+
+        $modelClassWithNamespace = new ClassWithNamespace($className, $namespace, $newFullFileName);#
+        return $modelClassWithNamespace;
     }
 
     /**
@@ -553,47 +595,6 @@ class DatabaseModel extends ValueObject
     }
 
     /**
-     * @return ClassWithNamespace Returns Model ClassWithNamespace
-     */
-    public function getModelClassNameWithNameSpace(): ClassWithNamespace
-    {
-        if (isset($this->modelClassWithNamespace)) {
-            return $this->modelClassWithNamespace;
-        }
-        $this->modelClassWithNamespace = self::getModelClassWithNamespaceForEntityClassWithNamespace(
-            $this->entityClassWithNamespace
-        );
-        return $this->modelClassWithNamespace;
-    }
-
-    /**
-     * Returns new ModelClassWithNamespace based on Entity ClassWithNamespace
-     * @param ClassWithNamespace $entityClassWithNamespace
-     * @return ClassWithNamespace
-     */
-    public static function getModelClassWithNamespaceForEntityClassWithNamespace(
-        ClassWithNamespace $entityClassWithNamespace
-    ): ClassWithNamespace {
-        $namespace = str_replace('\\Entities\\', '\\Repo\\DB\\', $entityClassWithNamespace->namespace);
-        $className = 'DB' . $entityClassWithNamespace->name . 'Model';
-        $pathParts = explode('/', $entityClassWithNamespace->filename);
-        $filenamePart = array_pop($pathParts); // Get the last part which is the filename
-        $filenameWithoutExtension = explode('.', $filenamePart)[0];
-        $newFilename = 'DB' . $filenameWithoutExtension . 'Model.php';
-        // Replace the filename part in the path
-        $pathParts[] = $newFilename;
-
-        // Rebuild the path with the new filename
-        $newFullFileName = implode('/', $pathParts);
-
-        // Special handling for subfolders/subnamespaces if needed
-        $newFullFileName = str_replace('/Entities/', '/Repo/DB/', $newFullFileName);
-
-        $modelClassWithNamespace = new ClassWithNamespace($className, $namespace, $newFullFileName);#
-        return $modelClassWithNamespace;
-    }
-
-    /**
      * Generates PHP Code for Doctrine model
      * @return string
      */
@@ -672,9 +673,10 @@ class DatabaseModel extends ValueObject
             // avoid Type mixed cannot be marked as nullable since mixed already includes null
             try {
                 $isNullable = $column->allowsNull && $column->getDoctrinePhpType() != 'mixed';
-            }
-            catch (InternalErrorException $e) {
-                throw new InternalErrorException("Could not determine Doctrine PHP type for column {$column->name} in Model {$this->modelClassWithNamespace->getNameWithNamespace()} ");
+            } catch (InternalErrorException $e) {
+                throw new InternalErrorException(
+                    "Could not determine Doctrine PHP type for column {$column->name} in Model {$this->modelClassWithNamespace->getNameWithNamespace()} "
+                );
             }
             $modelClassContent .= "\tpublic " . ($isNullable ? '?' : '') . $column->getDoctrinePhpType(
                 ) . ' $' . $column->name . (isset($column->phpDefaultValue) ? ' = ' . $column->getPhpDefaultValueAsString() : '') . ";\n";
@@ -716,11 +718,6 @@ class DatabaseModel extends ValueObject
         return $modelClassContent;
     }
 
-    public function uniqueKey(): string
-    {
-        return parent::uniqueKey($this->modelClassWithNamespace->getNameWithNamespace());
-    }
-
     public function getOneToManyRelationsShips(): DatabaseOneToManyRelationships
     {
         if (isset($this->oneToManyRelationships)) {
@@ -760,5 +757,10 @@ class DatabaseModel extends ValueObject
             $this->oneToManyRelationships->add($databaseOneToManyRelationShip);
         }
         return $this->oneToManyRelationships;
+    }
+
+    public function uniqueKey(): string
+    {
+        return parent::uniqueKey($this->modelClassWithNamespace->getNameWithNamespace());
     }
 }

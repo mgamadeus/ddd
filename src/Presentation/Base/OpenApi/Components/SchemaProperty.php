@@ -18,6 +18,8 @@ use DDD\Presentation\Base\OpenApi\Attributes\Parameter;
 use DDD\Presentation\Base\OpenApi\Attributes\Required;
 use DDD\Presentation\Base\OpenApi\Document;
 use DDD\Presentation\Base\OpenApi\Exceptions\TypeDefinitionMissingOrWrong;
+use ReflectionAttribute;
+use ReflectionEnum;
 use ReflectionException;
 use ReflectionNamedType;
 use ReflectionProperty;
@@ -30,22 +32,37 @@ class SchemaProperty
     use SerializerTrait;
 
     public const FORMAT_DATE_TIME = 'date-time';
+
     public const FORMAT_DATE = 'date';
+
     public ?string $type = null;
+
     public ?array $enum = null;
+
     public ?string $format = null;
+
     public ?bool $nullable = null;
+
     public ?string $example = null;
+
     public ?int $minLength;
+
     public ?int $maxLength;
+
     public mixed $default = null;
+
     public ?string $description = null;
+
     #[OverwritePropertyName('$ref')]
     public ?string $ref = null;
+
     /** @var string[]|null */
     public ?array $oneOf = null;
+
     public array|object|null $items = null;
+
     private Schema $schema;
+
     private array $typeNameAllocation = [
         'int' => 'integer',
         'string' => 'string',
@@ -54,6 +71,7 @@ class SchemaProperty
         'array' => 'array',
         'object' => 'object'
     ];
+
     private string $scope = Parameter::BODY;
 
     /**
@@ -73,8 +91,7 @@ class SchemaProperty
 
         if (!$schemaClassReflectionProperty->getType()) {
             throw new TypeDefinitionMissingOrWrong(
-                'Type Definition Missing in ' . $schemaReflectionClass->getName(
-                ) . '->$' . $schemaClassReflectionProperty->getName()
+                'Type Definition Missing in ' . $schemaReflectionClass->getName() . '->$' . $schemaClassReflectionProperty->getName()
             );
         }
 
@@ -111,19 +128,20 @@ class SchemaProperty
                 $this->nullable = true;
                 continue;
             }
-            if ($type->allowsNull()){
+            if ($type->allowsNull()) {
                 $this->nullable = true;
             }
             $required = false;
 
             if (
                 $schemaClassReflectionProperty->getAttributes(
-                    Required::class
-                ) || $schemaClassReflectionProperty->getAttributes(NotNull::class)
+                    Required::class,
+                    ReflectionAttribute::IS_INSTANCEOF
+                ) || $schemaClassReflectionProperty->getAttributes(NotNull::class, ReflectionAttribute::IS_INSTANCEOF)
             ) {
                 $required = true;
             }
-            foreach ($schemaClassReflectionProperty->getAttributes(Parameter::class) as $attribute) {
+            foreach ($schemaClassReflectionProperty->getAttributes(Parameter::class, ReflectionAttribute::IS_INSTANCEOF) as $attribute) {
                 /** @var Parameter $parameterAttributeInstance */
                 $parameterAttributeInstance = $attribute->newInstance();
                 if ($parameterAttributeInstance->isRequired()) {
@@ -138,24 +156,23 @@ class SchemaProperty
                 // array types are not accepted in case of POST scenario, only in BODY or FILES
                 if ($this->type == 'array' && $scope == Parameter::POST) {
                     throw new TypeDefinitionMissingOrWrong(
-                        'Declared type array in ' . $schemaReflectionClass->getName(
-                        ) . '->$' . $schemaClassReflectionProperty->getName() . ' allowed only for BODY or FILES parameters'
+                        'Declared type array in ' . $schemaReflectionClass->getName() . '->$' . $schemaClassReflectionProperty->getName(
+                        ) . ' allowed only for BODY or FILES parameters'
                     );
                 }
                 if ($this->type == 'object') {
                     throw new TypeDefinitionMissingOrWrong(
-                        'Declared type object in ' . $schemaReflectionClass->getName(
-                        ) . '->$' . $schemaClassReflectionProperty->getName(
+                        'Declared type object in ' . $schemaReflectionClass->getName() . '->$' . $schemaClassReflectionProperty->getName(
                         ) . ' not allowed. Use array or create a class'
                     );
                 }
 
                 // handle Choice attributes (fixed set of options for the property)
                 if (
-                    ($attributes = $schemaClassReflectionProperty->getAttributes(Choice::class)) ||
-                    ($attributes = $schemaClassReflectionProperty->getAttributes(
-                        \DDD\Infrastructure\Validation\Constraints\Choice::class
-                    ))
+                    $attributes = $schemaClassReflectionProperty->getAttributes(
+                        Choice::class,
+                        ReflectionAttribute::IS_INSTANCEOF
+                    )
                 ) {
                     /** @var Choice $choiceAttribute */
                     $choiceAttribute = $attributes[0]->newInstance();
@@ -174,12 +191,12 @@ class SchemaProperty
                 }
                 // this is to handle e.g. objectType attriubte, which has only one enum option, the class Name
                 if ($this->type == 'string') {
-                    if ($schemaClassReflectionProperty->getAttributes(ClassName::class)) {
+                    if ($schemaClassReflectionProperty->getAttributes(ClassName::class, ReflectionAttribute::IS_INSTANCEOF)) {
                         $this->enum[] = $schemaReflectionClass->getName();
                         // objectType => className is always required by convention
                         $this->schema->addRequiredProperty($schemaClassReflectionProperty->getName());
                     }
-                    if ($lengthAttribute = $schemaClassReflectionProperty->getAttributes(Length::class)[0] ?? null) {
+                    if ($lengthAttribute = $schemaClassReflectionProperty->getAttributes(Length::class, \ReflectionAttribute::IS_INSTANCEOF)[0] ?? null) {
                         /** @var Length $lengthAttributeInstance */
                         $lengthAttributeInstance = $lengthAttribute->newInstance();
                         if ($lengthAttributeInstance->min) {
@@ -191,8 +208,7 @@ class SchemaProperty
                     }
                 }
                 if (
-                    $this->type != 'array' && $this->type != 'object' && $schemaClassReflectionProperty->hasDefaultValue(
-                    )
+                    $this->type != 'array' && $this->type != 'object' && $schemaClassReflectionProperty->hasDefaultValue()
                 ) {
                     $this->default = $schemaClassReflectionProperty->getDefaultValue();
                 }
@@ -213,8 +229,7 @@ class SchemaProperty
                     $arrayType = $type->getArrayType();
                     if (!$arrayType) {
                         throw new TypeDefinitionMissingOrWrong(
-                            'Array Type Definition Missing in ' . $schemaReflectionClass->getName(
-                            ) . '->$' . $schemaClassReflectionProperty->getName()
+                            'Array Type Definition Missing in ' . $schemaReflectionClass->getName() . '->$' . $schemaClassReflectionProperty->getName()
                         );
                     }
                     if ($arrayType instanceof ReflectionUnionType) {
@@ -253,15 +268,13 @@ class SchemaProperty
                                 } else {
                                     $this->items['type'] = $this->typeNameAllocation[$arrayType];
                                 }
-
                             } // we have a complex type
                             else {
                                 $propertyClass = new ClassWithNamespace($arrayType);
                                 if (!class_exists($propertyClass->getNameWithNamespace())) {
                                     //echo $propertyClass->getNameWithNamespace();die();
                                     throw new TypeDefinitionMissingOrWrong(
-                                        'Declared type class ' . $propertyClass->getNameWithNamespace(
-                                        ) . ' in ' . $schemaReflectionClass->getName(
+                                        'Declared type class ' . $propertyClass->getNameWithNamespace() . ' in ' . $schemaReflectionClass->getName(
                                         ) . '->$' . $schemaClassReflectionProperty->getName() . ' does not exist'
                                     );
                                 }
@@ -295,13 +308,12 @@ class SchemaProperty
                 if (class_exists($typeName) && enum_exists($typeName)) {
                     if ($unionType) {
                         throw new TypeDefinitionMissingOrWrong(
-                            'Declared type ' . $typeName . ' in ' . $schemaReflectionClass->getName(
-                            ) . '->$' . $schemaClassReflectionProperty->getName(
+                            'Declared type ' . $typeName . ' in ' . $schemaReflectionClass->getName() . '->$' . $schemaClassReflectionProperty->getName(
                             ) . ' not allowed. Union Types are not allowed for Enums.'
                         );
                     }
 
-                    $reflection = new \ReflectionEnum($typeName);
+                    $reflection = new ReflectionEnum($typeName);
                     $cases = $reflection->getCases();
                     $isBacked = $reflection->isBacked();
                     $this->enum = [];
@@ -334,8 +346,8 @@ class SchemaProperty
                 // complex types are not accepted in POST scenario
                 if ($scope == Parameter::POST) {
                     throw new TypeDefinitionMissingOrWrong(
-                        'Declared type ' . $type->getName() . ' in ' . $schemaReflectionClass->getName(
-                        ) . '->$' . $schemaClassReflectionProperty->getName() . ' allowed only for BODY or FILES parameters'
+                        'Declared type ' . $type->getName() . ' in ' . $schemaReflectionClass->getName() . '->$' . $schemaClassReflectionProperty->getName(
+                        ) . ' allowed only for BODY or FILES parameters'
                     );
                 } else {
                     $this->type = 'object';
@@ -359,8 +371,7 @@ class SchemaProperty
                     }
                     if (!class_exists($propertyClass->getNameWithNamespace())) {
                         throw new TypeDefinitionMissingOrWrong(
-                            'Declared type class ' . $propertyClass->getNameWithNamespace(
-                            ) . ' in ' . $schemaReflectionClass->getName(
+                            'Declared type class ' . $propertyClass->getNameWithNamespace() . ' in ' . $schemaReflectionClass->getName(
                             ) . '->$' . $schemaClassReflectionProperty->getName() . ' does not exist'
                         );
                     }

@@ -9,11 +9,13 @@ use DDD\Infrastructure\Libs\Config;
 use ReflectionClassConstant;
 use ReflectionException;
 use RuntimeException;
+use stdClass;
 
 class ReflectionClass extends \ReflectionClass
 {
     // Scalar Data Types
     public const STRING = 'string';
+
     public const BOOL = 'bool';
 
     public const INTEGER = 'int';
@@ -21,12 +23,14 @@ class ReflectionClass extends \ReflectionClass
     public const DOUBLE = 'double';
 
     public const FLOAT = 'float';
+
     public const INTEGER_FULL_NAME = 'integer';
 
     public const BOOLEAN = 'boolean';
 
     // Compound Data Types
     public const ARRAY = 'array';
+
     public const OBJECT = 'object';
 
     public const SCALAR_BASE_TYPES = [
@@ -35,6 +39,7 @@ class ReflectionClass extends \ReflectionClass
         self::INTEGER => true,
         self::FLOAT => true
     ];
+
     public const GET_TYPE_ALLOCATIONS = [
         'string' => self::STRING,
         'boolean' => self::BOOL,
@@ -43,6 +48,7 @@ class ReflectionClass extends \ReflectionClass
         'array' => self::ARRAY,
         'object' => self::OBJECT
     ];
+
     public const BASE_TYPES = [
         self::STRING,
         self::BOOL,
@@ -54,6 +60,7 @@ class ReflectionClass extends \ReflectionClass
     ];
 
     public const NUMERIC_TYPES = [self::INTEGER, self::FLOAT, self::DOUBLE];
+
     public const SCALAR_TYPES = [
         self::STRING,
         self::BOOL,
@@ -71,29 +78,29 @@ class ReflectionClass extends \ReflectionClass
     public static $getPropertiesOfCurrentClassCache = [];
 
     public static $attributesCache = [];
+
     public static $propertyCache = [];
+
     public static $relectionClassCache = [];
 
     public static $classesWithNameSpaceCache = [];
+
     public static $getParentClassCache = [];
 
     public static $traitNamesByClass = [];
 
     public static $isLazyLoadedPropertyToBeAddedAsParentCache = [];
+
     public static $constantsDescriptionCache = [];
 
     public static $attributeInstanceCache = [];
+
     public static $reflectionPropertyAllowedTypesCache = [];
-    /** @var UseStatement[] */
-    protected $useStatements = [];
 
     protected static ?array $objectTypeMigrations = null;
 
-    public function getDocCommentInstance(): ReflectionDocComment
-    {
-        $reflectionDocComment = new ReflectionDocComment((string)$this->getDocComment());
-        return $reflectionDocComment;
-    }
+    /** @var UseStatement[] */
+    protected $useStatements = [];
 
     /**
      * @return array|null Returns associative array with associations of
@@ -118,6 +125,104 @@ class ReflectionClass extends \ReflectionClass
             return true;
         }
         return false;
+    }
+
+    /**
+     * Returns the closest common ancestor class of given classes, works also if one of them is inheriting the other
+     * @param string ...$classes
+     * @return string|null
+     */
+    public static function findClosestCommonAncestor(string ...$classes): ?string
+    {
+        if (count($classes) < 2) {
+            return null;
+        }
+
+        $parentLists = [];
+        foreach ($classes as $class) {
+            $parentLists[] = array_merge([$class], array_values(class_parents($class)));
+        }
+
+        // Use the first class's parents as the base for comparison
+        foreach ($parentLists[0] as $parent) {
+            $isCommon = true;
+            for ($i = 1; $i < count($parentLists); $i++) {
+                if (!in_array($parent, $parentLists[$i], true)) {
+                    $isCommon = false;
+                    break;
+                }
+            }
+            if ($isCommon) {
+                return $parent;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Checks if property is initialized within object, supports stdClass and namd classes
+     * @param object $object
+     * @param string $propertyName
+     * @return bool
+     * @throws ReflectionException
+     */
+    public static function isPropertyInitialized(object $object, string $propertyName): bool
+    {
+        if (isset($object->$propertyName)) {
+            return true;
+        }
+        if ($object instanceof stdClass) {
+            return property_exists($object, $propertyName);
+        }
+        $reflectionClass = ReflectionClass::instance($object::class);
+        $reflectionProperty = $reflectionClass->getProperty($propertyName);
+        return $reflectionProperty->isInitialized($object);
+    }
+
+    /**
+     * returns an instance of reflection class
+     * instances are statically cached per className
+     * @param string $className
+     * @return mixed|ReflectionClass
+     * @throws ReflectionException
+     */
+    public static function instance(string $className): ?ReflectionClass
+    {
+        if (isset(self::$relectionClassCache[$className])) {
+            $cached = self::$relectionClassCache[$className];
+            return $cached === self::NO_REFLECTION ? null : $cached;
+        }
+
+        try {
+            $reflection = new ReflectionClass($className);
+            self::$relectionClassCache[$className] = $reflection;
+            return $reflection;
+        } catch (ReflectionException $e) {
+            self::$relectionClassCache[$className] = self::NO_REFLECTION;
+            return null;
+        }
+    }
+
+    public function getProperty(string $propertyName): ReflectionProperty
+    {
+        if ($cachedProperty = (self::$propertyCache[$this->name][$propertyName] ?? false)) {
+            return $cachedProperty;
+        }
+        $property = parent::getProperty($propertyName);
+        //$propertyType = $property->getType();
+        /*if (!$propertyType || $propertyType instanceof \ReflectionUnionType) {
+            return $property;
+        }*/
+        $returnProperty = new ReflectionProperty($this->name, $property->name);
+        self::$propertyCache[$this->name][$propertyName] = $returnProperty;
+        return $returnProperty;
+    }
+
+    public function getDocCommentInstance(): ReflectionDocComment
+    {
+        $reflectionDocComment = new ReflectionDocComment((string)$this->getDocComment());
+        return $reflectionDocComment;
     }
 
     /**
@@ -207,46 +312,6 @@ class ReflectionClass extends \ReflectionClass
     }
 
     /**
-     * returns an instance of reflection class
-     * instances are statically cached per className
-     * @param string $className
-     * @return mixed|ReflectionClass
-     * @throws ReflectionException
-     */
-    public static function instance(string $className): ?ReflectionClass
-    {
-        if (isset(self::$relectionClassCache[$className])) {
-            $cached = self::$relectionClassCache[$className];
-            return $cached === self::NO_REFLECTION ? null : $cached;
-        }
-
-        try {
-            $reflection = new ReflectionClass($className);
-            self::$relectionClassCache[$className] = $reflection;
-            return $reflection;
-        } catch (ReflectionException $e) {
-            self::$relectionClassCache[$className] = self::NO_REFLECTION;
-            return null;
-        }
-    }
-
-    public function getProperty(string $propertyName): ReflectionProperty
-    {
-        if ($cachedProperty = (self::$propertyCache[$this->name][$propertyName] ?? false)) {
-            return $cachedProperty;
-        }
-        $property = parent::getProperty($propertyName);
-        //$propertyType = $property->getType();
-        /*if (!$propertyType || $propertyType instanceof \ReflectionUnionType) {
-            return $property;
-        }*/
-        $returnProperty = new ReflectionProperty($this->name, $property->name);
-        self::$propertyCache[$this->name][$propertyName] = $returnProperty;
-        return $returnProperty;
-    }
-
-
-    /**
      * Returns for a property that has to be lazyloaded if it has to be loaded as parent or as a child
      * This method caches its results statically
      * @param string $propertyName
@@ -261,7 +326,7 @@ class ReflectionClass extends \ReflectionClass
         }
         $reflectionProperty = $this->getProperty($propertyName);
         $addAsParent = false;
-        foreach ($reflectionProperty->getAttributes(LazyLoad::class) as $lazyLoadAttribute) {
+        foreach ($reflectionProperty->getAttributes(LazyLoad::class, \ReflectionAttribute::IS_INSTANCEOF) as $lazyLoadAttribute) {
             /** @var LazyLoad $lazyLoadAttributeInstance */
             $lazyLoadAttributeInstance = $lazyLoadAttribute->newInstance();
             if ($lazyLoadAttributeInstance->addAsParent) {
@@ -270,6 +335,68 @@ class ReflectionClass extends \ReflectionClass
         }
         self::$isLazyLoadedPropertyToBeAddedAsParentCache[$cacheKey] = $addAsParent;
         return $addAsParent;
+    }
+
+    /**
+     * Cached getAttributes with full support for $attributeName and $flags
+     *
+     * @param string|null $attributeName
+     * @param int $flags
+     * @return array|ReflectionAttribute[]
+     */
+    public function getAttributes(?string $attributeName = null, int $flags = 0): array
+    {
+        $key = $this->name;
+
+        // Build raw attribute cache only once per class
+        if (!isset(self::$attributesCache[$key])) {
+            self::$attributesCache[$key] = [];
+            $index = 0;
+
+            // Collect all system attributes without filtering
+            foreach (parent::getAttributes() as $systemAttribute) {
+                // Wrap system attribute in custom ReflectionAttribute
+                $attribute = new ReflectionAttribute($systemAttribute, $this->name, null, $index);
+                self::$attributesCache[$key][] = $attribute;
+                $index++;
+            }
+        }
+
+        // Raw list of all attributes on this class
+        $all = self::$attributesCache[$key];
+
+        // No filter = return all cached attributes
+        if ($attributeName === null && $flags === 0) {
+            return $all;
+        }
+
+        $result = [];
+
+        foreach ($all as $attribute) {
+            $name = $attribute->getName();
+
+            // No attributeName filter: only flags would apply,
+            // but internal Reflection ignores flags without name, so we do the same.
+            if ($attributeName === null) {
+                $result[] = $attribute;
+                continue;
+            }
+
+            // INSTANCEOF flag enabled: check inheritance/interface
+            if ($flags & \ReflectionAttribute::IS_INSTANCEOF) {
+                if (is_a($name, $attributeName, true)) {
+                    $result[] = $attribute;
+                }
+                continue;
+            }
+
+            // Exact class name match
+            if ($name === $attributeName) {
+                $result[] = $attribute;
+            }
+        }
+
+        return $result;
     }
 
     /**
@@ -286,7 +413,7 @@ class ReflectionClass extends \ReflectionClass
         } elseif ($this->isTrait()) {
             $type = ClassWithNamespace::TYPE_TRAIT;
         }
-        $classWithNamespace = new ClassWithNamespace($this->name,'', $this->getFileName(), $type);
+        $classWithNamespace = new ClassWithNamespace($this->name, '', $this->getFileName(), $type);
         self::$classesWithNameSpaceCache[$this->name] = $classWithNamespace;
         return $classWithNamespace;
     }
@@ -453,8 +580,8 @@ class ReflectionClass extends \ReflectionClass
      * @param \ReflectionProperty|ReflectionProperty $property
      * @return ReflectionAllowedTypes
      */
-    public function getAllowedTypesForProperty(\ReflectionProperty|ReflectionProperty &$property
-    ): ReflectionAllowedTypes {
+    public function getAllowedTypesForProperty(\ReflectionProperty|ReflectionProperty &$property): ReflectionAllowedTypes
+    {
         $cacheKey = $this->name . '_' . $property->name;
         if (isset(self::$reflectionPropertyAllowedTypesCache[$cacheKey])) {
             return self::$reflectionPropertyAllowedTypesCache[$cacheKey];
@@ -484,12 +611,11 @@ class ReflectionClass extends \ReflectionClass
      * Returns the instance of the first found class attribute of the given name
      * @param string|null $name
      * @param int $flags
-     * @return mixed|object|null
-     * @throws ReflectionException
+     * @return mixed
      */
-    public function getAttributeInstance(?string $name = null): mixed
+    public function getAttributeInstance(?string $name = null, int $flags = 0): mixed
     {
-        $classAttributes = $this->getAttributes($name);
+        $classAttributes = $this->getAttributes($name, $flags);
         foreach ($classAttributes as $attribute) {
             $attributeInstance = $attribute->newInstance();
             return $attribute->newInstance();
@@ -498,53 +624,25 @@ class ReflectionClass extends \ReflectionClass
     }
 
     /**
-     * Cached getAttributes
-     * @param string|null $attributeName
-     * @param int $flags
-     * @return array|ReflectionAttribute[]
-     */
-    public function getAttributes(?string $attributeName = null, int $flags = 0): array
-    {
-        $key = $this->name;
-        if (!isset(self::$attributesCache[$key])) {
-            self::$attributesCache[$key] = [];
-            $index = 0;
-            foreach (parent::getAttributes() as $systemAttribute) {
-                $attribute = new ReflectionAttribute($systemAttribute, $this->name, null, $index);
-                if (!isset(self::$attributesCache[$key][$attribute->getName()])) {
-                    self::$attributesCache[$key][$attribute->getName()] = [];
-                }
-                self::$attributesCache[$key][$attribute->getName()][] = $attribute;
-                $index++;
-            }
-        }
-        if (!$attributeName) {
-            $return = [];
-            foreach (self::$attributesCache[$key] as $attributeName => $attributes) {
-                $return = array_merge($return, $attributes);
-            }
-            return $return;
-        }
-        return self::$attributesCache[$key][$attributeName] ?? [];
-    }
-
-    /**
+     * Returns true if Attribute is present
      * @param string $attributeName
+     * @param int $flags
      * @return bool
      */
-    public function hasAttribute(string $attributeName): bool
+    public function hasAttribute(string $attributeName, int $flags = 0): bool
     {
-        return !empty(count($this->getAttributes($attributeName)));
+        return !empty(count($this->getAttributes($attributeName, $flags)));
     }
 
     /**
      * Returns first attribute instance for property and attribute name
      * @param string $propertyName
      * @param string $attributeName
+     * @param int $flags
      * @return mixed
      * @throws ReflectionException
      */
-    public function getAttributeInstanceForProperty(string $propertyName, string $attributeName): mixed
+    public function getAttributeInstanceForProperty(string $propertyName, string $attributeName, int $flags = 0): mixed
     {
         $index = $this->getName() . '_' . $propertyName . '_' . $attributeName;
         if (isset(self::$attributeInstanceCache[$index])) {
@@ -555,7 +653,7 @@ class ReflectionClass extends \ReflectionClass
                 self::$attributeInstanceCache[$index] = null;
                 return null;
             }
-            if ($attributes = $reflectionProperty->getAttributes($attributeName)) {
+            if ($attributes = $reflectionProperty->getAttributes($attributeName, $flags)) {
                 foreach ($attributes as $attribute) {
                     $attributeInstance = $attribute->newInstance();
                     self::$attributeInstanceCache[$index] = $attributeInstance;
@@ -567,6 +665,16 @@ class ReflectionClass extends \ReflectionClass
             }
         }
         return null;
+    }
+
+    /**
+     * Returns constant description for constant value
+     * @param string $constantValue
+     * @return string|null
+     */
+    public function getConstantDescriptionForConstantValue(string $constantValue): ?string
+    {
+        return $this->getConstantsDescriptions()[$constantValue] ?? null;
     }
 
     /**
@@ -583,9 +691,11 @@ class ReflectionClass extends \ReflectionClass
                 ReflectionClassConstant::IS_PUBLIC
             ) as $reflectionClassConstant
         ) {
-            if (!($reflectionClassConstant->getValue() && is_string(
-                    $reflectionClassConstant->getValue()
-                ))) {
+            if (
+                !($reflectionClassConstant->getValue() && is_string(
+                        $reflectionClassConstant->getValue()
+                    ))
+            ) {
                 continue;
             }
 
@@ -599,65 +709,5 @@ class ReflectionClass extends \ReflectionClass
         }
         self::$constantsDescriptionCache[$this->name] = $constantDescriptions;
         return $constantDescriptions;
-    }
-
-    /**
-     * Returns constant description for constant value
-     * @param string $constantValue
-     * @return string|null
-     */
-    public function getConstantDescriptionForConstantValue(string $constantValue): ?string
-    {
-        return $this->getConstantsDescriptions()[$constantValue] ?? null;
-    }
-
-    /**
-     * Returns the closest common ancestor class of given classes, works also if one of them is inheriting the other
-     * @param string ...$classes
-     * @return string|null
-     */
-    public static function findClosestCommonAncestor(string ...$classes): ?string
-    {
-        if (count($classes) < 2) {
-            return null;
-        }
-
-        $parentLists = [];
-        foreach ($classes as $class) {
-            $parentLists[] = array_merge([$class], array_values(class_parents($class)));
-        }
-
-        // Use the first class's parents as the base for comparison
-        foreach ($parentLists[0] as $parent) {
-            $isCommon = true;
-            for ($i = 1; $i < count($parentLists); $i++) {
-                if (!in_array($parent, $parentLists[$i], true)) {
-                    $isCommon = false;
-                    break;
-                }
-            }
-            if ($isCommon) {
-                return $parent;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Checks if property is initialized within object, supports stdClass and namd classes
-     * @param object $object
-     * @param string $propertyName
-     * @return bool
-     * @throws ReflectionException
-     */
-    public static function isPropertyInitialized(object $object, string $propertyName):bool {
-        if (isset($object->$propertyName))
-            return true;
-        if ($object instanceof \stdClass)
-            return property_exists($object, $propertyName);
-        $reflectionClass = ReflectionClass::instance($object::class);
-        $reflectionProperty = $reflectionClass->getProperty($propertyName);
-        return $reflectionProperty->isInitialized($object);
     }
 }

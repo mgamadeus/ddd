@@ -6,9 +6,9 @@ namespace DDD\Presentation\Base\OpenApi\Components;
 
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
 use DDD\Infrastructure\Reflection\ReflectionClass;
-use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 use DDD\Presentation\Base\OpenApi\Attributes\Parameter;
+use ReflectionAttribute;
 use ReflectionProperty;
 
 class Schema
@@ -32,6 +32,7 @@ class Schema
 
     /** @var ClassWithNamespace encapsulates schmea class */
     private ?ClassWithNamespace $schemaClass;
+
     /**
      * Either used for Body, or Post
      * @var string
@@ -61,7 +62,7 @@ class Schema
                 //as request DTOs have Attributes on their properties of type Parameter we can rely on the
                 //"in" property of the Parameter attribute (in can be in PATH, QUERY, BODY etc)
                 $skipProperty = false;
-                foreach ($reflectionProperty->getAttributes(Parameter::class) as $attribute) {
+                foreach ($reflectionProperty->getAttributes(Parameter::class, ReflectionAttribute::IS_INSTANCEOF) as $attribute) {
                     /** @var Parameter $parameterAttributeInstance */
                     $parameterAttributeInstance = $attribute->newInstance();
                     if ($parameterAttributeInstance->in != $this->scope && $this->scope != Parameter::RESPONSE) {

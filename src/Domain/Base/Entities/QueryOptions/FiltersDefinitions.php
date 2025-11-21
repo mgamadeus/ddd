@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Entities\QueryOptions;
 
 use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
+use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistoryTrait;
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
@@ -18,6 +19,7 @@ use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionNamedType;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
 use PHPUnit\TextUI\ReflectionException;
+use ReflectionAttribute;
 use ReflectionUnionType;
 use Symfony\Component\Validator\Constraints\Choice;
 
@@ -225,7 +227,7 @@ class FiltersDefinitions extends ObjectSet
                         true
                     )
                 ) {
-                    /** @var ChangeHistory $changeHistoryAttributeInstance */
+                    /** @var ChangeHistoryTrait $className */
                     $changeHistoryAttributeInstance = $className::getChangeHistoryAttribute(true);
                     $createdColumn = $changeHistoryAttributeInstance?->getCreatedColumn();
                     $modifiedColumn = $changeHistoryAttributeInstance?->getModifiedColumn();
@@ -252,7 +254,7 @@ class FiltersDefinitions extends ObjectSet
                     }
                 } elseif (DefaultObject::isEntity($type)) {
                     // we do not add lazyloaded Entities as filters
-                    if ($lazyloadAttribute = $reflectionProperty->getAttributes(LazyLoad::class)[0] ?? null) {
+                    if ($lazyloadAttribute = $reflectionProperty->getAttributes(LazyLoad::class, ReflectionAttribute::IS_INSTANCEOF)[0] ?? null) {
                         continue;
                     }
                     $subObjectFilters = self::getFilterPropertiesForClass(

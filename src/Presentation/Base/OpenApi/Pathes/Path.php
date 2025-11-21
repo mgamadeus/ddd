@@ -19,6 +19,7 @@ use DDD\Presentation\Base\OpenApi\Attributes\Summary;
 use DDD\Presentation\Base\OpenApi\Attributes\Tag;
 use DDD\Presentation\Base\OpenApi\Document;
 use DDD\Presentation\Base\OpenApi\Exceptions\TypeDefinitionMissingOrWrong;
+use ReflectionAttribute;
 use ReflectionException;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -66,7 +67,7 @@ class Path
         ReflectionMethod &$controllerReflectionMethod,
     ) {
         //add tags from controller class
-        foreach ($controllerReflectionClass->getAttributes(Tag::class) as $controllerMethodAttribute) {
+        foreach ($controllerReflectionClass->getAttributes(Tag::class, ReflectionAttribute::IS_INSTANCEOF) as $controllerMethodAttribute) {
             /** @var Tag $tagAttribute */
             $tagAttribute = $controllerMethodAttribute->newInstance();
             $this->addTag($tagAttribute);

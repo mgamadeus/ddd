@@ -190,8 +190,7 @@ class DatabaseColumn extends ValueObject
 
         /** @var LazyLoad $lazyloadAttributeInstance */
         // we ignore lazyloaded properties of type ClASS_METHOD
-        if ($lazyloadAttribute = $reflectionProperty?->getAttributes(LazyLoad::class)[0] ?? null) {
-            $lazyloadAttributeInstance = $lazyloadAttribute->newInstance();
+        if ($lazyloadAttributeInstance = $reflectionProperty?->getAttributeInstance(LazyLoad::class, \ReflectionAttribute::IS_INSTANCEOF) ?? null) {
             if ($lazyloadAttributeInstance->repoType == LazyLoadRepo::CLASS_METHOD) {
                 return null;
             }
@@ -259,13 +258,10 @@ class DatabaseColumn extends ValueObject
             }
         }
         if (
-            ($choicesAttribute = $reflectionProperty->getAttributes(
-                Choice::class,
-                ReflectionAttribute::IS_INSTANCEOF
-            )[0] ?? null) && self::MAP_CHOICES_TO_ENUMS
+            ($choicesAttributeInstance = $reflectionProperty->getAttributeInstance(Choice::class, \ReflectionAttribute::IS_INSTANCEOF)) &&
+            self::MAP_CHOICES_TO_ENUMS
         ) {
             /** @var Choice $choicesAttributeInstance */
-            $choicesAttributeInstance = $choicesAttribute->newInstance();
             $databaseColum->sqlType = 'ENUM(' . implode(
                     ',',
                     array_map(function (string $el) {
@@ -274,12 +270,9 @@ class DatabaseColumn extends ValueObject
                 ) . ')';
         } // handle length limits
         elseif (
-            $type->getName() == ReflectionClass::STRING && ($lengthAttribute = $reflectionProperty->getAttributes(
-                Length::class
-            )[0] ?? null)
+            $type->getName() == ReflectionClass::STRING && ($lengthAttributeInstance = $reflectionProperty->getAttributeInstance(Length::class, \ReflectionAttribute::IS_INSTANCEOF))
         ) {
             /** @var Length $lengthAttributeInstance */
-            $lengthAttributeInstance = $lengthAttribute->newInstance();
             if ($lengthAttributeInstance->max) {
                 $databaseColum->varCharLength = $lengthAttributeInstance->max;
             }
@@ -291,7 +284,7 @@ class DatabaseColumn extends ValueObject
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[GeoPoint::class];
         } elseif (DefaultObject::isValueObject($type->getName())) {
             // ignore Lazyload Repos ValueObject e.g. Virtual Repotype
-            if ($lazyloadAttributes = $reflectionProperty->getAttributes(LazyLoad::class)) {
+            if ($lazyloadAttributes = $reflectionProperty->getAttributes(LazyLoad::class, \ReflectionAttribute::IS_INSTANCEOF)) {
                 foreach ($lazyloadAttributes as $lazyloadAttribute) {
                     /** @var LazyLoad $lazyloadAttributeInstance */
                     $lazyloadAttributeInstance = $lazyloadAttribute->newInstance();
@@ -322,12 +315,9 @@ class DatabaseColumn extends ValueObject
 
         // if DatabaseColumn attribute is present, we overwrite definitions from attribute
         if (
-            $columnAttribute = $reflectionProperty->getAttributes(
-                DatabaseColumn::class
-            )[0] ?? null
+            $columnAttributeInstance = $reflectionProperty->getAttributeInstance(DatabaseColumn::class, \ReflectionAttribute::IS_INSTANCEOF)
         ) {
             /** @var DatabaseColumn $columnAttributeInstance */
-            $columnAttributeInstance = $columnAttribute->newInstance();
             if ($columnAttributeInstance->sqlType !== null) {
                 $databaseColum->sqlType = $columnAttributeInstance->sqlType;
             }

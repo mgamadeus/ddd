@@ -19,6 +19,8 @@ use DDD\Presentation\Base\OpenApi\Components\SchemaProperty;
 use DDD\Presentation\Base\OpenApi\Exceptions\TypeDefinitionMissingOrWrong;
 use DDD\Presentation\Base\QueryOptions\DtoQueryOptions;
 use DDD\Presentation\Base\QueryOptions\DtoQueryOptionsTrait;
+use ReflectionAttribute;
+use ReflectionEnum;
 use ReflectionNamedType;
 use ReflectionUnionType;
 use Symfony\Component\Validator\Constraints\Choice;
@@ -29,13 +31,20 @@ class PathParameterSchema
     use SerializerTrait;
 
     public ?string $type = null;
+
     public ?string $format = null;
+
     public ?int $minLength;
+
     public ?int $maxLength;
+
     public ?string $pattern = null;
+
     /** @var array|null */
     public ?array $oneOf = null;
+
     public ?array $enum = null;
+
     private array $typeNameAllocation = [
         'int' => 'integer',
         'string' => 'string',
@@ -54,12 +63,10 @@ class PathParameterSchema
         PathParameter &$parameter,
         ReflectionClass &$requestDtoReflectionClass,
         ReflectionProperty &$requestDtoReflectionProperty
-    )
-    {
+    ) {
         if (!$requestDtoReflectionProperty->getType()) {
             throw new TypeDefinitionMissingOrWrong(
-                'Type Definition Missing in ' . $requestDtoReflectionClass->getName(
-                ) . '->$' . $requestDtoReflectionProperty->getName()
+                'Type Definition Missing in ' . $requestDtoReflectionClass->getName() . '->$' . $requestDtoReflectionProperty->getName()
             );
         }
         $type = $requestDtoReflectionProperty->getType();
@@ -79,16 +86,14 @@ class PathParameterSchema
                     $typeNameAllocated = $this->typeNameAllocation[$typeName];
                     if ($typeNameAllocated == 'array') {
                         throw new TypeDefinitionMissingOrWrong(
-                            'Declared type array in ' . $requestDtoReflectionClass->getName(
-                            ) . '->$' . $requestDtoReflectionProperty->getName(
+                            'Declared type array in ' . $requestDtoReflectionClass->getName() . '->$' . $requestDtoReflectionProperty->getName(
                             ) . ' allowed only for BODY or FILES parameters'
                         );
                     }
                     if ($typeNameAllocated == 'object') {
                         if (!method_exists($typeName, 'fromString')) {
                             throw new TypeDefinitionMissingOrWrong(
-                                'Declared type object in ' . $requestDtoReflectionClass->getName(
-                                ) . '->$' . $requestDtoReflectionProperty->getName(
+                                'Declared type object in ' . $requestDtoReflectionClass->getName() . '->$' . $requestDtoReflectionProperty->getName(
                                 ) . ' not allowed. Only basic types are allowed outside of Body or Post, or Classes with fromString Method'
                             );
                         }
@@ -99,7 +104,7 @@ class PathParameterSchema
                         $this->type = $typeNameAllocated;
                     }
                     if ($this->type == 'string') {
-                        if ($lengthAttribute = $requestDtoReflectionProperty->getAttributes(Length::class)[0] ?? null) {
+                        if ($lengthAttribute = $requestDtoReflectionProperty->getAttributes(Length::class, ReflectionAttribute::IS_INSTANCEOF)[0] ?? null) {
                             /** @var Length $lengthAttributeInstance */
                             $lengthAttributeInstance = $lengthAttribute->newInstance();
                             if ($lengthAttributeInstance->min) {
@@ -111,11 +116,7 @@ class PathParameterSchema
                         }
                     }
 
-                    if (($attributes = $requestDtoReflectionProperty->getAttributes(Choice::class))
-                        || ($attributes = $requestDtoReflectionProperty->getAttributes(
-                            \DDD\Infrastructure\Validation\Constraints\Choice::class
-                        ))
-                    ) {
+                    if ($attributes = $requestDtoReflectionProperty->getAttributes(Choice::class, ReflectionAttribute::IS_INSTANCEOF)) {
                         /** @var Choice $choiceAttribute */
                         $choiceAttribute = $attributes[0]->newInstance();
                         $this->enum = $choiceAttribute->choices;
@@ -135,8 +136,7 @@ class PathParameterSchema
                     //DateTime and Date are handled custom
                     if ($typeName == DateTime::class || $typeName == Date::class) {
                         $this->type = 'string';
-                        $this->format = $type->getName(
-                        ) == Date::class ? SchemaProperty::FORMAT_DATE : SchemaProperty::FORMAT_DATE_TIME;
+                        $this->format = $type->getName() == Date::class ? SchemaProperty::FORMAT_DATE : SchemaProperty::FORMAT_DATE_TIME;
                         continue;
                     } //QueryOptions custom handling and individual documentation
                     elseif ($typeName == FiltersOptions::class || $typeName == OrderByOptions::class || $typeName == ExpandOptions::class) {
@@ -182,7 +182,7 @@ class PathParameterSchema
                                     $parameter->description .= ']';
                                 }
                             }
-                            $parameter->description .= "</details>";
+                            $parameter->description .= '</details>';
                         } elseif ($typeName == OrderByOptions::class) {
                             if (!$queryOptions->getOrderByDefinitions()) {
                                 $parameter->setToBeSkipped(true);
@@ -193,7 +193,7 @@ class PathParameterSchema
                             foreach ($queryOptions->getOrderByDefinitions() as $allowedField) {
                                 $parameter->description .= "\n- `{$allowedField}`";
                             }
-                            $parameter->description .= "</details>";
+                            $parameter->description .= '</details>';
                         } elseif ($typeName == ExpandOptions::class) {
                             /** @var DtoQueryOptions $dtoQueryOptionsAttributeInstane */
                             $dtoQueryOptionsAttributeInstane = $schemaReflectionClassName::getDtoQueryOptions();
@@ -237,20 +237,19 @@ class PathParameterSchema
                                     }
                                 }
                             }
-                            $parameter->description .= "</details>";
+                            $parameter->description .= '</details>';
                         }
                         continue;
                     } // Enum handling
                     elseif (class_exists($typeName) && enum_exists($typeName)) {
                         if ($unionType) {
                             throw new TypeDefinitionMissingOrWrong(
-                                'Declared type ' . $typeName . ' in ' . $requestDtoReflectionClass->getName(
-                                ) . '->$' . $requestDtoReflectionProperty->getName(
+                                'Declared type ' . $typeName . ' in ' . $requestDtoReflectionClass->getName() . '->$' . $requestDtoReflectionProperty->getName(
                                 ) . ' not allowed. Union Types are not allowed for Enums.'
                             );
                         }
 
-                        $reflection = new \ReflectionEnum($typeName);
+                        $reflection = new ReflectionEnum($typeName);
                         $cases = $reflection->getCases();
                         $isBacked = $reflection->isBacked();
                         $this->enum = [];
@@ -283,8 +282,7 @@ class PathParameterSchema
                     }
                     if (!method_exists($typeName, 'fromString')) {
                         throw new TypeDefinitionMissingOrWrong(
-                            'Declared type ' . $typeName . ' in ' . $requestDtoReflectionClass->getName(
-                            ) . '->$' . $requestDtoReflectionProperty->getName(
+                            'Declared type ' . $typeName . ' in ' . $requestDtoReflectionClass->getName() . '->$' . $requestDtoReflectionProperty->getName(
                             ) . ' not allowed. Only basic types are allowed outside of Body or Post'
                         );
                     }

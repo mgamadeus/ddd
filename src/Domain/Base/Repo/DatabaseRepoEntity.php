@@ -49,11 +49,13 @@ abstract class DatabaseRepoEntity extends RepoEntity
     public const BASE_ORM_MODEL = null;
 
     protected static $applyRightsRestrictions = true;
+
     /**
      * @var bool defines if the class loads a singe row or multiple rows, e.g. some site_settings are stored
      * on multiple rows, e.g. opening_hours, opening_hour_notes etc.
      */
     public bool $isMultiRowEntity = false;
+
     /** @var DoctrineModel|DoctrineModel[]|null model storing all the loaded data */
     protected DoctrineModel|array|null $ormInstance;
 
@@ -579,7 +581,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
                 }
                 $propertyReflectionClass = ReflectionClass::instance($value::class);
                 /** @var ReflectionAttribute[] $lazyloadRepoAttributes */
-                $lazyloadRepoAttributes = $propertyReflectionClass->getAttributes(LazyLoadRepo::class);
+                $lazyloadRepoAttributes = $propertyReflectionClass->getAttributes(LazyLoadRepo::class, \ReflectionAttribute::IS_INSTANCEOF);
                 $propertyHasDBRepo = false;
                 foreach ($lazyloadRepoAttributes as $lazyloadRepoAttribute) {
                     /** @var LazyLoadRepo $attributeInstance */
@@ -622,11 +624,12 @@ abstract class DatabaseRepoEntity extends RepoEntity
                 $databaseRepoCLasses = $value::getDatabaseRelatedRepoClasses();
                 foreach ($databaseRepoCLasses as $repoClass) {
                     $repoInstance = $repoClass && class_exists($repoClass) ? new $repoClass() : null;
-                    $noRecursiveUpdateAttribute = $propertyReflectionClass->getAttributes(
-                        NoRecursiveUpdate::class
+                    $hasNoRecursiveUpdateAttribute = $propertyReflectionClass->hasAttribute(
+                        NoRecursiveUpdate::class,
+                        \ReflectionAttribute::IS_INSTANCEOF
                     );
 
-                    if ($repoInstance && empty($noRecursiveUpdateAttribute)) {
+                    if ($repoInstance && !$hasNoRecursiveUpdateAttribute) {
                         if (method_exists($repoInstance, 'update')) {
                             $updatedChildProperties[$propertyName] = true;
                             $updatedChild = $repoInstance->update($value, --$depth);

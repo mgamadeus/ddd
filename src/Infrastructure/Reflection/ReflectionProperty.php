@@ -8,9 +8,8 @@ namespace DDD\Infrastructure\Reflection;
 class ReflectionProperty extends \ReflectionProperty
 {
     protected static $typeCache = [];
-    private string $reflectionClassName;
-
     protected static array $attributesCache = [];
+    private string $reflectionClassName;
 
     public function __construct(object|string $class, string $property)
     {
@@ -28,6 +27,24 @@ class ReflectionProperty extends \ReflectionProperty
     {
         $reflectionDocComment = new ReflectionDocComment((string)$this->getDocComment());
         return $reflectionDocComment;
+    }
+
+    /**
+     * @return bool Returns true if Type of one of the Types in UnionType allows null
+     */
+    public function allowsNull(): bool
+    {
+        $type = $this->getType();
+        if ($type instanceof \ReflectionNamedType) {
+            return $type->allowsNull();
+        } elseif ($type instanceof \ReflectionUnionType) {
+            foreach ($type->getTypes() as $unionType) {
+                if ($unionType->allowsNull()) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     public function getType(): \ReflectionNamedType|ReflectionArrayType|\ReflectionUnionType|null
@@ -51,24 +68,35 @@ class ReflectionProperty extends \ReflectionProperty
     }
 
     /**
-     * @return bool Returns true if Type of one of the Types in UnionType allows null
+     * Returns first attribute instance for attribute name
+     * @param string $attributeName
+     * @param int $flags
+     * @return mixed
+     * @throws \ReflectionException
      */
-    public function allowsNull():bool {
-        $type = $this->getType();
-        if ($type instanceof \ReflectionNamedType){
-            return $type->allowsNull();
-        }
-        elseif ($type instanceof \ReflectionUnionType){
-            foreach ($type->getTypes() as $unionType){
-                if ($unionType->allowsNull())
-                    return true;
-            }
-        }
-        return false;
+    public function getAttributeInstance(string $attributeName, int $flags = 0): mixed
+    {
+        return ReflectionClass::instance($this->reflectionClassName)->getAttributeInstanceForProperty(
+            $this->name,
+            $attributeName,
+            $flags
+        );
     }
 
     /**
-     * Cached getAttributes
+     * Returns true if Attribute is present on Property
+     * @param string $attributeName
+     * @param int $flags
+     * @return bool
+     */
+    public function hasAttribute(string $attributeName, int $flags = 0): bool
+    {
+        return !empty(count($this->getAttributes($attributeName, $flags)));
+    }
+
+    /**
+     * Cached getAttributes with full support for $attributeName and $flags
+     *
      * @param string|null $attributeName
      * @param int $flags
      * @return ReflectionAttribute[]
@@ -76,49 +104,61 @@ class ReflectionProperty extends \ReflectionProperty
     public function getAttributes(?string $attributeName = null, int $flags = 0): array
     {
         $key = $this->reflectionClassName . '_' . $this->name;
+
+        // Build raw attribute cache only once per property
         if (!isset(self::$attributesCache[$key])) {
             self::$attributesCache[$key] = [];
             $index = 0;
+
+            // Collect all system attributes without filtering
             foreach (parent::getAttributes() as $systemAttribute) {
-                $attribute = new ReflectionAttribute($systemAttribute, $this->reflectionClassName, $this->name, $index);
-                if (!isset(self::$attributesCache[$key][$attribute->getName()])) {
-                    self::$attributesCache[$key][$attribute->getName()] = [];
-                }
-                self::$attributesCache[$key][$attribute->getName()][] = $attribute;
+                // Wrap system attribute in custom ReflectionAttribute
+                $attribute = new ReflectionAttribute(
+                    $systemAttribute,
+                    $this->reflectionClassName,
+                    $this->name,
+                    $index
+                );
+
+                self::$attributesCache[$key][] = $attribute;
                 $index++;
             }
         }
-        if (!$attributeName) {
-            $return = [];
-            foreach (self::$attributesCache[$key] as $attributeName => $attributes) {
-                $return = array_merge($return, $attributes);
-            }
-            return $return;
+
+        // Raw list of all attributes on this property
+        $all = self::$attributesCache[$key];
+
+        // No filters → return everything
+        if ($attributeName === null && $flags === 0) {
+            return $all;
         }
-        return self::$attributesCache[$key][$attributeName] ?? [];
-    }
 
-    /**
-     * Returns first attribute instance for attribute name
-     * @param string $attributeName
-     * @return mixed
-     * @throws \ReflectionException
-     */
-    public function getAttributeInstance(string $attributeName): mixed
-    {
-        return ReflectionClass::instance($this->reflectionClassName)->getAttributeInstanceForProperty(
-            $this->name,
-            $attributeName
-        );
-    }
+        $result = [];
 
+        foreach ($all as $attribute) {
+            $name = $attribute->getName();
 
-    /**
-     * @param string $attributeName
-     * @return bool
-     */
-    public function hasAttribute(string $attributeName): bool
-    {
-        return !empty(count($this->getAttributes($attributeName)));
+            // No attribute name filter:
+            // internal Reflection ignores flags if name is null
+            if ($attributeName === null) {
+                $result[] = $attribute;
+                continue;
+            }
+
+            // INSTANCEOF flag enabled → inheritance-aware filtering
+            if ($flags & \ReflectionAttribute::IS_INSTANCEOF) {
+                if (is_a($name, $attributeName, true)) {
+                    $result[] = $attribute;
+                }
+                continue;
+            }
+
+            // Exact class name match (default behavior)
+            if ($name === $attributeName) {
+                $result[] = $attribute;
+            }
+        }
+
+        return $result;
     }
 }

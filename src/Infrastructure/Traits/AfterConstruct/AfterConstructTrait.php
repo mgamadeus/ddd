@@ -6,6 +6,7 @@ namespace DDD\Infrastructure\Traits\AfterConstruct;
 
 use DDD\Infrastructure\Traits\AfterConstruct\Attributes\AfterConstruct;
 use DDD\Infrastructure\Traits\ReflectorTrait;
+use ReflectionAttribute;
 
 trait AfterConstructTrait
 {
@@ -34,7 +35,7 @@ trait AfterConstructTrait
         }
         AfterConstruct::$afterConstructMethods[static::class] = [];
         foreach (static::getReflectionClass()->getMethods() as $method) {
-            if ($method->getAttributes(AfterConstruct::class)) {
+            if ($method->getAttributes(AfterConstruct::class, ReflectionAttribute::IS_INSTANCEOF)) {
                 $methodName = $method->getName();
                 AfterConstruct::$afterConstructMethods[static::class][] = $methodName;
                 $this->$methodName();

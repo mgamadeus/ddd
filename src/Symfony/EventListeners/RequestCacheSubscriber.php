@@ -4,13 +4,16 @@ declare (strict_types=1);
 
 namespace DDD\Symfony\EventListeners;
 
-use DDD\Infrastructure\Services\AuthService;
 use DDD\Domain\Base\Entities\BaseObject;
 use DDD\Infrastructure\Cache\Cache;
 use DDD\Infrastructure\Reflection\ReflectionClass;
+use DDD\Infrastructure\Services\AuthService;
 use DDD\Presentation\Base\Router\RouteAttributes\RequestCache;
+use ReflectionAttribute;
 use ReflectionMethod;
+use ReflectionNamedType;
 use ReflectionProperty;
+use ReflectionUnionType;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -51,7 +54,7 @@ class RequestCacheSubscriber implements EventSubscriberInterface
 
         [$obj, $method] = $ctrl;
         $ref = new ReflectionMethod($obj, $method);
-        $attrs = $ref->getAttributes(RequestCache::class);
+        $attrs = $ref->getAttributes(RequestCache::class, ReflectionAttribute::IS_INSTANCEOF);
         if (empty($attrs)) {
             return;
         }
@@ -74,53 +77,6 @@ class RequestCacheSubscriber implements EventSubscriberInterface
         // Mark request for caching after controller execution
         $request->attributes->set('_request_cache_ttl', $ttl);
         $request->attributes->set('_request_cache_key', $key);
-    }
-
-    public function onResponse(ResponseEvent $event): void
-    {
-        // Only cache main GET responses
-        $req = $event->getRequest();
-        if (!$event->isMainRequest() || $req->getMethod() !== 'GET') {
-            return;
-        }
-
-        $ttl = $req->attributes->get('_request_cache_ttl');
-        $key = $req->attributes->get('_request_cache_key');
-        // No caching info? Skip.
-        if (!is_int($ttl) || $ttl <= 0 || !is_string($key)) {
-            return;
-        }
-
-        $response = $event->getResponse();
-        // Only cache successful (2xx) responses
-        if (!$response->isSuccessful()) {
-            return;
-        }
-        // We avoid saving complex data to be serialized and unset complex properties
-        $responseReflection = ReflectionClass::instance($response::class);
-
-        // Trigger storage of Content
-        $response->getContent();
-
-        // Unset complex properties
-        foreach ($responseReflection->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
-            if (!$property->isInitialized($response)) {
-                continue;
-            }
-            if ($property->getType() instanceof \ReflectionNamedType) {
-                if (is_a($property->getType()->getName(), BaseObject::class, true)) {
-                    unset($response->{$property->getName()});
-                }
-            } elseif ($property->getType() instanceof \ReflectionUnionType) {
-                $types = $property->getType()->getTypes();
-                foreach ($types as $type) {
-                    if (is_a($type->getName(), BaseObject::class, true)) {
-                        unset($response->{$property->getName()});
-                    }
-                }
-            }
-        }
-        Cache::instance()->set($key, $response, $ttl);
     }
 
     private function makeCacheKey(Request $req, RequestCache $requestCacheAttributeInstance): string
@@ -155,5 +111,52 @@ class RequestCacheSubscriber implements EventSubscriberInterface
         }
         // Use a hash to ensure a safe cache key
         return 'req_cache_' . md5($method . '_' . $path);
+    }
+
+    public function onResponse(ResponseEvent $event): void
+    {
+        // Only cache main GET responses
+        $req = $event->getRequest();
+        if (!$event->isMainRequest() || $req->getMethod() !== 'GET') {
+            return;
+        }
+
+        $ttl = $req->attributes->get('_request_cache_ttl');
+        $key = $req->attributes->get('_request_cache_key');
+        // No caching info? Skip.
+        if (!is_int($ttl) || $ttl <= 0 || !is_string($key)) {
+            return;
+        }
+
+        $response = $event->getResponse();
+        // Only cache successful (2xx) responses
+        if (!$response->isSuccessful()) {
+            return;
+        }
+        // We avoid saving complex data to be serialized and unset complex properties
+        $responseReflection = ReflectionClass::instance($response::class);
+
+        // Trigger storage of Content
+        $response->getContent();
+
+        // Unset complex properties
+        foreach ($responseReflection->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
+            if (!$property->isInitialized($response)) {
+                continue;
+            }
+            if ($property->getType() instanceof ReflectionNamedType) {
+                if (is_a($property->getType()->getName(), BaseObject::class, true)) {
+                    unset($response->{$property->getName()});
+                }
+            } elseif ($property->getType() instanceof ReflectionUnionType) {
+                $types = $property->getType()->getTypes();
+                foreach ($types as $type) {
+                    if (is_a($type->getName(), BaseObject::class, true)) {
+                        unset($response->{$property->getName()});
+                    }
+                }
+            }
+        }
+        Cache::instance()->set($key, $response, $ttl);
     }
 }

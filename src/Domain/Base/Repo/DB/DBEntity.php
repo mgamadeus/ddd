@@ -28,6 +28,7 @@ use DDD\Infrastructure\Exceptions\UnauthorizedException;
 use DDD\Infrastructure\Libs\Encrypt;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use Psr\Cache\InvalidArgumentException;
+use ReflectionAttribute;
 use ReflectionException;
 use ReflectionNamedType;
 use ReflectionUnionType;
@@ -124,6 +125,7 @@ class DBEntity extends DatabaseRepoEntity
                     );
                 }
             }
+            /** @var ChangeHistoryTrait $entityInstance */
             $entityInstance->changeHistory = $changeHistoryAttributeInstance->clone();
             if ($createdTime) {
                 $entityInstance->changeHistory->createdTime = $createdTime;
@@ -521,7 +523,8 @@ class DBEntity extends DatabaseRepoEntity
 
         if (
             $propertyValueIsValueObject && ($lazyloadAttributes = $entityReflectionProperty->getAttributes(
-                LazyLoad::class
+                LazyLoad::class,
+                ReflectionAttribute::IS_INSTANCEOF
             ))
         ) {
             foreach ($lazyloadAttributes as $lazyloadAttribute) {

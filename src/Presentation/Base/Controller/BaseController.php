@@ -7,6 +7,7 @@ namespace DDD\Presentation\Base\Controller;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Presentation\Base\Controller\Filters\After;
 use DDD\Presentation\Base\Controller\Filters\Before;
+use ReflectionAttribute;
 use ReflectionException;
 use ReflectionMethod;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -14,6 +15,7 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 abstract class BaseController extends AbstractController
 {
     public const FILTER_BEFORE = Before::class;
+
     public const FILTER_AFTER = After::class;
 
     /**
@@ -27,12 +29,11 @@ abstract class BaseController extends AbstractController
         /** @var ReflectionMethod[] $methods */
         $methods = [];
         foreach (ReflectionClass::instance(static::class)->getMethods() as $method) {
-            foreach ($method->getAttributes($filterType) as $attribute) {
+            foreach ($method->getAttributes($filterType, ReflectionAttribute::IS_INSTANCEOF) as $attribute) {
                 $methods[] = $method;
             }
         }
         return $methods;
     }
-
 
 }

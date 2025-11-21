@@ -23,6 +23,7 @@ use DDD\Infrastructure\Traits\Serializer\Attributes\HidePropertyOnSystemSerializ
 use DDD\Infrastructure\Traits\Serializer\Attributes\OverwritePropertyName;
 use Error;
 use Exception;
+use ReflectionAttribute;
 use ReflectionException;
 use stdClass;
 use Throwable;
@@ -189,7 +190,7 @@ trait SerializerTrait
 
         $propertyNameToExposeInsteadOfClass = null;
         $reflectionClass = new ReflectionClass($this);
-        foreach ($reflectionClass->getAttributes(ExposePropertyInsteadOfClass::class) as $classAttribute) {
+        foreach ($reflectionClass->getAttributes(ExposePropertyInsteadOfClass::class, ReflectionAttribute::IS_INSTANCEOF) as $classAttribute) {
             $attributeInstance = $classAttribute->newInstance();
             $propertyNameToExposeInsteadOfClass = $attributeInstance->propertyNameToExpose;
         }
@@ -201,7 +202,7 @@ trait SerializerTrait
             }
             $visiblePropertyName = $propertyName;
             //attribute OverwritePropertyName changes the visible name of an atribute on serialization
-            foreach ($property->getAttributes(OverwritePropertyName::class) as $attribute) {
+            foreach ($property->getAttributes(OverwritePropertyName::class, ReflectionAttribute::IS_INSTANCEOF) as $attribute) {
                 $attributeInstance = $attribute->newInstance();
                 $visiblePropertyName = $attributeInstance->name;
             }
@@ -211,12 +212,13 @@ trait SerializerTrait
             ) { // we process only properties that are initialized
                 if (
                     !$ignoreHideAttributes && $property->getAttributes(
-                        HideProperty::class
+                        HideProperty::class,
+                        ReflectionAttribute::IS_INSTANCEOF
                     ) || !$this->isPropertyVisible($propertyName)
                 ) {
                     continue;
                 }
-                if (!$forPersistence && $property->getAttributes(DontPersistProperty::class)) {
+                if (!$forPersistence && $property->getAttributes(DontPersistProperty::class, ReflectionAttribute::IS_INSTANCEOF)) {
                     continue;
                 }
                 $propertyValue = $this->$propertyName;
@@ -529,9 +531,9 @@ trait SerializerTrait
                 $return['unset'][$propertyName] = true;
                 continue;
             }
-            if ($property->getAttributes(HidePropertyOnSystemSerialization::class)) {
+            if ($property->getAttributes(HidePropertyOnSystemSerialization::class, ReflectionAttribute::IS_INSTANCEOF)) {
                 //Lazyload Attributes need to be unset if we want to hide them so lazyloading will work properly with __get
-                if ($property->getAttributes(LazyLoad::class)) {
+                if ($property->getAttributes(LazyLoad::class, ReflectionAttribute::IS_INSTANCEOF)) {
                     $return['unset'][$propertyName] = true;
                 }
                 continue;

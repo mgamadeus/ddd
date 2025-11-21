@@ -10,11 +10,11 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\Datafilter;
 use DDD\Infrastructure\Libs\Encrypt;
 use DDD\Infrastructure\Reflection\ReflectionClass;
-use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 use DDD\Infrastructure\Traits\ValidatorTrait;
 use DDD\Presentation\Base\OpenApi\Attributes\Parameter;
 use DDD\Symfony\Extended\EncryptedCookie;
+use ReflectionAttribute;
 use ReflectionException;
 use ReflectionProperty;
 use Symfony\Component\HttpFoundation\Request;
@@ -40,7 +40,6 @@ class RequestDto
         }
     }
 
-
     /**
      * Populates data from current request to dto
      * @param Request $request
@@ -61,7 +60,7 @@ class RequestDto
             $propertyName = $property->getName();
             /** @var Parameter $oaParameter */
             $oaParameter = null;
-            foreach ($property->getAttributes(Parameter::class) as $oaParameterAttribute) {
+            foreach ($property->getAttributes(Parameter::class, ReflectionAttribute::IS_INSTANCEOF) as $oaParameterAttribute) {
                 $oaParameter = $oaParameterAttribute->newInstance();
             }
             // we apply values only to parameters that have proper attribute
