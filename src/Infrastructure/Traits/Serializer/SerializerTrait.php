@@ -1120,9 +1120,18 @@ trait SerializerTrait
             }
             if (isset($this->$propertyName) && $this->$propertyName) {
                 if (!$entityFromCache && method_exists($this->$propertyName, 'setPropertiesFromObject')) {
-                    // empty objects come as arrays and havde to be converted
                     if (is_array($value)) {
-                        $value = (object)$value;
+                        // Make it possible to set elements to ObjectSets without passing the values in .elements property
+                        // and allow values being passed as array directly
+                        if ($this->$propertyName instanceof ObjectSet){
+                            $tObject = new stdClass();
+                            $tObject->elements = $value;
+                            $value = $tObject;
+                        }
+                        else {
+                            // empty objects come as arrays and have to be converted
+                            $value = (object)$value;
+                        }
                     }
                     if (!$entityFromCache) {
                         $this->$propertyName->setPropertiesFromObject($value, $throwErrors, false, $sanitizeInput);
