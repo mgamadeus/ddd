@@ -31,7 +31,7 @@ trait EntityTrait
     public const bool IS_ENTITY = true;
 
     /** @var string|null The internal identifier of the entity */
-    public ?int $id = null;
+    public int|string|null $id = null;
 
     /**
      * returns the class of the corresponding EntitySet if existent
