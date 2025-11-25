@@ -26,6 +26,8 @@ class DateTime extends \DateTime
 
     public const string DATE_RFC3339_ZULU = 'Y-m-d\TH:i:s\Z';
 
+    public const string DATE_RFC3339_MILLISECONDS_OFFSET = 'Y-m-d\TH:i:s.vP';
+
     public const string UNIX = 'U';
 
     /**
@@ -62,7 +64,17 @@ class DateTime extends \DateTime
      */
     public static function fromString(
         string $stringFormattedDate,
-        string|array $dateTimeFormat = self::SIMPLE
+        string|array $dateTimeFormat = [
+            self::SIMPLE,
+            self::UBERALL,
+            self::DATE_RFC3339ZULU,
+            self::DATE_RFC3339ZULU_MILLISECONDS,
+            self::DATE_POSTGRES_WITH_TIMEZONE,
+            self::DATE_ARGUS_BUSINESS_LISTINGS,
+            self::DATE_RFC3339_MICROSECONDS_ZULU,
+            self::DATE_RFC3339_ZULU,
+            self::DATE_RFC3339_MILLISECONDS_OFFSET,
+        ]
     ): DateTime|bool {
         if (is_string($dateTimeFormat)) {
             $tDate = \DateTime::createFromFormat($dateTimeFormat, $stringFormattedDate);
