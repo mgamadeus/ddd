@@ -20,7 +20,7 @@ class ExceptionDetails extends ObjectSet
      * @param $detail
      * @return $this
      */
-    public function addDetail(string $message, $detail): ExceptionDetails
+    public function addDetail(string $message, $detail = null): ExceptionDetails
     {
         $exceptionDetail = new ExceptionDetail($message, $detail);
         $this->add($exceptionDetail);
