@@ -8,6 +8,7 @@ use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\ObjectSet;
+use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use ReflectionException;
@@ -116,6 +117,9 @@ class ExpandDefinitions extends ObjectSet
                 $targetPropertyClass = $propertyType->getName();
                 if (!$propertyType->isBuiltin()) {
                     $targetPropertyReflectionClass = ReflectionClass::instance((string)$targetPropertyClass);
+                    if (!$targetPropertyReflectionClass){
+                        throw new InternalErrorException("Target Property Reflection class for Expand definitions  not found: $targetPropertyClass");
+                    }
                     if ($targetPropertyReflectionClass->hasTrait(QueryOptionsTrait::class)) {
                         /** @var QueryOptions $defaultQueryOptions */
                         $defaultQueryOptions = $targetPropertyClass::getDefaultQueryOptions($depth);

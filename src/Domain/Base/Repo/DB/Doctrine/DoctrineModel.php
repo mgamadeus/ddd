@@ -105,8 +105,9 @@ abstract class DoctrineModel
         // in case of ManyToOne properties, the Type is already the desired one
         if (is_a($reflectionProperty->getType()->getName(), DoctrineModel::class, true)) {
             return $reflectionProperty->getType()->getName();
-        } elseif ($oneToManyAttribueInstance = ($reflectionProperty->getAttributes(ORM\OneToMany::class, ReflectionAttribute::IS_INSTANCEOF))) {
+        } elseif ($oneToManyAttribue = ($reflectionProperty->getAttributes(ORM\OneToMany::class, ReflectionAttribute::IS_INSTANCEOF)[0] ?? null)) {
             /** @var ORM\OneToMany $oneToManyAttribueInstance */
+            $oneToManyAttribueInstance = $oneToManyAttribue->newInstance();
             return $oneToManyAttribueInstance->targetEntity;
         }
         return null;
