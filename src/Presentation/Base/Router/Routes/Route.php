@@ -7,30 +7,33 @@ namespace DDD\Presentation\Base\Router\Routes;
 use Attribute;
 use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
-use Symfony\Component\Routing\Attribute\DeprecatedAlias;
 
 #[Attribute(Attribute::IS_REPEATABLE | Attribute::TARGET_CLASS | Attribute::TARGET_METHOD)]
-class Route extends \Symfony\Component\Routing\Attribute\Route
+class Route extends \Symfony\Component\Routing\Annotation\Route
 {
     use SerializerTrait, BaseAttributeTrait;
 
+    private ?string $path = null;
+    private array $localizedPaths = [];
+    private array $methods;
+    private array $schemes;
+
     public function __construct(
-        public string|array|null $path = null,
-        public ?string $name = null,
-        public array $requirements = [],
-        public array $options = [],
-        public array $defaults = [],
-        public ?string $host = null,
+        array|string|null $path = null,
+        ?string $name = null,
+        array $requirements = [],
+        array $options = [],
+        array $defaults = [],
+        ?string $host = null,
         array|string $methods = [],
         array|string $schemes = [],
-        public ?string $condition = null,
-        public ?int $priority = null,
+        ?string $condition = null,
+        ?int $priority = null,
         ?string $locale = null,
         ?string $format = null,
         ?bool $utf8 = null,
         ?bool $stateless = null,
-        string|array|null $env = null,
-        string|DeprecatedAlias|array $alias = [],
+        ?string $env = null
     ) {
         $this->addRouteParamRequirements($path, $requirements);
 
@@ -49,8 +52,7 @@ class Route extends \Symfony\Component\Routing\Attribute\Route
             $format,
             $utf8,
             $stateless,
-            $env,
-            $alias
+            $env
         );
     }
 
