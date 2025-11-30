@@ -25,7 +25,12 @@ class ExcelResponseDto extends FileResponseDto
     ) {
         $headers = array_merge(
             $headers,
-            ['Pragma' => 'cache', 'Cache-Control' => 'public, max-age=15552000', 'Content-Type' => $contentType]
+            [
+                'Pragma' => 'no-cache',
+                'Cache-Control' => 'no-cache, no-store, must-revalidate, max-age=0',
+                'Expires' => '0',
+                'Content-Type' => $contentType
+            ]
         );
         parent::__construct($content, $status, $headers);
     }

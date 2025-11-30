@@ -143,6 +143,10 @@ class ExcelDocument extends Document
                     $sheet->getStyle($cellCoordinate)->getNumberFormat()->setFormatCode('yyyy-mm-dd hh:mm:ss');
                 } else {
                     $sheet->setCellValue($cellCoordinate, $value);
+                    // Apply number format for numeric values with decimals
+                    if (is_numeric($value) && !is_int($value) && (float)$value == $value) {
+                        $sheet->getStyle($cellCoordinate)->getNumberFormat()->setFormatCode('0.0');
+                    }
                     if (is_string($value) && strpos($value, "\n") !== false) {
                         $sheet->getStyle($cellCoordinate)->getAlignment()->setWrapText(true)->setVertical(Alignment::VERTICAL_TOP);
                     }
