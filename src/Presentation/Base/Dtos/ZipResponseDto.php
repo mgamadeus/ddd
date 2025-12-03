@@ -19,8 +19,19 @@ class ZipResponseDto extends FileResponseDto
         ?string $content = '',
         int $status = 200,
         array $headers = [],
-        string $contentType = 'application/zip'
+        string $fileName = 'download.zip'
     ) {
-        parent::__construct($content, $status, $headers);
+        // Pass ZIP content with correct MIME type to base DTO
+        parent::__construct($content, $status, $headers, 'application/zip');
+
+        // Force browser to download the file
+        $disposition = $this->headers->makeDisposition(
+            ResponseHeaderBag::DISPOSITION_ATTACHMENT,
+            $fileName
+        );
+
+        // Apply download headers
+        $this->headers->set('Content-Disposition', $disposition);
+        $this->headers->set('Content-Type', 'application/zip');
     }
 }

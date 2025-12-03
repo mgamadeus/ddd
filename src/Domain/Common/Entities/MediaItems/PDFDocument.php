@@ -28,6 +28,22 @@ class PDFDocument extends Document
     /** @var GenericMediaItemContent PDF File Content */
     public GenericMediaItemContent $mediaItemContent;
 
+    public function __construct(string $fileName = null, string $title = null, string $pdfBody = null)
+    {
+        if ($pdfBody) {
+            $this->mediaItemContent = new GenericMediaItemContent();
+            $this->addChildren($this->mediaItemContent);
+            if ($fileName) {
+                $this->fileName = $fileName;
+            }
+            if ($title) {
+                $this->title = $title;
+            }
+            $this->mediaItemContent->body = $pdfBody;
+        }
+    }
+
+
     /**
      * Converts PDF to Image
      * @param int $width
@@ -247,7 +263,9 @@ class PDFDocument extends Document
         if ($fileName !== null && substr($fileName, -4) !== '.pdf') {
             $fileName .= '.pdf'; // Add '.pdf' to the end
         }
-
+        if (!$fileName) {
+            $fileName = 'pdf.pdf';
+        }
         return $fileName;
     }
 

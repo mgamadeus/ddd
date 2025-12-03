@@ -23,6 +23,11 @@ class FileResponseDto extends Response
         array $headers = [],
         string $contentType = 'application/octet-stream'
     ) {
+        // put content type into header
+        if (!isset($headers['Content-Type'])) {
+            $headers['Content-Type'] = $contentType;
+        }
+
         parent::__construct($content, $status, $headers);
     }
 

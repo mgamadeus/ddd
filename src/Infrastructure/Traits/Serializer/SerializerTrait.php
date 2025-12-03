@@ -761,16 +761,19 @@ trait SerializerTrait
                             continue;
                         }
                     }
-                    if (
-                        isset($allowedTypes->allowedTypes[ReflectionClass::STRING]) && (is_string(
-                                $arrayItem
-                            ) || is_numeric($arrayItem))
-                    ) {
-                        if ($sanitizeInput) {
-                            $arrayItem = Datafilter::sanitizeInput($arrayItem);
+                    if (isset($allowedTypes->allowedTypes[ReflectionClass::STRING])) {
+                        // Cast any scalar type (string, int, float, bool) to string
+                        if (is_scalar($arrayItem)) {
+                            if ($sanitizeInput && is_string($arrayItem)) {
+                                $arrayItem = Datafilter::sanitizeInput($arrayItem);
+                            }
+                            // Convert boolean to string representation
+                            if (is_bool($arrayItem)) {
+                                $arrayItem = $arrayItem ? 'true' : 'false';
+                            }
+                            $this->$propertyName[] = (string)$arrayItem;
+                            continue;
                         }
-                        $this->$propertyName[] = (string)$arrayItem;
-                        continue;
                     }
                     if (
                         isset($allowedTypes->allowedTypes[ReflectionClass::BOOL]) && (is_bool(
@@ -950,16 +953,19 @@ trait SerializerTrait
                         return;
                     }
                 }
-                if (
-                    isset($allowedTypes->allowedTypes[ReflectionClass::STRING]) && (is_string($value) || is_numeric(
-                            $value
-                        ))
-                ) {
-                    if ($sanitizeInput) {
-                        $value = Datafilter::sanitizeInput($value);
+                if (isset($allowedTypes->allowedTypes[ReflectionClass::STRING])) {
+                    // Cast any scalar type (string, int, float, bool) to string
+                    if (is_scalar($value)) {
+                        if ($sanitizeInput && is_string($value)) {
+                            $value = Datafilter::sanitizeInput($value);
+                        }
+                        // Convert boolean to string representation
+                        if (is_bool($value)) {
+                            $value = $value ? 'true' : 'false';
+                        }
+                        $this->$propertyName = (string)$value;
+                        return;
                     }
-                    $this->$propertyName = (string)$value;
-                    return;
                 }
                 if (
                     isset($allowedTypes->allowedTypes[ReflectionClass::BOOL]) && (is_bool(

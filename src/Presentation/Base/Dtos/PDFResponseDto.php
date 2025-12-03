@@ -35,7 +35,7 @@ class PDFResponseDto extends FileResponseDto
         $pdfResponseDto = new PDFResponseDto(
             $pdfDocument->mediaItemContent->getBody(),
             headers: [
-                'Content-Disposition' => 'attachment; filename="' . (isset($pdfDocument->title) ? $pdfDocument->title : 'pdf') . '.pdf"',
+                'Content-Disposition' => 'attachment; filename="' . $pdfDocument->getFileName() . '"',
                 'Content-Length' => strlen($pdfDocument->mediaItemContent->getBody())
             ]
         );
