@@ -688,7 +688,13 @@ trait SerializerTrait
 
         // type is array
         if ($allowedTypes->isArrayType) {
-            // we have by design an array but $number is not an array
+            // Handle null values for array types when null is allowed
+            if ($value === null && $allowedTypes->allowsNull) {
+                $this->$propertyName = null;
+                return;
+            }
+
+            // we have by design an array but $value is not an array
             if (!is_array($value)) {
                 if (is_object($value)) {
                     $value = Arr::fromObject($value);
