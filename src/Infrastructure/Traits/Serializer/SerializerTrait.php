@@ -130,14 +130,17 @@ trait SerializerTrait
     }
 
     /**
-     * recusively converts current entity to a stdClass object: top level entry function,
+     * Recursively converts current entity to a stdClass object: top level entry function,
      * calls processPropertyForSerialization on properties
-     * @param $cached
-     * @param bool $returnUniqueKeyInsteadOfContent
-     * @param array $path
-     * @param bool $ignoreHideAttributes
-     * @param bool $ignoreNullValues
-     * @return array
+     *
+     * @param bool $cached Whether to use caching
+     * @param bool $returnUniqueKeyInsteadOfContent Return unique key for entities instead of full content
+     * @param array $path Recursion path tracking
+     * @param bool $ignoreHideAttributes Ignore HideProperty attributes
+     * @param bool $ignoreNullValues Ignore properties with null values
+     * @param bool $forPersistence Include properties for persistence
+     * @param int $flags Bitwise flags from Serializer class (default: 0)
+     * @return array|stdClass
      * @throws ReflectionException
      */
     public function toObject(
@@ -146,15 +149,17 @@ trait SerializerTrait
         array $path = [],
         bool $ignoreHideAttributes = false,
         bool $ignoreNullValues = true,
-        bool $forPersistence = true
+        bool $forPersistence = true,
+        int $flags = 0
     ): mixed {
         $this->onToObject(
             $cached,
             $returnUniqueKeyInsteadOfContent,
             $path,
+            $ignoreHideAttributes,
             $ignoreNullValues,
-            $ignoreNullValues,
-            $forPersistence
+            $forPersistence,
+            $flags
         );
         // in order to avoid caching objects, manipulating them in the meantime and then having an outdated cache, on the first call
         // we clear the SerializerRegistry. Currently this is deactivated, if problems occur, it can be activated again
@@ -162,7 +167,7 @@ trait SerializerTrait
             SerializerRegistry::clearToObjectCache();
         }*/
         $objectId = spl_object_id($this);
-        $cacheKey = $objectId . '_' . $ignoreHideAttributes . '_' . $ignoreNullValues . '_' . $forPersistence . '_(' . implode(
+        $cacheKey = $objectId . '_' . $ignoreHideAttributes . '_' . $ignoreNullValues . '_' . $forPersistence . '_' . $flags . '_(' . implode(
                 '_',
                 array_keys($this->propertiesToHide)
             ) . ')';
@@ -177,6 +182,34 @@ trait SerializerTrait
                     return $cachedResult;
                 }
             }*/
+        }
+
+        // Special handling for ObjectSet when SERIALIZE_ELEMENTS_AS_ARRAY_IN_OBJECT_SETS flag is set
+        if ($this instanceof ObjectSet && Serializer::hasFlag($flags, Serializer::SERIALIZE_ELEMENTS_AS_ARRAY_IN_OBJECT_SETS)) {
+            // Return empty array if elements not set
+            if (!isset($this->elements)) {
+                $result = [];
+            } else {
+                // Serialize only the elements property
+                $propertyValue = $this->elements;
+                $result = $this->serializeProperty(
+                    $propertyValue,
+                    $cached,
+                    $returnUniqueKeyInsteadOfContent,
+                    $path,
+                    $ignoreHideAttributes,
+                    $ignoreNullValues,
+                    $forPersistence,
+                    $flags
+                );
+            }
+
+            // Store in cache before returning
+            if ($cached) {
+                SerializerRegistry::setToObjectCacheForObjectId($cacheKey, $result);
+            }
+
+            return $result;
         }
 
         // on each iteraton we add the current spl_obejct_hash to the path. when trying to add the same id again,
@@ -229,7 +262,8 @@ trait SerializerTrait
                     $path,
                     $ignoreHideAttributes,
                     $ignoreNullValues,
-                    $forPersistence
+                    $forPersistence,
+                    $flags
                 );
                 if ($serializedValue !== '*RECURSION*') // serialization created recursion loop, we skip the property
                 {
@@ -257,7 +291,17 @@ trait SerializerTrait
     }
 
     /**
-     * @return void Implement this method if object rewquires modifications, such as media item body needs to be nulled due to non utf8 chars
+     * Hook method called before serialization. Implement this method if object requires modifications,
+     * such as media item body needs to be nulled due to non utf8 chars
+     *
+     * @param bool $cached
+     * @param bool $returnUniqueKeyInsteadOfContent
+     * @param array $path
+     * @param bool $ignoreHideAttributes
+     * @param bool $ignoreNullValues
+     * @param bool $forPersistence
+     * @param int $flags Bitwise flags from Serializer class
+     * @return void
      */
     public function onToObject(
         $cached = true,
@@ -265,7 +309,8 @@ trait SerializerTrait
         array $path = [],
         bool $ignoreHideAttributes = false,
         bool $ignoreNullValues = true,
-        bool $forPersistence = true
+        bool $forPersistence = true,
+        int $flags = 0
     ): void {}
 
     /**
@@ -290,13 +335,16 @@ trait SerializerTrait
     }
 
     /**
-     * recursively serializes property
+     * Recursively serializes property
+     *
      * @param mixed $propertyValue
-     * @param $cached
+     * @param bool $cached
      * @param bool $returnUniqueKeyInsteadOfContent
      * @param array $path
      * @param bool $ignoreHideAttributes
      * @param bool $ignoreNullValues
+     * @param bool $forPersistence
+     * @param int $flags Bitwise flags from Serializer class
      * @return mixed
      */
     private function serializeProperty(
@@ -306,7 +354,8 @@ trait SerializerTrait
         array $path = [],
         bool $ignoreHideAttributes = false,
         bool $ignoreNullValues = true,
-        bool $forPersistence = true
+        bool $forPersistence = true,
+        int $flags = 0
     ): mixed {
         $propertyValueIsArray = is_array($propertyValue);
         $propertyValueIsObject = is_object($propertyValue);
@@ -334,7 +383,9 @@ trait SerializerTrait
                         $returnUniqueKeyInsteadOfContent,
                         $path,
                         $ignoreHideAttributes,
-                        $ignoreNullValues
+                        $ignoreNullValues,
+                        $forPersistence,
+                        $flags
                     );
                 }
             } else {  // we are in a general object that supports JSON Serialization
@@ -363,7 +414,8 @@ trait SerializerTrait
                     $path,
                     $ignoreHideAttributes,
                     $ignoreNullValues,
-                    $forPersistence
+                    $forPersistence,
+                    $flags
                 );
                 // we skip empty values and values that created a recursion loop
                 if ($serializedArrayValue !== null && $serializedArrayValue !== '*RECURSION*') {

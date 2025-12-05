@@ -18,9 +18,21 @@ class DateValue extends BaseObject {
      * @param $cached
      * @param bool $returnUniqueKeyInsteadOfContent
      * @param array $path
+     * @param bool $ignoreHideAttributes
+     * @param bool $ignoreNullValues
+     * @param bool $forPersistence
+     * @param int $flags
      * @return array
      */
-    public function toObject($cached = true, bool $returnUniqueKeyInsteadOfContent = false, array $path = []): array {
+    public function toObject(
+        $cached = true,
+        bool $returnUniqueKeyInsteadOfContent = false,
+        array $path = [],
+        bool $ignoreHideAttributes = false,
+        bool $ignoreNullValues = true,
+        bool $forPersistence = true,
+        int $flags = 0
+    ): array {
         return ['x' => (string) $this->x, 'y' => $this->y??null];
     }
 

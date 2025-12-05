@@ -119,6 +119,7 @@ class GeoPoint extends ValueObject
      * @param bool $ignoreHideAttributes
      * @param bool $ignoreNullValues
      * @param bool $forPersistence
+     * @param int $flags
      * @return mixed
      */
     public function toObject(
@@ -127,7 +128,8 @@ class GeoPoint extends ValueObject
         array $path = [],
         bool $ignoreHideAttributes = false,
         bool $ignoreNullValues = true,
-        bool $forPersistence = true
+        bool $forPersistence = true,
+        int $flags = 0
     ): mixed {
         return [
             'lat' => $this->lat,

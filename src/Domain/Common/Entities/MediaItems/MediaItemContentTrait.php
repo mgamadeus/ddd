@@ -198,7 +198,8 @@ trait MediaItemContentTrait
         array $path = [],
         bool $ignoreHideAttributes = false,
         bool $ignoreNullValues = true,
-        bool $forPersistence = true
+        bool $forPersistence = true,
+        int $flags = 0
     ): void {
         $this->getBase64EncodedContent();
         $this->body = null;
