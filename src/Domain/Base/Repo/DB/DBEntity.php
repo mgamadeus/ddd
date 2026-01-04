@@ -18,6 +18,7 @@ use DDD\Domain\Base\Entities\Translatable\TranslatableTrait;
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Domain\Base\Repo\DatabaseRepoEntity;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseVirtualColumn;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Common\Entities\Encryption\EncryptionScopes;
 use DDD\Infrastructure\Base\DateTime\Date;
@@ -170,9 +171,13 @@ class DBEntity extends DatabaseRepoEntity
         if (!isset($this->ormInstance->$propertyName)) {
             return;
         }
+        $entityPropertyName = $propertyName;
 
         $entityReflectionClass = ReflectionClass::instance($entity::class);
-        if (!$entityReflectionClass->hasProperty($propertyName)) {
+        if (isset($this->ormInstance->virtualColumns[$propertyName])) {
+            $entityPropertyName = DatabaseVirtualColumn::getColumnNameForVirtualColumn($propertyName);
+        }
+        if (!$entityReflectionClass->hasProperty($entityPropertyName)) {
             return;
         }
 
@@ -186,8 +191,8 @@ class DBEntity extends DatabaseRepoEntity
         ) {
             // there is already an Entity that has been mapped from the same ORM instance
             $propertyEntity = self::$ormInstanceToEntityAllocation[spl_object_id($this->ormInstance->$propertyName)];
-            $entity->$propertyName = $propertyEntity;
-            $addAsParent = $entityReflectionClass->isLazyLoadedPropertyToBeAddedAsParent($propertyName);
+            $entity->$entityPropertyName = $propertyEntity;
+            $addAsParent = $entityReflectionClass->isLazyLoadedPropertyToBeAddedAsParent($entityPropertyName);
             if ($addAsParent) {
                 $entity->setParent($propertyEntity);
                 $propertyEntity->addChildren($entity);
@@ -198,7 +203,7 @@ class DBEntity extends DatabaseRepoEntity
             return;
         }
 
-        $entityReflectionProperty = $entityReflectionClass->getProperty($propertyName);
+        $entityReflectionProperty = $entityReflectionClass->getProperty($entityPropertyName);
 
         $ormModelReflectionClass = ReflectionClass::instance($this->ormInstance::class);
         $ormModelReflectionProperty = $ormModelReflectionClass->getProperty($propertyName);
@@ -218,7 +223,7 @@ class DBEntity extends DatabaseRepoEntity
         // Handling Encryption setup and errors
         /** @var DatabaseColumn $databaseColumnAttribute */
         $databaseColumnAttribute = $entityReflectionClass->getAttributeInstanceForProperty(
-            $propertyName,
+            $entityPropertyName,
             DatabaseColumn::class
         );
 
@@ -246,52 +251,52 @@ class DBEntity extends DatabaseRepoEntity
             if ($encryptionScopePassword) {
                 $decryptedString = Encrypt::decrypt($this->ormInstance->$propertyName, $encryptionScopePassword);
                 if ($possibleEntityType == ReflectionClass::STRING) {
-                    $entity->$propertyName = (string)$decryptedString;
+                    $entity->$entityPropertyName = (string)$decryptedString;
                     continue;
                 } elseif ($possibleEntityType == ReflectionClass::INTEGER) {
-                    $entity->$propertyName = (int)$decryptedString;
+                    $entity->$entityPropertyName = (int)$decryptedString;
                     continue;
                 } elseif ($possibleEntityType == ReflectionClass::FLOAT) {
-                    $entity->$propertyName = (float)$decryptedString;
+                    $entity->$entityPropertyName = (float)$decryptedString;
                     continue;
                 } elseif ($possibleEntityType == ReflectionClass::BOOL) {
-                    $entity->$propertyName = (bool)$decryptedString;
+                    $entity->$entityPropertyName = (bool)$decryptedString;
                     continue;
                 } elseif ($possibleEntityType == DateTime::class) {
-                    $entity->$propertyName = DateTime::fromString($decryptedString);
+                    $entity->$entityPropertyName = DateTime::fromString($decryptedString);
                     continue;
                 } elseif ($possibleEntityType == Date::class) {
-                    $entity->$propertyName = Date::fromString($decryptedString);
+                    $entity->$entityPropertyName = Date::fromString($decryptedString);
                     continue;
                 }
             }
 
             // handling cases with translation
             $translatableProperty = $entityReflectionClass->getAttributeInstanceForProperty(
-                $propertyName,
+                $entityPropertyName,
                 Translatable::class
             );
             if ($translatableProperty) {
                 /** @var TranslatableTrait $entity */
                 $translationInfos = $entity->getTranslationInfos();
-                $entity->setTranslationsForProperty($propertyName, $this->ormInstance->$propertyName);
+                $entity->setTranslationsForProperty($entityPropertyName, $this->ormInstance->$propertyName);
                 return;
             }
 
             // trivial case, types are equal
             if ($possibleEntityTypeName == $ormModelReflectionProperty->getType()->getName()) {
-                $entity->$propertyName = $this->ormInstance->$propertyName;
+                $entity->$entityPropertyName = $this->ormInstance->$propertyName;
                 return;
             }
             if (
                 $possibleEntityTypeName == DateTime::class && $ormModelReflectionProperty->getType()->getName() == \DateTime::class
             ) {
-                $entity->$propertyName = DateTime::fromTimestamp($this->ormInstance->$propertyName->getTimestamp());
+                $entity->$entityPropertyName = DateTime::fromTimestamp($this->ormInstance->$propertyName->getTimestamp());
             }
             if (
                 $possibleEntityTypeName == Date::class && $ormModelReflectionProperty->getType()->getName() == \DateTime::class
             ) {
-                $entity->$propertyName = Date::fromTimestamp($this->ormInstance->$propertyName->getTimestamp());
+                $entity->$entityPropertyName = Date::fromTimestamp($this->ormInstance->$propertyName->getTimestamp());
             }
             // one to many relations implicitly loaded
             if (is_a($possibleEntityTypeName, EntitySet::class, true)) {
@@ -320,7 +325,7 @@ class DBEntity extends DatabaseRepoEntity
                             $entitySet->add($dependentEntity);
                             $entitySet->addChildren($dependentEntity);
                         }
-                        $entity->$propertyName = $entitySet;
+                        $entity->$entityPropertyName = $entitySet;
                         $entity->addChildren($entitySet);
                         $entitySet->setParent($entity);
                     }
@@ -359,8 +364,8 @@ class DBEntity extends DatabaseRepoEntity
                         $propertyValue = Encrypt::decrypt($propertyValue, $encryptionScopePassword);
                     }
                     $valueObject->mapFromRepository($propertyValue);
-                    $entity->$propertyName = $valueObject;
-                    $entity->addChildren($entity->$propertyName);
+                    $entity->$entityPropertyName = $valueObject;
+                    $entity->addChildren($entity->$entityPropertyName);
                     $valueObject->setParent($entity);
                 }
             }
@@ -385,9 +390,9 @@ class DBEntity extends DatabaseRepoEntity
                         false,
                         $initiatorClasses
                     );
-                    $entity->$propertyName = $propertyEntity;
+                    $entity->$entityPropertyName = $propertyEntity;
                     // check if entity needs to be added as child or as parent
-                    $addAsParent = $entityReflectionClass->isLazyLoadedPropertyToBeAddedAsParent($propertyName);
+                    $addAsParent = $entityReflectionClass->isLazyLoadedPropertyToBeAddedAsParent($entityPropertyName);
                     if ($addAsParent) {
                         $entity->setParent($propertyEntity);
                         $propertyEntity->addChildren($entity);
