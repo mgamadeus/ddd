@@ -174,7 +174,7 @@ class DBEntity extends DatabaseRepoEntity
         $entityPropertyName = $propertyName;
 
         $entityReflectionClass = ReflectionClass::instance($entity::class);
-        if (isset($this->ormInstance->virtualColumns[$propertyName])) {
+        if (isset($this->ormInstance::$virtualColumns[$propertyName])) {
             $entityPropertyName = DatabaseVirtualColumn::getColumnNameForVirtualColumn($propertyName);
         }
         if (!$entityReflectionClass->hasProperty($entityPropertyName)) {

@@ -86,7 +86,7 @@ class DoctrineEntityManager extends EntityManager
 
         foreach ($metadata->getFieldNames() as $fieldName) {
             // We ignore virtual columns
-            if (isset($doctrineModel->virtualColumns[$fieldName])) {
+            if (isset($doctrineModel::$virtualColumns[$fieldName])) {
                 continue;
             }
             $value = $metadata->getFieldValue($doctrineModel, $fieldName);
@@ -248,7 +248,7 @@ class DoctrineEntityManager extends EntityManager
         // Get column names outside of the loop
         foreach ($metadata->getFieldNames() as $fieldName) {
             // We ignore virtual columns
-            if (isset($doctrineModel->virtualColumns[$fieldName])) {
+            if (isset($doctrineModel::$virtualColumns[$fieldName])) {
                 continue;
             }
             $reflectionProperty = $reflectionClass->getProperty($fieldName);

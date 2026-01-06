@@ -6,6 +6,7 @@ namespace DDD\Domain\Base\Entities\QueryOptions;
 
 use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
 use DDD\Domain\Base\Entities\ObjectSet;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseVirtualColumn;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Infrastructure\Exceptions\BadRequestException;
@@ -124,7 +125,11 @@ class SelectOptions extends ObjectSet
         }
 
         // Build an array of fields to select for the main entity from SelectOptions
-        $selectFields = [];
+        // These are used for partial select
+        $fieldsForDBSelect = [];
+        // Fields not contained here, are added as propertiesToHide, this is kept separated from the fields in DB select
+        // As some fields could e.g. come from non db properties, e.g. virtual lazyload properties
+        $fieldsToKeepInEntity = [];
         foreach ($this->getElements() as $selectOption) {
             $propertyName = $selectOption->propertyName;
             if ($mappingFunction) {
@@ -145,19 +150,28 @@ class SelectOptions extends ObjectSet
             /** @var DoctrineModel $baseModelClass */
             if ($baseModelClass::isValidDatabaseExpression($selectExpression, $baseModelClass)) {
                 // In the partial clause, we only need the field name.
-                $selectFields[] = $propertyName;
+                $fieldsForDBSelect[] = $propertyName;
+            }
+            // Virtual Columns are named in DB different that in Entity, and property name needs to be adjusted
+            if (isset($baseModelClass::$virtualColumns[$propertyName])) {
+                $entityPropertyName = DatabaseVirtualColumn::getColumnNameForVirtualColumn($propertyName);
+                $fieldsToKeepInEntity[] = DatabaseVirtualColumn::getColumnNameForVirtualColumn($propertyName);
+            }
+            else {
+                $fieldsToKeepInEntity[] = $propertyName;
             }
         }
 
-        if (!empty($selectFields)) {
+        if (!empty($fieldsForDBSelect)) {
             // Ensure the identifier is present (e.g. "id")
-            if (!in_array('id', $selectFields, true)) {
-                $selectFields[] = 'id';
+            if (!in_array('id', $fieldsForDBSelect, true)) {
+                $fieldsForDBSelect[] = 'id';
+                $fieldsToKeepInEntity[] = 'id';
             }
             // Build a partial select clause for the main entity.
-            $partialClause = sprintf('partial %s.{%s}', $alias, implode(', ', $selectFields));
+            $partialClause = sprintf('partial %s.{%s}', $alias, implode(', ', $fieldsForDBSelect));
             $queryBuilder->addSelect($partialClause);
-            self::addPropertiesToHideByByJoinPath($baseModelClass::ENTITY_CLASS, self::extractJoinPathFromJoinAlias($alias ?? ''), $selectFields);
+            self::addPropertiesToHideByByJoinPath($baseModelClass::ENTITY_CLASS, self::extractJoinPathFromJoinAlias($alias ?? ''), $fieldsToKeepInEntity);
         }
 
         return $queryBuilder;

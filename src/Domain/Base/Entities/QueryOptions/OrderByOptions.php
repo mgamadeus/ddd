@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Entities\QueryOptions;
 
 use DDD\Domain\Base\Entities\ObjectSet;
+use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 
@@ -113,6 +114,7 @@ class OrderByOptions extends ObjectSet
             $baseAlias = $baseModelClass::MODEL_ALIAS;
             $baseAlias = $orderBy?->getFiltersDefinition()?->getExpandDefinition() ? '' : $baseAlias;
             $orderByExpression = ($baseAlias ? $baseAlias . '.' : '') . $propertyName;
+            /** @var DoctrineModel $baseModelClass */
             if ($baseModelClass::isValidDatabaseExpression($orderByExpression, $baseModelClass)) {
                 $queryBuilder->addOrderBy($orderByExpression, $orderBy->direction);
             }

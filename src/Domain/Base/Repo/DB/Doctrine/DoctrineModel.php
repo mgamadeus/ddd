@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Repo\DB\Doctrine;
 
 use DDD\Infrastructure\Reflection\ReflectionClass;
+use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\ORM\Mapping as ORM;
 use Doctrine\ORM\PersistentCollection;
@@ -25,7 +26,7 @@ abstract class DoctrineModel
 
     public array $jsonMergableColumns = [];
 
-    public array $virtualColumns = [];
+    public static array $virtualColumns = [];
 
     /**
      * Returns table name for Model
@@ -71,7 +72,10 @@ abstract class DoctrineModel
                         $expression[1]
                     )
                 ) {
-                    return true;
+                    $reflectionProperty = $baseModelReflectionClass->getProperty($expression[1]);
+                    if ($reflectionProperty->hasAttribute(ORM\Column::class)) {
+                        return true;
+                    }
                 }
             }
         }

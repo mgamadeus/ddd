@@ -631,7 +631,7 @@ class DatabaseModel extends ValueObject
             $virtualColumns = implode(', ', array_map(function (DatabaseVirtualColumn $virtualColumn) {
                 return "'{$virtualColumn->getName()}' => true";
             }, $this->virtualColumns->getElements()));
-            $modelClassContent .= "\t" . 'public array $virtualColumns = [' . $virtualColumns . '];' . "\n\n";
+            $modelClassContent .= "\t" . 'public static array $virtualColumns = [' . $virtualColumns . '];' . "\n\n";
         }
         $databaseColumnModelImport = new DatabaseModelImport(DatabaseColumn::getClassWithNamespace());
         $this->modelImports->add($databaseColumnModelImport);
