@@ -183,7 +183,7 @@ class DBEntity extends DatabaseRepoEntity
         // #[DatabaseColumn(ignoreProperty: true)]
         // #[DatabaseVirtualColumn(as: "(CAST(JSON_UNQUOTE(JSON_EXTRACT(mediaItemContent, '$.height')) AS SIGNED))")]
         // public ?int $height; => height will be set based on virtualHeight
-        if (isset($this->ormInstance::$virtualColumns[$propertyName]) && !$entityReflectionClass->hasProperty($propertyName)) {
+        if (isset($this->ormInstance::$virtualColumns[$propertyName]['referenceColumnStored']) && !$this->ormInstance::$virtualColumns[$propertyName]['referenceColumnStored']) {
             $entityPropertyName = DatabaseVirtualColumn::getColumnNameForVirtualColumn($propertyName);
         }
         if (!$entityReflectionClass->hasProperty($entityPropertyName)) {
