@@ -69,10 +69,20 @@ class ExpandOptions extends ObjectSet
     /**
      * Searches for ExpandOption with given propertyName and returns it if present
      * @param string $propertyName
+     * @param bool $recursive
      * @return ExpandOption|null
      */
-    public function getExpandOptionByPropertyName(string $propertyName): ?ExpandOption
+    public function getExpandOptionByPropertyName(string $propertyName, bool $recursive = false): ?ExpandOption
     {
+        if ($recursive && ($currPontPos = strpos($propertyName, '.')) !== false) {
+            $firstSegment = substr($propertyName, 0, $currPontPos);
+            $remainingSegments = substr($propertyName, $currPontPos + 1);
+            $firstSegmentOption = $this->getExpandOptionByPropertyName($firstSegment, false);
+            if (!$firstSegmentOption || !isset($firstSegmentOption->expandOptions)) {
+                return null;
+            }
+            return $firstSegmentOption->expandOptions->getExpandOptionByPropertyName($remainingSegments, true);
+        }
         foreach ($this->getElements() as $element) {
             if ($element->propertyName == $propertyName) {
                 return $element;

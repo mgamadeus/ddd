@@ -23,6 +23,9 @@ class OrderByOption extends ValueObject
     /** @var FiltersDefinition The definition the option is based on */
     protected ?FiltersDefinition $filtersDefinition = null;
 
+    /** @var ExpandOption The expandOption the orderByOption refers to in case of expanded properties */
+    protected ?ExpandOption $expandOption = null;
+
     /**
      * @return FiltersDefinition
      */
@@ -37,6 +40,21 @@ class OrderByOption extends ValueObject
     public function setFiltersDefinition(FiltersDefinition $filtersDefinition): void
     {
         $this->filtersDefinition = $filtersDefinition;
+    }
+
+    /**
+     * @return ExpandOption|null
+     */
+    public function getExpandOption(): ?ExpandOption {
+        return $this->expandOption;
+    }
+
+    /**
+     * @param ExpandOption $expandOption
+     * @return void
+     */
+    public function setExpandOption(ExpandOption $expandOption): void {
+        $this->expandOption = $expandOption;
     }
 
     /**

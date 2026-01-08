@@ -60,13 +60,39 @@ class OrderByOptions extends ObjectSet
      * @return bool
      * @throws BadRequestException
      */
-    public function validateAgainstDefinitions(?array $orderByDefinitions): bool
+    public function validateAgainstDefinitions(?array $orderByDefinitions, ?ExpandOptions $expandOptions = null): bool
     {
         $orderByDefinitions = $orderByDefinitions ?? [];
         foreach ($this->getElements() as $orderByOption) {
+            // First check if we have a nested orderby, e.g. account.created DESC ...
+
+            if (($strRightPos = strrpos($orderByOption->propertyName, '.')) !== false){
+                // if propertyName is e.g. team.world.id we extract team.world and obtain team.world
+                // we have to search for team.world
+                $expandPath = substr($orderByOption->propertyName, 0, $strRightPos);
+                $propertyNameInExpandPath = substr($orderByOption->propertyName, $strRightPos + 1);
+                $expandOptionForPropertyName = $expandOptions->getExpandOptionByPropertyName($expandPath, recursive: true);
+                if (!$expandOptionForPropertyName) {
+                    throw new BadRequestException(
+                        "Property name used to orderBy ({$orderByOption->propertyName}), cannot be found scanning the expand path '{$expandPath}', check if you expanded necesary properties."
+                    );
+                }
+                $orderByDefinitionsForPropertyName = $expandOptionForPropertyName->expandDefinition->getOrderbyDefinitions();
+                $optionExists = in_array($propertyNameInExpandPath, $orderByDefinitionsForPropertyName);
+                if (!$optionExists) {
+                    throw new BadRequestException(
+                        "OrderBy option used with expand path '{$expandPath}' does not allow for property '{$propertyNameInExpandPath}'. Allowed property names under this path are: [" . implode(
+                            ', ',
+                            $orderByDefinitionsForPropertyName
+                        ) . ']'
+                    );
+                }
+                $orderByOption->setExpandOption($expandOptionForPropertyName);
+                continue;
+            }
             if (!in_array($orderByOption->propertyName, $orderByDefinitions)) {
                 throw new BadRequestException(
-                    "Property name used to orderBy ({$orderByOption->propertyName}) is not allowed. Allowed property names are: [" . implode(
+                    "Property name used to orderBy '{$orderByOption->propertyName}' is not allowed. Allowed property names are: [" . implode(
                         ', ',
                         $orderByDefinitions
                     ) . ']'
@@ -102,22 +128,45 @@ class OrderByOptions extends ObjectSet
         string $baseModelClass = '',
         callable $mappingFunction = null
     ): DoctrineQueryBuilder {
-        foreach ($this->getElements() as $orderBy) {
+        foreach ($this->getElements() as $orderByOption) {
             // if orderBy is based on a filter property that comes from an expand property, alias has to be empty as otherwise the base alias would be
             // added to the query, e.g. filter is 'expandProperty.name' => then no alias is needed
-            $propertyName = $orderBy->propertyName;
+            $propertyName = $orderByOption->propertyName;
             if ($mappingFunction) {
                 /** @var QueryOptionsPropertyMapping $queryOptionPropertyMapping */
                 $queryOptionPropertyMapping = $mappingFunction($propertyName);
                 $propertyName = $queryOptionPropertyMapping->propertyName;
             }
-            $baseAlias = $baseModelClass::MODEL_ALIAS;
-            $baseAlias = $orderBy?->getFiltersDefinition()?->getExpandDefinition() ? '' : $baseAlias;
-            $orderByExpression = ($baseAlias ? $baseAlias . '.' : '') . $propertyName;
-            /** @var DoctrineModel $baseModelClass */
-            if ($baseModelClass::isValidDatabaseExpression($orderByExpression, $baseModelClass)) {
-                $queryBuilder->addOrderBy($orderByExpression, $orderBy->direction);
+            $orderByExpression = null;
+            if (($strRightPos = strrpos($propertyName, '.')) !== false){
+                $propertyNameInExpandPath = substr($orderByOption->propertyName, $strRightPos + 1);
+                if ($joinAlias = $orderByOption?->getExpandOption()?->joinAlias ?? null){
+                    // validate expression
+                    /** @var DoctrineModel $verifyModelClass */
+                    $verifyModelClass = $orderByOption->getExpandOption()->getTargetPropertyModelClass();
+                    if ($verifyModelClass === null) {
+                        continue;
+                    }
+                    $verifyModelAlias = $verifyModelClass::MODEL_ALIAS;
+                    if (!$verifyModelClass::isValidDatabaseExpression("$verifyModelAlias.$propertyNameInExpandPath")) {
+                        continue;
+                    }
+                    $orderByExpression = "{$joinAlias}.{$propertyNameInExpandPath}";
+                }
+                else {
+                    continue;
+                }
             }
+            else {
+                $baseAlias = $baseModelClass::MODEL_ALIAS;
+                $baseAlias = $orderByOption?->getFiltersDefinition()?->getExpandDefinition() ? '' : $baseAlias;
+                $orderByExpression = ($baseAlias ? $baseAlias . '.' : '') . $propertyName;
+                /** @var DoctrineModel $baseModelClass */
+                if (!$baseModelClass::isValidDatabaseExpression($orderByExpression, $baseModelClass)) {
+                    continue;
+                }
+            }
+            $queryBuilder->addOrderBy($orderByExpression, $orderByOption->direction);
         }
         return $queryBuilder;
     }

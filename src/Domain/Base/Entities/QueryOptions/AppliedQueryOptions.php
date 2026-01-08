@@ -160,7 +160,8 @@ class AppliedQueryOptions extends ValueObject
     {
         $this->orderBy = $orderBy;
         if ($this->orderBy && $validateAgainstDefinitions) {
-            $this->orderBy->validateAgainstDefinitions($this->getOrderByDefinitions());
+            $expandOptions = isset($this->expand) ? $this->expand : null;
+            $this->orderBy->validateAgainstDefinitions($this->getOrderByDefinitions(), $expandOptions);
             // Set filters definitions for OrderBy options based on filters.
             if ($this->getFiltersDefinitions()) {
                 foreach ($this->orderBy->getElements() as $orderByOption) {
