@@ -174,7 +174,16 @@ class DBEntity extends DatabaseRepoEntity
         $entityPropertyName = $propertyName;
 
         $entityReflectionClass = ReflectionClass::instance($entity::class);
-        if (isset($this->ormInstance::$virtualColumns[$propertyName])) {
+
+        // If property is virtual column, and no regular column property exists, we use regular name
+        // Examples:
+        // #[DatabaseVirtualColumn(as: '(IFNULL(battleTeamId, 0))')]
+        // public ?int $battleTeamId; => virtualBattleTeamId will not overwrite battleTeamId
+        //
+        // #[DatabaseColumn(ignoreProperty: true)]
+        // #[DatabaseVirtualColumn(as: "(CAST(JSON_UNQUOTE(JSON_EXTRACT(mediaItemContent, '$.height')) AS SIGNED))")]
+        // public ?int $height; => height will be set based on virtualHeight
+        if (isset($this->ormInstance::$virtualColumns[$propertyName]) && !$entityReflectionClass->hasProperty($propertyName)) {
             $entityPropertyName = DatabaseVirtualColumn::getColumnNameForVirtualColumn($propertyName);
         }
         if (!$entityReflectionClass->hasProperty($entityPropertyName)) {
