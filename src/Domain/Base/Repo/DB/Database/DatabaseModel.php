@@ -628,9 +628,30 @@ class DatabaseModel extends ValueObject
         }
 
         if ($this->virtualColumns->count()) {
-            $virtualColumns = implode(', ', array_map(function (DatabaseVirtualColumn $virtualColumn) {
-                return "'{$virtualColumn->getName()}' => true";
-            }, $this->virtualColumns->getElements()));
+            $virtualColumns = '';
+            foreach ($this->virtualColumns->getElements() as $virtualColumn) {
+                $virtualColumnProperties = [
+                    'createIndex' => $virtualColumn->createIndex,
+                    'stored' => $virtualColumn->stored,
+                    'as' => $virtualColumn->as,
+                    'referenceColumn' => $virtualColumn->referenceColumn->name,
+                    'referenceColumnStored' => !$virtualColumn->referenceColumn->ignoreProperty,
+                ];
+
+                $virtualColumnPropertiesString = var_export($virtualColumnProperties, true);
+
+                $virtualColumnPropertiesString = preg_replace('/\barray\s*\(/', '[', $virtualColumnPropertiesString);
+                $virtualColumnPropertiesString = preg_replace('/\)\s*$/', ']', $virtualColumnPropertiesString);
+
+                $virtualColumnPropertiesString = preg_replace('/\s+/', ' ', $virtualColumnPropertiesString);
+                $virtualColumnPropertiesString = str_replace(' ,', ',', $virtualColumnPropertiesString);
+                $virtualColumnPropertiesString = trim($virtualColumnPropertiesString);
+
+                $virtualColumns .= "'{$virtualColumn->getName()}' => $virtualColumnPropertiesString, ";
+            }
+
+            $virtualColumns = rtrim($virtualColumns, ", ");
+
             $modelClassContent .= "\t" . 'public static array $virtualColumns = [' . $virtualColumns . '];' . "\n\n";
         }
         $databaseColumnModelImport = new DatabaseModelImport(DatabaseColumn::getClassWithNamespace());
