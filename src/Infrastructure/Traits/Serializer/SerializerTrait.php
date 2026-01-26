@@ -21,6 +21,7 @@ use DDD\Infrastructure\Traits\Serializer\Attributes\ExposePropertyInsteadOfClass
 use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
 use DDD\Infrastructure\Traits\Serializer\Attributes\HidePropertyOnSystemSerialization;
 use DDD\Infrastructure\Traits\Serializer\Attributes\OverwritePropertyName;
+use DDD\Infrastructure\Traits\Serializer\Attributes\SerializeInToonFormat;
 use Error;
 use Exception;
 use ReflectionAttribute;
@@ -33,10 +34,10 @@ trait SerializerTrait
     use ReflectorTrait;
 
     /**
-     * @var array Properties that will not be exposed to frontend, allows dynamically remove
-     * properties vivibility instead of applying HideProperty attribute
+     * @var bool Enables Token-Oriented Object Notation (TOON) serialization for this class.
+     *  https://github.com/toon-format/toon
      */
-    protected static $staticPropertiesToHide = [];
+    protected static $toonEnabledSerialization = false;
 
     /** @var array Tracks unset properties */
     protected $unsetProperties = [];
@@ -51,7 +52,10 @@ trait SerializerTrait
     {
         $className = $forCurrentClass ? static::class : self::class;
         foreach ($properties as $property) {
-            StaticRegistry::$propertiesToHideOnSerialization[$className . '_' . $property] = true;
+            if (!isset(StaticRegistry::$propertiesToHideOnSerialization[$className])) {
+                StaticRegistry::$propertiesToHideOnSerialization[$className] = [];
+            }
+            StaticRegistry::$propertiesToHideOnSerialization[$className][$property] = true;
         }
     }
 
@@ -59,8 +63,8 @@ trait SerializerTrait
     {
         $className = $forCurrentClass ? static::class : self::class;
         foreach ($properties as $property) {
-            if (isset(StaticRegistry::$propertiesToHideOnSerialization[$className . '_' . $property])) {
-                unset(StaticRegistry::$propertiesToHideOnSerialization[$className . '_' . $property]);
+            if (isset(StaticRegistry::$propertiesToHideOnSerialization[$className][$property])) {
+                unset(StaticRegistry::$propertiesToHideOnSerialization[$className][$property]);
             }
         }
     }
@@ -151,7 +155,8 @@ trait SerializerTrait
         bool $ignoreNullValues = true,
         bool $forPersistence = true,
         int $flags = 0
-    ): mixed {
+    ): mixed
+    {
         $this->onToObject(
             $cached,
             $returnUniqueKeyInsteadOfContent,
@@ -185,7 +190,10 @@ trait SerializerTrait
         }
 
         // Special handling for ObjectSet when SERIALIZE_ELEMENTS_AS_ARRAY_IN_OBJECT_SETS flag is set
-        if ($this instanceof ObjectSet && Serializer::hasFlag($flags, Serializer::SERIALIZE_ELEMENTS_AS_ARRAY_IN_OBJECT_SETS)) {
+        if ($this instanceof ObjectSet && Serializer::hasFlag(
+                $flags,
+                Serializer::SERIALIZE_ELEMENTS_AS_ARRAY_IN_OBJECT_SETS
+            )) {
             // Return empty array if elements not set
             if (!isset($this->elements)) {
                 $result = [];
@@ -223,7 +231,12 @@ trait SerializerTrait
 
         $propertyNameToExposeInsteadOfClass = null;
         $reflectionClass = new ReflectionClass($this);
-        foreach ($reflectionClass->getAttributes(ExposePropertyInsteadOfClass::class, ReflectionAttribute::IS_INSTANCEOF) as $classAttribute) {
+        foreach (
+            $reflectionClass->getAttributes(
+                ExposePropertyInsteadOfClass::class,
+                ReflectionAttribute::IS_INSTANCEOF
+            ) as $classAttribute
+        ) {
             $attributeInstance = $classAttribute->newInstance();
             $propertyNameToExposeInsteadOfClass = $attributeInstance->propertyNameToExpose;
         }
@@ -235,9 +248,12 @@ trait SerializerTrait
             }
             $visiblePropertyName = $propertyName;
             //attribute OverwritePropertyName changes the visible name of an atribute on serialization
-            foreach ($property->getAttributes(OverwritePropertyName::class, ReflectionAttribute::IS_INSTANCEOF) as $attribute) {
-                $attributeInstance = $attribute->newInstance();
-                $visiblePropertyName = $attributeInstance->name;
+            if ($overwritePropertyNameAttributeInstance = $property->getAttributeInstance(
+                OverwritePropertyName::class,
+                ReflectionAttribute::IS_INSTANCEOF
+            )) {
+                /** @var OverwritePropertyName $overwritePropertyNameAttributeInstance */
+                $visiblePropertyName = $overwritePropertyNameAttributeInstance->name;
             }
             if (
                 (!$ignoreNullValues && $property->isInitialized($this) && $property->isPublic() && !$property->isStatic(
@@ -251,7 +267,10 @@ trait SerializerTrait
                 ) {
                     continue;
                 }
-                if ($forPersistence && $property->getAttributes(DontPersistProperty::class, ReflectionAttribute::IS_INSTANCEOF)) {
+                if (!$forPersistence && $property->getAttributes(
+                        DontPersistProperty::class,
+                        ReflectionAttribute::IS_INSTANCEOF
+                    )) {
                     continue;
                 }
                 $propertyValue = $this->$propertyName;
@@ -265,6 +284,16 @@ trait SerializerTrait
                     $forPersistence,
                     $flags
                 );
+
+                if (
+                    is_array($propertyValue)
+                    && is_array($serializedValue)
+                    && $property->hasAttribute(SerializeInToonFormat::class, ReflectionAttribute::IS_INSTANCEOF)
+                ) {
+                    $serializedValue = $this->convertArrayOfObjectsToToon($serializedValue);
+                    $visiblePropertyName = SerializeInToonFormat::getToonPropertyName($propertyName);
+                }
+
                 if ($serializedValue !== '*RECURSION*') // serialization created recursion loop, we skip the property
                 {
                     $resultArray[$visiblePropertyName] = $serializedValue;
@@ -311,27 +340,8 @@ trait SerializerTrait
         bool $ignoreNullValues = true,
         bool $forPersistence = true,
         int $flags = 0
-    ): void {}
-
-    /**
-     * Returns false if propertyName is hidden based on class properties and static properties
-     * @param string $propertyName
-     * @return bool
-     */
-    public function isPropertyVisible(string $propertyName): bool
+    ): void
     {
-        if (isset($this->propertiesToHide[$propertyName])) {
-            return false;
-        }
-        // handle current class
-        if (isset(StaticRegistry::$propertiesToHideOnSerialization[static::class . '_' . $propertyName])) {
-            return false;
-        }
-        // handle all inheritants of base class using trait
-        if (isset(StaticRegistry::$propertiesToHideOnSerialization[self::class . '_' . $propertyName])) {
-            return false;
-        }
-        return true;
     }
 
     /**
@@ -347,7 +357,7 @@ trait SerializerTrait
      * @param int $flags Bitwise flags from Serializer class
      * @return mixed
      */
-    private function serializeProperty(
+    protected function serializeProperty(
         mixed &$propertyValue,
         $cached = true,
         bool $returnUniqueKeyInsteadOfContent = false,
@@ -356,7 +366,8 @@ trait SerializerTrait
         bool $ignoreNullValues = true,
         bool $forPersistence = true,
         int $flags = 0
-    ): mixed {
+    ): mixed
+    {
         $propertyValueIsArray = is_array($propertyValue);
         $propertyValueIsObject = is_object($propertyValue);
         if (!$propertyValueIsArray && !$propertyValueIsObject) {
@@ -436,6 +447,164 @@ trait SerializerTrait
         // unset toObject Cache
         SerializerRegistry::$toOjectCache = [];
         return $this->toObject(ignoreHideAttributes: $ignoreHideAttributes);
+    }
+
+    /**
+     * Returns false if propertyName is hidden based on class properties and static properties
+     * @param string $propertyName
+     * @return bool
+     */
+    public function isPropertyVisible(string $propertyName): bool
+    {
+        if (isset($this->propertiesToHide[$propertyName])) {
+            return false;
+        }
+        // handle current class
+        if (isset(StaticRegistry::$propertiesToHideOnSerialization[static::class][$propertyName])) {
+            return false;
+        }
+        // handle all inheritants of base class using trait
+        if (isset(StaticRegistry::$propertiesToHideOnSerialization[self::class][$propertyName])) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Convert an array of (already serialized) objects to a compact TOON-like tabular representation.
+     * Missing properties are filled with null; columns are the union of all (flattened) property paths.
+     *
+     * @param array<int|string, mixed> $arrayOfObjects
+     */
+    private function convertArrayOfObjectsToToon(array $arrayOfObjects): string
+    {
+        $rows = [];
+        $columns = [];
+        $columnsSeen = [];
+
+        foreach ($arrayOfObjects as $item) {
+            $row = $this->flattenToonColumns($item);
+            $rows[] = $row;
+
+            foreach ($row as $columnName => $_) {
+                if (!isset($columnsSeen[$columnName])) {
+                    $columnsSeen[$columnName] = true;
+                    $columns[] = $columnName;
+                }
+            }
+        }
+
+        $header = '[' . count($arrayOfObjects) . ']';
+        if (!empty($columns)) {
+            $header .= '(' . implode(',', $columns) . ')';
+        }
+        $header .= ':';
+
+        $lines = [$header];
+
+        foreach ($rows as $row) {
+            $values = [];
+            foreach ($columns as $columnName) {
+                $values[] = $this->toonEncodeValue($row[$columnName] ?? null);
+            }
+            $lines[] = implode(',', $values);
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * @return array<string, mixed> map of flattened column name => scalar (or json-stringified complex) value
+     */
+    private function flattenToonColumns(mixed $value, string $prefix = ''): array
+    {
+        if ($value instanceof stdClass) {
+            $value = get_object_vars($value);
+        } elseif (is_object($value)) {
+            // If it is still an object at this point, serialize to JSON and treat as scalar cell.
+            return [
+                ($prefix !== '' ? $prefix : 'value') => json_encode(
+                    $value,
+                    JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+                )
+            ];
+        }
+
+        if (is_array($value)) {
+            $result = [];
+
+            $keys = array_keys($value);
+            $isList = ($keys === [] || $keys === range(0, count($keys) - 1));
+
+            foreach ($value as $k => $v) {
+                if ($isList) {
+                    $childPrefix = $prefix . '[' . (string)$k . ']';
+                } else {
+                    $childPrefix = $prefix !== '' ? ($prefix . '.' . (string)$k) : (string)$k;
+                }
+
+                $result += $this->flattenToonColumns($v, $childPrefix);
+            }
+
+            return $result;
+        }
+
+        // scalar
+        return [($prefix !== '' ? $prefix : 'value') => $value];
+    }
+
+    protected function toonEncodeValue(mixed $value): string
+    {
+        if ($value === null) {
+            return 'null';
+        }
+
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+
+        if (is_int($value)) {
+            return (string)$value;
+        }
+
+        if (is_float($value)) {
+            if (is_nan($value) || is_infinite($value)) {
+                return 'null';
+            }
+
+            // Avoid exponent notation, normalize -0 to 0
+            if ($value == 0.0) {
+                return '0';
+            }
+
+            $s = rtrim(rtrim(sprintf('%.15F', $value), '0'), '.');
+            if ($s === '-0') {
+                return '0';
+            }
+
+            return $s;
+        }
+
+        // Complex values should normally be flattened already; keep a fallback
+        if (is_array($value) || is_object($value)) {
+            $value = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        }
+
+        $s = (string)$value;
+
+        // Keep rows single-line (avoid multi-line cells, which explode the TOON table and then JSON escaping)
+        $s = str_replace(["\r\n", "\r", "\n"], ' ', $s);
+
+        // Minimize escaping because the TOON table is embedded into JSON later anyway.
+        // Only quote if needed for comma-separated rows, and only escape quotes.
+        $needsQuotes = ($s === '' || str_contains($s, ',') || str_contains($s, '"'));
+        if (!$needsQuotes) {
+            return $s;
+        }
+
+        $s = str_replace('"', '\\"', $s);
+
+        return '"' . $s . '"';
     }
 
     /**
@@ -583,7 +752,10 @@ trait SerializerTrait
                 $return['unset'][$propertyName] = true;
                 continue;
             }
-            if ($property->getAttributes(HidePropertyOnSystemSerialization::class, ReflectionAttribute::IS_INSTANCEOF)) {
+            if ($property->getAttributes(
+                HidePropertyOnSystemSerialization::class,
+                ReflectionAttribute::IS_INSTANCEOF
+            )) {
                 //Lazyload Attributes need to be unset if we want to hide them so lazyloading will work properly with __get
                 if ($property->getAttributes(LazyLoad::class, ReflectionAttribute::IS_INSTANCEOF)) {
                     $return['unset'][$propertyName] = true;
@@ -675,7 +847,8 @@ trait SerializerTrait
         $throwErrors = true,
         bool $rootCall = true,
         bool $sanitizeInput = false
-    ): void {
+    ): void
+    {
         $reflectionClass = $this->getReflectionClass();
         foreach ($reflectionClass->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
             if ($property->isReadOnly()) {
@@ -731,7 +904,8 @@ trait SerializerTrait
         $throwErrors = true,
         ?ReflectionClass $reflectionClass = null,
         bool $sanitizeInput = false
-    ): void {
+    ): void
+    {
         $propertyName = $property->getName();
         if ($reflectionClass) {
             $reflectionClass = $this->getReflectionClass();
@@ -1187,12 +1361,11 @@ trait SerializerTrait
                     if (is_array($value)) {
                         // Make it possible to set elements to ObjectSets without passing the values in .elements property
                         // and allow values being passed as array directly
-                        if ($this->$propertyName instanceof ObjectSet){
+                        if ($this->$propertyName instanceof ObjectSet) {
                             $tObject = new stdClass();
                             $tObject->elements = $value;
                             $value = $tObject;
-                        }
-                        else {
+                        } else {
                             // empty objects come as arrays and have to be converted
                             $value = (object)$value;
                         }

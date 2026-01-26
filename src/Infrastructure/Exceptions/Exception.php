@@ -11,16 +11,19 @@ use Throwable;
 
 class Exception extends \Exception
 {
-    public const CONTENT_TYPE_JSON = 'application/json';
     use SerializerTrait;
+
+    public const CONTENT_TYPE_JSON = 'application/json';
+
+    /** @var string Error message */
+    public ?string $error = null;
+
+    public ?ExceptionDetails $exceptionDetails = null;
 
     /** @var int The default */
     protected static int $defaultCode = Response::HTTP_NOT_FOUND;
-    /** @var string Error message */
-    public ?string $error = null;
-    protected string $contentType = self::CONTENT_TYPE_JSON;
 
-    public ?ExceptionDetails $exceptionDetails = null;
+    protected string $contentType = self::CONTENT_TYPE_JSON;
 
     public function __construct(string $message, ExceptionDetails &$exceptionDetails = null, Throwable $previous = null)
     {

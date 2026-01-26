@@ -34,55 +34,103 @@ trait DtoQueryOptionsTrait
     public ?string $skiptoken = null;
 
     /**
-     * @var string Definition of orderBy following the syntax:
-     * <details><summary>Definitions and examples:</summary>
+     * @var string
+     * OrderBy Options (OData-inspired)
      *
-     * `<property> <direction>?, <property> <direction>? ...`
+     * Comma-separated list of sort keys:
+     * `<propertyPath> <direction>?, <propertyPath> <direction>? ...`
      *
-     * **Examples:**
-     * - `priority asc, creationDate desc, price`
-     * </details>
+     * Rules / restrictions:
+     * - `<propertyPath>` is **not quoted** and supports dot-notation.
+     * - Sortable fields are **endpoint-specific** and validated against the endpoint QueryOptions definitions.
+     * - Sorting by expanded relations is supported via `<relation>.<field>` if that relation is included via `expand`.
+     * - `<direction>` is optional (defaults to `asc`), allowed: `asc`, `desc` (case-insensitive).
+     *
+     * @example someField asc, otherField desc
+     * @example someRelation.someField desc
      */
     #[Parameter(in: Parameter::QUERY, required: false)]
     public OrderByOptions $orderBy;
 
     /**
-     * @var string Definition of filters following the syntax:
-     * <details><summary>Definitions and examples:</summary>
+     * @var string
+     * Filter Options (OData-inspired)
+     * Basics:
+     * - Combine comparisons with `and` / `or` (case-insensitive).
+     * - Use parentheses `(...)` for grouping / precedence (nesting allowed).
      *
-     * `<property> <operator> <value> [ <and|or> <property> <operator> <value> ... ]`
+     * Comparison:
+     * - `<property> <operator> <value>`
+     * - `<property>` may use dot-notation: `foo`, `fooBar`, `foo.bar_baz`
      *
-     * **Examples:**
-     * - `price lt 10`
-     * - `city eq 'Berlin'`
-     * </details>
+     * Operators:
+     * - `eq`, `ne`, `gt`, `ge`, `lt`, `le`  -> single scalar value
+     * - `in`                                -> list of scalars: `['A','B']`
+     * - `bw`                                -> list of exactly 2 scalars: `['from','to']`
+     *
+     * Value rules (strict):
+     * - Every scalar MUST be wrapped in single quotes: `'...'` (numbers and dates included).
+     * - NULL MUST be written as the scalar `'NULL'`.
+     * - Lists MUST use brackets and comma separation, with every item quoted: `['A','B']`.
+     *
+     * @example someInt lt '10'
+     * @example someDate ge '2025-01-01'
+     * @example someEntity.subEntity.someProperty eq 'mydomain.com'
+     * @example someStatus in ['UPCOMING','RUNNING']
+     * @example someDate bw ['2026-01-01','2026-01-22']
+     * @example someDate eq 'NULL' or someDate gt '2025-01-01'
+     * @example (someStatus in ['UPCOMING','RUNNING'] and someInt ge '2') or otherInt eq '42'
+     * @example (someId eq '1' and ((someStartDate le '2026-01-22' and someEndDate ge '2026-01-01') or (someStartDate bw ['2026-01-01','2026-01-22'] or someEndDate bw ['2026-01-01','2026-01-22'])))
      */
     #[Parameter(in: Parameter::QUERY, required: false)]
     public FiltersOptions $filters;
 
     /**
-     * @var string Definition of expanding options following the syntax:
-     * <details><summary>Definitions and examples:</summary>
+     * @var string
+     * Expand Options (OData-inspired)
      *
-     * `<property> (<expandDefinitions>)?, <property> (<expandDefinitions>)? ...`
+     * Comma-separated list of relations to include:
+     * `someRelation,otherRelation`
      *
-     * **Examples:**
-     * - `openingHours, competitors`
-     * - `projects(expand=business(expand=locations(expand=website)))`
-     * </details>
+     * A relation may define clauses in parentheses. **Clauses are separated by semicolons (`;`)**:
+     * `someRelation(select=someField,otherField;filters=...;orderBy=someField desc;top=50;skip=0;expand=otherRelation(select=someField))`
+     *
+     * Supported clauses (inside `(...)`):
+     * - `select=<prop>,<prop>,...` (comma-separated list, no quotes)
+     * - `filters=<filterExpr>` (same language as `filters`)
+     * - `orderBy=<propertyPath> <direction>?` (same language as `orderBy`)
+     * - `top=<int>`
+     * - `skip=<int>`
+     * - `expand=<relation>[...],...` (comma-separated, recursive)
+     *
+     * Rules / restrictions:
+     * - Expandable relations and selectable/orderable fields are **endpoint-specific** and validated against the endpoint QueryOptions definitions.
+     * - `and` / `or` inside `filters` are case-insensitive.
+     *
+     * @example someRelation,otherRelation
+     * @example someRelation(select=someField,otherField)
+     * @example someRelation(expand=otherRelation(select=someField))
+     * @example someRelation(orderBy=someField desc;top=50;skip=0;select=someField,otherField;expand=otherRelation(select=someField))
      */
     #[Parameter(in: Parameter::QUERY, required: false)]
     public ExpandOptions $expand;
 
     /**
-     * @var string Definition of select options following the syntax:
-     * <details><summary>Definitions and examples:</summary>
+     * @var string
+     * Select Options (OData-inspired)
      *
-     * `<property>, <property>, ...`
+     * Comma-separated list of properties to include in the response.
      *
-     * **Examples:**
-     * - `name, email, phone`
-     * </details>
+     * Rules / restrictions:
+     * - Properties are **not quoted**.
+     * - Whitespace around commas is ignored.
+     * - Dot-notation is allowed (e.g. `nested.fieldName`).
+     * - Selectable fields are **endpoint-specific** and validated against the endpoint QueryOptions definitions.
+     * - Not allowed: operators (`eq`, `gt`, ...), lists (`[...]`), parentheses, or any functions.
+     *
+     * @example id,name
+     * @example scope,identifier,type,publicUrl
+     * @example nested.fieldName,nested.otherField
      */
     #[Parameter(in: Parameter::QUERY, required: false)]
     public SelectOptions $select;
@@ -112,8 +160,7 @@ trait DtoQueryOptionsTrait
         }
         if (isset($this->orderBy)) {
             if ($queryOptions) {
-                $expandOptions = $this->expand ?? null;
-                $this->orderBy->validateAgainstDefinitions($queryOptions->getOrderByDefinitions(), $expandOptions);
+                $this->orderBy->validateAgainstDefinitions($queryOptions->getOrderByDefinitions());
                 // Set filters definitions for OrderBy options based on filters.
                 if ($queryOptions->getFiltersDefinitions()) {
                     foreach ($this->orderBy->getElements() as $orderByOption) {

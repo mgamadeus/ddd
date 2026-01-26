@@ -58,9 +58,10 @@ class StaticRegistry
     public static $containerServiceClassMap = null;
 
     /**
-     * @var array <className>_<spropertyName>, properties stored here are not exposed on SerializerTrait toObejct method
+     * @var array<string, array<string, bool>> <className> => <propertyName> => true
+     * Properties stored here are not exposed on SerializerTrait toObject method.
      */
-    public static $propertiesToHideOnSerialization = [];
+    public static array $propertiesToHideOnSerialization = [];
 
     /**
      * @var array <className> => array of properties, properties that have Translatable attribute
