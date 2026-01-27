@@ -21,6 +21,7 @@ use DDD\Presentation\Base\QueryOptions\DtoQueryOptions;
 use DDD\Presentation\Base\QueryOptions\DtoQueryOptionsTrait;
 use ReflectionAttribute;
 use ReflectionEnum;
+use ReflectionException;
 use ReflectionNamedType;
 use ReflectionUnionType;
 use Symfony\Component\Validator\Constraints\Choice;
@@ -45,19 +46,23 @@ class PathParameterSchema
 
     public ?array $enum = null;
 
+    /** @var array|string[] */
     private array $typeNameAllocation = [
         'int' => 'integer',
         'string' => 'string',
         'bool' => 'boolean',
         'float' => 'number',
-        'array' => 'array'
+        'array' => 'array',
+        'null' => 'null',
     ];
 
     /**
-     * @param PathParameter $parameter
-     * @param ReflectionClass $requestDtoReflectionClass
+     * @param PathParameter      $parameter
+     * @param ReflectionClass    $requestDtoReflectionClass
      * @param ReflectionProperty $requestDtoReflectionProperty
+     *
      * @throws TypeDefinitionMissingOrWrong
+     * @throws ReflectionException
      */
     public function __construct(
         PathParameter &$parameter,
