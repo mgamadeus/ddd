@@ -118,5 +118,23 @@ class Vector extends ValueObject
         // Repository should receive the raw numeric array; DBAL type will handle SQL conversion.
         return $this->vectorValues ?: null;
     }
-}
 
+    /**
+     * Check if the vector is empty (all values are zero)
+     * @return bool Returns true if all values are 0.0, false if at least one value is non-zero
+     */
+    public function isEmpty(): bool
+    {
+        if (!$this->vectorValues || count($this->vectorValues) === 0) {
+            return true;
+        }
+
+        foreach ($this->vectorValues as $value) {
+            if ((float)$value !== 0.0) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+}
