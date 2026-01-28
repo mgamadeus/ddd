@@ -267,7 +267,7 @@ trait SerializerTrait
                 ) {
                     continue;
                 }
-                if (!$forPersistence && $property->getAttributes(
+                if ($forPersistence && $property->getAttributes(
                         DontPersistProperty::class,
                         ReflectionAttribute::IS_INSTANCEOF
                     )) {

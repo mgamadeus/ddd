@@ -43,6 +43,15 @@ class OrderByOptions extends ObjectSet
         return $orderByOptions;
     }
 
+    /**
+     * Returns OpenApi schmea definition regex
+     * @return string
+     */
+    public static function getRegexForOpenApi(): string
+    {
+        return '^(?:(?:\s*,\s*)?(?<property>[a-z]+)(\s+?<direction>asc|desc)?)+?$';
+    }
+
     public function getOrderByOptionByName(string $orderByOptionName): ?OrderByOption
     {
         foreach ($this->getElements() as $orderByOption) {
@@ -66,12 +75,15 @@ class OrderByOptions extends ObjectSet
         foreach ($this->getElements() as $orderByOption) {
             // First check if we have a nested orderby, e.g. account.created DESC ...
 
-            if (($strRightPos = strrpos($orderByOption->propertyName, '.')) !== false){
+            if (($strRightPos = strrpos($orderByOption->propertyName, '.')) !== false) {
                 // if propertyName is e.g. team.world.id we extract team.world and obtain team.world
                 // we have to search for team.world
                 $expandPath = substr($orderByOption->propertyName, 0, $strRightPos);
                 $propertyNameInExpandPath = substr($orderByOption->propertyName, $strRightPos + 1);
-                $expandOptionForPropertyName = $expandOptions->getExpandOptionByPropertyName($expandPath, recursive: true);
+                $expandOptionForPropertyName = null;
+                if ($expandOptions) {
+                    $expandOptionForPropertyName = $expandOptions->getExpandOptionByPropertyName($expandPath, recursive: true);
+                }
                 if (!$expandOptionForPropertyName) {
                     throw new BadRequestException(
                         "Property name used to orderBy ({$orderByOption->propertyName}), cannot be found scanning the expand path '{$expandPath}', check if you expanded necesary properties."
@@ -102,15 +114,6 @@ class OrderByOptions extends ObjectSet
         return true;
     }
 
-    /**
-     * Returns OpenApi schmea definition regex
-     * @return string
-     */
-    public static function getRegexForOpenApi(): string
-    {
-        return '^(?:(?:\s*,\s*)?(?<property>[a-z]+)(\s+?<direction>asc|desc)?)+?$';
-    }
-
     public function uniqueKey(): string
     {
         $key = md5(json_encode($this->toObject(true, true)));
@@ -138,9 +141,9 @@ class OrderByOptions extends ObjectSet
                 $propertyName = $queryOptionPropertyMapping->propertyName;
             }
             $orderByExpression = null;
-            if (($strRightPos = strrpos($propertyName, '.')) !== false){
+            if (($strRightPos = strrpos($propertyName, '.')) !== false) {
                 $propertyNameInExpandPath = substr($orderByOption->propertyName, $strRightPos + 1);
-                if ($joinAlias = $orderByOption?->getExpandOption()?->joinAlias ?? null){
+                if ($joinAlias = $orderByOption?->getExpandOption()?->joinAlias ?? null) {
                     // validate expression
                     /** @var DoctrineModel $verifyModelClass */
                     $verifyModelClass = $orderByOption->getExpandOption()->getTargetPropertyModelClass();
@@ -152,12 +155,10 @@ class OrderByOptions extends ObjectSet
                         continue;
                     }
                     $orderByExpression = "{$joinAlias}.{$propertyNameInExpandPath}";
-                }
-                else {
+                } else {
                     continue;
                 }
-            }
-            else {
+            } else {
                 $baseAlias = $baseModelClass::MODEL_ALIAS;
                 $baseAlias = $orderByOption?->getFiltersDefinition()?->getExpandDefinition() ? '' : $baseAlias;
                 $orderByExpression = ($baseAlias ? $baseAlias . '.' : '') . $propertyName;
@@ -170,6 +171,5 @@ class OrderByOptions extends ObjectSet
         }
         return $queryBuilder;
     }
-
 
 }

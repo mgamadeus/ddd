@@ -160,7 +160,8 @@ trait DtoQueryOptionsTrait
         }
         if (isset($this->orderBy)) {
             if ($queryOptions) {
-                $this->orderBy->validateAgainstDefinitions($queryOptions->getOrderByDefinitions());
+                $expandOptions = isset($this->expand) ? $this->expand : null;
+                $this->orderBy->validateAgainstDefinitions($queryOptions->getOrderByDefinitions(), $expandOptions);
                 // Set filters definitions for OrderBy options based on filters.
                 if ($queryOptions->getFiltersDefinitions()) {
                     foreach ($this->orderBy->getElements() as $orderByOption) {
