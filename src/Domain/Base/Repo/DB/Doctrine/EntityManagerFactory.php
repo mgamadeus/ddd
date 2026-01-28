@@ -28,6 +28,12 @@ use DoctrineExtensions\Query\Mysql\Rand;
 use DoctrineExtensions\Query\Mysql\StrToDate;
 use DoctrineExtensions\Types\PolygonType;
 use RuntimeException;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\CosineDistance;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\CosineSimilarity;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Distance;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\EuclideanDistance;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\VecFromText;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\VectorType;
 
 class EntityManagerFactory
 {
@@ -133,6 +139,17 @@ class EntityManagerFactory
         $config->addCustomNumericFunction('ST_Area', AreaFunction::class);
         $config->addCustomNumericFunction('ST_Within', WithinFunction::class);
         $config->addCustomNumericFunction('ST_Contains', ContainsFunction::class);
+
+        $serverVersion = $configSettings['connectionParams']['server_version'] ?? null;
+        if (!Type::hasType(VectorType::NAME)) {
+            Type::addType(VectorType::NAME, VectorType::class);
+        }
+
+        $config->addCustomStringFunction('VEC_FROM_TEXT', VecFromText::class);
+        $config->addCustomNumericFunction('COSINE_DISTANCE', CosineDistance::class);
+        $config->addCustomNumericFunction('EUCLIDEAN_DISTANCE', EuclideanDistance::class);
+        $config->addCustomNumericFunction('VEC_DISTANCE', Distance::class);
+        $config->addCustomNumericFunction('COSINE_SIMILARITY', CosineSimilarity::class);
 
         $config->setProxyNamespace(self::DEFAULT_NAMESPACE);
         $config->setAutoGenerateProxyClasses($configSettings['doctrineConfig']['proxyGenerationMode']);

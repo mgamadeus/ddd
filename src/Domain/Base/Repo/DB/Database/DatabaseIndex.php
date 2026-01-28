@@ -19,20 +19,44 @@ class DatabaseIndex extends ValueObject
     public const TYPE_UNIQUE = 'UNIQUE INDEX';
     public const TYPE_FULLTEXT = 'FULLTEXT INDEX';
     public const TYPE_SPATIAL = 'SPATIAL INDEX';
+    public const TYPE_VECTOR = 'VECTOR INDEX';
+
+    public const DISTANCE_METRIC_COSINE = 'cosine';
+    public const DISTANCE_METRIC_EUCLIDEAN = 'euclidean';
+
+    public const int DEFAULT_VECTOR_MAX_NEIGHBORS = 8;
 
     public const TYPE_NAME_ALLOCATION = [
         self::TYPE_INDEX => 'idx',
         self::TYPE_SPATIAL => 'spx',
         self::TYPE_UNIQUE => 'uniq',
-        self::TYPE_FULLTEXT => 'ft'
+        self::TYPE_FULLTEXT => 'ft',
+        self::TYPE_VECTOR => 'vx'
     ];
 
     /** @var string Type of index */
-    #[Choice([self::TYPE_INDEX, self::TYPE_UNIQUE, self::TYPE_FULLTEXT])]
+    #[Choice([self::TYPE_INDEX, self::TYPE_UNIQUE, self::TYPE_FULLTEXT, self::TYPE_SPATIAL, self::TYPE_VECTOR])]
     public string $indexType = self::TYPE_INDEX;
 
     /** @var string[] All columns in the index */
     public array $indexColumns = [];
+
+    /**
+     * MariaDB VECTOR INDEX option: distance metric baked into the index.
+     *
+     * Public API name: distanceMetric
+     * SQL mapping: DISTANCE=<cosine|euclidean>
+     */
+    #[Choice([self::DISTANCE_METRIC_COSINE, self::DISTANCE_METRIC_EUCLIDEAN])]
+    public ?string $distanceMetric = null;
+
+    /**
+     * MariaDB VECTOR INDEX option: max neighbor connections (HNSW M parameter).
+     *
+     * Public API name: maxNeighbors
+     * SQL mapping: M=<int>
+     */
+    public ?int $maxNeighbors = null;
 
     public function getSql(string $tableName): string
     {
@@ -49,17 +73,34 @@ class DatabaseIndex extends ValueObject
             $indexName .= $columnsShort;
         }
 
-        return "CREATE {$this->indexType} IF NOT EXISTS `{$indexName}` ON `{$tableName}` (" . implode(
-                ',',
-                array_map(function (string $el) {
-                    return "`$el`";
-                }, $this->indexColumns)
-            ) . ')';
+        $columnsSql = implode(
+            ',',
+            array_map(function (string $el) {
+                return "`$el`";
+            }, $this->indexColumns)
+        );
+
+        $sql = "CREATE {$this->indexType} IF NOT EXISTS `{$indexName}` ON `{$tableName}` ({$columnsSql})";
+
+        // MariaDB VECTOR INDEX options
+        if ($this->indexType === self::TYPE_VECTOR) {
+            $distanceMetric = $this->distanceMetric ?? self::DISTANCE_METRIC_COSINE;
+            $maxNeighbors = $this->maxNeighbors ?? self::DEFAULT_VECTOR_MAX_NEIGHBORS;
+
+            $sql .= ' DISTANCE=' . $distanceMetric;
+            $sql .= ' M=' . (int)$maxNeighbors;
+        }
+
+        return $sql;
     }
 
     public function uniqueKey(): string
     {
-        $key = implode(',', $this->indexColumns) .'_'. $this->indexType;
+        $key = implode(',', $this->indexColumns) . '_' . $this->indexType;
+        if ($this->indexType === self::TYPE_VECTOR) {
+            $key .= '_distanceMetric=' . ($this->distanceMetric ?? '');
+            $key .= '_maxNeighbors=' . ($this->maxNeighbors ?? '');
+        }
         return self::uniqueKeyStatic($key);
     }
 
@@ -69,10 +110,22 @@ class DatabaseIndex extends ValueObject
      */
     public function __construct(
         string $indexType = self::TYPE_INDEX,
-        array $indexColumns = []
+        array $indexColumns = [],
+        ?string $distanceMetric = null,
+        ?int $maxNeighbors = null
     ) {
         $this->indexType = $indexType;
         $this->indexColumns = $indexColumns;
+
+        // Only apply defaults for VECTOR indexes.
+        if ($indexType === self::TYPE_VECTOR) {
+            $this->distanceMetric = $distanceMetric ?? self::DISTANCE_METRIC_COSINE;
+            $this->maxNeighbors = $maxNeighbors ?? self::DEFAULT_VECTOR_MAX_NEIGHBORS;
+        } else {
+            $this->distanceMetric = $distanceMetric;
+            $this->maxNeighbors = $maxNeighbors;
+        }
+
         parent::__construct();
     }
 }

@@ -15,6 +15,7 @@ use DDD\Domain\Base\Entities\Translatable\Translatable;
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Domain\Common\Entities\Encryption\EncryptionScope;
 use DDD\Domain\Common\Entities\GeoEntities\GeoPoint;
+use DDD\Domain\Common\Entities\MathEntities\Vector;
 use DDD\Infrastructure\Base\DateTime\Date;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
@@ -54,6 +55,7 @@ class DatabaseColumn extends ValueObject
     public const SQL_TYPE_LONGBLOB = 'LONGBLOB';
     public const SQL_TYPE_JSON = 'JSON';
     public const SQL_TYPE_POINT = 'POINT';
+    public const SQL_TYPE_VECTOR = 'VECTOR';
 
     public const SQL_TYPE_ALLOCATION = [
         ReflectionClass::INTEGER => self::SQL_TYPE_INT,
@@ -63,6 +65,7 @@ class DatabaseColumn extends ValueObject
         Date::class => self::SQL_TYPE_DATE,
         DateTime::class => self::SQL_TYPE_DATETIME,
         GeoPoint::class => self::SQL_TYPE_POINT,
+        Vector::class => self::SQL_TYPE_VECTOR,
         ValueObject::class => self::SQL_TYPE_JSON,
     ];
 
@@ -74,6 +77,7 @@ class DatabaseColumn extends ValueObject
         DateTime::class => 'datetime',
         Date::class => 'date',
         GeoPoint::class => 'point',
+        Vector::class => 'vector',
         ValueObject::class => 'json',
     ];
 
@@ -87,6 +91,7 @@ class DatabaseColumn extends ValueObject
         self::SQL_TYPE_DATETIME => 'datetime',
         self::SQL_TYPE_DATE => 'date',
         self::SQL_TYPE_POINT => 'point',
+        self::SQL_TYPE_VECTOR => 'vector',
         self::SQL_TYPE_JSON => 'json',
     ];
 
@@ -99,6 +104,7 @@ class DatabaseColumn extends ValueObject
         Date::class => '\DateTime',
         GeoPoint::class => 'mixed',
         ValueObject::class => 'mixed',
+        Vector::class => 'mixed',
     ];
 
     public const SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS = [
@@ -118,6 +124,7 @@ class DatabaseColumn extends ValueObject
         self::SQL_TYPE_LONGBLOB => DatabaseIndex::TYPE_NONE,
         self::SQL_TYPE_JSON => DatabaseIndex::TYPE_NONE,
         self::SQL_TYPE_POINT => DatabaseIndex::TYPE_SPATIAL,
+        self::SQL_TYPE_VECTOR => DatabaseIndex::TYPE_VECTOR,
     ];
 
     public const SPATIAL_SQL_TYPES = [
@@ -156,6 +163,9 @@ class DatabaseColumn extends ValueObject
 
     /** @var int If type is varchar, this is used for it's length */
     public ?int $varCharLength = 255;
+
+    /** @var int If type is Vector, this is used for it's dimension */
+    public ?int $vectorDimensions = 1024;
 
     /** @var bool It true, the column will be encrypted in the Database using an encryption password from the Encrypt class */
     public bool $encrypted = false;
@@ -282,7 +292,11 @@ class DatabaseColumn extends ValueObject
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[Date::class];
         } elseif (is_a($type->getName(), GeoPoint::class, true)) {
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[GeoPoint::class];
-        } elseif (DefaultObject::isValueObject($type->getName())) {
+        }
+        elseif (is_a($type->getName(), Vector::class, true)) {
+            $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[Vector::class];
+        }
+        elseif (DefaultObject::isValueObject($type->getName())) {
             // ignore Lazyload Repos ValueObject e.g. Virtual Repotype
             if ($lazyloadAttributes = $reflectionProperty->getAttributes(LazyLoad::class, \ReflectionAttribute::IS_INSTANCEOF)) {
                 foreach ($lazyloadAttributes as $lazyloadAttribute) {
@@ -349,6 +363,9 @@ class DatabaseColumn extends ValueObject
             if ($columnAttributeInstance->varCharLength !== null) {
                 $databaseColum->varCharLength = $columnAttributeInstance->varCharLength;
             }
+            if ($columnAttributeInstance->vectorDimensions !== null) {
+                $databaseColum->vectorDimensions = $columnAttributeInstance->vectorDimensions;
+            }
             if ($columnAttributeInstance->onUpdateAction !== null) {
                 $databaseColum->onUpdateAction = $columnAttributeInstance->onUpdateAction;
             }
@@ -356,7 +373,34 @@ class DatabaseColumn extends ValueObject
         if ($reflectionProperty->hasAttribute(NotNull::class)) {
             $databaseColum->allowsNull = false;
         }
+
+        // MariaDB VECTOR columns should not be nullable and should default to a NULL-vector.
+        // This makes inserts resilient even when no explicit value is provided.
+        if ($databaseColum->sqlType === self::SQL_TYPE_VECTOR && !$databaseColum->ignoreProperty) {
+            $databaseColum->allowsNull = false;
+
+            // If no explicit default was defined, use a NULL-vector based on the configured dimensionality.
+            // IMPORTANT: we use a raw SQL expression (not quoted) because this is a function call.
+            if (!isset($databaseColum->sqlDefaultValue)) {
+                $databaseColum->sqlDefaultValue = self::createMariaDbNullVectorDefault($databaseColum->vectorDimensions ?? 0);
+            }
+        }
+
         return $databaseColum;
+    }
+
+    protected static function createMariaDbNullVectorDefault(int $dimensions): DatabaseSqlExpression
+    {
+        if ($dimensions <= 0) {
+            throw new InternalErrorException('VECTOR dimensions must be a positive integer');
+        }
+
+        // Build JSON array without allocating a huge PHP array.
+        // Example: [0,0,0]
+        $json = '[' . ($dimensions === 1 ? '0' : (rtrim(str_repeat('0,', $dimensions), ','))) . ']';
+
+        // MariaDB expects the JSON array as a string argument.
+        return new DatabaseSqlExpression("(VEC_FromText(CONCAT('[', REPEAT('0,', {$dimensions}-1), '0]')))");
     }
 
     /**
@@ -419,6 +463,9 @@ class DatabaseColumn extends ValueObject
         if ($this->sqlType == self::SQL_TYPE_VARCHAR) {
             return self::SQL_TYPE_VARCHAR . "({$this->varCharLength})";
         }
+        elseif ($this->sqlType == self::SQL_TYPE_VECTOR) {
+            return self::SQL_TYPE_VECTOR . "({$this->vectorDimensions})";
+        }
         $unsigned = in_array($this->sqlType, [self::SQL_TYPE_INT, self::SQL_TYPE_BIGINT]
         ) && $this->isUnsigned ? ' UNSIGNED' : '';
         return $this->sqlType . $unsigned;
@@ -470,6 +517,7 @@ class DatabaseColumn extends ValueObject
         bool $hasAutoIncrement = null,
         bool $isUnsigned = null,
         int $varCharLength = null,
+        int $vectorDimensions = null,
         bool $encrypted = false,
         ?string $encryptionScope = null,
         ?string $onUpdateAction = null,
@@ -481,6 +529,7 @@ class DatabaseColumn extends ValueObject
         $this->hasAutoIncrement = $hasAutoIncrement;
         $this->isUnsigned = $isUnsigned;
         $this->varCharLength = $varCharLength;
+        $this->vectorDimensions = $vectorDimensions;
         $this->encrypted = $encrypted;
         $this->onUpdateAction = $onUpdateAction;
         $this->enryptionScope = $encryptionScope;

@@ -62,7 +62,7 @@ class ReflectionAllowedTypes
             $this->enumType = $typeName;
         }
         else {
-            if (!$type->isBuiltin()) {
+            if (!$type->isBuiltin() || $typeName == 'object') {
                 $this->allowsObject = true;
             }
             if (isset(ReflectionClass::SCALAR_BASE_TYPES[$typeName])) {
