@@ -116,7 +116,15 @@ class DoctrineEntityManager extends EntityManager
                     $value = (string)$value;
                     $types[] = 'string';
                 }
-            } else {
+            }
+            elseif($type == 'vector'){
+                $set[] = 'VEC_FromText(?)';
+                if ($value) {
+                    $value = json_encode($value, JSON_THROW_ON_ERROR);
+                    $types[] = 'string';
+                }
+            }
+            else {
                 $set[] = '?';
                 $types[] = $type;
             }
