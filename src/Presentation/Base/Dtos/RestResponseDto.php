@@ -7,6 +7,7 @@ namespace DDD\Presentation\Base\Dtos;
 use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 use DDD\Infrastructure\Traits\ValidatorTrait;
+use DDD\Presentation\Base\OpenApi\Attributes\Ignore;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 
@@ -17,7 +18,7 @@ class RestResponseDto extends JsonResponse
     /**
      * @var ResponseHeaderBag
      */
-    #[HideProperty]
+    #[HideProperty, Ignore]
     public ResponseHeaderBag $headers;
 
     public function __construct(mixed $data = null, int $status = 200, array $headers = [], bool $json = false)

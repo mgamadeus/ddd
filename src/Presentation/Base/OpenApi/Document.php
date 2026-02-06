@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Presentation\Base\OpenApi;
 
 use DDD\Infrastructure\Reflection\ReflectionClass;
+use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
 use DDD\Infrastructure\Traits\Serializer\Attributes\OverwritePropertyName;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 use DDD\Presentation\Base\OpenApi\Attributes\Ignore;
@@ -39,6 +40,8 @@ class Document
     public const THROW_ERRORS_ON_ENDPOINTS_WITHOUT_SUMMARY = true;
 
     public const BASE_TYPES = ['string' => true, 'integer' => true, 'float' => true, 'boolean' => true];
+    
+    public const EXTERNAL_SCHEMA_URL_NAME_PLACEHOLER = '{{SCHEMA_NAME}}';
 
     public const MODELS_TAG_GROUP_NAME = 'Models';
 
@@ -70,18 +73,44 @@ class Document
 
     protected string $routePrefix = '';
 
+    /** @var int|null Max recursion depth for Schema generation */
+    protected ?int $maxRecursiveSchemaDepth = null;
+
+    /** @var bool Defines if Schemas references are included in documentation of referenced with external url */
+    protected bool $useExternalSchemaReferencves = false;
+
+    /**
+     * @var string|null The external schema Reference URL, if $useExternalSchemaReferencves is true,
+     * e.g. https://api.example.com/documentation?schema={{SCHEMA_NAME}} in which {{SCHEMA_NAME}} will be replaced with the schema name itself
+     */
+    protected ?string $externalSchemaReferenceUrl = null;
+
     /**
      * @param RouteCollection $routeCollection
      * @throws ReflectionException
      * @throws TypeDefinitionMissingOrWrong
      */
-    public function __construct(RouteCollection &$routeCollection, string $routePrefix = '')
+    public function __construct(RouteCollection &$routeCollection, string $routePrefix = '', ?int $maxRecursiveSchemaDepth = null, bool $useExternalSchemaReferences = false, ?string $externalSchemaReferenceUrl = null)
     {
         $this->routeCollection = $routeCollection;
         $this->components = new Components($this);
         $this->routePrefix = $routePrefix;
+        $this->maxRecursiveSchemaDepth = $maxRecursiveSchemaDepth;
+        $this->useExternalSchemaReferences = $useExternalSchemaReferences;
+        $this->externalSchemaReferenceUrl = $externalSchemaReferenceUrl;
         self::$instance = $this;
-        $this->buildDocumentation();
+    }
+
+    public function getMaxRecursiveSchemaDepth(): ?int {
+        return $this->maxRecursiveSchemaDepth;
+    }
+
+    public function useExternalSchemaReferences(): bool {
+        return $this->useExternalSchemaReferences;
+    }
+
+    public function getExternalSchemaReferenceUrl(): ?string {
+        return $this->externalSchemaReferenceUrl;
     }
 
     /**

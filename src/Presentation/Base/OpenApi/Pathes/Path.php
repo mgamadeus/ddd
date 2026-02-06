@@ -64,7 +64,7 @@ class Path
         Route &$route,
         string $httpMethod,
         ReflectionClass &$controllerReflectionClass,
-        ReflectionMethod &$controllerReflectionMethod,
+        ReflectionMethod &$controllerReflectionMethod
     ) {
         //add tags from controller class
         foreach ($controllerReflectionClass->getAttributes(Tag::class, ReflectionAttribute::IS_INSTANCEOF) as $controllerMethodAttribute) {
@@ -179,7 +179,7 @@ class Path
             } else {
                 $requestBody = new RequestBody($requestDtoReflectionClass, $httpMethod);
                 if ($requestBody->hasContent()) {
-                    $this->requestBody = new RequestBody($requestDtoReflectionClass, $httpMethod);
+                    $this->requestBody = $requestBody;
                     if (
                         in_array(
                             $httpMethod,

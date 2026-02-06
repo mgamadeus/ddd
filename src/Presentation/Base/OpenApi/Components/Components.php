@@ -16,6 +16,7 @@ class Components
 
     /** @var Schema[] */
     public array $schemas = [];
+
     protected Document $document;
 
     public function __construct(Document &$document)
@@ -25,19 +26,31 @@ class Components
 
 
     public function addSchemaForClass(
-        ClassWithNamespace &$classWithNamespace,
-        string $scope = Parameter::BODY
-    ) {
+        ClassWithNamespace $classWithNamespace,
+        string $scope = Parameter::BODY,
+        ?int $maxRecursiveSchemaDepth = null,
+        bool $forceSchemaGenerationForCurrentClassEvenExternalSchemaReferencesAreSet = false
+    ): void
+    {
+        if ($maxRecursiveSchemaDepth === null) {
+            if ($this->document->getMaxRecursiveSchemaDepth()) {
+                $maxRecursiveSchemaDepth = $this->document->getMaxRecursiveSchemaDepth();
+            }
+        }
         $classNamespaceWithDots = $classWithNamespace->getNameWithNamespace('.');
         if (isset($this->schemas[$classNamespaceWithDots])) {
             return;
         }
 
         //redocly compatible Schema Tags
-        $schemaDesription = '<SchemaDefinition schemaRef="#/components/schemas/' . $classNamespaceWithDots . '" />';
+        $schemaRef = $this->getSchemaRefForClass($classWithNamespace);
+        $schemaDesription = '<SchemaDefinition schemaRef="' . $schemaRef . '" />';
         $schemaTag = new Tag($classWithNamespace->name, 'Models', $schemaDesription, isSchemaTag: true);
         $this->document->addGlobalTag($schemaTag);
-
+        if ($this->document->useExternalSchemaReferences() && !$forceSchemaGenerationForCurrentClassEvenExternalSchemaReferencesAreSet) {
+            // We do not need to build any schema form here on
+            return;
+        }
 
         // add schema
         $schema = new Schema($classWithNamespace, $scope);
@@ -47,6 +60,24 @@ class Components
         //otherwise the initial check if the schema is already present will fail in recurisve calls
         //(as schema can contain opther schemas and at some point a schema of itself,
         //e.g. OrmAccount->parentAccount is also of type OrmAccount)
-        $schema->buildSchema();
+        $schema->buildSchema($maxRecursiveSchemaDepth);
+    }
+
+    public function getSchemaForClass(ClassWithNamespace $classWithNamespace): ?Schema {
+        $classNamespaceWithDots = $classWithNamespace->getNameWithNamespace('.');
+        return $this->schemas[$classNamespaceWithDots] ?? null;
+    }
+
+    public function getSchemaRefForClass(ClassWithNamespace &$classWithNamespace): string
+    {
+        if ($this->document->useExternalSchemaReferences()) {
+            return str_replace(
+                Document::EXTERNAL_SCHEMA_URL_NAME_PLACEHOLER,
+                $classWithNamespace->getNameWithNamespace('.'),
+                $this->document->getExternalSchemaReferenceUrl()
+            );
+        } else {
+            return '#/components/schemas/' . $classWithNamespace->getNameWithNamespace('.');
+        }
     }
 }

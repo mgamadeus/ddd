@@ -27,7 +27,7 @@ class RequestBodySchema
         // in case of request BODY we add schema with $ref to components
         // we are assuming here a complex potentially recursive schema definition
         if ($this->scope == Parameter::BODY) {
-            $this->schema['$ref'] = '#/components/schemas/' . $classWithNamespace->getNameWithNamespace('.');
+            $this->schema['$ref'] = Document::getInstance()->components->getSchemaRefForClass($classWithNamespace);
             Document::getInstance()->components->addSchemaForClass($classWithNamespace, $scope);
         }
         // in case of request POST or FILES form data we add schema with $ref to components

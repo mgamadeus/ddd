@@ -10,7 +10,7 @@ use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
 /**
  * If atached, action or entire controller is ignored
  */
-#[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_CLASS)]
+#[Attribute(Attribute::TARGET_METHOD | Attribute::TARGET_CLASS | Attribute::TARGET_PROPERTY)]
 class Ignore extends Base
 {
     use BaseAttributeTrait;

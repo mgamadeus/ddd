@@ -7,6 +7,7 @@ namespace DDD\Presentation\Base\OpenApi\Components;
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
+use DDD\Presentation\Base\OpenApi\Attributes\Ignore;
 use DDD\Presentation\Base\OpenApi\Attributes\Parameter;
 use ReflectionAttribute;
 use ReflectionProperty;
@@ -31,23 +32,24 @@ class Schema
     public array $required;
 
     /** @var ClassWithNamespace encapsulates schmea class */
-    private ?ClassWithNamespace $schemaClass;
+    protected ?ClassWithNamespace $schemaClass;
 
     /**
      * Either used for Body, or Post
      * @var string
      */
-    private ?string $scope;
+    protected ?string $scope;
 
     public function __construct(
         ClassWithNamespace &$schemaClass = null,
         ?string $scope = null
-    ) {
+    )
+    {
         $this->schemaClass = $schemaClass;
         $this->scope = $scope;
     }
 
-    public function buildSchema()
+    public function buildSchema(?int $maxRecursiveSchemaDepth = null)
     {
         if ($this->schemaClass) {
             $schemReflectionClass = new ReflectionClass($this->schemaClass->getNameWithNamespace());
@@ -62,7 +64,15 @@ class Schema
                 //as request DTOs have Attributes on their properties of type Parameter we can rely on the
                 //"in" property of the Parameter attribute (in can be in PATH, QUERY, BODY etc)
                 $skipProperty = false;
-                foreach ($reflectionProperty->getAttributes(Parameter::class, ReflectionAttribute::IS_INSTANCEOF) as $attribute) {
+                if ($reflectionProperty->hasAttribute(Ignore::class)) {
+                    $skipProperty = true;
+                }
+                foreach (
+                    $reflectionProperty->getAttributes(
+                        Parameter::class,
+                        ReflectionAttribute::IS_INSTANCEOF
+                    ) as $attribute
+                ) {
                     /** @var Parameter $parameterAttributeInstance */
                     $parameterAttributeInstance = $attribute->newInstance();
                     if ($parameterAttributeInstance->in != $this->scope && $this->scope != Parameter::RESPONSE) {
@@ -74,7 +84,7 @@ class Schema
                     continue;
                 }
                 $this->properties[$reflectionProperty->getName()] = new SchemaProperty(
-                    $schemReflectionClass, $reflectionProperty, $this->scope, $this
+                    $schemReflectionClass, $reflectionProperty, $this->scope, $this, $maxRecursiveSchemaDepth
                 );
             }
         }

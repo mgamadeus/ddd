@@ -85,8 +85,12 @@ class SchemaProperty
         ReflectionClass &$schemaReflectionClass,
         ReflectionProperty &$schemaClassReflectionProperty,
         string $scope = Parameter::BODY,
-        Schema &$schema = null
+        Schema &$schema = null,
+        ?int $maxRecursiveSchemaDepth = null
     ) {
+        if ($maxRecursiveSchemaDepth !== null) {
+            $maxRecursiveSchemaDepth--;
+        }
         $this->schema = $schema;
 
         if (!$schemaClassReflectionProperty->getType()) {
@@ -153,6 +157,10 @@ class SchemaProperty
                 $this->schema->addRequiredProperty($schemaClassReflectionProperty->getName());
             }
             if ($type->isBuiltin()) {
+                // mixed type should not have a type in OpenAPI, skip allocation
+                if ($type->getName() === 'mixed') {
+                    continue;
+                }
                 // array types are not accepted in case of POST scenario, only in BODY or FILES
                 if ($this->type == 'array' && $scope == Parameter::POST) {
                     throw new TypeDefinitionMissingOrWrong(
@@ -270,6 +278,22 @@ class SchemaProperty
                                 }
                             } // we have a complex type
                             else {
+                                if ($maxRecursiveSchemaDepth === 0) {
+                                    $stub = [
+                                        'type' => 'object',
+                                        'description' => 'max recursion depth reached',
+                                        'additionalProperties' => true,
+                                    ];
+
+                                    if ($unionType) {
+                                        $this->items['oneOf'][] = $stub;
+                                    } else {
+                                        $this->items = $stub;
+                                    }
+
+                                    continue;
+                                }
+
                                 $propertyClass = new ClassWithNamespace($arrayType);
                                 if (!class_exists($propertyClass->getNameWithNamespace())) {
                                     //echo $propertyClass->getNameWithNamespace();die();
@@ -278,18 +302,15 @@ class SchemaProperty
                                         ) . '->$' . $schemaClassReflectionProperty->getName() . ' does not exist'
                                     );
                                 }
+                                $schemaRefForClass = Document::getInstance()->components->getSchemaRefForClass($propertyClass);
                                 if ($unionType) {
                                     $this->items['oneOf'][] = [
-                                        '$ref' => '#/components/schemas/' . $propertyClass->getNameWithNamespace(
-                                                '.'
-                                            )
+                                        '$ref' => $schemaRefForClass
                                     ];
                                 } else {
-                                    $this->items['$ref'] = '#/components/schemas/' . $propertyClass->getNameWithNamespace(
-                                            '.'
-                                        );
+                                    $this->items['$ref'] = $schemaRefForClass;
                                 }
-                                Document::getInstance()->components->addSchemaForClass($propertyClass);
+                                Document::getInstance()->components->addSchemaForClass($propertyClass, maxRecursiveSchemaDepth: $maxRecursiveSchemaDepth);
                             }
                         }
                     }
@@ -351,31 +372,36 @@ class SchemaProperty
                     );
                 } else {
                     $this->type = 'object';
-                    $propertyClass = new ClassWithNamespace($type->getName());
-                    // in case of Union Type we have oneOf and multiple $ref in an array below oneOf
-                    if ($unionType) {
-                        if (!$this->oneOf) {
-                            $this->oneOf = [];
-                        }
-                        $this->oneOf[] = [
-                            '$ref' => '#/components/schemas/' . $propertyClass->getNameWithNamespace(
-                                    '.'
-                                )
-                        ];
-                    } // in standard type case we have normal $ref
+                    if ($maxRecursiveSchemaDepth === 0){
+                        $this->description = 'max recursion depth reached';
+                    }
                     else {
-                        // since all other properties are ignored if $ref is ued, we null them
-                        $this->description = null;
-                        $this->type = null;
-                        $this->ref = '#/components/schemas/' . $propertyClass->getNameWithNamespace('.');
+                        $propertyClass = new ClassWithNamespace($type->getName());
+                        // in case of Union Type we have oneOf and multiple $ref in an array below oneOf
+                        $schemaRefForClass = Document::getInstance()->components->getSchemaRefForClass($propertyClass);
+                        if ($unionType) {
+                            if (!$this->oneOf) {
+                                $this->oneOf = [];
+                            }
+                            $this->oneOf[] = [
+                                '$ref' => $schemaRefForClass
+                            ];
+                        } // in standard type case we have normal $ref
+                        else {
+                            // since all other properties are ignored if $ref is ued, we null them
+                            $this->description = null;
+                            $this->type = null;
+                            $this->ref = $schemaRefForClass;
+                        }
+                        if (!class_exists($propertyClass->getNameWithNamespace())) {
+                            throw new TypeDefinitionMissingOrWrong(
+                                'Declared type class ' . $propertyClass->getNameWithNamespace(
+                                ) . ' in ' . $schemaReflectionClass->getName(
+                                ) . '->$' . $schemaClassReflectionProperty->getName() . ' does not exist'
+                            );
+                        }
+                        Document::getInstance()->components->addSchemaForClass($propertyClass, maxRecursiveSchemaDepth: $maxRecursiveSchemaDepth);
                     }
-                    if (!class_exists($propertyClass->getNameWithNamespace())) {
-                        throw new TypeDefinitionMissingOrWrong(
-                            'Declared type class ' . $propertyClass->getNameWithNamespace() . ' in ' . $schemaReflectionClass->getName(
-                            ) . '->$' . $schemaClassReflectionProperty->getName() . ' does not exist'
-                        );
-                    }
-                    Document::getInstance()->components->addSchemaForClass($propertyClass);
                 }
             }
         }

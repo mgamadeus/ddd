@@ -29,7 +29,8 @@ class ResponseBodySchema
             $classWithNamespace = new ClassWithNamespace($responseDtoReflectionClass->getName());
             // in case of request BODY we add schema with $ref to components
             // we are assuming here a complex potentially recoursive schema definition
-            $this->schema['$ref'] = '#/components/schemas/' . $classWithNamespace->getNameWithNamespace('.');
+            
+            $this->schema['$ref'] = Document::getInstance()->components->getSchemaRefForClass($classWithNamespace);
             Document::getInstance()->components->addSchemaForClass($classWithNamespace, Parameter::RESPONSE);
         } elseif (is_a($responseDtoReflectionClass->getName(), FileResponseDto::class, true)) {
             $this->schema = new Schema();
