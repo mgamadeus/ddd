@@ -149,53 +149,10 @@ abstract class DatabaseRepoEntity extends RepoEntity
             throw new InternalErrorException('No BASE_ORM_MODEL defined in ' . static::class);
         }
         $useEntityRegistrCache = $useEntityRegistrCache && !DoctrineEntityRegistry::$clearCache;
-        $baseOrmModelAlias = (static::BASE_ORM_MODEL)::MODEL_ALIAS;
 
         $entityRegistry = DoctrineEntityRegistry::getInstance();
 
-        if (!($idOrQueryBuilder instanceof DoctrineQueryBuilder)) {
-            $queryBuilder = EntityManagerFactory::getInstance()->createQueryBuilder();
-            // apply id query
-            $queryBuilder->andWhere($baseOrmModelAlias . '.id = :find_id')->setParameter('find_id', $idOrQueryBuilder);
-        } else {
-            $queryBuilder = $idOrQueryBuilder;
-        }
-
-        $skipSelectFrom = false;
-        // in case we define a join, the select from part needs to be added before the join
-        // cause otherwise stupid doctrine throws an error. In case the select from is added before
-        // it cannot be added twice, cause doctrine throws another supid error
-        foreach ($queryBuilder->getDQLPart('from') as $fromPart) {
-            /** @var From $fromPart */
-            if ($fromPart->getFrom() == $this::BASE_ORM_MODEL) {
-                $skipSelectFrom = true;
-            }
-        }
-        if (!$skipSelectFrom) {
-            // Apply the select and from clause based on model and alias definitions.
-            $queryBuilder->addSelect($baseOrmModelAlias)->from($this::BASE_ORM_MODEL, $baseOrmModelAlias);
-        }
-
-        // Apply read rights restrictions.
-        static::applyReadRightsQuery($queryBuilder);
-
-        // Handle translations.
-        $queryBuilder = static::applyTranslationJoinToQueryBuilder($queryBuilder);
-
-        // --- APPLY SELECT OPTIONS ---
-        $baseEntityClass = $this::BASE_ENTITY_CLASS;
-        $baseEntityReflection = ReflectionClass::instance($baseEntityClass);
-        if ($baseEntityReflection->hasTrait(QueryOptionsTrait::class)) {
-            /** @var QueryOptionsTrait $baseEntityClass */
-            $defaultQueryOptions = $baseEntityClass::getDefaultQueryOptions();
-            if ($defaultQueryOptions && $select = $defaultQueryOptions->getSelect()) {
-                $select->applySelectToDoctrineQueryBuilder(
-                    queryBuilder: $queryBuilder,
-                    baseModelClass: $this::BASE_ORM_MODEL
-                );
-            }
-        }
-        // --- END APPLY SELECT OPTIONS ---
+        $queryBuilder = $this->buildFindQueryBuilder($idOrQueryBuilder);
 
         if ($useEntityRegistrCache) {
             // Check if an element exists in the registry.
@@ -249,6 +206,66 @@ abstract class DatabaseRepoEntity extends RepoEntity
         }
         // post processing needs to happen after storage!!!
         return $this->postProcessAfterMapping($entityInstance);
+    }
+
+    /**
+     * Builds a QueryBuilder with the same structure as find() uses, including select/from, read rights,
+     * translations, and default query options. This ensures the QueryBuilder hash matches exactly what
+     * find() would produce, which is critical for cache invalidation after delete.
+     *
+     * @param DoctrineQueryBuilder|string|int $idOrQueryBuilder An entity ID or pre-configured QueryBuilder
+     * @return DoctrineQueryBuilder
+     * @throws ReflectionException
+     */
+    protected function buildFindQueryBuilder(DoctrineQueryBuilder|string|int $idOrQueryBuilder): DoctrineQueryBuilder
+    {
+        $baseOrmModelAlias = (static::BASE_ORM_MODEL)::MODEL_ALIAS;
+
+        if (!($idOrQueryBuilder instanceof DoctrineQueryBuilder)) {
+            $queryBuilder = EntityManagerFactory::getInstance()->createQueryBuilder();
+            // apply id query
+            $queryBuilder->andWhere($baseOrmModelAlias . '.id = :find_id')->setParameter('find_id', $idOrQueryBuilder);
+        } else {
+            $queryBuilder = $idOrQueryBuilder;
+        }
+
+        $skipSelectFrom = false;
+        // in case we define a join, the select from part needs to be added before the join
+        // cause otherwise stupid doctrine throws an error. In case the select from is added before
+        // it cannot be added twice, cause doctrine throws another supid error
+        foreach ($queryBuilder->getDQLPart('from') as $fromPart) {
+            /** @var From $fromPart */
+            if ($fromPart->getFrom() == $this::BASE_ORM_MODEL) {
+                $skipSelectFrom = true;
+            }
+        }
+        if (!$skipSelectFrom) {
+            // Apply the select and from clause based on model and alias definitions.
+            $queryBuilder->addSelect($baseOrmModelAlias)->from($this::BASE_ORM_MODEL, $baseOrmModelAlias);
+        }
+
+        // Apply read rights restrictions.
+        static::applyReadRightsQuery($queryBuilder);
+
+        // Handle translations.
+        $queryBuilder = static::applyTranslationJoinToQueryBuilder($queryBuilder);
+
+        // --- APPLY SELECT OPTIONS ---
+        $baseEntityClass = $this::BASE_ENTITY_CLASS;
+        $baseEntityReflection = ReflectionClass::instance($baseEntityClass);
+        if ($baseEntityReflection->hasTrait(QueryOptionsTrait::class)) {
+            /** @var QueryOptionsTrait $baseEntityClass */
+            $defaultQueryOptions = $baseEntityClass::getDefaultQueryOptions();
+            if ($defaultQueryOptions && $select = $defaultQueryOptions->getSelect()) {
+                $select->applySelectToDoctrineQueryBuilder(
+                    queryBuilder: $queryBuilder,
+                    baseModelClass: $this::BASE_ORM_MODEL
+                );
+            }
+        }
+        // --- END APPLY SELECT OPTIONS ---
+
+        return $queryBuilder;
     }
 
     /**
@@ -702,6 +719,10 @@ abstract class DatabaseRepoEntity extends RepoEntity
                     $entityManager = EntityManagerFactory::getInstance();
                     $entityManager->remove($instance);
                     $entityManager->flush();
+
+                    // Invalidate entity registry cache using the same QueryBuilder structure as find()
+                    $cacheQueryBuilder = $this->buildFindQueryBuilder($entity->id);
+                    DoctrineEntityRegistry::getInstance()->remove(static::class, $cacheQueryBuilder);
                 } catch (Throwable $t) {
                     throw new BadRequestException('Error deleting ' . $this::BASE_ORM_MODEL . ': ' . $t);
                 }

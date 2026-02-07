@@ -87,6 +87,35 @@ class DoctrineEntityRegistry
     }
 
     /**
+     * Removes an entity from registry and extended cache by using its id or a queryBuilder hash as key
+     * @param string $repoClass
+     * @param string|int|DoctrineQueryBuilder $idOrQuery
+     * @return void
+     * @throws InvalidArgumentException
+     * @throws ReflectionException
+     */
+    public function remove(
+        string $repoClass,
+        string|int|DoctrineQueryBuilder $idOrQuery
+    ): void {
+        $registryIndex = $repoClass . '_' . ($idOrQuery instanceof DoctrineQueryBuilder ? $idOrQuery->getQueryHash(
+            ) : $idOrQuery);
+
+        // Remove from static in-memory registry
+        unset(self::$entityRegistry[$registryIndex]);
+
+        // Remove from extended cache (APCu) if configured
+        /** @var EntityCache $entityCacheAttribute */
+        $reflectionClass = ReflectionClass::instance($repoClass);
+        $entityCacheAttribute = $reflectionClass->getAttributeInstance(EntityCache::class);
+
+        if ($entityCacheAttribute && $entityCacheAttribute->useExtendedRegistryCache && $entityCacheAttribute->ttl) {
+            $cache = Cache::instance($entityCacheAttribute->cacheGroup);
+            $cache->delete(self::getCacheKey($registryIndex));
+        }
+    }
+
+    /**
      * Get an Entity from Registry by by query hash instead of uniqueKey, especially usefull when we don't have an id yet
      * If extended registry cache is defined to be used, tries to find it in the cache.
      * If no result is found, returns false
