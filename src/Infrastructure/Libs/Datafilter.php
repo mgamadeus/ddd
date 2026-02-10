@@ -581,6 +581,63 @@ class Datafilter
     }
 
     /**
+     * Generate a strict URL-safe slug.
+     *
+     * Notes:
+     * - Normalizes diacritics (e.g. München -> muenchen)
+     * - Lowercases
+     * - Replaces any non [a-z0-9-_] characters with the delimiter
+     * - Collapses repeated delimiters and trims them from both ends
+     */
+    public static function slug(string $string, string $delimiter = '-'): string
+    {
+        $string = trim($string);
+        if ($string === '') {
+            return '';
+        }
+
+        // Normalize diacritics to ASCII-ish equivalents (e.g. ü -> ue)
+        $string = self::normalizeDiacritics($string);
+        $string = mb_strtolower($string);
+
+        // Normalize common punctuation/spaces to delimiter
+        $string = str_replace([
+            '&',
+            ',',
+            '.',
+            '!',
+            '?',
+            ':',
+            ';',
+            '/',
+            '\\',
+            "'",
+            '"',
+            '’',
+            '“',
+            '”',
+            '(',
+            ')',
+            '[',
+            ']',
+            '{',
+            '}',
+        ], $delimiter, $string);
+
+        // Replace any remaining invalid chars with delimiter
+        $string = preg_replace('/[^a-z0-9\-_]+/u', $delimiter, $string);
+
+        // Collapse repeated delimiters
+        $delim = preg_quote($delimiter, '/');
+        $string = preg_replace('/' . $delim . '{2,}/', $delimiter, $string);
+
+        // Trim delimiters from both ends
+        $string = trim($string, $delimiter);
+
+        return $string;
+    }
+
+    /**
      * Alias function for keywords..
      * @param     $string
      * @return
