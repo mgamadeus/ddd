@@ -22,7 +22,7 @@ class GeoPoint extends ValueObject
     #[LessThanOrEqual(180)]
     public float $lng = 0;
 
-    public function __construct(float $lat = 0, float $lng = 0, ?string $language = null)
+    public function __construct(float $lat = 0, float $lng = 0)
     {
         $this->lat = max(-90, min(90, $lat));
         $this->lng = max(-180, min(180, $lng));
@@ -43,9 +43,9 @@ class GeoPoint extends ValueObject
     /**
      * Creates GeoPoint from comma separated lat,lng pair, only if coordinates are valid
      * @param string $latLng
-     * @return GeoPoint|null
+     * @return static|null
      */
-    public static function fromLatLngString(string $latLng): ?GeoPoint
+    public static function fromLatLngString(string $latLng): ?static
     {
         $latLng = explode(',', $latLng);
         [$lat, $lng] = $latLng;
@@ -60,7 +60,7 @@ class GeoPoint extends ValueObject
         if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
             return null;
         }
-        return new GeoPoint($lat, $lng);
+        return new static($lat, $lng);
     }
 
     /**
@@ -136,5 +136,4 @@ class GeoPoint extends ValueObject
             'lng' => $this->lng,
         ];
     }
-
 }
