@@ -347,6 +347,66 @@ class FiltersOptions extends ObjectSet
     }
 
     /**
+     * Removes all filter expressions matching the given property name recursively.
+     * Handles the tree-like structure of operations and expressions:
+     * - If this is an expression matching the property, returns null (removed)
+     * - If this is an operation, recursively processes children:
+     *   - If all children are removed, returns null
+     *   - If only one child remains, collapses the operation to that single child
+     *     (e.g. AND(description eq 'x', scope eq 'y') with 'description' removed becomes scope eq 'y')
+     *   - If multiple children remain, returns the operation with remaining children
+     *
+     * @param string $property The property name whose expressions should be removed
+     * @return FiltersOptions|null The modified FiltersOptions tree, or null if everything was removed
+     */
+    public function removeAllFilterExpressionsForProperty(string $property): ?FiltersOptions
+    {
+        if (!isset($this->type)) {
+            return null;
+        }
+
+        // Leaf node: expression
+        if ($this->type === self::TYPE_EXPRESSION) {
+            if (isset($this->property) && $this->property === $property) {
+                return null; // Remove this expression
+            }
+            return $this; // Keep this expression
+        }
+
+        // Internal node: operation — recursively filter children
+        if ($this->type === self::TYPE_OPERATION) {
+            $remainingChildren = [];
+            foreach ($this->getElements() as $child) {
+                $result = $child->removeAllFilterExpressionsForProperty($property);
+                if ($result !== null) {
+                    $remainingChildren[] = $result;
+                }
+            }
+
+            // All children removed → remove this operation entirely
+            if (empty($remainingChildren)) {
+                return null;
+            }
+
+            // Single child remains → collapse the operation, return child directly
+            if (count($remainingChildren) === 1) {
+                return $remainingChildren[0];
+            }
+
+            // Multiple children remain → rebuild operation with surviving children
+            $newOperation = new FiltersOptions();
+            $newOperation->type = self::TYPE_OPERATION;
+            $newOperation->joinOperator = $this->joinOperator;
+            foreach ($remainingChildren as $child) {
+                $newOperation->add($child);
+            }
+            return $newOperation;
+        }
+
+        return $this;
+    }
+
+    /**
      * Validates recursively the filters against allowed property definitions and throws Error if invalid property names or options for values are used.
      * returns true if validation finds no issues.
      * ExpandOptions are are required for recursive validation
