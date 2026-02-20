@@ -69,6 +69,7 @@ use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\CosineSimilarity;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Distance;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\EuclideanDistance;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\VecFromText;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\UnescapedJsonType;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\VectorType;
 
 // Custom Geo/Spatial Query functions
@@ -245,6 +246,9 @@ class EntityManagerFactory
         $config->addCustomNumericFunction('ST_X', StX::class);
         $config->addCustomNumericFunction('ST_Y', StY::class);
         $config->addCustomNumericFunction('ST_NumPoints', StNumPoints::class);
+
+        // ─── JSON type override: preserve Unicode characters (e.g. "Münster" instead of "M\u00fcnster") ───
+        Type::overrideType('json', UnescapedJsonType::class);
 
         // ─── Vector functions ───
         $serverVersion = $configSettings['connectionParams']['server_version'] ?? null;
