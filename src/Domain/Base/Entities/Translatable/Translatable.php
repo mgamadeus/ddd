@@ -90,6 +90,13 @@ class Translatable extends ValueObject
     public static bool $fallbackToDefaultLanguageCode;
 
     /**
+     * If no translation is found in given language and no translation is found in default language,
+     * this setting determines that the first available translation (native value) is returned
+     * @var bool
+     */
+    public static bool $fallbackToNativeValue;
+
+    /**
      * @var array|null Snapshot of translation settings to be easily restored
      */
     protected static ?array $translationSettingsSnapshot = null;
@@ -160,6 +167,26 @@ class Translatable extends ValueObject
             self::$fallbackToDefaultLanguageCode = false;
         }
         return self::$fallbackToDefaultLanguageCode;
+    }
+
+    /**
+     * Checks if the system should fallback to the first available (native) translation value
+     * when no translation is found in the current language or the default language.
+     *
+     * @return bool Returns true if the system should fallback to native value, false otherwise.
+     */
+    public static function fallbackToNativeValueIfNoTranslationIsPresent(): bool
+    {
+        if (isset(self::$fallbackToNativeValue)) {
+            return self::$fallbackToNativeValue;
+        }
+        $fallbackToNativeValue = Config::getEnv('TRANSLATABLE_FALLBACK_TO_NATIVE_VALUE');
+        if (isset($fallbackToNativeValue)) {
+            self::$fallbackToNativeValue = $fallbackToNativeValue;
+        } else {
+            self::$fallbackToNativeValue = false;
+        }
+        return self::$fallbackToNativeValue;
     }
 
     /**
@@ -399,6 +426,16 @@ class Translatable extends ValueObject
             $translation = $translationsFromConfig[$translationKey][$index] ?? null;
             if ($translation) {
                 return static::replacePlaceholders($translation, $placeholders);
+            }
+        }
+        // If still no translation found, fallback to first available (native) value
+        if (!$translation && Translatable::fallbackToNativeValueIfNoTranslationIsPresent()) {
+            $keyTranslations = $translationsFromConfig[$translationKey] ?? [];
+            if (!empty($keyTranslations)) {
+                $translation = reset($keyTranslations);
+                if ($translation) {
+                    return static::replacePlaceholders($translation, $placeholders);
+                }
             }
         }
         // if nothing is found, return key itself
