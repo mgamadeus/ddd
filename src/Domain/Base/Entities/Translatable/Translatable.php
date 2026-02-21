@@ -17,6 +17,24 @@ class Translatable extends ValueObject
     use BaseAttributeTrait;
 
     /**
+     * If enabled, the database model generator creates a stored virtual search column `virtual{Field}Search`
+     * and a FULLTEXT index on it.
+     *
+     * Motivation: translatable fields are stored as JSON, which cannot be fulltext-indexed directly.
+     */
+    public bool $fullTextIndex = false;
+
+    /**
+     * Returns the stored virtual column name used for FULLTEXT indexing of JSON-backed translatable fields.
+     *
+     * Example: name -> virtualNameSearch
+     */
+    public static function getFullTextSearchVirtualColumnName(string $propertyName): string
+    {
+        return 'virtual' . ucfirst($propertyName) . 'Search';
+    }
+
+    /**
      * The constant representing the formal writing style.
      * This writing style is used for more professional or serious contexts.
      * @var string
@@ -90,13 +108,6 @@ class Translatable extends ValueObject
     public static bool $fallbackToDefaultLanguageCode;
 
     /**
-     * If no translation is found in given language and no translation is found in default language,
-     * this setting determines that the first available translation (native value) is returned
-     * @var bool
-     */
-    public static bool $fallbackToNativeValue;
-
-    /**
      * @var array|null Snapshot of translation settings to be easily restored
      */
     protected static ?array $translationSettingsSnapshot = null;
@@ -167,26 +178,6 @@ class Translatable extends ValueObject
             self::$fallbackToDefaultLanguageCode = false;
         }
         return self::$fallbackToDefaultLanguageCode;
-    }
-
-    /**
-     * Checks if the system should fallback to the first available (native) translation value
-     * when no translation is found in the current language or the default language.
-     *
-     * @return bool Returns true if the system should fallback to native value, false otherwise.
-     */
-    public static function fallbackToNativeValueIfNoTranslationIsPresent(): bool
-    {
-        if (isset(self::$fallbackToNativeValue)) {
-            return self::$fallbackToNativeValue;
-        }
-        $fallbackToNativeValue = Config::getEnv('TRANSLATABLE_FALLBACK_TO_NATIVE_VALUE');
-        if (isset($fallbackToNativeValue)) {
-            self::$fallbackToNativeValue = $fallbackToNativeValue;
-        } else {
-            self::$fallbackToNativeValue = false;
-        }
-        return self::$fallbackToNativeValue;
     }
 
     /**
@@ -428,16 +419,6 @@ class Translatable extends ValueObject
                 return static::replacePlaceholders($translation, $placeholders);
             }
         }
-        // If still no translation found, fallback to first available (native) value
-        if (!$translation && Translatable::fallbackToNativeValueIfNoTranslationIsPresent()) {
-            $keyTranslations = $translationsFromConfig[$translationKey] ?? [];
-            if (!empty($keyTranslations)) {
-                $translation = reset($keyTranslations);
-                if ($translation) {
-                    return static::replacePlaceholders($translation, $placeholders);
-                }
-            }
-        }
         // if nothing is found, return key itself
         if (!$translation) {
             $translation = $translationKey;
@@ -475,5 +456,11 @@ class Translatable extends ValueObject
         } else {
             DefaultObject::addStaticPropertiesToHide(false, 'translationInfos');
         }
+    }
+
+    public function __construct(bool $fullTextIndex = false)
+    {
+        $this->fullTextIndex = $fullTextIndex;
+        parent::__construct();
     }
 }

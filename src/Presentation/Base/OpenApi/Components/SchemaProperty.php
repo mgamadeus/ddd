@@ -45,6 +45,8 @@ class SchemaProperty
 
     public ?string $example = null;
 
+    public ?array $examples = null;
+
     public ?int $minLength;
 
     public ?int $maxLength;
@@ -75,6 +77,48 @@ class SchemaProperty
     private string $scope = Parameter::BODY;
 
     /**
+     * Normalizes a list of doc-comment examples into OpenAPI-compatible `examples`.
+     *
+     * OpenAPI expects `examples` to be an object/map, not a list. If we keep the raw list
+     * (e.g. ["foo", "bar"]) it becomes a JSON array and breaks some renderers/validators.
+     *
+     * We convert a list like:
+     *   ["name asc", "name asc, severity desc"]
+     * into:
+     *   {
+     *     "1": {"value": "name asc"},
+     *     "2": {"value": "name asc, severity desc"}
+     *   }
+     *
+     * We start counting at 1 so the resulting PHP array is encoded as an object (not a JSON list).
+     *
+     * @param string[] $examples
+     * @return array
+     */
+    private function normalizeExamplesForOpenApi(array $examples): array
+    {
+        if (!$examples) {
+            return $examples;
+        }
+
+        $keys = array_keys($examples);
+        $isList = $keys === range(0, count($examples) - 1);
+        if (!$isList) {
+            return $examples;
+        }
+
+        $normalized = [];
+        foreach ($examples as $index => $example) {
+            $exampleIndex = (string)($index + 1);
+            $normalized[$exampleIndex] = [
+                'summary' => $exampleIndex,
+                'value' => $example,
+            ];
+        }
+        return $normalized;
+    }
+
+    /**
      * @param ReflectionClass $schemaReflectionClass
      * @param ReflectionProperty $schemaClassReflectionProperty
      * @param string $scope
@@ -101,11 +145,15 @@ class SchemaProperty
 
         if ($schemaClassReflectionProperty->getDocComment()) {
             $docComment = new ReflectionDocComment($schemaClassReflectionProperty->getDocComment());
-            if ($description = $docComment->getDescription(true)) {
+            if ($description = $docComment->getDescription(true, false)) {
                 $this->description = $description;
             }
-            if ($example = $docComment->getExample()) {
-                $this->example = $example;
+            $examples = $docComment->getExamples();
+            if (count($examples) > 1) {
+                $this->examples = $this->normalizeExamplesForOpenApi($examples);
+            }
+            elseif ($examples) {
+                $this->example = $examples[0];
             }
         }
 

@@ -19,11 +19,41 @@ class PathParameter
     public ?string $name = null;
     public ?string $description = null;
     public ?string $example = null;
+    public ?array $examples = null;
     public ?bool $required = null;
     public string $in = 'query';
     protected bool $toBeSkipped = false;
     protected ?Route $route;
     public ?PathParameterSchema $schema = null;
+
+    /**
+     * See [`SchemaProperty::normalizeExamplesForOpenApi()`](backend/vendor/mgamadeus/ddd/src/Presentation/Base/OpenApi/Components/SchemaProperty.php:86).
+     *
+     * @param string[] $examples
+     * @return array
+     */
+    private function normalizeExamplesForOpenApi(array $examples): array
+    {
+        if (!$examples) {
+            return $examples;
+        }
+
+        $keys = array_keys($examples);
+        $isList = $keys === range(0, count($examples) - 1);
+        if (!$isList) {
+            return $examples;
+        }
+
+        $normalized = [];
+        foreach ($examples as $index => $example) {
+            $exampleIndex = (string)($index + 1);
+            $normalized[$exampleIndex] = [
+                'summary' => $exampleIndex,
+                'value' => $example,
+            ];
+        }
+        return $normalized;
+    }
 
     /**
      * @param ReflectionClass $requestDtoReflectionClass
@@ -39,9 +69,14 @@ class PathParameter
         $this->name = $requestDtoReflectionProperty->getName();
         if ($requestDtoReflectionProperty->getDocComment()) {
             $docComment = new ReflectionDocComment($requestDtoReflectionProperty->getDocComment());
-            $this->description = $docComment->getDescription(true);
-            $example = $docComment->getExample();
-            $this->example = $example ? $example : null;
+            $this->description = $docComment->getDescription(true, false);
+            $examples = $docComment->getExamples();
+            if (count($examples) > 1) {
+                $this->examples = $this->normalizeExamplesForOpenApi($examples);
+            }
+            elseif ($examples) {
+                $this->example = $examples[0];
+            }
         }
         foreach ($requestDtoReflectionProperty->getAttributes() as $requestDtoPropertyAttribute) {
             $requestDtoPropertyAttributeInstance = $requestDtoPropertyAttribute->newInstance();

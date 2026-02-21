@@ -91,6 +91,12 @@ class OrderByOptions extends ObjectSet
                 }
                 $orderByDefinitionsForPropertyName = $expandOptionForPropertyName->expandDefinition->getOrderbyDefinitions();
                 $optionExists = in_array($propertyNameInExpandPath, $orderByDefinitionsForPropertyName);
+
+                // Allow score suffix for fulltext ordering (e.g. nameScore) if base property exists.
+                if (!$optionExists && str_ends_with($propertyNameInExpandPath, 'Score')) {
+                    $basePropertyName = substr($propertyNameInExpandPath, 0, -strlen('Score'));
+                    $optionExists = in_array($basePropertyName, $orderByDefinitionsForPropertyName);
+                }
                 if (!$optionExists) {
                     throw new BadRequestException(
                         "OrderBy option used with expand path '{$expandPath}' does not allow for property '{$propertyNameInExpandPath}'. Allowed property names under this path are: [" . implode(
@@ -101,6 +107,14 @@ class OrderByOptions extends ObjectSet
                 }
                 $orderByOption->setExpandOption($expandOptionForPropertyName);
                 continue;
+            }
+
+            // Allow score suffix for fulltext ordering (e.g. nameScore) if base property exists.
+            if (!in_array($orderByOption->propertyName, $orderByDefinitions) && str_ends_with($orderByOption->propertyName, 'Score')) {
+                $basePropertyName = substr($orderByOption->propertyName, 0, -strlen('Score'));
+                if (in_array($basePropertyName, $orderByDefinitions)) {
+                    continue;
+                }
             }
             if (!in_array($orderByOption->propertyName, $orderByDefinitions)) {
                 throw new BadRequestException(
@@ -135,6 +149,32 @@ class OrderByOptions extends ObjectSet
             // if orderBy is based on a filter property that comes from an expand property, alias has to be empty as otherwise the base alias would be
             // added to the query, e.g. filter is 'expandProperty.name' => then no alias is needed
             $propertyName = $orderByOption->propertyName;
+
+            // Fulltext score ordering (e.g. orderBy=nameScore DESC)
+            if (str_ends_with($propertyName, 'Score')) {
+                // Score alias must be a valid DQL identifier (no dots)
+                $scoreAlias = str_replace('.', '__', $propertyName);
+
+                // For nested paths like business.nameScore, base property is business.name
+                $basePropertyName = substr($propertyName, 0, -strlen('Score'));
+                $fulltextSearchInfo = FiltersOptions::getFulltextSearchForProperty($basePropertyName);
+                if (!$fulltextSearchInfo) {
+                    throw new BadRequestException(
+                        "OrderBy score option '{$propertyName}' requires a corresponding fulltext filter on '{$basePropertyName}' (operator ft or fb)."
+                    );
+                }
+
+                $booleanModeClause = $fulltextSearchInfo['booleanMode'] ? ' IN BOOLEAN MODE' : '';
+                $parameterCount = $queryBuilder->getParameters()->count() + 1;
+                $queryBuilder->setParameter($parameterCount, $fulltextSearchInfo['searchTerms']);
+
+                $queryBuilder->addSelect(
+                    "MATCH({$fulltextSearchInfo['qualifiedColumn']}) AGAINST (?{$parameterCount}{$booleanModeClause}) AS HIDDEN {$scoreAlias}"
+                );
+                $queryBuilder->addOrderBy($scoreAlias, $orderByOption->direction);
+                continue;
+            }
+
             if ($mappingFunction) {
                 /** @var QueryOptionsPropertyMapping $queryOptionPropertyMapping */
                 $queryOptionPropertyMapping = $mappingFunction($propertyName);

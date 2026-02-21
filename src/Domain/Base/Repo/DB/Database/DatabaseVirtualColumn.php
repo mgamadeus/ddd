@@ -30,6 +30,12 @@ class DatabaseVirtualColumn extends ValueObject
     /** @var bool If true, an index for the virtual column will be generated */
     public bool $createIndex = false;
 
+    /**
+     * Optional explicit virtual column name (used when the name cannot be derived from referenceColumn.name).
+     * Example: virtualNameSearch.
+     */
+    public ?string $virtualColumnNameOverride = null;
+
     public function getSql(bool $asUpdate = false): string
     {
         $sql = $asUpdate ? 'ADD COLUMN IF NOT EXISTS ' : '';
@@ -52,6 +58,9 @@ class DatabaseVirtualColumn extends ValueObject
 
     public function getName(): string
     {
+        if ($this->virtualColumnNameOverride) {
+            return $this->virtualColumnNameOverride;
+        }
         return self::getVirtualColumnName($this->referenceColumn->name);
     }
 

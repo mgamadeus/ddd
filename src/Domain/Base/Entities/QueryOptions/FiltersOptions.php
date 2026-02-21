@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Entities\QueryOptions;
 
 use DDD\Domain\Base\Entities\ObjectSet;
+use DDD\Domain\Base\Entities\Translatable\Translatable;
 use DDD\Domain\Base\Repo\DB\DBEntity;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\MethodNotAllowedException;
+use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Validation\Constraints\Choice;
 use Doctrine\ORM\Query\Expr;
 use Doctrine\ORM\Query\Expr\Join;
@@ -58,6 +60,12 @@ class FiltersOptions extends ObjectSet
     /** @var string Between, e.g. in ['2023-01-01 00:00:00','2024-01-01 00:00:00'] */
     public const OPERATOR_BETWEEN = 'bw';
 
+    /** @var string Fulltext search (MATCH AGAINST) in natural language mode */
+    public const OPERATOR_FULLTEXT = 'ft';
+
+    /** @var string Fulltext search (MATCH AGAINST) in boolean mode */
+    public const OPERATOR_FULLTEXT_BOOLEAN = 'fb';
+
     /** @var string[] The operators allowed if the value is NULL */
     public const ALLOWED_OPERATORS_ON_NULL_VALUE = [self::OPERATOR_EQUAL, self::OPERATOR_NOT_EQUAL];
 
@@ -72,7 +80,9 @@ class FiltersOptions extends ObjectSet
         self::OPERATOR_LESS_THAN,
         self::OPERATOR_LESS_OR_EQUAL,
         self::OPERATOR_IN,
-        self::OPERATOR_BETWEEN
+        self::OPERATOR_BETWEEN,
+        self::OPERATOR_FULLTEXT,
+        self::OPERATOR_FULLTEXT_BOOLEAN,
     ];
 
     public const OPERATORS_TO_DOCTRINE_ALLOCATION = [
@@ -84,7 +94,44 @@ class FiltersOptions extends ObjectSet
         self::OPERATOR_LESS_OR_EQUAL => 'lte',
         self::OPERATOR_IN => 'in',
         self::OPERATOR_BETWEEN => 'between',
+
+        // Fulltext operators are handled explicitly in getFiltersExpressionForDoctrineQueryBuilder()
+        self::OPERATOR_FULLTEXT => 'fulltext',
+        self::OPERATOR_FULLTEXT_BOOLEAN => 'fulltextBoolean',
     ];
+
+    /** @var string[] Fulltext operators (MATCH AGAINST) */
+    public const FULLTEXT_OPERATORS = [self::OPERATOR_FULLTEXT, self::OPERATOR_FULLTEXT_BOOLEAN];
+
+    /**
+     * Registry to bridge FILTERS -> ORDER BY score (e.g. orderBy=nameScore).
+     *
+     * @var array<string, array{qualifiedColumn: string, searchTerms: string, booleanMode: bool}>
+     */
+    protected static array $fulltextSearchRegistry = [];
+
+    public static function registerFulltextSearch(
+        string $propertyName,
+        string $qualifiedColumn,
+        string $searchTerms,
+        bool $booleanMode
+    ): void {
+        self::$fulltextSearchRegistry[$propertyName] = [
+            'qualifiedColumn' => $qualifiedColumn,
+            'searchTerms' => $searchTerms,
+            'booleanMode' => $booleanMode,
+        ];
+    }
+
+    public static function getFulltextSearchForProperty(string $propertyName): ?array
+    {
+        return self::$fulltextSearchRegistry[$propertyName] ?? null;
+    }
+
+    public static function clearFulltextSearchRegistry(): void
+    {
+        self::$fulltextSearchRegistry = [];
+    }
 
     /** @var string Can be either expression or operation, an operation holds other operations or expressions */
     #[Choice(choices: [self::TYPE_EXPRESSION, self::TYPE_OPERATION, null])]
@@ -106,7 +153,9 @@ class FiltersOptions extends ObjectSet
         self::OPERATOR_LESS_THAN,
         self::OPERATOR_LESS_OR_EQUAL,
         self::OPERATOR_IN,
-        self::OPERATOR_BETWEEN
+        self::OPERATOR_BETWEEN,
+        self::OPERATOR_FULLTEXT,
+        self::OPERATOR_FULLTEXT_BOOLEAN,
     ])]
     public string $operator;
 
@@ -159,7 +208,7 @@ class FiltersOptions extends ObjectSet
     {
         $regExps = [
             '(\s+and\s+|\s+or\s+)',
-            '(\s+eq\s+|\s+ne\s+|\s+gt\s+|\s+lt\s+|\s+ge\s+|\s+le\s+)',
+            '(\s+eq\s+|\s+ne\s+|\s+gt\s+|\s+lt\s+|\s+ge\s+|\s+le\s+|\s+in\s+|\s+bw\s+|\s+ft\s+|\s+fb\s+)',
             '([a-zA-Z\._]+)',
             "(-?\d+(?:\.\d+)?|[^\\\\]{0}\'(?:(?![^\\\\]\').)*[^\\\\]?\')",
         ];
@@ -644,8 +693,78 @@ class FiltersOptions extends ObjectSet
             /** @var Expr\Orx|Expr\Andx $expression */
             return $queryBuilder->expr()->$operator(...$childExpressions);
         } else {
-            $operator = self::OPERATORS_TO_DOCTRINE_ALLOCATION[$this->operator];
             $value = $this->value;
+
+            $propertyName = $this->getApplicablePropertyNameConsideringExpandJoinAlias();
+
+            $applyMappingFunction = function () use ($mappingFunction, &$propertyName, &$value): void {
+                if (!$mappingFunction) {
+                    return;
+                }
+                /** @var QueryOptionsPropertyMapping $queryOptionPropertyMapping */
+                $queryOptionPropertyMapping = $mappingFunction($propertyName, $value);
+                $propertyName = $queryOptionPropertyMapping->propertyName;
+                $value = $queryOptionPropertyMapping->value;
+            };
+
+            // Fulltext search (MATCH AGAINST)
+            if (in_array($this->operator, self::FULLTEXT_OPERATORS, true)) {
+                $booleanMode = ($this->operator === self::OPERATOR_FULLTEXT_BOOLEAN);
+                $booleanModeClause = $booleanMode ? ' IN BOOLEAN MODE' : '';
+
+                // If this property is a JSON-backed Translatable field with fullTextIndex enabled,
+                // target the generated stored virtual search column instead of the JSON column.
+                // Example: name -> virtualNameSearch
+                $joinAlias = $this->expandOption?->joinAlias;
+                $targetModelClass = $joinAlias
+                    ? $this->expandOption->getTargetPropertyModelClass()
+                    : $this->getBaseModelClass();
+                if (!$targetModelClass || !is_a($targetModelClass, DoctrineModel::class, true)) {
+                    return null;
+                }
+
+                $entityClassNameForProperty = $targetModelClass::ENTITY_CLASS;
+
+                if ($entityClassNameForProperty && class_exists($entityClassNameForProperty)) {
+                    $entityReflectionClass = ReflectionClass::instance($entityClassNameForProperty);
+                    if ($entityReflectionClass && $entityReflectionClass->hasProperty($propertyName)) {
+                        $entityProperty = $entityReflectionClass->getProperty($propertyName);
+                        /** @var Translatable|null $translatableAttributeInstance */
+                        $translatableAttributeInstance = $entityProperty->getAttributeInstance(Translatable::class);
+                        if ($translatableAttributeInstance?->fullTextIndex) {
+                            // Example: name -> virtualNameSearch
+                            $propertyName = Translatable::getFullTextSearchVirtualColumnName($propertyName);
+                        }
+                    }
+                }
+
+                $applyMappingFunction();
+
+                // Validate expression and determine alias
+                $verifyModelAlias = $targetModelClass::MODEL_ALIAS;
+                if (!$targetModelClass::isValidDatabaseExpression("$verifyModelAlias.$propertyName")) {
+                    return null;
+                }
+
+
+
+                $baseModelAlias = $joinAlias ?: $verifyModelAlias;
+                $qualifiedColumn = "{$baseModelAlias}.{$propertyName}";
+
+                $parameterCount = $queryBuilder->getParameters()->count() + 1;
+                $queryBuilder->setParameter($parameterCount, $value);
+
+                self::registerFulltextSearch(
+                    $this->property,
+                    $qualifiedColumn,
+                    (string)$value,
+                    $booleanMode
+                );
+
+                return "MATCH({$qualifiedColumn}) AGAINST (?{$parameterCount}{$booleanModeClause}) > 0";
+            }
+
+            $operator = self::OPERATORS_TO_DOCTRINE_ALLOCATION[$this->operator];
             /** @var Expr $expression */
             if (is_string($this->value) && strpos($this->value, '*') !== false) {
                 $value = str_replace('*', '%', $this->value);
@@ -656,14 +775,7 @@ class FiltersOptions extends ObjectSet
                 }
             }
 
-            $propertyName = $this->getApplicablePropertyNameConsideringExpandJoinAlias();
-
-            if ($mappingFunction) {
-                /** @var QueryOptionsPropertyMapping $queryOptionPropertyMapping */
-                $queryOptionPropertyMapping = $mappingFunction($propertyName, $value);
-                $propertyName = $queryOptionPropertyMapping->propertyName;
-                $value = $queryOptionPropertyMapping->value;
-            }
+            $applyMappingFunction();
 
             // Validate expression
             if ($this->expandOption && $this->expandOption->joinAlias) {

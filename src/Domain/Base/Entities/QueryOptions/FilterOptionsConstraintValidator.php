@@ -90,6 +90,14 @@ class FilterOptionsConstraintValidator extends ConstraintValidator
                         'QueryOptions: if operator is bw (between) or in, value has to be array formatted'
                     );
                 }
+
+                if (in_array($filterOptions->operator, FiltersOptions::FULLTEXT_OPERATORS, true)) {
+                    if (!is_string($filterOptions->value) || trim($filterOptions->value) === '') {
+                        throw new BadRequestException(
+                            'QueryOptions: fulltext operators (ft, fb) require a non-empty string value'
+                        );
+                    }
+                }
             }
         } catch (Throwable $t) {
             $this->context->buildViolation($t->getMessage())->addViolation();

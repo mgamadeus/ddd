@@ -10,6 +10,7 @@ use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
+use DDD\Domain\Base\Entities\Translatable\Translatable;
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Domain\Base\Repo\DatabaseRepoEntity;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
@@ -209,11 +210,62 @@ class DatabaseModel extends ValueObject
             if ($reflectionProperty->isStatic()) {
                 continue;
             }
+
+            /** @var Translatable|null $translatableAttributeInstance */
+            $translatableAttributeInstance = $reflectionProperty->getAttributeInstance(
+                Translatable::class,
+                ReflectionAttribute::IS_INSTANCEOF
+            );
             // create regular columns
             $databaseColumn = DatabaseColumn::createFromReflectionProperty($entityReflectionClass, $reflectionProperty);
             $virtualColumnsForProperty = null;
             if ($databaseColumn) {
                 $databaseModel->columns->add($databaseColumn);
+
+                // Translatable(fullTextIndex: true) => add stored virtual search column + FULLTEXT index.
+                if ($translatableAttributeInstance?->fullTextIndex) {
+                    $virtualSearchColumnName = Translatable::getFullTextSearchVirtualColumnName($databaseColumn->name);
+
+                    $virtualSearchAsTemplate = <<<'SQL'
+                        (
+                          CASE
+                            WHEN %1$s IS NULL OR JSON_VALID(%1$s) = 0 THEN ''
+                            ELSE REGEXP_REPLACE(
+                              TRIM(
+                                BOTH ' '
+                                FROM REGEXP_REPLACE(
+                                  REGEXP_REPLACE(JSON_UNQUOTE(%1$s), '^\\{\\s*|\\s*\\}\\s*$', ''),
+                                  '"[^"]+"\\s*:\\s*"([^"]*)"\\s*(,\\s*)?',
+                                  '\\1 | '
+                                )
+                              ),
+                              '\\s*\\|\\s*$', ''
+                            )
+                          END
+                        )
+                        SQL;
+                    $virtualSearchAs = sprintf($virtualSearchAsTemplate, $databaseColumn->name);
+
+                    // Define the type of the virtual column as TEXT (not JSON)
+                    $virtualSearchReferenceColumn = clone $databaseColumn;
+                    $virtualSearchReferenceColumn->name = $databaseColumn->name . 'Search';
+                    $virtualSearchReferenceColumn->sqlType = DatabaseColumn::SQL_TYPE_TEXT;
+                    $virtualSearchReferenceColumn->phpType = 'string';
+                    $virtualSearchReferenceColumn->isBuildinType = true;
+                    $virtualSearchReferenceColumn->isMergableJSONColumn = false;
+
+                    $virtualSearchColumn = new DatabaseVirtualColumn(
+                        as: $virtualSearchAs,
+                        stored: true,
+                        createIndex: false
+                    );
+                    $virtualSearchColumn->referenceColumn = $virtualSearchReferenceColumn;
+                    $virtualSearchColumn->virtualColumnNameOverride = $virtualSearchColumnName;
+                    $databaseModel->virtualColumns->add($virtualSearchColumn);
+
+                    $virtualSearchReferencecolumnDBIndex = new DatabaseIndex(indexType: DatabaseIndex::TYPE_FULLTEXT, indexColumns: [$virtualSearchColumnName]);
+                    $databaseModel->indexes->add($virtualSearchReferencecolumnDBIndex);
+                }
                 if ($virtualColumnAttributes = $reflectionProperty->getAttributes(DatabaseVirtualColumn::class, ReflectionAttribute::IS_INSTANCEOF)) {
                     foreach ($virtualColumnAttributes as $virtualColumnAttribute) {
                         /** @var DatabaseVirtualColumn $virtualColumnAttributeInstance */
@@ -268,26 +320,32 @@ class DatabaseModel extends ValueObject
                 $index = new DatabaseIndex(indexColumns: [ChangeHistory::DEFAULT_MODIFIED_COLUMN_NAME]);
                 $databaseModel->indexes->add($index);
             }
-            if ($databaseColumn && !$databaseColumn->isPrimaryKey) {
-                // handle indexes
-                $indexAttributes = $reflectionProperty->getAttributes(DatabaseIndex::class, ReflectionAttribute::IS_INSTANCEOF);
-                if (count($indexAttributes)) {
-                    foreach ($indexAttributes as $indexAttribute) {
-                        /** @var DatabaseIndex $indexAttributeInstance */
-                        $indexAttributeInstance = $indexAttribute->newInstance();
-                        if ($indexAttributeInstance->indexType != DatabaseIndex::TYPE_NONE) {
-                            $indexAttributeInstance->indexColumns = [$reflectionProperty->getName()];
-                            $databaseModel->indexes->add($indexAttributeInstance);
+                if ($databaseColumn && !$databaseColumn->isPrimaryKey) {
+                    // handle indexes
+                    $indexAttributes = $reflectionProperty->getAttributes(DatabaseIndex::class, ReflectionAttribute::IS_INSTANCEOF);
+                    if (count($indexAttributes)) {
+                        foreach ($indexAttributes as $indexAttribute) {
+                            /** @var DatabaseIndex $indexAttributeInstance */
+                            $indexAttributeInstance = $indexAttribute->newInstance();
+
+                            // JSON-backed Translatable columns cannot have FULLTEXT index directly.
+                            // If Translatable(fullTextIndex: true) is enabled, the FULLTEXT index is created on the virtual search column instead.
+                            if ($translatableAttributeInstance?->fullTextIndex && $indexAttributeInstance->indexType === DatabaseIndex::TYPE_FULLTEXT) {
+                                continue;
+                            }
+                            if ($indexAttributeInstance->indexType != DatabaseIndex::TYPE_NONE) {
+                                $indexAttributeInstance->indexColumns = [$reflectionProperty->getName()];
+                                $databaseModel->indexes->add($indexAttributeInstance);
+                            }
+                        }
+                    } elseif (isset($databaseColumn->sqlType) && $databaseColumn->hasIndex && !$databaseColumn->ignoreProperty) {
+                        $indexType = DatabaseColumn::SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS[$databaseColumn->sqlType];
+                        if ($indexType != DatabaseIndex::TYPE_NONE) {
+                            $index = new DatabaseIndex(indexColumns: [$databaseColumn->name], indexType: $indexType);
+                            $databaseModel->indexes->add($index);
                         }
                     }
-                } elseif (isset($databaseColumn->sqlType) && $databaseColumn->hasIndex && !$databaseColumn->ignoreProperty) {
-                    $indexType = DatabaseColumn::SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS[$databaseColumn->sqlType];
-                    if ($indexType != DatabaseIndex::TYPE_NONE) {
-                        $index = new DatabaseIndex(indexColumns: [$databaseColumn->name], indexType: $indexType);
-                        $databaseModel->indexes->add($index);
-                    }
                 }
-            }
 
             // handle indexes added to potentialOneToManyPropertyNames and processed later
             // in order to avoid recursion, we need to process first all Classes and then go through them and

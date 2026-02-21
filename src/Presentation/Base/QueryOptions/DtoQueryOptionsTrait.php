@@ -40,15 +40,23 @@ trait DtoQueryOptionsTrait
      * Comma-separated list of sort keys:
      * `<propertyPath> <direction>?, <propertyPath> <direction>? ...`
      *
-     * Rules / restrictions:
-     * - `<propertyPath>` is **not quoted** and supports dot-notation.
-     * - Sortable fields are **endpoint-specific** and validated against the endpoint QueryOptions definitions.
-     * - Sorting by expanded relations is supported via `<relation>.<field>` if that relation is included via `expand`.
-     * - `<direction>` is optional (defaults to `asc`), allowed: `asc`, `desc` (case-insensitive).
-     *
-     * @example someField asc, otherField desc
-     * @example someRelation.someField desc
-     */
+      * Rules / restrictions:
+      * - `<propertyPath>` is **not quoted** and supports dot-notation.
+      * - Sortable fields are **endpoint-specific** and validated against the endpoint QueryOptions definitions.
+      * - Sorting by expanded relations is supported via `<relation>.<field>` if that relation is included via `expand`.
+      * - `<direction>` is optional (defaults to `asc`), allowed: `asc`, `desc` (case-insensitive).
+      * - Fulltext relevance score ordering is supported via the `{propertyName}Score` suffix (e.g. `nameScore desc`).
+      *   This requires a corresponding fulltext filter on the base property using `ft` or `fb`.
+      * - Score ordering also works on expanded relations using dot-notation (e.g. `business.nameScore desc`),
+      *   but requires:
+      *   - the relation to be included via `expand=business`
+      *   - a fulltext filter on the matching base property (e.g. `filters=business.name ft 'kfc arad'`)
+      *
+      * @example someField asc, otherField desc
+      * @example someRelation.someField desc
+      * @example nameScore desc
+      * @example business.nameScore desc
+      */
     #[Parameter(in: Parameter::QUERY, required: false)]
     public OrderByOptions $orderBy;
 
@@ -63,25 +71,36 @@ trait DtoQueryOptionsTrait
      * - `<property> <operator> <value>`
      * - `<property>` may use dot-notation: `foo`, `fooBar`, `foo.bar_baz`
      *
-     * Operators:
-     * - `eq`, `ne`, `gt`, `ge`, `lt`, `le`  -> single scalar value
-     * - `in`                                -> list of scalars: `['A','B']`
-     * - `bw`                                -> list of exactly 2 scalars: `['from','to']`
-     *
-     * Value rules (strict):
-     * - Every scalar MUST be wrapped in single quotes: `'...'` (numbers and dates included).
-     * - NULL MUST be written as the scalar `'NULL'`.
-     * - Lists MUST use brackets and comma separation, with every item quoted: `['A','B']`.
+      * Operators:
+      * - `eq`, `ne`, `gt`, `ge`, `lt`, `le`  -> single scalar value
+      * - `in`                                -> list of scalars: `['A','B']`
+      * - `bw`                                -> list of exactly 2 scalars: `['from','to']`
+      * - `ft`                                -> fulltext search (MATCH AGAINST) in natural language mode
+      * - `fb`                                -> fulltext search (MATCH AGAINST) in boolean mode
+      *
+      * Fulltext notes:
+      * - `ft` / `fb` require that the target column is FULLTEXT-indexed in the database.
+      * - For `#[Translatable(fullTextIndex: true)]` properties, the system uses a generated stored virtual
+      *   search column (e.g. `virtualNameSearch`) behind the scenes, so filtering still targets `name` in
+      *   the API while the database query targets the virtual FULLTEXT column.
+      *
+      * Value rules (strict):
+      * - Every scalar MUST be wrapped in single quotes: `'...'` (numbers and dates included).
+      * - NULL MUST be written as the scalar `'NULL'`.
+      * - Lists MUST use brackets and comma separation, with every item quoted: `['A','B']`.
      *
      * @example someInt lt '10'
-     * @example someDate ge '2025-01-01'
-     * @example someEntity.subEntity.someProperty eq 'mydomain.com'
-     * @example someStatus in ['UPCOMING','RUNNING']
-     * @example someDate bw ['2026-01-01','2026-01-22']
-     * @example someDate eq 'NULL' or someDate gt '2025-01-01'
-     * @example (someStatus in ['UPCOMING','RUNNING'] and someInt ge '2') or otherInt eq '42'
-     * @example (someId eq '1' and ((someStartDate le '2026-01-22' and someEndDate ge '2026-01-01') or (someStartDate bw ['2026-01-01','2026-01-22'] or someEndDate bw ['2026-01-01','2026-01-22'])))
-     */
+      * @example someDate ge '2025-01-01'
+      * @example someEntity.subEntity.someProperty eq 'mydomain.com'
+      * @example someStatus in ['UPCOMING','RUNNING']
+      * @example someDate bw ['2026-01-01','2026-01-22']
+      * @example name ft 'berlin brandenburg'
+      * @example name fb '+berlin +brandenburg -potsdam'
+      * @example business.name ft 'kfc arad'
+      * @example someDate eq 'NULL' or someDate gt '2025-01-01'
+      * @example (someStatus in ['UPCOMING','RUNNING'] and someInt ge '2') or otherInt eq '42'
+      * @example (someId eq '1' and ((someStartDate le '2026-01-22' and someEndDate ge '2026-01-01') or (someStartDate bw ['2026-01-01','2026-01-22'] or someEndDate bw ['2026-01-01','2026-01-22'])))
+      */
     #[Parameter(in: Parameter::QUERY, required: false)]
     public FiltersOptions $filters;
 

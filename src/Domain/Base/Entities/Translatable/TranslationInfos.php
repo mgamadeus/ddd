@@ -245,13 +245,6 @@ class TranslationInfos extends ValueObject
                 return $translation;
             }
         }
-        // If still no translation found, fallback to first available (native) value in the store
-        if (!$translation && Translatable::fallbackToNativeValueIfNoTranslationIsPresent()) {
-            $propertyTranslations = $this->translationsStore[$propertyName] ?? [];
-            if (!empty($propertyTranslations)) {
-                $translation = reset($propertyTranslations);
-            }
-        }
         return $translation;
     }
 }

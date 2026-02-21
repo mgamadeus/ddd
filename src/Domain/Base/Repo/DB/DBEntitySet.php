@@ -12,6 +12,7 @@ use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Entities\QueryOptions\AppliedQueryOptions;
+use DDD\Domain\Base\Entities\QueryOptions\FiltersOptions;
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptionsTrait;
 use DDD\Domain\Base\Entities\QueryOptions\SelectOptions;
 use DDD\Domain\Base\Repo\DatabaseRepoEntitySet;
@@ -103,6 +104,10 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
         if (!$entitySetReflectionClass->hasTrait(QueryOptionsTrait::class)) {
             return $queryBuilder;
         }
+
+        // Ensure fulltext score ordering registry is clean for this query.
+        FiltersOptions::clearFulltextSearchRegistry();
+
         /** @var QueryOptionsTrait $entitySetClass */
         /** @var AppliedQueryOptions $defaultQueryOptions */
         $defaultQueryOptions = $entitySetClass::getDefaultQueryOptions();
@@ -197,6 +202,7 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
 
         // We apply query options
         $queryBuilder = self::applyQueryOptions($queryBuilder);
+        $sql = $queryBuilder->getQuery()->getSQL();
 
         if ($useEntityRegistrCache) {
             $className = (string)$this::BASE_ENTITY_SET_CLASS;
