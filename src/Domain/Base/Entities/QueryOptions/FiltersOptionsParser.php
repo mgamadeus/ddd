@@ -10,10 +10,10 @@ class FiltersOptionsParser
 {
     protected const BRACKETS = ['(', ')'];
 
-    private string $input;
-    private int $index;
+    protected string $input;
+    protected int $index;
 
-    private int $inputLength;
+    protected int $inputLength;
 
     public function __construct(string $input)
     {
@@ -30,7 +30,7 @@ class FiltersOptionsParser
     /**
      * @return FiltersOptions Parses experession recursively
      */
-    private function parseExpression(): FiltersOptions
+    protected function parseExpression(): FiltersOptions
     {
         $left = $this->parseTerm();
 
@@ -56,7 +56,7 @@ class FiltersOptionsParser
     }
 
 
-    private function parseTerm(): FiltersOptions
+    protected function parseTerm(): FiltersOptions
     {
         if ($this->match('(')) {
             $expr = $this->parseExpression();
@@ -72,7 +72,7 @@ class FiltersOptionsParser
      * @return FiltersOptions
      * @throws BadRequestException
      */
-    private function parseComparison(): FiltersOptions
+    protected function parseComparison(): FiltersOptions
     {
         $left = $this->parseIdentifier();
         $operator = $this->parseOperator();
@@ -90,7 +90,7 @@ class FiltersOptionsParser
      * @return string
      * @throws BadRequestException
      */
-    private function parseIdentifier(): string
+    protected function parseIdentifier(): string
     {
         $tIndex = $this->index + $this->getWhiteSpaceCharactersCountAtBeginning();
         $identifier = '';
@@ -118,7 +118,7 @@ class FiltersOptionsParser
      * @return string
      * @throws BadRequestException
      */
-    private function parseOperator(): string
+    protected function parseOperator(): string
     {
         $tIndex = $this->index + $this->getWhiteSpaceCharactersCountAtBeginning();
 
@@ -153,7 +153,7 @@ class FiltersOptionsParser
      * @return string|float|int|array
      * @throws BadRequestException
      */
-    private function parseLiteral(): string|float|int|array|null
+    protected function parseLiteral(): string|float|int|array|null
     {
         $tIndex = $this->index + $this->getWhiteSpaceCharactersCountAtBeginning();
 
@@ -275,7 +275,7 @@ class FiltersOptionsParser
      * @param string $token
      * @return bool
      */
-    private function match(string $token): bool
+    protected function match(string $token): bool
     {
         $tIndex = $this->index + $this->getWhiteSpaceCharactersCountAtBeginning();
 
@@ -316,7 +316,7 @@ class FiltersOptionsParser
      * @param int $index
      * @return bool
      */
-    private function isWhitespace(int $index): bool
+    protected function isWhitespace(int $index): bool
     {
         // Get the current character
         $char = $this->input[$index];
@@ -327,7 +327,7 @@ class FiltersOptionsParser
     /**
      * @return int Returns the number of whitespace characters at the beginning of current index position
      */
-    private function getWhiteSpaceCharactersCountAtBeginning(): int
+    protected function getWhiteSpaceCharactersCountAtBeginning(): int
     {
         $tIndex = $this->index;
         while (true) {

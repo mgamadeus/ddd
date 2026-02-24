@@ -12,6 +12,7 @@ use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Entities\ObjectSet;
+use DDD\Domain\Base\Entities\Translatable\Translatable;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseVirtualColumn;
 use DDD\Infrastructure\Base\DateTime\DateTime;
@@ -134,7 +135,7 @@ class FiltersDefinitions extends ObjectSet
      * @return array
      * @throws ReflectionException
      */
-    private static function getFilterPropertiesForClass(
+    protected static function getFilterPropertiesForClass(
         string $className,
         string $propertyPrefix = '',
         array $callPath = []
@@ -208,6 +209,16 @@ class FiltersDefinitions extends ObjectSet
 
                 if ($databaseVirtualColumnAttribute) {
                     $allowedFilterProperties[$propertyPrefix . DatabaseVirtualColumn::getVirtualColumnName(
+                        $reflectionProperty->getName()
+                    )] = $allowedPropertyValue;
+                }
+
+                // Translatable properties with fullTextIndex generate a stored virtual search column
+                // e.g. #[Translatable(fullTextIndex: true)] on $name => virtualNameSearch
+                /** @var Translatable|null $translatableAttribute */
+                $translatableAttribute = $reflectionProperty->getAttributeInstance(Translatable::class);
+                if ($translatableAttribute && $translatableAttribute->fullTextIndex) {
+                    $allowedFilterProperties[$propertyPrefix . Translatable::getFullTextSearchVirtualColumnName(
                         $reflectionProperty->getName()
                     )] = $allowedPropertyValue;
                 }
