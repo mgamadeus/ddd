@@ -202,7 +202,7 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
 
         // We apply query options
         $queryBuilder = self::applyQueryOptions($queryBuilder);
-        $sql = $queryBuilder->getQuery()->getSQL();
+        //$sql = $queryBuilder->getQuery()->getSQL();
 
         if ($useEntityRegistrCache) {
             $className = (string)$this::BASE_ENTITY_SET_CLASS;
