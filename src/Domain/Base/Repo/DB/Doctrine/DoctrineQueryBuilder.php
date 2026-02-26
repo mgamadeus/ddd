@@ -281,10 +281,11 @@ class DoctrineQueryBuilder extends QueryBuilder
             &$paramsAllocation,
             &$typesAllocation,
         ): string {
+            $currentIndex = $placeholderIndex;
             $placeholderIndex++;
-            $placeholderToken = 'param' . $placeholderIndex;
+            $placeholderToken = 'param' . $currentIndex;
 
-            $mappedParameterName = $positionToParameterName[$placeholderIndex] ?? (string)$placeholderIndex;
+            $mappedParameterName = $positionToParameterName[$currentIndex] ?? (string)$currentIndex;
             $mappedParameter = $parametersByName[$mappedParameterName] ?? null;
             if ($mappedParameter) {
                 $paramsAllocation[$placeholderToken] = $mappedParameter->getValue();
