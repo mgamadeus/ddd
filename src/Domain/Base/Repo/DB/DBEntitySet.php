@@ -201,6 +201,8 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
         $queryBuilder = $baseRepoClass::applyTranslationJoinToQueryBuilder($queryBuilder);
 
         // We apply query options
+        // First we clear the SelectOptions::$propertiesToHideByJoinPath cache
+        SelectOptions::$propertiesToHideByJoinPath = [];
         $queryBuilder = self::applyQueryOptions($queryBuilder);
         //$sql = $queryBuilder->getQuery()->getSQL();
 
@@ -227,7 +229,7 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
         $entitySetInstance = new $baseEntitySetClass();
         $memoryUsage = memory_get_usage();
 
-        $propertiesToHideBasedOnSelectOptions = static::getPropertiesToHideBasedOnSelectOptions();
+        //$propertiesToHideBasedOnSelectOptions = static::getPropertiesToHideBasedOnSelectOptions();
         $propertiesToHideBasedOnSelectOptions = SelectOptions::$propertiesToHideByJoinPath;
         foreach ($ormInstances as $ormInstance) {
             /** @var DBEntity $baseRepoInstance */
@@ -258,6 +260,7 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
             }
             $memoryUsage = memory_get_usage();
         }
+
         $memoryUsage = memory_get_usage();
         $entityRegistry->add($entitySetInstance, static::class, $queryBuilder, true);
         // since we load many instances and call find on their repo with loaded OrmInstance we defer cache commit to the end
