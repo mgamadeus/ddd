@@ -10,27 +10,39 @@
 
 namespace DDD\Infrastructure\Libs;
 
-use DDD\Infrastructure\Services\AuthService;
+use HTMLPurifier;
+use HTMLPurifier_AttrDef_CSS_Length;
+use HTMLPurifier_AttrDef_CSS_Multiple;
+use HTMLPurifier_AttrDef_Enum;
+use HTMLPurifier_Config;
 use libphonenumber\NumberParseException;
 use libphonenumber\PhoneNumberFormat;
 use libphonenumber\PhoneNumberUtil;
+use stdClass;
 
 define('_is_utf8_split', 5000);
 
 class Datafilter
 {
+    /** @var HTMLPurifier */
     public static $htmlPurifier = null;
 
     public static $locale = null;
+
     public static $currency = null;
+
     public static $debug_url = null;
+
     // first we put in utf8 then in hex
     // Strange, functions doesnt work OK if using hexa. weird char? @todo research. \xC4\xE4\xD6\xF6\xDC\xFC\xDF\x20AC\xC0\xC2\xC8\xC9\xCA\xCB\xCE\xCF\xD4\x152\xD9\xDB\x178\xE0\xE2\xE8\xE9\xEA\xEB\xEE\xEF\xF4\x153\xF9\xFB\xFF\xC1\xCD\xD3\xDA\xD1\xE1\xED\xF3\xFA\xF1\xCC\xD2\xEC\xF2\x103\x15F\x163\x102\x15E\x162
     public static $special_charsOLD = 'ÄäÖöÜüß€ÀÂÄÈÉÊËÎÏÔŒÙÛÜŸàâäèéêëîïôœùûüÿÁÉÍÓÚÑÜáéíóúñüÀÈÉÌÒÓÙàèéìòóùăîâşţĂÎÂŞŢșțΑαΒβΓγΔδΕεΖζΗηΘθΙιΚκΛλΜμΝνΞξΟοΠπΡρΣσΣσςΤτΥυΦφΧχΨψΩωĄąĘęĆćŁłŃńŚśŹźŻżÓóόώ';
+
     // ok, NO need to list all unicode LETTERS. use this.
     public static $special_chars = '\p{L}\p{N}';
+
     // delimiter characters to exclude from breakwords function.
     public static $exclude_chars = '';
+
     // regex special chars. those need to be escaped
     public static $regex_special_chars = [
         '\\',
@@ -50,6 +62,7 @@ class Datafilter
         '|',
         '#'
     ];
+
     // greek: ΑαΒβΓγΔδΕεΖζΗηΘθΙιΚκΛλΜμΝνΞξΟοΠπΡρΣσΣσςΤτΥυΦφΧχΨψΩω
     // polish: ĄąĘęĆćŁłŃńŚśŹźŻżÓó
     // india (hindi): ऑऒऊऔउबभचछडढफफ़गघग़घग़हजझकखख़लळऌऴॡमनङञणऩॐपक़रऋॠऱसशषटतठदथधड़ढ़वयय़ज़
@@ -123,6 +136,7 @@ class Datafilter
         'ό',
         'ώ'
     ];
+
     public static $special = [
         "'",  // - http://jira.rankingcoach.com/browse/RAN-1223271
         //'"', - http://jira.rankingcoach.com/browse/RAN-1120871 ,
@@ -144,6 +158,9 @@ class Datafilter
         '€',
         '§',
         '@',
+        // NOTE: '<' and '>' are included for legacy compatibility with keyword matching.
+        // These characters allow HTML tag fragments to pass through. If you use this array
+        // to build a filter regex, ensure the output is HTML-escaped before rendering.
         '<',
         '>',
         '=',
@@ -161,7 +178,13 @@ class Datafilter
 
     public static function decodeAmpersand(string $input): string
     {
-        return preg_replace_callback("/([a-zA-Z0-9]*\s*)&amp;(\s*[a-zA-Z0-9]*)/", function ($matches) {
+        /**
+         * Decodes &amp; back to & in contexts like "Tom &amp; Jerry".
+         *
+         * @security WARNING: If called on HTML-encoded output, this partially reverses encoding.
+         *           Ensure the result is not inserted into HTML without re-encoding.
+         */
+        return preg_replace_callback('/([a-zA-Z0-9]*\s*)&amp;(\s*[a-zA-Z0-9]*)/', function ($matches) {
             return $matches[1] . '&' . $matches[2];
         }, $input);
     }
@@ -182,10 +205,12 @@ class Datafilter
         }
 
         if (is_string($input)) {
-            return html_entity_decode(self::$htmlPurifier->purify($input));
+            // IMPORTANT: Do not html_entity_decode() after purification.
+            // Decoding after sanitization can re-introduce HTML that was intentionally kept as escaped text.
+            return self::$htmlPurifier->purify($input);
         }
         if (is_array($input)) {
-            return array_map([self::class, 'sanitize'], $input);
+            return array_map([self::class, 'sanitizeInput'], $input);
         }
 
         return $input;
@@ -211,15 +236,262 @@ class Datafilter
      *      ],
      * ];
      *
-     * @return \HTMLPurifier
+     * @return HTMLPurifier
      */
-    public static function initializePurifier(array $customDefinitions = []): \HTMLPurifier
+    public static function initializePurifier(array $customDefinitions = []): HTMLPurifier
     {
-        $config = \HTMLPurifier_Config::createDefault();
+        $config = HTMLPurifier_Config::createDefault();
         $config->set('Core.Encoding', 'UTF-8');
         $config->set('HTML.Doctype', 'HTML 4.01 Transitional');
         $config->set('HTML.DefinitionID', $customDefinitions['definition_id'] ?? 'default');
         $config->set('HTML.DefinitionRev', $customDefinitions['definition_rev'] ?? 1);
+
+        // Explicitly restrict URL schemes. This prevents javascript:, vbscript:, data: etc.
+        // (If you ever need data:image/... for inline images, it must be added consciously.)
+        $config->set('URI.AllowedSchemes', [
+            'http' => true,
+            'https' => true,
+            'mailto' => true,
+            'tel' => true,
+        ]);
+
+        // Allow inline styles (style="...") in a controlled way.
+        // NOTE: We must NOT use HTML.AllowedAttributes here, because it overrides *all* allowed
+        // attributes and would strip essentials like img[src|alt], causing images to disappear.
+        // Instead we set HTML.Allowed with a constrained tag+attribute allowlist.
+        //
+        // Keep in mind: allowing CSS increases UI-redressing risk; do not allow layout primitives
+        // like position/top/left/z-index/opacity/transform/pointer-events, and any url()-loading props.
+        $config->set('HTML.Allowed', implode(',', [
+            // Text / structure
+            'p[style]',
+            'div[style]',
+            'span[style]',
+            'br',
+            'hr',
+            'blockquote',
+            'pre',
+            'code',
+
+            // Basic formatting
+            'strong',
+            'em',
+            'b',
+            'i',
+            'u',
+            'sub',
+            'sup',
+
+            // Links
+            'a[href|title|target|rel|style]',
+
+            // Lists
+            'ul[style]',
+            'ol[style]',
+            'li[style]',
+
+            // Tables
+            'table[style]',
+            'thead[style]',
+            'tbody[style]',
+            'tr[style]',
+            'td[style|colspan|rowspan]',
+            'th[style|colspan|rowspan]',
+
+            // Images
+            'img[src|alt|title|width|height|style]',
+        ]));
+
+        // Enable additional CSS modules. We'll still restrict via CSS.AllowedProperties.
+        // - CSS.AllowTricky enables properties like display/visibility/opacity/overflow.
+        // - CSS.Proprietary enables some additional CSS3-ish properties.
+        $config->set('CSS.Proprietary', true);
+        $config->set('CSS.AllowTricky', true);
+
+        $config->set('CSS.Trusted', false);
+        $config->set('CSS.AllowedProperties', [
+            // Typography
+            'color',
+            'background-color',
+            'font-family',
+            'font-size',
+            'font-style',
+            'font-weight',
+            'font-variant',
+            'line-height',
+            'letter-spacing',
+            'word-spacing',
+            'text-align',
+            'text-decoration',
+            'text-decoration-line',
+            'text-decoration-style',
+            'text-decoration-color',
+            'text-transform',
+            'text-indent',
+            'white-space',
+
+            // Spacing
+            'margin',
+            'margin-top',
+            'margin-right',
+            'margin-bottom',
+            'margin-left',
+            'padding',
+            'padding-top',
+            'padding-right',
+            'padding-bottom',
+            'padding-left',
+
+            // Borders
+            'border',
+            'border-top',
+            'border-right',
+            'border-bottom',
+            'border-left',
+            'border-color',
+            'border-top-color',
+            'border-right-color',
+            'border-bottom-color',
+            'border-left-color',
+            'border-style',
+            'border-top-style',
+            'border-right-style',
+            'border-bottom-style',
+            'border-left-style',
+            'border-width',
+            'border-top-width',
+            'border-right-width',
+            'border-bottom-width',
+            'border-left-width',
+            'border-radius',
+            'border-top-left-radius',
+            'border-top-right-radius',
+            'border-bottom-left-radius',
+            'border-bottom-right-radius',
+
+            // Sizing
+            'width',
+            'height',
+            'min-width',
+            'max-width',
+            'min-height',
+            'max-height',
+            'aspect-ratio',
+
+            // Basic layout
+            // NOTE: allowing display can enable display:none (UI redressing). We disallow "none" below via enum.
+            'display',
+
+            // Flexbox (for side-by-side layouts)
+            // (HTMLPurifier doesn't support these by default; we add support below via CSS definition overrides.)
+            'flex-direction',
+            'flex-wrap',
+            'justify-content',
+            'align-items',
+            'align-content',
+            'gap',
+            'row-gap',
+            'column-gap',
+
+            // Flex item sizing (used for logo rows)
+            'flex',
+
+            // Tables
+            'border-collapse',
+            'border-spacing',
+            'table-layout',
+            'caption-side',
+
+            // Images
+            'vertical-align',
+
+            // Lists
+            'list-style-type',
+            'list-style-position',
+        ]);
+
+        // HTMLPurifier's default CSSDefinition is conservative and does not support newer flexbox
+        // properties/values. If we want `display:flex` + gap/alignment, we need to add definitions.
+        //
+        // IMPORTANT:
+        // - Do NOT call getCSSDefinition(true) / maybeGetRawCSSDefinition() here.
+        //   In this HTMLPurifier build, the directive `CSS.DefinitionID` is not available, and
+        //   requesting the *raw* CSS definition triggers a warning:
+        //   "Cannot retrieve value of undefined directive CSS.DefinitionID".
+        // - getCSSDefinition() (without the raw flag) is sufficient for extending allowed values.
+        if ($cssDef = $config->getCSSDefinition()) {
+            // Extend display to allow flex layouts.
+            $cssDef->info['display'] = new HTMLPurifier_AttrDef_Enum([
+                'inline',
+                'block',
+                'inline-block',
+                'list-item',
+                'table',
+                'inline-table',
+                'table-row-group',
+                'table-header-group',
+                'table-footer-group',
+                'table-row',
+                'table-column-group',
+                'table-column',
+                'table-cell',
+                'table-caption',
+                'flex',
+                'inline-flex',
+            ]);
+
+            $cssDef->info['flex-direction'] = new HTMLPurifier_AttrDef_Enum([
+                'row',
+                'row-reverse',
+                'column',
+                'column-reverse',
+            ]);
+
+            $cssDef->info['flex-wrap'] = new HTMLPurifier_AttrDef_Enum([
+                'nowrap',
+                'wrap',
+                'wrap-reverse',
+            ]);
+
+            $cssDef->info['justify-content'] = new HTMLPurifier_AttrDef_Enum([
+                'flex-start',
+                'flex-end',
+                'center',
+                'space-between',
+                'space-around',
+                'space-evenly',
+            ]);
+
+            $cssDef->info['align-items'] = new HTMLPurifier_AttrDef_Enum([
+                'stretch',
+                'flex-start',
+                'flex-end',
+                'center',
+                'baseline',
+            ]);
+
+            $cssDef->info['align-content'] = new HTMLPurifier_AttrDef_Enum([
+                'stretch',
+                'flex-start',
+                'flex-end',
+                'center',
+                'space-between',
+                'space-around',
+            ]);
+
+            // gap supports one or two lengths; we'll accept up to two lengths, non-negative.
+            $gapLength = new HTMLPurifier_AttrDef_CSS_Length('0');
+            $cssDef->info['gap'] = new HTMLPurifier_AttrDef_CSS_Multiple($gapLength, 2);
+            $cssDef->info['row-gap'] = $gapLength;
+            $cssDef->info['column-gap'] = $gapLength;
+        }
+
+        // Allow a couple of HTML5-ish image attributes used in content (these are optional; if unknown
+        // to HTMLPurifier they would be stripped even if present in the HTML).
+        if ($def = $config->maybeGetRawHTMLDefinition()) {
+            $def->addAttribute('img', 'loading', 'Enum#lazy,eager,auto');
+            $def->addAttribute('img', 'decoding', 'Enum#sync,async,auto');
+        }
 
         if (!empty($customDefinitions['elements']) && ($def = $config->maybeGetRawHTMLDefinition())) {
             foreach ($customDefinitions['elements'] as $elementName => $elementConfig) {
@@ -234,7 +506,7 @@ class Datafilter
             }
         }
 
-        self::$htmlPurifier = new \HTMLPurifier($config);
+        self::$htmlPurifier = new HTMLPurifier($config);
         return self::$htmlPurifier;
     }
 
@@ -324,10 +596,12 @@ class Datafilter
     // public static $specialChars = '\x27\x41-\x5a\x5f\x61-\x7a\xc0-\xd6\xd8-\xf6\xf8-\xff\x100\x103\x17e\x180';
 
     /**
-     * Entity decode
+     * Entity decode.
      *
-     * @param     $text
-     * @return
+     * @security WARNING: This method converts HTML entities back to their literal characters
+     *           (e.g. &lt;script&gt; → <script>). NEVER call this on output that has already
+     *           been sanitized by HTMLPurifier or htmlspecialchars(). Use only on raw input
+     *           BEFORE sanitization, or on data that will not be rendered as HTML.
      */
     public static function entity_decode(string $text): string
     {
@@ -420,7 +694,8 @@ class Datafilter
         }
         //$data = self::encode_utf8($data);
         $data = preg_replace(
-            '#[^~\r\n\ta-z ' . self::$special_chars . '90-9\.:,;=\-_\+\*&\?!/{}\(\)\[\]%$€<>' . $chars . '\|\\\]#isu',
+        // SECURITY: do not allow '<' or '>' through a "cleanText" plaintext sanitizer.
+            '#[^~\r\n\ta-z ' . self::$special_chars . '90-9\.:,;=\-_\+\*&\?!/{}\(\)\[\]%$€' . $chars . '\|\\\]#isu',
             ' ',
             $data
         );
@@ -471,7 +746,12 @@ class Datafilter
             }
          */
 
-        $data = utf8_encode($data);
+        // PHP 8.2+: utf8_encode()/utf8_decode() are deprecated.
+        // utf8_encode() historically converted ISO-8859-1 -> UTF-8.
+        // Only apply this conversion if the string is NOT already valid UTF-8.
+        if (!mb_check_encoding($data, 'UTF-8')) {
+            $data = mb_convert_encoding($data, 'UTF-8', 'ISO-8859-1');
+        }
 
         //return $data;
         // This will take care of <>> character that generates a lot of proble (eg: mysql text truncation)
@@ -492,12 +772,15 @@ class Datafilter
 
         foreach ($dataExp as $word) {
             // from DE, RO, jpn charset ..
-            if (preg_match(
-                '#Â©|Ã¤|Ã¼|Ã¶|Ã®|ÄÅ|[^\w\s\d\x00-\x7F]|â¬|Â»|â¢|â€|€™|Â|Å|â|Å£|Ã¢|Ã|Ã§|°Ñ|Ð|Ä|ã|¼|å|¤|¾|é#su',
-                $word
-            )) {
+            if (
+                preg_match(
+                    '#Â©|Ã¤|Ã¼|Ã¶|Ã®|ÄÅ|[^\w\s\d\x00-\x7F]|â¬|Â»|â¢|â€|€™|Â|Å|â|Å£|Ã¢|Ã|Ã§|°Ñ|Ð|Ä|ã|¼|å|¤|¾|é#su',
+                    $word
+                )
+            ) {
                 //if (!self::is_utf8($word)) {
-                $wordArr[] = utf8_decode($word);
+                // utf8_decode() is deprecated; equivalent conversion UTF-8 -> ISO-8859-1
+                $wordArr[] = mb_convert_encoding($word, 'ISO-8859-1', 'UTF-8');
                 //echo "$word -^gt;  " . utf8_encode($word) . "<br/>";
             } else {
                 $wordArr[] = $word;
@@ -525,6 +808,10 @@ class Datafilter
             ], '', $url);
     }
 
+    /**
+     * @deprecated Use cleanText() instead. This method uses hardcoded character ranges
+     *             and an incomplete sanitization approach.
+     */
     public static function cleanTextTest($data, $utfdecode = 0)
     {
         $data = utf8_decode($data);
@@ -638,6 +925,342 @@ class Datafilter
     }
 
     /**
+     * Replace language-specific characters by ASCII-equivalents. e.g. ö => oe
+     * @param string $s
+     * @return string
+     */
+    public static function normalizeDiacritics(string $s): string
+    {
+        $replace = [
+            'ъ' => '-',
+            'Ь' => '-',
+            'Ъ' => '-',
+            'ь' => '-',
+            'Ă' => 'A',
+            'Ą' => 'A',
+            'À' => 'A',
+            'Ã' => 'A',
+            'Á' => 'A',
+            'Æ' => 'A',
+            'Â' => 'A',
+            'Å' => 'A',
+            'Ä' => 'Ae',
+            'Þ' => 'B',
+            'Ć' => 'C',
+            'ץ' => 'C',
+            'Ç' => 'C',
+            'È' => 'E',
+            'Ę' => 'E',
+            'É' => 'E',
+            'Ë' => 'E',
+            'Ê' => 'E',
+            'Ğ' => 'G',
+            'İ' => 'I',
+            'Ï' => 'I',
+            'Î' => 'I',
+            'Í' => 'I',
+            'Ì' => 'I',
+            'Ł' => 'L',
+            'Ñ' => 'N',
+            'Ń' => 'N',
+            'Ø' => 'O',
+            'Ó' => 'O',
+            'Ò' => 'O',
+            'Ô' => 'O',
+            'Õ' => 'O',
+            'Ö' => 'Oe',
+            'Ş' => 'S',
+            'Ś' => 'S',
+            'Ș' => 'S',
+            'Š' => 'S',
+            'Ț' => 'T',
+            'Ù' => 'U',
+            'Û' => 'U',
+            'Ú' => 'U',
+            'Ü' => 'Ue',
+            'Ý' => 'Y',
+            'Ź' => 'Z',
+            'Ž' => 'Z',
+            'Ż' => 'Z',
+            'â' => 'a',
+            'ǎ' => 'a',
+            'ą' => 'a',
+            'á' => 'a',
+            'ă' => 'a',
+            'ã' => 'a',
+            'Ǎ' => 'a',
+            'а' => 'a',
+            'А' => 'a',
+            'å' => 'a',
+            'à' => 'a',
+            'א' => 'a',
+            'Ǻ' => 'a',
+            'Ā' => 'a',
+            'ǻ' => 'a',
+            'ā' => 'a',
+            'ä' => 'ae',
+            'æ' => 'ae',
+            'Ǽ' => 'ae',
+            'ǽ' => 'ae',
+            'б' => 'b',
+            'ב' => 'b',
+            'Б' => 'b',
+            'þ' => 'b',
+            'ĉ' => 'c',
+            'Ĉ' => 'c',
+            'Ċ' => 'c',
+            'ć' => 'c',
+            'ç' => 'c',
+            'ц' => 'c',
+            'צ' => 'c',
+            'ċ' => 'c',
+            'Ц' => 'c',
+            'Č' => 'c',
+            'č' => 'c',
+            'Ч' => 'ch',
+            'ч' => 'ch',
+            'ד' => 'd',
+            'ď' => 'd',
+            'Đ' => 'd',
+            'Ď' => 'd',
+            'đ' => 'd',
+            'д' => 'd',
+            'Д' => 'D',
+            'ð' => 'd',
+            'є' => 'e',
+            'ע' => 'e',
+            'е' => 'e',
+            'Е' => 'e',
+            'Ə' => 'e',
+            'ę' => 'e',
+            'ĕ' => 'e',
+            'ē' => 'e',
+            'Ē' => 'e',
+            'Ė' => 'e',
+            'ė' => 'e',
+            'ě' => 'e',
+            'Ě' => 'e',
+            'Є' => 'e',
+            'Ĕ' => 'e',
+            'ê' => 'e',
+            'ə' => 'e',
+            'è' => 'e',
+            'ë' => 'e',
+            'é' => 'e',
+            'ф' => 'f',
+            'ƒ' => 'f',
+            'Ф' => 'f',
+            'ġ' => 'g',
+            'Ģ' => 'g',
+            'Ġ' => 'g',
+            'Ĝ' => 'g',
+            'Г' => 'g',
+            'г' => 'g',
+            'ĝ' => 'g',
+            'ğ' => 'g',
+            'ג' => 'g',
+            'Ґ' => 'g',
+            'ґ' => 'g',
+            'ģ' => 'g',
+            'ח' => 'h',
+            'ħ' => 'h',
+            'Х' => 'h',
+            'Ħ' => 'h',
+            'Ĥ' => 'h',
+            'ĥ' => 'h',
+            'х' => 'h',
+            'ה' => 'h',
+            'î' => 'i',
+            'ï' => 'i',
+            'í' => 'i',
+            'ì' => 'i',
+            'į' => 'i',
+            'ĭ' => 'i',
+            'ı' => 'i',
+            'Ĭ' => 'i',
+            'И' => 'i',
+            'ĩ' => 'i',
+            'ǐ' => 'i',
+            'Ĩ' => 'i',
+            'Ǐ' => 'i',
+            'и' => 'i',
+            'Į' => 'i',
+            'י' => 'i',
+            'Ї' => 'i',
+            'Ī' => 'i',
+            'І' => 'i',
+            'ї' => 'i',
+            'і' => 'i',
+            'ī' => 'i',
+            'ĳ' => 'ij',
+            'Ĳ' => 'ij',
+            'й' => 'j',
+            'Й' => 'j',
+            'Ĵ' => 'j',
+            'ĵ' => 'j',
+            'я' => 'ja',
+            'Я' => 'ja',
+            'Э' => 'je',
+            'э' => 'je',
+            'ё' => 'jo',
+            'Ё' => 'jo',
+            'ю' => 'ju',
+            'Ю' => 'ju',
+            'ĸ' => 'k',
+            'כ' => 'k',
+            'Ķ' => 'k',
+            'К' => 'k',
+            'к' => 'k',
+            'ķ' => 'k',
+            'ך' => 'k',
+            'Ŀ' => 'l',
+            'ŀ' => 'l',
+            'Л' => 'l',
+            'ł' => 'l',
+            'ļ' => 'l',
+            'ĺ' => 'l',
+            'Ĺ' => 'l',
+            'Ļ' => 'l',
+            'л' => 'l',
+            'Ľ' => 'l',
+            'ľ' => 'l',
+            'ל' => 'l',
+            'מ' => 'm',
+            'М' => 'm',
+            'ם' => 'm',
+            'м' => 'm',
+            'ñ' => 'n',
+            'н' => 'n',
+            'Ņ' => 'n',
+            'ן' => 'n',
+            'ŋ' => 'n',
+            'נ' => 'n',
+            'Н' => 'n',
+            'ń' => 'n',
+            'Ŋ' => 'n',
+            'ņ' => 'n',
+            'ŉ' => 'n',
+            'Ň' => 'n',
+            'ň' => 'n',
+            'о' => 'o',
+            'О' => 'o',
+            'ő' => 'o',
+            'õ' => 'o',
+            'ô' => 'o',
+            'Ő' => 'o',
+            'ŏ' => 'o',
+            'Ŏ' => 'o',
+            'Ō' => 'o',
+            'ō' => 'o',
+            'ø' => 'o',
+            'ǿ' => 'o',
+            'ǒ' => 'o',
+            'ò' => 'o',
+            'Ǿ' => 'o',
+            'Ǒ' => 'o',
+            'ơ' => 'o',
+            'ó' => 'o',
+            'Ơ' => 'o',
+            'œ' => 'oe',
+            'Œ' => 'oe',
+            'ö' => 'oe',
+            'פ' => 'p',
+            'ף' => 'p',
+            'п' => 'p',
+            'П' => 'p',
+            'ק' => 'q',
+            'ŕ' => 'r',
+            'ř' => 'r',
+            'Ř' => 'r',
+            'ŗ' => 'r',
+            'Ŗ' => 'r',
+            'ר' => 'r',
+            'Ŕ' => 'r',
+            'Р' => 'r',
+            'р' => 'r',
+            'ș' => 's',
+            'с' => 's',
+            'Ŝ' => 's',
+            'š' => 's',
+            'ś' => 's',
+            'ס' => 's',
+            'ş' => 's',
+            'С' => 's',
+            'ŝ' => 's',
+            'Щ' => 'sch',
+            'щ' => 'sch',
+            'ш' => 'sh',
+            'Ш' => 'sh',
+            'ß' => 'ss',
+            'т' => 't',
+            'ט' => 't',
+            'ŧ' => 't',
+            'ת' => 't',
+            'ť' => 't',
+            'ţ' => 't',
+            'Ţ' => 't',
+            'Т' => 't',
+            'ț' => 't',
+            'Ŧ' => 't',
+            'Ť' => 't',
+            '™' => 'tm',
+            'ū' => 'u',
+            'у' => 'u',
+            'Ũ' => 'u',
+            'ũ' => 'u',
+            'Ư' => 'u',
+            'ư' => 'u',
+            'Ū' => 'u',
+            'Ǔ' => 'u',
+            'ų' => 'u',
+            'Ų' => 'u',
+            'ŭ' => 'u',
+            'Ŭ' => 'u',
+            'Ů' => 'u',
+            'ů' => 'u',
+            'ű' => 'u',
+            'Ű' => 'u',
+            'Ǖ' => 'u',
+            'ǔ' => 'u',
+            'Ǜ' => 'u',
+            'ù' => 'u',
+            'ú' => 'u',
+            'û' => 'u',
+            'У' => 'u',
+            'ǚ' => 'u',
+            'ǜ' => 'u',
+            'Ǚ' => 'u',
+            'Ǘ' => 'u',
+            'ǖ' => 'u',
+            'ǘ' => 'u',
+            'ü' => 'ue',
+            'в' => 'v',
+            'ו' => 'v',
+            'В' => 'v',
+            'ש' => 'w',
+            'ŵ' => 'w',
+            'Ŵ' => 'w',
+            'ы' => 'y',
+            'ŷ' => 'y',
+            'ý' => 'y',
+            'ÿ' => 'y',
+            'Ÿ' => 'y',
+            'Ŷ' => 'y',
+            'Ы' => 'y',
+            'ž' => 'z',
+            'З' => 'z',
+            'з' => 'z',
+            'ź' => 'z',
+            'ז' => 'z',
+            'ż' => 'z',
+            'ſ' => 'z',
+            'Ж' => 'zh',
+            'ж' => 'zh'
+        ];
+        return strtr($s, $replace);
+    }
+
+    /**
      * Alias function for keywords..
      * @param     $string
      * @return
@@ -709,9 +1332,29 @@ class Datafilter
 
     /**
      * Clean keyword
+     * @param     $string
+     * @return
+     */
+    /*
+        public static function clean_keyword($string, $useWhitelist = false) {
+        //                $string = utf8_encode($string);
+        //                $string = Encoding::toUTF8($string);  ß$%+"-
+        $string = mb_strtolower(trim($string, " \t\n\r\0\x0B.,!@#^&*<>=~|_"));
+        if ($useWhitelist)
+        $string = preg_replace('#[^a-z ' . self::$special_chars . '0-9\.\-_&%$Ä\'"/]#isu', ' ', $string);
+        else {
+        $string = str_replace('&amp;', '&', $string);
+        $string = str_replace(array(';', ')', '(', ']', '[', '{', '}', '?', ',', '!', '#'), '', $string);
+        }
+        $string = preg_replace('#[\s]{2,}#', ' ', $string);
+        return $string;
+        } */
+
+    /**
+     * Clean keyword
      *
      * @param string $string
-     * @param bool   $useWhitelist
+     * @param bool $useWhitelist
      *
      * @return string
      */
@@ -793,26 +1436,6 @@ class Datafilter
         //$string = rtrim($string, " :,.;/_|[({?");
         return trim($string);
     }
-
-    /**
-     * Clean keyword
-     * @param     $string
-     * @return
-     */
-    /*
-        public static function clean_keyword($string, $useWhitelist = false) {
-        //                $string = utf8_encode($string);
-        //                $string = Encoding::toUTF8($string);  ß$%+"-
-        $string = mb_strtolower(trim($string, " \t\n\r\0\x0B.,!@#^&*<>=~|_"));
-        if ($useWhitelist)
-        $string = preg_replace('#[^a-z ' . self::$special_chars . '0-9\.\-_&%$Ä\'"/]#isu', ' ', $string);
-        else {
-        $string = str_replace('&amp;', '&', $string);
-        $string = str_replace(array(';', ')', '(', ']', '[', '{', '}', '?', ',', '!', '#'), '', $string);
-        }
-        $string = preg_replace('#[\s]{2,}#', ' ', $string);
-        return $string;
-        } */
 
     /**
      * Alow only unique values, takes cares of extra spaces and it's case InSenSiTiVe
@@ -900,7 +1523,7 @@ class Datafilter
         bool $asString = false,
         bool $removewww = false,
         bool $skipFileExclusion = true
-    ): ?\stdClass {
+    ): ?stdClass {
         $domain = self::domain($url, false, false, $removewww);
         $path = '';
 
@@ -1405,6 +2028,11 @@ class Datafilter
         return $return;
     }
 
+    /*
+     * Reliable only for DE/AT/CH domains.
+     * Compare domains and check if they are the same domain
+     */
+
     /**
      * Delimiter a text by adding comma after each div, span, td,  - (notice teh space between - ).
      *
@@ -1479,11 +2107,6 @@ class Datafilter
         $text = str_replace($delimiter, $delimiter_output, $text);
         return $text;
     }
-
-    /*
-     * Reliable only for DE/AT/CH domains.
-     * Compare domains and check if they are the same domain
-     */
 
     /**
      * Prioritize array's elements by a keyword.
@@ -1648,11 +2271,28 @@ class Datafilter
      */
     public static function cleanRequestFromScript(?array $request = null, array $intValues = []): ?array
     {
+        // SECURITY NOTE:
+        // The previous implementation removed the substring "script" from values, which is trivially bypassable
+        // (e.g. <scrscriptipt> becomes <script> after replacement). This method MUST NOT be used as an XSS defense.
+        //
+        // We now normalize request values as plain text by stripping tags.
+        // If you actually need to accept rich HTML, use sanitizeInput() explicitly at the call site.
+        if ($request === null) {
+            return null;
+        }
         foreach ($request as $index => $value) {
             if (is_array($intValues) && in_array($index, $intValues)) {
                 $request[$index] = (int)$value ? (int)$value : '';
             } else {
-                $request[$index] = str_replace('script', '', $value);
+                // Convert scalars to string and remove all markup.
+                // SECURITY: also recurse into nested arrays (e.g. foo[bar]=<script>...)
+                if (is_scalar($value)) {
+                    $request[$index] = strip_tags((string)$value);
+                } elseif (is_array($value)) {
+                    $request[$index] = self::cleanRequestFromScript($value, []);
+                } else {
+                    $request[$index] = $value;
+                }
             }
         }
         return $request;
@@ -1702,11 +2342,13 @@ class Datafilter
                 $countryCode = strtoupper($countryCode);
                 if ($regionCode == $countryCode) { //check if the region code returned from filtering is the same from site
                     return true;
-                } elseif (!empty($regionCountriesList) && array_search(
+                } elseif (
+                    !empty($regionCountriesList) && array_search(
                         strtolower($regionCode),
                         $regionCountriesList,
                         true
-                    )) {
+                    )
+                ) {
                     return true;
                 } else {
                     // there is a niche situation where the country prefix is the same, but the region code is different, for example Isle of Man and GB
@@ -1924,7 +2566,6 @@ class Datafilter
         return str_replace(self::$regex_special_chars, $aux, $text);
     }
 
-
     /**
      * Reverse a string - supports UTF-8 encoding
      *
@@ -1977,9 +2618,13 @@ class Datafilter
         return $out;
     }
 
-
     public static function htmlspecialchars_decode(string $text): string
     {
+        /**
+         * @security WARNING: Reverses HTML encoding. Calling this on sanitized output
+         *           re-introduces raw HTML and opens XSS vectors. Use only when the
+         *           decoded value will NOT be rendered in an HTML context.
+         */
         $text = str_replace('&apos;', "'", $text); // damn you php
         return htmlspecialchars_decode($text, ENT_QUOTES);
     }
@@ -2006,10 +2651,15 @@ class Datafilter
 
     public static function escapeQuotesForJavascriptJSON(string $text): string
     {
-        return str_replace(["'", "'", '"'], ["\'", '&#039;', '&quot;'], $text);
-        return htmlentities(str_replace("'", "\'", $text), ENT_QUOTES);
+        // SECURITY: do not hand-roll escaping for inline JS contexts.
+        // Use JSON encoding with HEX flags to prevent breaking out of <script> blocks.
+        // Returns the escaped string WITHOUT surrounding quotes for backwards compatibility.
+        $json = json_encode($text, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+        if ($json === false) {
+            return '';
+        }
+        return trim($json, '"');
     }
-
 
     /**
      * Removes consecutive punctuations from a text string. Optionally, it can remove sequences of the same punctuation.
@@ -2086,14 +2736,6 @@ class Datafilter
 
     public static function textContainsPhoneNumber(string $text): bool
     {
-        $user = AuthService::instance()->get_user();
-        $phoneNumberUtil = PhoneNumberUtil::getInstance();
-        $phoneNumberMatcher = $phoneNumberUtil->findNumbers($text, $user->site->country->country_shortcode);
-
-        foreach ($phoneNumberMatcher as $phoneNumberMatch) {
-            return true;
-        }
-
         $text = str_replace(['(', ')', '/'], '', $text);
 
         //matches the following patterns and check if the match is longer than 6 (usual phone number length)
@@ -2262,343 +2904,6 @@ class Datafilter
         return min(array_diff(array_map('intval', $values), [0]));
     }
 
-
-    /**
-     * Replace language-specific characters by ASCII-equivalents. e.g. ö => oe
-     * @param string $s
-     * @return string
-     */
-    public static function normalizeDiacritics(string $s): string
-    {
-        $replace = [
-            'ъ' => '-',
-            'Ь' => '-',
-            'Ъ' => '-',
-            'ь' => '-',
-            'Ă' => 'A',
-            'Ą' => 'A',
-            'À' => 'A',
-            'Ã' => 'A',
-            'Á' => 'A',
-            'Æ' => 'A',
-            'Â' => 'A',
-            'Å' => 'A',
-            'Ä' => 'Ae',
-            'Þ' => 'B',
-            'Ć' => 'C',
-            'ץ' => 'C',
-            'Ç' => 'C',
-            'È' => 'E',
-            'Ę' => 'E',
-            'É' => 'E',
-            'Ë' => 'E',
-            'Ê' => 'E',
-            'Ğ' => 'G',
-            'İ' => 'I',
-            'Ï' => 'I',
-            'Î' => 'I',
-            'Í' => 'I',
-            'Ì' => 'I',
-            'Ł' => 'L',
-            'Ñ' => 'N',
-            'Ń' => 'N',
-            'Ø' => 'O',
-            'Ó' => 'O',
-            'Ò' => 'O',
-            'Ô' => 'O',
-            'Õ' => 'O',
-            'Ö' => 'Oe',
-            'Ş' => 'S',
-            'Ś' => 'S',
-            'Ș' => 'S',
-            'Š' => 'S',
-            'Ț' => 'T',
-            'Ù' => 'U',
-            'Û' => 'U',
-            'Ú' => 'U',
-            'Ü' => 'Ue',
-            'Ý' => 'Y',
-            'Ź' => 'Z',
-            'Ž' => 'Z',
-            'Ż' => 'Z',
-            'â' => 'a',
-            'ǎ' => 'a',
-            'ą' => 'a',
-            'á' => 'a',
-            'ă' => 'a',
-            'ã' => 'a',
-            'Ǎ' => 'a',
-            'а' => 'a',
-            'А' => 'a',
-            'å' => 'a',
-            'à' => 'a',
-            'א' => 'a',
-            'Ǻ' => 'a',
-            'Ā' => 'a',
-            'ǻ' => 'a',
-            'ā' => 'a',
-            'ä' => 'ae',
-            'æ' => 'ae',
-            'Ǽ' => 'ae',
-            'ǽ' => 'ae',
-            'б' => 'b',
-            'ב' => 'b',
-            'Б' => 'b',
-            'þ' => 'b',
-            'ĉ' => 'c',
-            'Ĉ' => 'c',
-            'Ċ' => 'c',
-            'ć' => 'c',
-            'ç' => 'c',
-            'ц' => 'c',
-            'צ' => 'c',
-            'ċ' => 'c',
-            'Ц' => 'c',
-            'Č' => 'c',
-            'č' => 'c',
-            'Ч' => 'ch',
-            'ч' => 'ch',
-            'ד' => 'd',
-            'ď' => 'd',
-            'Đ' => 'd',
-            'Ď' => 'd',
-            'đ' => 'd',
-            'д' => 'd',
-            'Д' => 'D',
-            'ð' => 'd',
-            'є' => 'e',
-            'ע' => 'e',
-            'е' => 'e',
-            'Е' => 'e',
-            'Ə' => 'e',
-            'ę' => 'e',
-            'ĕ' => 'e',
-            'ē' => 'e',
-            'Ē' => 'e',
-            'Ė' => 'e',
-            'ė' => 'e',
-            'ě' => 'e',
-            'Ě' => 'e',
-            'Є' => 'e',
-            'Ĕ' => 'e',
-            'ê' => 'e',
-            'ə' => 'e',
-            'è' => 'e',
-            'ë' => 'e',
-            'é' => 'e',
-            'ф' => 'f',
-            'ƒ' => 'f',
-            'Ф' => 'f',
-            'ġ' => 'g',
-            'Ģ' => 'g',
-            'Ġ' => 'g',
-            'Ĝ' => 'g',
-            'Г' => 'g',
-            'г' => 'g',
-            'ĝ' => 'g',
-            'ğ' => 'g',
-            'ג' => 'g',
-            'Ґ' => 'g',
-            'ґ' => 'g',
-            'ģ' => 'g',
-            'ח' => 'h',
-            'ħ' => 'h',
-            'Х' => 'h',
-            'Ħ' => 'h',
-            'Ĥ' => 'h',
-            'ĥ' => 'h',
-            'х' => 'h',
-            'ה' => 'h',
-            'î' => 'i',
-            'ï' => 'i',
-            'í' => 'i',
-            'ì' => 'i',
-            'į' => 'i',
-            'ĭ' => 'i',
-            'ı' => 'i',
-            'Ĭ' => 'i',
-            'И' => 'i',
-            'ĩ' => 'i',
-            'ǐ' => 'i',
-            'Ĩ' => 'i',
-            'Ǐ' => 'i',
-            'и' => 'i',
-            'Į' => 'i',
-            'י' => 'i',
-            'Ї' => 'i',
-            'Ī' => 'i',
-            'І' => 'i',
-            'ї' => 'i',
-            'і' => 'i',
-            'ī' => 'i',
-            'ĳ' => 'ij',
-            'Ĳ' => 'ij',
-            'й' => 'j',
-            'Й' => 'j',
-            'Ĵ' => 'j',
-            'ĵ' => 'j',
-            'я' => 'ja',
-            'Я' => 'ja',
-            'Э' => 'je',
-            'э' => 'je',
-            'ё' => 'jo',
-            'Ё' => 'jo',
-            'ю' => 'ju',
-            'Ю' => 'ju',
-            'ĸ' => 'k',
-            'כ' => 'k',
-            'Ķ' => 'k',
-            'К' => 'k',
-            'к' => 'k',
-            'ķ' => 'k',
-            'ך' => 'k',
-            'Ŀ' => 'l',
-            'ŀ' => 'l',
-            'Л' => 'l',
-            'ł' => 'l',
-            'ļ' => 'l',
-            'ĺ' => 'l',
-            'Ĺ' => 'l',
-            'Ļ' => 'l',
-            'л' => 'l',
-            'Ľ' => 'l',
-            'ľ' => 'l',
-            'ל' => 'l',
-            'מ' => 'm',
-            'М' => 'm',
-            'ם' => 'm',
-            'м' => 'm',
-            'ñ' => 'n',
-            'н' => 'n',
-            'Ņ' => 'n',
-            'ן' => 'n',
-            'ŋ' => 'n',
-            'נ' => 'n',
-            'Н' => 'n',
-            'ń' => 'n',
-            'Ŋ' => 'n',
-            'ņ' => 'n',
-            'ŉ' => 'n',
-            'Ň' => 'n',
-            'ň' => 'n',
-            'о' => 'o',
-            'О' => 'o',
-            'ő' => 'o',
-            'õ' => 'o',
-            'ô' => 'o',
-            'Ő' => 'o',
-            'ŏ' => 'o',
-            'Ŏ' => 'o',
-            'Ō' => 'o',
-            'ō' => 'o',
-            'ø' => 'o',
-            'ǿ' => 'o',
-            'ǒ' => 'o',
-            'ò' => 'o',
-            'Ǿ' => 'o',
-            'Ǒ' => 'o',
-            'ơ' => 'o',
-            'ó' => 'o',
-            'Ơ' => 'o',
-            'œ' => 'oe',
-            'Œ' => 'oe',
-            'ö' => 'oe',
-            'פ' => 'p',
-            'ף' => 'p',
-            'п' => 'p',
-            'П' => 'p',
-            'ק' => 'q',
-            'ŕ' => 'r',
-            'ř' => 'r',
-            'Ř' => 'r',
-            'ŗ' => 'r',
-            'Ŗ' => 'r',
-            'ר' => 'r',
-            'Ŕ' => 'r',
-            'Р' => 'r',
-            'р' => 'r',
-            'ș' => 's',
-            'с' => 's',
-            'Ŝ' => 's',
-            'š' => 's',
-            'ś' => 's',
-            'ס' => 's',
-            'ş' => 's',
-            'С' => 's',
-            'ŝ' => 's',
-            'Щ' => 'sch',
-            'щ' => 'sch',
-            'ш' => 'sh',
-            'Ш' => 'sh',
-            'ß' => 'ss',
-            'т' => 't',
-            'ט' => 't',
-            'ŧ' => 't',
-            'ת' => 't',
-            'ť' => 't',
-            'ţ' => 't',
-            'Ţ' => 't',
-            'Т' => 't',
-            'ț' => 't',
-            'Ŧ' => 't',
-            'Ť' => 't',
-            '™' => 'tm',
-            'ū' => 'u',
-            'у' => 'u',
-            'Ũ' => 'u',
-            'ũ' => 'u',
-            'Ư' => 'u',
-            'ư' => 'u',
-            'Ū' => 'u',
-            'Ǔ' => 'u',
-            'ų' => 'u',
-            'Ų' => 'u',
-            'ŭ' => 'u',
-            'Ŭ' => 'u',
-            'Ů' => 'u',
-            'ů' => 'u',
-            'ű' => 'u',
-            'Ű' => 'u',
-            'Ǖ' => 'u',
-            'ǔ' => 'u',
-            'Ǜ' => 'u',
-            'ù' => 'u',
-            'ú' => 'u',
-            'û' => 'u',
-            'У' => 'u',
-            'ǚ' => 'u',
-            'ǜ' => 'u',
-            'Ǚ' => 'u',
-            'Ǘ' => 'u',
-            'ǖ' => 'u',
-            'ǘ' => 'u',
-            'ü' => 'ue',
-            'в' => 'v',
-            'ו' => 'v',
-            'В' => 'v',
-            'ש' => 'w',
-            'ŵ' => 'w',
-            'Ŵ' => 'w',
-            'ы' => 'y',
-            'ŷ' => 'y',
-            'ý' => 'y',
-            'ÿ' => 'y',
-            'Ÿ' => 'y',
-            'Ŷ' => 'y',
-            'Ы' => 'y',
-            'ž' => 'z',
-            'З' => 'z',
-            'з' => 'z',
-            'ź' => 'z',
-            'ז' => 'z',
-            'ż' => 'z',
-            'ſ' => 'z',
-            'Ж' => 'zh',
-            'ж' => 'zh'
-        ];
-        return strtr($s, $replace);
-    }
-
     /**
      * Returns true if the given $url is on the SSL protocol, as in getProtocolFromUrl it defaults to true
      *
@@ -2636,49 +2941,6 @@ class Datafilter
     }
 
     /**
-     * Remove punctuation from a string
-     *
-     * @param string $data
-     * @return  string
-     */
-    public function cleanNum(string $data): stroing
-    {
-        return str_replace([
-            ' ',
-            ',',
-            '.',
-            '\''
-        ], '', $data);
-    }
-
-    /**
-     * Get page from an url?
-     * @param     $url
-     * @return
-     */
-    public function urlpage(string $url): string
-    {
-        preg_match(
-            '#^((?:(?:http(?:s)?|ftp):(/){1,3})?(?:(?:(?:[a-z0-9\.\-_]+\.)?[^/\?\.]{1,255}\.[a-z]{2,4})|[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}))#iu',
-            $url,
-            $match
-        );
-        $page = str_replace($match[1], '', $url);
-        return $page;
-    }
-
-    /**
-     * Remove http, www from an URL.
-     */
-    public function sitenormalize(string $url): string
-    {
-        $url = preg_replace('#^http://#iu', '', $url);
-        $url = preg_replace('#^www\.#iu', '', $url);
-        $url = preg_replace('#\/$#u', '', $url);
-        return $url;
-    }
-
-    /**
      * Checks if input is a valid timestamp
      *
      * @param string|int $timestamp
@@ -2686,9 +2948,7 @@ class Datafilter
      */
     public static function isValidTimestamp(string|int $timestamp): bool
     {
-        return ((string)(int)$timestamp == $timestamp)
-            && ($timestamp <= PHP_INT_MAX)
-            && ($timestamp >= PHP_INT_MIN);
+        return ((string)(int)$timestamp == $timestamp) && ($timestamp <= PHP_INT_MAX) && ($timestamp >= PHP_INT_MIN);
     }
 
     /**
@@ -2745,5 +3005,48 @@ class Datafilter
 
         // Validate the provided IP address using filter_var, excluding reserved ranges
         return (bool)filter_var($ipAddress, FILTER_VALIDATE_IP, FILTER_FLAG_NO_RES_RANGE);
+    }
+
+    /**
+     * Remove punctuation from a string
+     *
+     * @param string $data
+     * @return  string
+     */
+    public function cleanNum(string $data): stroing
+    {
+        return str_replace([
+            ' ',
+            ',',
+            '.',
+            '\''
+        ], '', $data);
+    }
+
+    /**
+     * Get page from an url?
+     * @param     $url
+     * @return
+     */
+    public function urlpage(string $url): string
+    {
+        preg_match(
+            '#^((?:(?:http(?:s)?|ftp):(/){1,3})?(?:(?:(?:[a-z0-9\.\-_]+\.)?[^/\?\.]{1,255}\.[a-z]{2,4})|[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}))#iu',
+            $url,
+            $match
+        );
+        $page = str_replace($match[1], '', $url);
+        return $page;
+    }
+
+    /**
+     * Remove http, www from an URL.
+     */
+    public function sitenormalize(string $url): string
+    {
+        $url = preg_replace('#^http://#iu', '', $url);
+        $url = preg_replace('#^www\.#iu', '', $url);
+        $url = preg_replace('#\/$#u', '', $url);
+        return $url;
     }
 }
