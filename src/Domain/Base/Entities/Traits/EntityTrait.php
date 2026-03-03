@@ -134,7 +134,7 @@ trait EntityTrait
      * @throws NonUniqueResultException
      * @throws OptimisticLockException
      */
-    public function update(): ?static
+    public function update(int $depth = DatabaseRepoEntity::UPDATE_DEFAULT_RECURSIVE_DEPTH): ?static
     {
         $service = static::getService();
         if (!$service) {
@@ -143,20 +143,20 @@ trait EntityTrait
         $classWithNamespace = new ClassWithNamespace(static::class);
         $updateMethod = 'update';
         if (method_exists($service, $updateMethod)) {
-            $updatedEntity = $service->$updateMethod($this);
+            $updatedEntity = $service->$updateMethod($this, $depth);
             $this->overwritePropertiesFromOtherObject($updatedEntity);
             return $this;
         }
         $updateMethod = 'update' . $classWithNamespace->name;
         if (method_exists($service, $updateMethod)) {
-            $updatedEntity = $service->$updateMethod($this);
+            $updatedEntity = $service->$updateMethod($this, $depth);
             $this->overwritePropertiesFromOtherObject($updatedEntity);
             return $this;
         }
         if ($parentEntityClassName = static::getParentEntityClassName()) {
             $updateMethod = 'update' . $parentEntityClassName;
             if (method_exists($service, $updateMethod)) {
-                $updatedEntity = $service->$updateMethod($this);
+                $updatedEntity = $service->$updateMethod($this, $depth);
                 $this->overwritePropertiesFromOtherObject($updatedEntity);
                 return $this;
             }
@@ -164,7 +164,7 @@ trait EntityTrait
         // generic update function
         $repoClassInstance = static::getRepoClassInstance();
         if ($repoClassInstance && method_exists($repoClassInstance, 'update')) {
-            return $repoClassInstance->update($this);
+            return $repoClassInstance->update($this, $depth);
         }
         return null;
     }

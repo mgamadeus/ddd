@@ -48,6 +48,9 @@ abstract class DatabaseRepoEntity extends RepoEntity
     /** @var string */
     public const BASE_ORM_MODEL = null;
 
+    /** @var int The default decursive depth for update operations */
+    public const UPDATE_DEFAULT_RECURSIVE_DEPTH = 2;
+
     protected static $applyRightsRestrictions = true;
 
     /**
@@ -399,7 +402,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
      */
     public function update(
         DefaultObject &$entity,
-        int $depth = 1
+        int $depth = self::UPDATE_DEFAULT_RECURSIVE_DEPTH
     ): ?DefaultObject {
         if (!DefaultObject::isEntity($entity)) {
             return $entity;
@@ -649,7 +652,10 @@ abstract class DatabaseRepoEntity extends RepoEntity
                     if ($repoInstance && !$hasNoRecursiveUpdateAttribute) {
                         if (method_exists($repoInstance, 'update')) {
                             $updatedChildProperties[$propertyName] = true;
-                            $updatedChild = $repoInstance->update($value, --$depth);
+                            // $updatedChild = $repoInstance->update($value, --$depth);
+                            // instead of using the repo update itself, we persist the Entity by calling it's udpate method
+                            // since otherwise we miss to run custom code that has to be executed on update
+                            $updatedChild = $value->update($depth--);
                             $entity->$propertyName = $updatedChild;
                             if ($updatedChild instanceof EntitySet) {
                                 $updatedChild->regenerateElementsByUniqueKey();

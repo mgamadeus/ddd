@@ -95,7 +95,12 @@ class Config
             $currentTreeElement[$searchPathElement] = [];
             $currentTreeElement = &$currentTreeElement[$searchPathElement];
         }
-        $currentTreeElement = require $configFile;
+        $fileExtension = strtolower(pathinfo($configFile, PATHINFO_EXTENSION));
+        if ($fileExtension === 'md' || $fileExtension === 'txt') {
+            $currentTreeElement = file_get_contents($configFile);
+        } else {
+            $currentTreeElement = require $configFile;
+        }
         return $this->searchInConfigTree($searchString);
     }
 
@@ -152,17 +157,31 @@ class Config
         }
 
         $searchString = implode('.', $searchKeys);
+        $lowercaseDirItems = array_map('strtolower', $dirItems);
+        $lowercaseCurrentKey = strtolower($currentKey);
 
         // There are cases where inside a folder we may encounter a file and a folder with the same name
         // In those cases we must prioritize one over the other
-        // If file found and $prioritizeFilesOverDirectories is true then return the file
-        $fileKey = array_search(strtolower($currentKey) . '.php', array_map('strtolower', $dirItems), true);
-        $filePath = $fileKey ? trim($configPath . DIRECTORY_SEPARATOR . $dirItems[$fileKey]) : null;
-        if (!$prioritizeDirectorySearch && $filePath && is_file($filePath)) {
+        // Search for files with supported extensions: .php, .md, .txt (in priority order)
+        $supportedExtensions = ['php', 'md', 'txt'];
+        $filePath = null;
+        foreach ($supportedExtensions as $extension) {
+            $fileKey = array_search($lowercaseCurrentKey . '.' . $extension, $lowercaseDirItems, true);
+            if ($fileKey !== false) {
+                $candidatePath = trim($configPath . DIRECTORY_SEPARATOR . $dirItems[$fileKey]);
+                if (is_file($candidatePath)) {
+                    $filePath = $candidatePath;
+                    break;
+                }
+            }
+        }
+
+        // If file found and not prioritizing directory search, return the file
+        if (!$prioritizeDirectorySearch && $filePath) {
             return [$filePath, $relativeSearchPath];
         }
 
-        $dirKey = array_search(strtolower($currentKey), array_map('strtolower', $dirItems), true);
+        $dirKey = array_search($lowercaseCurrentKey, $lowercaseDirItems, true);
         $dirItemPath = $dirKey ? trim($configPath . DIRECTORY_SEPARATOR . $dirItems[$dirKey]) : null;
         if ($dirItemPath && is_dir($dirItemPath)) {
             return $this->searchForFileInRootDirectory(
@@ -173,7 +192,7 @@ class Config
             );
         }
 
-        if ($filePath && is_file($filePath)) {
+        if ($filePath) {
             return [$filePath, $relativeSearchPath];
         }
 

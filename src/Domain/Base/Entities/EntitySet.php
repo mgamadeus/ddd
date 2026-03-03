@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Entities;
 
+use DDD\Domain\Base\Repo\DatabaseRepoEntity;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
@@ -71,10 +72,10 @@ class EntitySet extends ObjectSet
      * @throws InvalidArgumentException
      * @throws ReflectionException
      */
-    public function update(): ?static
+    public function update(int $depth = DatabaseRepoEntity::UPDATE_DEFAULT_RECURSIVE_DEPTH): ?static
     {
         foreach ($this->getElements() as $element) {
-            $element->update();
+            $element->update($depth);
         }
         return $this;
     }
