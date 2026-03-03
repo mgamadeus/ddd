@@ -17,6 +17,9 @@ class TranslationInfos extends ValueObject
     /** @var array[] Stores translations applied with setter function */
     public array $translationsStore = [];
 
+    /** @var bool If true, on persist the translationsStore fully replaces existing translations instead of JSON_MERGE_PATCH */
+    public bool $replaceExistingTranslations = false;
+
     /**
      * The current language code.
      * @var string

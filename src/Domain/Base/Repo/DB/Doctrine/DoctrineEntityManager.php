@@ -136,7 +136,12 @@ class DoctrineEntityManager extends EntityManager
             if ($databaseColumnAttributeInstance?->isMergableJSONColumn && is_array(
                     $value
                 )) {
-                $update[] = "{$column} = JSON_MERGE_PATCH(COALESCE($column,'{}'), VALUES($column))";
+                // If the column is marked for full replacement (e.g. replaceExistingTranslations), skip JSON_MERGE_PATCH
+                if (in_array($fieldName, $doctrineModel->columnsToReplaceInsteadOfMerge, true)) {
+                    $update[] = "{$column} = VALUES({$column})";
+                } else {
+                    $update[] = "{$column} = JSON_MERGE_PATCH(COALESCE($column,'{}'), VALUES($column))";
+                }
             } elseif ($fieldName == $createdColumn) {
                 // we do not execute updates on created columns
                 $update[] = "{$column} = COALESCE(VALUES($column), $column)";

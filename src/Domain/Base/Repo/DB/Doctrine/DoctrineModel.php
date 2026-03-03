@@ -26,6 +26,9 @@ abstract class DoctrineModel
 
     public array $jsonMergableColumns = [];
 
+    /** @var string[] Columns that should skip JSON_MERGE_PATCH and use full replacement instead */
+    public array $columnsToReplaceInsteadOfMerge = [];
+
     public static array $virtualColumns = [];
 
     /**

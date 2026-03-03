@@ -600,6 +600,10 @@ class DBEntity extends DatabaseRepoEntity
                 if ($mappedValue !== null) {
                     $mappedValueSet = true;
                 }
+                // If replaceExistingTranslations is set, signal to DoctrineEntityManager to skip JSON_MERGE_PATCH for this column
+                if ($translationInfos->replaceExistingTranslations) {
+                    $this->ormInstance->columnsToReplaceInsteadOfMerge[] = $propertyName;
+                }
             }
 
             // if column is encrypted, we encrypt the value using the scope password
