@@ -98,10 +98,11 @@ class EntitiesService extends Service
      * @throws ReflectionException
      */
     public function update(
-        DefaultObject $entity
+        DefaultObject $entity,
+        int $depth = DatabaseRepoEntity::UPDATE_DEFAULT_RECURSIVE_DEPTH
     ): DefaultObject {
         $repoClass = $entity::getRepoClassInstance();
-        return $repoClass->update($entity);
+        return $repoClass->update($entity, $depth);
     }
 
     /**
