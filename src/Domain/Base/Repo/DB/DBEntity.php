@@ -560,10 +560,30 @@ class DBEntity extends DatabaseRepoEntity
         $mappedValue = null;
         $mappedValueSet = false;
 
-        // handle null case
-        if ($entity->$propertyName === null) {
+        // Handle translatable properties first.
+        // Important: the entity property itself can be NULL/empty while translations are stored in TranslationInfos.
+        // In that case we still must persist the translations instead of writing NULL.
+        $translatableProperty = $entityReflectionClass->getAttributeInstanceForProperty(
+            $propertyName,
+            Translatable::class
+        );
+        if ($translatableProperty) {
+            /** @var TranslatableTrait $entity */
+            $translationInfos = $entity->getTranslationInfos();
+            $mappedValue = $translationInfos->getTranslationsForProperty($propertyName, true);
+            if ($mappedValue !== null) {
+                $mappedValueSet = true;
+            }
+            // If replaceExistingTranslations is set, signal to DoctrineEntityManager to skip JSON_MERGE_PATCH for this column
+            if ($translationInfos->replaceExistingTranslations) {
+                $this->ormInstance->columnsToReplaceInsteadOfMerge[] = $propertyName;
+            }
+        }
+
+        // handle null case (only if not already mapped via Translatable)
+        if (!$mappedValueSet && $entity->$propertyName === null) {
             $mappedValueSet = true;
-        } else {
+        } elseif (!$mappedValueSet) {
             if ($propertyValueIsValueObject && !$hasDBOrVirtualLazyloadRepo) {
                 /** @var ValueObjectTrait $valueObject */
                 $valueObject = $entity->$propertyName;
@@ -589,24 +609,11 @@ class DBEntity extends DatabaseRepoEntity
                 $mappedValueSet = true;
             }
 
-            $translatableProperty = $entityReflectionClass->getAttributeInstanceForProperty(
-                $propertyName,
-                Translatable::class
-            );
-            if ($translatableProperty) {
-                /** @var TranslatableTrait $entity */
-                $translationInfos = $entity->getTranslationInfos();
-                $mappedValue = $translationInfos->getTranslationsForProperty($propertyName, true);
-                if ($mappedValue !== null) {
-                    $mappedValueSet = true;
-                }
-                // If replaceExistingTranslations is set, signal to DoctrineEntityManager to skip JSON_MERGE_PATCH for this column
-                if ($translationInfos->replaceExistingTranslations) {
-                    $this->ormInstance->columnsToReplaceInsteadOfMerge[] = $propertyName;
-                }
-            }
+        }
 
-            // if column is encrypted, we encrypt the value using the scope password
+        // Encryption can also apply to translatable properties (mapped value may be an array)
+        // so we apply it once after mapping.
+        if ($mappedValueSet) {
             /** @var DatabaseColumn $databaseColumnAttribute */
             $databaseColumnAttribute = $entityReflectionClass->getAttributeInstanceForProperty(
                 $propertyName,
