@@ -25,6 +25,7 @@ use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\ForbiddenException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
+use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Reflection\ReflectionAttribute;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Services\AuthService;
@@ -460,17 +461,46 @@ abstract class DatabaseRepoEntity extends RepoEntity
                 // create new entity
                 $mapped = $this->mapToRepository($entity);
                 if ($mapped) {
-                    $updatedID = $entityManager->upsert(
-                        $this->ormInstance,
-                        $updateRightsQueryBuilder,
-                        $changeHistoryAttributeInstance ? $changeHistoryAttributeInstance?->getCreatedColumn() : null,
-                        $changeHistoryAttributeInstance ? $changeHistoryAttributeInstance?->getModifiedColumn() : ''
-                    );
+                    // DB_USE_READ_AFTER_WRITE controls whether the entity is re-read from DB after upsert
+                    // to capture DB-generated values (generated columns, JSON_MERGE_PATCH results, timestamps).
+                    // When enabled, the upsert + reload are wrapped in a transaction to guarantee
+                    // read-after-write consistency in ProxySQL + Galera setups with connection multiplexing,
+                    // where the SELECT could otherwise be routed to a stale replica.
+                    $useReadAfterWrite = self::extractBool(Config::getEnv('DB_USE_READ_AFTER_WRITE') ?? false);
+                    $connection = $entityManager->getConnection();
+                    $startedTransaction = false;
+                    if ($useReadAfterWrite && $entityId && !$connection->isTransactionActive()) {
+                        $connection->beginTransaction();
+                        $startedTransaction = true;
+                    }
+                    try {
+                        $updatedID = $entityManager->upsert(
+                            $this->ormInstance,
+                            $updateRightsQueryBuilder,
+                            $changeHistoryAttributeInstance ? $changeHistoryAttributeInstance?->getCreatedColumn() : null,
+                            $changeHistoryAttributeInstance ? $changeHistoryAttributeInstance?->getModifiedColumn() : ''
+                        );
+                    } catch (Throwable $t) {
+                        if ($startedTransaction) {
+                            try { $connection->rollBack(); } catch (Throwable) {}
+                        }
+                        throw $t;
+                    }
                     if ($updatedID) {
-                        if ($entityId) {
-                            // if we are not inserting a new entity, but updating it, we want to return a fully loaded entity back
+                        if ($entityId && $useReadAfterWrite) {
+                            // Re-read entity from DB to capture generated columns, JSON merges, timestamps etc.
                             $entityManager->clear();
-                            $updatedEntity = $this->find($this->ormInstance->id, false);
+                            try {
+                                $updatedEntity = $this->find($this->ormInstance->id, false);
+                            } finally {
+                                if ($startedTransaction) {
+                                    try {
+                                        $connection->commit();
+                                    } catch (Throwable) {
+                                        try { $connection->rollBack(); } catch (Throwable) {}
+                                    }
+                                }
+                            }
                             foreach ($updatedEntity as $propertyName => $value) {
                                 if (!isset($updatedChildProperties[$propertyName])) {
                                     // we put all properties that are not updated child properties from updatedEntity to entity
@@ -486,7 +516,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
                                     }
                                 }
                             }
-                        } else {
+                        } elseif (!$entityId) {
                             $entity->id = $updatedID;
                         }
                         if ($hasTranslations) {
