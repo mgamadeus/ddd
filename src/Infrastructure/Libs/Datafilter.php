@@ -205,9 +205,12 @@ class Datafilter
         }
 
         if (is_string($input)) {
-            // IMPORTANT: Do not html_entity_decode() after purification.
-            // Decoding after sanitization can re-introduce HTML that was intentionally kept as escaped text.
-            return self::$htmlPurifier->purify($input);
+            $purified = self::$htmlPurifier->purify($input);
+            // HTMLPurifier encodes bare & as &amp;, < as &lt;, > as &gt; etc.
+            // This is correct for HTML output but wrong for data storage — the values
+            // are stored in the database and the frontend handles escaping at render time.
+            // Decode HTML entities back to their literal characters.
+            return html_entity_decode($purified, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         }
         if (is_array($input)) {
             return array_map([self::class, 'sanitizeInput'], $input);
@@ -3013,7 +3016,7 @@ class Datafilter
      * @param string $data
      * @return  string
      */
-    public function cleanNum(string $data): stroing
+    public function cleanNum(string $data): string
     {
         return str_replace([
             ' ',
