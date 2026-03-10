@@ -266,19 +266,27 @@ class Datafilter
         // Keep in mind: allowing CSS increases UI-redressing risk; do not allow layout primitives
         // like position/top/left/z-index/opacity/transform/pointer-events, and any url()-loading props.
         $config->set('HTML.Allowed', implode(',', [
+            // Headings
+            'h1[id|class|style]',
+            'h2[id|class|style]',
+            'h3[id|class|style]',
+            'h4[id|class|style]',
+            'h5[id|class|style]',
+            'h6[id|class|style]',
+
             // Text / structure
-            'p[style]',
-            'div[style]',
-            'span[style]',
+            'p[id|class|style]',
+            'div[id|class|style]',
+            'span[id|class|style]',
             'br',
             'hr',
-            'blockquote',
-            'pre',
-            'code',
+            'blockquote[id|class|style]',
+            'pre[id|class|style]',
+            'code[id|class|style]',
 
             // Basic formatting
-            'strong',
-            'em',
+            'strong[id|class]',
+            'em[id|class]',
             'b',
             'i',
             'u',
@@ -286,23 +294,23 @@ class Datafilter
             'sup',
 
             // Links
-            'a[href|title|target|rel|style]',
+            'a[id|class|href|title|target|rel|style]',
 
             // Lists
-            'ul[style]',
-            'ol[style]',
-            'li[style]',
+            'ul[id|class|style]',
+            'ol[id|class|style]',
+            'li[id|class|style]',
 
             // Tables
-            'table[style]',
-            'thead[style]',
-            'tbody[style]',
-            'tr[style]',
-            'td[style|colspan|rowspan]',
-            'th[style|colspan|rowspan]',
+            'table[id|class|style]',
+            'thead[id|class|style]',
+            'tbody[id|class|style]',
+            'tr[id|class|style]',
+            'td[id|class|style|colspan|rowspan]',
+            'th[id|class|style|colspan|rowspan]',
 
             // Images
-            'img[src|alt|title|width|height|style]',
+            'img[id|class|src|alt|title|width|height|style]',
         ]));
 
         // Enable additional CSS modules. We'll still restrict via CSS.AllowedProperties.
