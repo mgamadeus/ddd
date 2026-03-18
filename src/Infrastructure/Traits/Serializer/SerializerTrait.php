@@ -21,6 +21,7 @@ use DDD\Infrastructure\Traits\Serializer\Attributes\ExposePropertyInsteadOfClass
 use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
 use DDD\Infrastructure\Traits\Serializer\Attributes\HidePropertyOnSystemSerialization;
 use DDD\Infrastructure\Traits\Serializer\Attributes\OverwritePropertyName;
+use DDD\Infrastructure\Traits\Serializer\Attributes\Aliases;
 use DDD\Infrastructure\Traits\Serializer\Attributes\SerializeInToonFormat;
 use Error;
 use Exception;
@@ -297,6 +298,17 @@ trait SerializerTrait
                 if ($serializedValue !== '*RECURSION*') // serialization created recursion loop, we skip the property
                 {
                     $resultArray[$visiblePropertyName] = $serializedValue;
+
+                    // Aliases attribute: copy the serialized value to additional alias property names for backward compatibility
+                    if ($aliasesAttributeInstance = $property->getAttributeInstance(
+                        Aliases::class,
+                        ReflectionAttribute::IS_INSTANCEOF
+                    )) {
+                        /** @var Aliases $aliasesAttributeInstance */
+                        foreach ($aliasesAttributeInstance->aliases as $alias) {
+                            $resultArray[$alias] = $serializedValue;
+                        }
+                    }
                 }
             }
             if ($propertyNameToExposeInsteadOfClass) {
