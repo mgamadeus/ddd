@@ -63,6 +63,9 @@ class Cron extends Entity
     #[CronCommandConstraint]
     public string $command;
 
+    /** @var bool Active state of Cron */
+    public bool $isActive = true;
+
     /** @var DateTime The last start time of Cron execution */
     public DateTime $lastExecutionStartedAt;
 
