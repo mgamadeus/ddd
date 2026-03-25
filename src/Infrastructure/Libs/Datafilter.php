@@ -393,20 +393,6 @@ class Datafilter
             // NOTE: allowing display can enable display:none (UI redressing). We disallow "none" below via enum.
             'display',
 
-            // Flexbox (for side-by-side layouts)
-            // (HTMLPurifier doesn't support these by default; we add support below via CSS definition overrides.)
-            'flex-direction',
-            'flex-wrap',
-            'justify-content',
-            'align-items',
-            'align-content',
-            'gap',
-            'row-gap',
-            'column-gap',
-
-            // Flex item sizing (used for logo rows)
-            'flex',
-
             // Tables
             'border-collapse',
             'border-spacing',
