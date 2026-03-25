@@ -44,7 +44,7 @@ class CronsService extends EntitiesService
 
 
     /**
-     * @return void Deltes CronExecutions older than 14 days and deletes executions that are marked as running after 4 hours
+     * @return void Deletes CronExecutions older than 14 days and deletes executions that are marked as running after 4 hours
      */
     public function cleanupCronExecutions(): void
     {
@@ -75,9 +75,8 @@ class CronsService extends EntitiesService
         $cronExecutionsAlias = DBCronExecutions::getBaseModelAlias();
         $cronExecutionsModel = DBCronExecutions::getBaseModel();
         $queryBuilder->andWhere(
-            "{$baseModelAlias}.id NOT IN (SELECT executions.cronId from {$cronExecutionsModel} executions WHERE executions.state = :stateRunning)"
+            "{$baseModelAlias}.id NOT IN (SELECT executions.cronId from {$cronExecutionsModel} executions WHERE executions.state = :stateRunning) AND {$baseModelAlias}.nextExecutionScheduledAt <= :currentDate AND {$baseModelAlias}.active = 1"
         );
-        $queryBuilder->andWhere("{$baseModelAlias}.nextExecutionScheduledAt <= :currentDate");
         $queryBuilder->setParameter('currentDate', new DateTime());
         $queryBuilder->setParameter('stateRunning', CronExecution::STATE_RUNNING);
         return $dbCrons->find($queryBuilder);
