@@ -84,8 +84,9 @@ class RequestCacheSubscriber implements EventSubscriberInterface
         $method = $req->getMethod();
         $path = $req->getPathInfo();
 
-        // Include sorted query parameters in the key
+        // Include sorted query parameters in the key (exclude noCache so it doesn't alter the key)
         $qs = $req->query->all();
+        unset($qs['noCache']);
         if ($qs) {
             ksort($qs);
             $path .= '?' . http_build_query($qs);
