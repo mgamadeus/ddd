@@ -431,8 +431,25 @@ class DBEntity extends DatabaseRepoEntity
         ))();
         $this->mapCreatedAndUpdatedTime($entity);
         // map all fields from Entity to ormInstance to
+        $mappedProperties = [];
         foreach ($entity as $propertyName => $propertyValue) {
             $this->mapPropertyToRepository($entity, $propertyName);
+            $mappedProperties[$propertyName] = true;
+        }
+
+        // Also map properties that exist only in translationsStore but are not set on the entity
+        if (method_exists($entity, 'getTranslationInfos') && isset($entity->translationInfos)) {
+            $translationsStore = $entity->translationInfos->translationsStore ?? [];
+            $entityReflectionClass = ReflectionClass::instance($entity::class);
+            foreach ($translationsStore as $propertyName => $translations) {
+                if (isset($mappedProperties[$propertyName])) {
+                    continue;
+                }
+                if (!$entityReflectionClass->hasProperty($propertyName)) {
+                    continue;
+                }
+                $this->mapPropertyToRepository($entity, $propertyName);
+            }
         }
         return true;
     }
@@ -521,6 +538,13 @@ class DBEntity extends DatabaseRepoEntity
                 $setProperty = true;
             }
         }
+        // Also allow mapping if the property is not initialized but has translations in the store
+        if (!$setProperty && method_exists($entity, 'getTranslationInfos') && isset($entity->translationInfos)) {
+            $translationsStore = $entity->translationInfos->translationsStore ?? [];
+            if (isset($translationsStore[$propertyName]) && !empty($translationsStore[$propertyName])) {
+                $setProperty = true;
+            }
+        }
         if (!$setProperty) {
             return;
         }
@@ -531,7 +555,8 @@ class DBEntity extends DatabaseRepoEntity
         $hasDBOrVirtualLazyloadRepo = false;
         $propertyValueIsValueObject = false;
         $propertyValueIsEntity = false;
-        $propertyValue = $entity->$propertyName;
+        $propertyInitialized = ReflectionClass::isPropertyInitialized($entity, $propertyName);
+        $propertyValue = $propertyInitialized ? $entity->$propertyName : null;
         $propertyValueIsValueObject = DefaultObject::isValueObject($propertyValue);
         $propertyValueIsEntity = DefaultObject::isEntity($propertyValue);
 
@@ -581,16 +606,16 @@ class DBEntity extends DatabaseRepoEntity
         }
 
         // handle null case (only if not already mapped via Translatable)
-        if (!$mappedValueSet && $entity->$propertyName === null) {
+        if (!$mappedValueSet && $propertyInitialized && $entity->$propertyName === null) {
             $mappedValueSet = true;
-        } elseif (!$mappedValueSet) {
+        } elseif (!$mappedValueSet && $propertyInitialized) {
             if ($propertyValueIsValueObject && !$hasDBOrVirtualLazyloadRepo) {
                 /** @var ValueObjectTrait $valueObject */
-                $valueObject = $entity->$propertyName;
+                $valueObject = $propertyValue;
                 $mappedValue = $valueObject->mapToRepository();
                 $mappedValueSet = true;
             } elseif ($ormType->isBuiltin()) {
-                $value = $entity->$propertyName;
+                $value = $propertyValue;
                 if ($ormType->getName() == ReflectionClass::STRING) {
                     $mappedValue = (string)$value;
                     $mappedValueSet = true;
@@ -604,8 +629,8 @@ class DBEntity extends DatabaseRepoEntity
                     $mappedValue = (bool)$value;
                     $mappedValueSet = true;
                 }
-            } elseif ($entity->$propertyName instanceof \DateTime) {
-                $mappedValue = $entity->$propertyName;
+            } elseif ($propertyValue instanceof \DateTime) {
+                $mappedValue = $propertyValue;
                 $mappedValueSet = true;
             }
 
