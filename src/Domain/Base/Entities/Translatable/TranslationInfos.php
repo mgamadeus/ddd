@@ -222,19 +222,18 @@ class TranslationInfos extends ValueObject
                 if ($translation) {
                     return $translation;
                 }
-                // if writing style was given, we try without
-                if ($writingStyle) {
-                    // try out switching writing style
-                    $writingStyle = $writingStyle == Translatable::WRITING_STYLE_INFORMAL ? Translatable::WRITING_STYLE_FORMAL : Translatable::WRITING_STYLE_INFORMAL;
-                    $key = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
-                        $languageCode,
-                        '',
-                        null
-                    );
-                    $translation = $this->translationsStore[$propertyName][$key] ?? null;
-                    if ($translation) {
-                        return $translation;
-                    }
+            }
+            // try alternate writing style (without country code)
+            if (!$translation && $writingStyle) {
+                $altWritingStyle = $writingStyle == Translatable::WRITING_STYLE_INFORMAL ? Translatable::WRITING_STYLE_FORMAL : Translatable::WRITING_STYLE_INFORMAL;
+                $key = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
+                    $languageCode,
+                    '',
+                    $altWritingStyle
+                );
+                $translation = $this->translationsStore[$propertyName][$key] ?? null;
+                if ($translation) {
+                    return $translation;
                 }
             }
         }
