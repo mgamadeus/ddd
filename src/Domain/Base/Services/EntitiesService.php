@@ -86,6 +86,22 @@ class EntitiesService extends Service
     }
 
     /**
+     * Returns the count of all elements matching the current QueryOptions (filters + expand) and read rights.
+     *
+     * @return int
+     * @throws InternalErrorException
+     * @throws ReflectionException
+     */
+    public function countAll(): int
+    {
+        $repoClassInstance = $this->getEntitySetRepoClassInstance();
+        if (!$repoClassInstance) {
+            return 0;
+        }
+        return $repoClassInstance->count();
+    }
+
+    /**
      * Updates entity
      * @param DefaultObject $entity
      * @return DefaultObject

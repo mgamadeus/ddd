@@ -143,6 +143,87 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
     }
 
     /**
+     * Applies only filters and expand QueryOptions to QueryBuilder (no select, orderBy, top, skip).
+     * Used by count() to ensure consistent filtering without result-shaping options.
+     * @param DoctrineQueryBuilder $queryBuilder
+     * @return DoctrineQueryBuilder
+     */
+    public static function applyQueryOptionsForCount(DoctrineQueryBuilder &$queryBuilder): DoctrineQueryBuilder
+    {
+        $entitySetClass = (string)static::BASE_ENTITY_SET_CLASS;
+        $entitySetReflectionClass = ReflectionClass::instance($entitySetClass);
+        if (!$entitySetReflectionClass->hasTrait(QueryOptionsTrait::class)) {
+            return $queryBuilder;
+        }
+
+        FiltersOptions::clearFulltextSearchRegistry();
+
+        /** @var QueryOptionsTrait $entitySetClass */
+        /** @var AppliedQueryOptions $defaultQueryOptions */
+        $defaultQueryOptions = $entitySetClass::getDefaultQueryOptions();
+
+        if ($expandOptions = $defaultQueryOptions->getExpandOptions()) {
+            $expandOptions->applyExpandOptionsToDoctrineQueryBuilder($queryBuilder);
+        }
+        if ($filters = $defaultQueryOptions->getFilters()) {
+            $filters->applyFiltersToDoctrineQueryBuilder(
+                queryBuilder: $queryBuilder,
+            );
+        }
+        return $queryBuilder;
+    }
+
+    /**
+     * Counts elements matching the given QueryBuilder and applied QueryOptions (filters + expand).
+     * Applies read rights restrictions. Does not apply select, orderBy, top, skip, or translations.
+     *
+     * @param DoctrineQueryBuilder|null $queryBuilder
+     * @return int
+     * @throws InternalErrorException
+     * @throws ReflectionException
+     */
+    public function count(
+        ?DoctrineQueryBuilder $queryBuilder = null,
+    ): int {
+        if (!$this::BASE_REPO_CLASS) {
+            throw new InternalErrorException('No BASE_REPO_CLASS defined in ' . static::class);
+        }
+        if (!$this::BASE_ENTITY_SET_CLASS) {
+            throw new InternalErrorException('No BASE_ENTITY_SET_CLASS defined in ' . static::class);
+        }
+
+        /** @var DBEntity $baseRepoClass */
+        $baseRepoClass = $this::BASE_REPO_CLASS;
+        $baseOrmModel = $baseRepoClass::BASE_ORM_MODEL;
+        $baseOrmModelAlias = $baseOrmModel::MODEL_ALIAS;
+
+        if (!$queryBuilder) {
+            $queryBuilder = EntityManagerFactory::getInstance()->createQueryBuilder();
+        }
+
+        $skipSelectFrom = false;
+        foreach ($queryBuilder->getDQLPart('from') as $fromPart) {
+            /** @var From $fromPart */
+            if ($fromPart->getFrom() == $baseOrmModel) {
+                $skipSelectFrom = true;
+            }
+        }
+        if (!$skipSelectFrom) {
+            $queryBuilder->from($baseOrmModel, $baseOrmModelAlias);
+        }
+
+        $queryBuilder->select("COUNT({$baseOrmModelAlias}.id)");
+
+        // Apply read rights restrictions
+        $baseRepoClass::applyReadRightsQuery($queryBuilder);
+
+        // Apply only filters and expand from QueryOptions
+        self::applyQueryOptionsForCount($queryBuilder);
+        $query = $queryBuilder->getQuery()->getSQL();
+        return (int) $queryBuilder->getQuery()->getSingleScalarResult();
+    }
+
+    /**
      * Finds elements either by queryBuilder query and returns EntitySet
      * @param DoctrineQueryBuilder|null $queryBuilder
      * @param $useEntityRegistrCache
