@@ -87,7 +87,7 @@ class FilterOptionsConstraintValidator extends ConstraintValidator
                         FiltersOptions::ALLOWED_OPERATORS_ON_ARRAY_VALUE
                     )) {
                     throw new BadRequestException(
-                        'QueryOptions: if operator is bw (between) or in, value has to be array formatted'
+                        'QueryOptions: if operator is bw (between), in or ni (not in), value has to be array formatted'
                     );
                 }
 

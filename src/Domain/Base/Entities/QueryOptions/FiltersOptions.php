@@ -57,6 +57,9 @@ class FiltersOptions extends ObjectSet
     /** @var string In, e.g. in [1, 2, 3, 4, '123'] */
     public const OPERATOR_IN = 'in';
 
+    /** @var string Not In, e.g. ni [1, 2, 3, 4, '123'] */
+    public const OPERATOR_NOT_IN = 'ni';
+
     /** @var string Between, e.g. in ['2023-01-01 00:00:00','2024-01-01 00:00:00'] */
     public const OPERATOR_BETWEEN = 'bw';
 
@@ -70,7 +73,7 @@ class FiltersOptions extends ObjectSet
     public const ALLOWED_OPERATORS_ON_NULL_VALUE = [self::OPERATOR_EQUAL, self::OPERATOR_NOT_EQUAL];
 
     /** @var string[] The operators allowed if the value is an array type */
-    public const ALLOWED_OPERATORS_ON_ARRAY_VALUE = [self::OPERATOR_IN, self::OPERATOR_BETWEEN];
+    public const ALLOWED_OPERATORS_ON_ARRAY_VALUE = [self::OPERATOR_IN, self::OPERATOR_NOT_IN, self::OPERATOR_BETWEEN];
 
     public const OPERATORS = [
         self::OPERATOR_EQUAL,
@@ -80,6 +83,7 @@ class FiltersOptions extends ObjectSet
         self::OPERATOR_LESS_THAN,
         self::OPERATOR_LESS_OR_EQUAL,
         self::OPERATOR_IN,
+        self::OPERATOR_NOT_IN,
         self::OPERATOR_BETWEEN,
         self::OPERATOR_FULLTEXT,
         self::OPERATOR_FULLTEXT_BOOLEAN,
@@ -93,6 +97,7 @@ class FiltersOptions extends ObjectSet
         self::OPERATOR_LESS_THAN => 'lt',
         self::OPERATOR_LESS_OR_EQUAL => 'lte',
         self::OPERATOR_IN => 'in',
+        self::OPERATOR_NOT_IN => 'notIn',
         self::OPERATOR_BETWEEN => 'between',
 
         // Fulltext operators are handled explicitly in getFiltersExpressionForDoctrineQueryBuilder()
@@ -153,6 +158,7 @@ class FiltersOptions extends ObjectSet
         self::OPERATOR_LESS_THAN,
         self::OPERATOR_LESS_OR_EQUAL,
         self::OPERATOR_IN,
+        self::OPERATOR_NOT_IN,
         self::OPERATOR_BETWEEN,
         self::OPERATOR_FULLTEXT,
         self::OPERATOR_FULLTEXT_BOOLEAN,
@@ -208,7 +214,7 @@ class FiltersOptions extends ObjectSet
     {
         $regExps = [
             '(\s+and\s+|\s+or\s+)',
-            '(\s+eq\s+|\s+ne\s+|\s+gt\s+|\s+lt\s+|\s+ge\s+|\s+le\s+|\s+in\s+|\s+bw\s+|\s+ft\s+|\s+fb\s+)',
+            '(\s+eq\s+|\s+ne\s+|\s+gt\s+|\s+lt\s+|\s+ge\s+|\s+le\s+|\s+in\s+|\s+ni\s+|\s+bw\s+|\s+ft\s+|\s+fb\s+)',
             '([a-zA-Z\._]+)',
             "(-?\d+(?:\.\d+)?|[^\\\\]{0}\'(?:(?![^\\\\]\').)*[^\\\\]?\')",
         ];
@@ -361,6 +367,7 @@ class FiltersOptions extends ObjectSet
             self::OPERATOR_LESS_THAN => is_numeric($value) && $value < $this->value,
             self::OPERATOR_LESS_OR_EQUAL => is_numeric($value) && $value <= $this->value,
             self::OPERATOR_IN => is_array($this->value) && in_array($value, $this->value),
+            self::OPERATOR_NOT_IN => is_array($this->value) && !in_array($value, $this->value),
             self::OPERATOR_BETWEEN => is_array($this->value) && count(
                     $this->value
                 ) == 2 && $value >= $this->value[0] && $value <= $this->value[1],
