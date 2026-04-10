@@ -6,6 +6,7 @@ namespace DDD\Domain\Base\Entities\Translatable;
 
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\ValueObject;
+use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Validation\Constraints\Choice;
 
 /**
@@ -166,6 +167,19 @@ class TranslationInfos extends ValueObject
         if (!property_exists($this->getParent(), $propertyName)) {
             return;
         }
+        // Normalize to lowercase and validate 2-letter codes
+        if ($languageCode !== null) {
+            $languageCode = strtolower($languageCode);
+            if (!preg_match('/^[a-z]{2}$/', $languageCode)) {
+                throw new BadRequestException("Invalid language code '{$languageCode}': must be a 2-letter ISO 639-1 code");
+            }
+        }
+        if ($countryCode !== null) {
+            $countryCode = strtolower($countryCode);
+            if (!preg_match('/^[a-z]{2}$/', $countryCode)) {
+                throw new BadRequestException("Invalid country code '{$countryCode}': must be a 2-letter ISO 3166-1 alpha-2 code");
+            }
+        }
         $key = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
             $languageCode,
             $countryCode,
@@ -175,9 +189,9 @@ class TranslationInfos extends ValueObject
 
         // if we are in the default state and all parameter matches, we also set the Entity's property to the translation value
         if (
-            (!$languageCode || $languageCode == Translatable::getCurrentLanguageCode(
-                )) && (!$countryCode || $countryCode == Translatable::getCurrentCountryCode(
-                )) && (!$writingStyle || $writingStyle == Translatable::getCurrentWritingStyle())
+            (!$languageCode || $languageCode == strtolower(Translatable::getCurrentLanguageCode() ?? '')
+            ) && (!$countryCode || $countryCode == strtolower(Translatable::getCurrentCountryCode() ?? '')
+            ) && (!$writingStyle || $writingStyle == Translatable::getCurrentWritingStyle())
         ) {
             $this->getParent()->$propertyName = $translation;
         }

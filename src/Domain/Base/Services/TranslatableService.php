@@ -176,8 +176,8 @@ class TranslatableService extends Service
         ?string $countryCode = null,
         ?string $writingStyle = null
     ): string {
-        $languageCode = $languageCode ?? $this->getCurrentLanguageCode();
-        $countryCode = $countryCode ?? ($this->getCurrentCountryCode() ?? '');
+        $languageCode = strtolower($languageCode ?? $this->getCurrentLanguageCode());
+        $countryCode = strtolower($countryCode ?? ($this->getCurrentCountryCode() ?? ''));
         $writingStyle = $writingStyle ?? $this->getCurrentWritingStyle();
         return $languageCode . ':' . $countryCode . ':' . $writingStyle;
     }

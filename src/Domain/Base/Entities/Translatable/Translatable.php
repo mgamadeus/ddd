@@ -172,7 +172,7 @@ class Translatable extends ValueObject
 
     public static function setCurrentLanguageCode(string $languageCode): void
     {
-        self::$currentLanguageCode = $languageCode;
+        self::$currentLanguageCode = strtolower($languageCode);
     }
 
     public static function setCurrentWritingStyle(string $writingStyle): void
@@ -182,7 +182,7 @@ class Translatable extends ValueObject
 
     public static function setCurrentCountryCode(?string $countryCode): void
     {
-        self::$currentCountryCode = $countryCode;
+        self::$currentCountryCode = $countryCode !== null ? strtolower($countryCode) : null;
     }
 
     public static function getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
