@@ -162,6 +162,12 @@ abstract class DatabaseRepoEntity extends RepoEntity
             // Check if an element exists in the registry.
             $entityInstance = $entityRegistry->get(static::class, $queryBuilder);
             if ($entityInstance) {
+                // If we have a loaded Orm Instance, it is possible that it has expanded options that are different to the ones of the cached entity
+                // Therefor we have to run mapToEntity again as otherwise we could end up with an enity that does not contain the expanded properties
+                if ($loadedOrmInstance){
+                    $this->ormInstance = $loadedOrmInstance;
+                    $entityInstance = $this->mapToEntity($useEntityRegistrCache, $initiatorClasses);
+                }
                 return $this->postProcessAfterMapping($entityInstance);
             }
         }
