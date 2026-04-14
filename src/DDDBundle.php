@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace DDD;
 
 use DDD\Infrastructure\Libs\Config;
+use DDD\Infrastructure\Modules\DDDModule;
 use DDD\Infrastructure\Services\DDDService;
+use DDD\Symfony\CompilerPasses\ModuleCompilerPass;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 
@@ -25,7 +28,20 @@ class DDDBundle extends Bundle
         }
         self::$defaultContainer = $this->container;
 
+        // Load DDD framework config
         Config::addConfigDirectory(DDDService::instance()->getRootDir() . '/config/app');
+
+        // Load module configs (modules registered first = lower priority than app)
+        $containerBuilder = new ContainerBuilder();
+        $containerBuilder->setParameter('kernel.project_dir', $projectDirectory);
+        foreach (ModuleCompilerPass::discoverModules($containerBuilder) as $moduleClass) {
+            /** @var DDDModule $moduleClass */
+            $configPath = $moduleClass::getConfigPath();
+            if ($configPath !== null && is_dir($configPath)) {
+                Config::addConfigDirectory($configPath);
+            }
+        }
+
         parent::boot();
     }
 

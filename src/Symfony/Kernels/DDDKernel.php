@@ -2,6 +2,7 @@
 
 namespace DDD\Symfony\Kernels;
 
+use DDD\Symfony\CompilerPasses\ModuleCompilerPass;
 use DDD\Symfony\CompilerPasses\ServiceClassCollectorPass;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\DependencyInjection\Container;
@@ -154,6 +155,8 @@ class DDDKernel extends Kernel
 
     protected function build(ContainerBuilder $container): void
     {
+        // Register module services from discovered DDD modules
+        $container->addCompilerPass(new ModuleCompilerPass());
         // In the ServiceClassCollectorPass we register all class / service name associations
         $container->addCompilerPass(new ServiceClassCollectorPass());
     }
