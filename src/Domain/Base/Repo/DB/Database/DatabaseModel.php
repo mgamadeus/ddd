@@ -591,7 +591,6 @@ class DatabaseModel extends ValueObject
                 return 0;
             }
         });
-        $this->columns->elements = $databaseColumns;
         foreach ($this->columns->getElements() as $column) {
             $columnSQL = $column->getSql();
             if ($columnSQL !== null) {
@@ -682,7 +681,7 @@ class DatabaseModel extends ValueObject
                 );
                 $this->modelImports->mergeFromOtherSet($modelImportsFromSubclassIndicators);
             }
-            $modelClassContent = "#[ORM\Entity]\n#[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]\n#[ORM\Table(name: '{$this->sqlTableName}')]{$subclassIndicatorDeclarations}\nclass {$this->getModelClassNameWithNameSpace()->name} extends DoctrineModel\n{\n\tpublic const MODEL_ALIAS = '{$this->name}';\n\n\tpublic const TABLE_NAME = '{$this->sqlTableName}';\n\n\tpublic const ENTITY_CLASS = '{$this->entityClassWithNamespace->getNameWithNamespace()}';\n\n";
+            $modelClassContent = "#[ORM\Entity]\n#[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]\n#[ORM\Table(name: '{$this->sqlTableName}')]{$subclassIndicatorDeclarations}\nclass {$this->getModelClassNameWithNameSpace()->name} extends DoctrineModel\n{\n\tpublic const string MODEL_ALIAS = '{$this->name}';\n\n\tpublic const string TABLE_NAME = '{$this->sqlTableName}';\n\n\tpublic const string ENTITY_CLASS = '{$this->entityClassWithNamespace->getNameWithNamespace()}';\n\n";
         }
 
         if ($this->virtualColumns->count()) {

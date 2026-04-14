@@ -13,7 +13,6 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Routing\RouterInterface;
@@ -51,7 +50,6 @@ class IssuesLogService
      * @param RouterInterface $router Router service for accessing route configuration.
      */
     public function __construct(
-        #[Autowire(service: 'monolog.logger.issues')]
         LoggerInterface $issuesLogger,
         RequestStack $requestStack,
         RouterInterface $router,
@@ -191,17 +189,20 @@ class IssuesLogService
                 continue;
             }
 
+            /** @var string $className */
+            $className = $frame['class'];
+
             // Check for Message Handler
-            if (is_a($frame['class'], AppMessageHandler::class, true)) {
-                $transport = $this->extractMessageHandlerTransport((string)$frame['class']);
+            if (is_a($className, AppMessageHandler::class, true)) {
+                $transport = $this->extractMessageHandlerTransport($className);
                 if ($transport) {
                     return 'MessageHandler:' . $transport;
                 }
             }
 
             // Check for CLI Command
-            if (is_a($frame['class'], Command::class, true)) {
-                $commandName = $this->extractCommandName((string)$frame['class']);
+            if (is_a($className, Command::class, true)) {
+                $commandName = $this->extractCommandName($className);
                 if ($commandName) {
                     return 'CLI:' . $commandName;
                 }

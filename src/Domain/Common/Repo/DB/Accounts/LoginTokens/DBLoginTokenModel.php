@@ -9,17 +9,18 @@ use Doctrine\ORM\Mapping as ORM;
 use Doctrine\ORM\PersistentCollection;
 use DateTime;
 use DDD\Domain\Common\Repo\DB\Accounts\DBAccountModel;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 
 #[ORM\Entity]
 #[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
-#[ORM\Table(name: 'EntityLoginTokens')]
+#[ORM\Table(name: 'LoginTokens')]
 class DBLoginTokenModel extends DoctrineModel
 {
-	public const MODEL_ALIAS = 'LoginToken';
+	public const string MODEL_ALIAS = 'LoginToken';
 
-	public const TABLE_NAME = 'EntityLoginTokens';
+	public const string TABLE_NAME = 'LoginTokens';
 
-	public const ENTITY_CLASS = 'DDD\Domain\Common\Entities\Accounts\LoginTokens\LoginToken';
+	public const string ENTITY_CLASS = 'DDD\Domain\Common\Entities\Accounts\LoginTokens\LoginToken';
 
 	#[ORM\Column(type: 'integer')]
 	public ?int $accountId;

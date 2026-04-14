@@ -8,17 +8,18 @@ use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use Doctrine\ORM\Mapping as ORM;
 use Doctrine\ORM\PersistentCollection;
 use DateTime;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 
 #[ORM\Entity]
 #[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
-#[ORM\Table(name: 'EntityCrons')]
+#[ORM\Table(name: 'Crons')]
 class DBCronModel extends DoctrineModel
 {
-	public const MODEL_ALIAS = 'Cron';
+	public const string MODEL_ALIAS = 'Cron';
 
-	public const TABLE_NAME = 'EntityCrons';
+	public const string TABLE_NAME = 'Crons';
 
-	public const ENTITY_CLASS = 'DDD\Domain\Common\Entities\Crons\Cron';
+	public const string ENTITY_CLASS = 'DDD\Domain\Common\Entities\Crons\Cron';
 
 	#[ORM\Column(type: 'string')]
 	public ?string $name;
@@ -31,6 +32,9 @@ class DBCronModel extends DoctrineModel
 
 	#[ORM\Column(type: 'string')]
 	public ?string $command;
+
+	#[ORM\Column(type: 'boolean')]
+	public ?bool $isActive = true;
 
 	#[ORM\Column(type: 'datetime')]
 	public ?\DateTime $lastExecutionStartedAt;

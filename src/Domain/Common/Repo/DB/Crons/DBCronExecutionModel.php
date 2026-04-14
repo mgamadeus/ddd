@@ -8,17 +8,18 @@ use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use Doctrine\ORM\Mapping as ORM;
 use Doctrine\ORM\PersistentCollection;
 use DateTime;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 
 #[ORM\Entity]
 #[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
-#[ORM\Table(name: 'EntityCronExecutions')]
+#[ORM\Table(name: 'CronExecutions')]
 class DBCronExecutionModel extends DoctrineModel
 {
-	public const MODEL_ALIAS = 'CronExecution';
+	public const string MODEL_ALIAS = 'CronExecution';
 
-	public const TABLE_NAME = 'EntityCronExecutions';
+	public const string TABLE_NAME = 'CronExecutions';
 
-	public const ENTITY_CLASS = 'DDD\Domain\Common\Entities\Crons\CronExecution';
+	public const string ENTITY_CLASS = 'DDD\Domain\Common\Entities\Crons\CronExecution';
 
 	#[ORM\Column(type: 'integer')]
 	public ?int $cronId;

@@ -8,17 +8,18 @@ use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use Doctrine\ORM\Mapping as ORM;
 use Doctrine\ORM\PersistentCollection;
 use DateTime;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 
 #[ORM\Entity]
 #[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
-#[ORM\Table(name: 'EntityAccounts')]
+#[ORM\Table(name: 'Accounts')]
 class DBAccountModel extends DoctrineModel
 {
-	public const MODEL_ALIAS = 'Account';
+	public const string MODEL_ALIAS = 'Account';
 
-	public const TABLE_NAME = 'EntityAccounts';
+	public const string TABLE_NAME = 'Accounts';
 
-	public const ENTITY_CLASS = 'DDD\Domain\Common\Entities\Accounts\Account';
+	public const string ENTITY_CLASS = 'DDD\Domain\Common\Entities\Accounts\Account';
 
 	#[ORM\Column(type: 'string')]
 	public ?string $password;

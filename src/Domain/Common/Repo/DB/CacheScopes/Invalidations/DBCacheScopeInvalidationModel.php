@@ -9,20 +9,21 @@ use Doctrine\ORM\Mapping as ORM;
 use Doctrine\ORM\PersistentCollection;
 use DateTime;
 use DDD\Domain\Common\Repo\DB\Accounts\DBAccountModel;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 
 #[ORM\Entity]
 #[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
-#[ORM\Table(name: 'EntityCacheScopeInvalidations')]
+#[ORM\Table(name: 'CacheScopeInvalidations')]
 class DBCacheScopeInvalidationModel extends DoctrineModel
 {
-	public const MODEL_ALIAS = 'CacheScopeInvalidation';
+	public const string MODEL_ALIAS = 'CacheScopeInvalidation';
 
-	public const TABLE_NAME = 'EntityCacheScopeInvalidations';
+	public const string TABLE_NAME = 'CacheScopeInvalidations';
 
-	public const ENTITY_CLASS = 'DDD\Domain\Common\Entities\CacheScopes\Invalidations\CacheScopeInvalidation';
+	public const string ENTITY_CLASS = 'DDD\Domain\Common\Entities\CacheScopes\Invalidations\CacheScopeInvalidation';
 
 	#[ORM\Column(type: 'string')]
-	public ?string $cacheScope;
+	public string $cacheScope;
 
 	#[ORM\Column(type: 'integer')]
 	public ?int $accountId;

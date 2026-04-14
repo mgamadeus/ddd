@@ -8,17 +8,18 @@ use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use Doctrine\ORM\Mapping as ORM;
 use Doctrine\ORM\PersistentCollection;
 use DateTime;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 
 #[ORM\Entity]
 #[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]
-#[ORM\Table(name: 'EntityRoles')]
+#[ORM\Table(name: 'Roles')]
 class DBRoleModel extends DoctrineModel
 {
-	public const MODEL_ALIAS = 'Role';
+	public const string MODEL_ALIAS = 'Role';
 
-	public const TABLE_NAME = 'EntityRoles';
+	public const string TABLE_NAME = 'Roles';
 
-	public const ENTITY_CLASS = 'DDD\Domain\Common\Entities\Roles\Role';
+	public const string ENTITY_CLASS = 'DDD\Domain\Common\Entities\Roles\Role';
 
 	#[ORM\Column(type: 'string')]
 	public ?string $name;
