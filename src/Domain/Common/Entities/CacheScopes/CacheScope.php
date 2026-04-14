@@ -13,7 +13,7 @@ use ReflectionException;
 class CacheScope extends ValueObject
 {
     /** @var string Loading of FeatureFlags */
-    public const ACCOUNT_ROLES = 'ACCOUNT_ROLES';
+    public const string ACCOUNT_ROLES = 'ACCOUNT_ROLES';
 
     /**
      * Returns all cache scopes based on current classes constants

@@ -13,6 +13,6 @@ use DDD\Domain\Common\Entities\Accounts\Accounts;
  */
 class DBAccounts extends DBEntitySet
 {
-    public const BASE_REPO_CLASS = DBAccount::class;
-    public const BASE_ENTITY_SET_CLASS = Accounts::class;
+    public const string BASE_REPO_CLASS = DBAccount::class;
+    public const string BASE_ENTITY_SET_CLASS = Accounts::class;
 }

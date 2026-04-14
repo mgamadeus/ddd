@@ -18,8 +18,8 @@ use DDD\Infrastructure\Services\AuthService;
  */
 class DBCronExecution extends DBEntity
 {
-    public const BASE_ENTITY_CLASS = CronExecution::class;
-    public const BASE_ORM_MODEL = DBCronExecutionModel::class;
+    public const string BASE_ENTITY_CLASS = CronExecution::class;
+    public const string BASE_ORM_MODEL = DBCronExecutionModel::class;
 
     /**
      * Applies restrictions based on Auth::getAccount

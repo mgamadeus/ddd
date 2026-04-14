@@ -15,11 +15,11 @@ use Override;
  */
 class Vector extends ValueObject
 {
-    public CONST DIMENSION_OPENAI_EMBEDDING_SMALL = 1536;
+    public const int DIMENSION_OPENAI_EMBEDDING_SMALL = 1536;
 
-    public CONST DIMENSION_OPENAI_EMBEDDING_LARGE = 3072;
+    public const int DIMENSION_OPENAI_EMBEDDING_LARGE = 3072;
 
-    /** @var array|float[]|null  */
+    /** @var array|float[]|null */
     #[HideProperty]
     public ?array $vectorValues = [];
 
@@ -33,15 +33,6 @@ class Vector extends ValueObject
         $this->vectorValues = $vectorValues ?? [];
     }
 
-    public function __toString(): string
-    {
-        if (!$this->vectorValues) {
-            return '';
-        }
-
-        return '[' . implode(',', array_map(static fn($v) => (string)(float)$v, $this->vectorValues)) . ']';
-    }
-
     /**
      * Convenience constructor.
      *
@@ -50,6 +41,15 @@ class Vector extends ValueObject
     public static function fromArray(?array $vectorValues): self
     {
         return new self($vectorValues ?? []);
+    }
+
+    public function __toString(): string
+    {
+        if (!$this->vectorValues) {
+            return '';
+        }
+
+        return '[' . implode(',', array_map(static fn($v) => (string)(float)$v, $this->vectorValues)) . ']';
     }
 
     public function uniqueKey(): string

@@ -16,7 +16,7 @@ class SerializeInToonFormat extends SerializerAttribute
 {
     use BaseAttributeTrait;
 
-    public const TOON_PROPERTY_POSTFIX = 'InToonFormat';
+    public const string TOON_PROPERTY_POSTFIX = 'InToonFormat';
 
     /**
      * Retrieves the toon property name by appending a predefined postfix.

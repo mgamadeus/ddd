@@ -26,7 +26,7 @@ use ReflectionException;
 
 class CronsService extends EntitiesService
 {
-    public const DEFAULT_ENTITY_CLASS = Cron::class;
+    public const string DEFAULT_ENTITY_CLASS = Cron::class;
 
     /**
      * Lists all Crons

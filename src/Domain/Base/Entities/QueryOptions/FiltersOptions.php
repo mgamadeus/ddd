@@ -28,54 +28,56 @@ use ReflectionException;
 #[FilterOptionsConstraint]
 class FiltersOptions extends ObjectSet
 {
-    public const TYPE_OPERATION = 'operation';
-    public const TYPE_EXPRESSION = 'expression';
+    public const string TYPE_OPERATION = 'operation';
 
-    public const JOIN_OPERATOR_AND = 'and';
-    public const JOIN_OPERATOR_OR = 'or';
+    public const string TYPE_EXPRESSION = 'expression';
 
-    public const JOIN_OPERATORS = [self::JOIN_OPERATOR_AND, self::JOIN_OPERATOR_OR];
+    public const string JOIN_OPERATOR_AND = 'and';
+
+    public const string JOIN_OPERATOR_OR = 'or';
+
+    public const array JOIN_OPERATORS = [self::JOIN_OPERATOR_AND, self::JOIN_OPERATOR_OR];
 
     /** @var string Equal */
-    public const OPERATOR_EQUAL = 'eq';
+    public const string OPERATOR_EQUAL = 'eq';
 
     /** @var string Greater or equal */
-    public const OPERATOR_GREATER_OR_EQUAL = 'ge';
+    public const string OPERATOR_GREATER_OR_EQUAL = 'ge';
 
     /** @var string Not equal */
-    public const OPERATOR_NOT_EQUAL = 'ne';
+    public const string OPERATOR_NOT_EQUAL = 'ne';
 
     /** @var string Greater than */
-    public const OPERATOR_GREATER_THAN = 'gt';
+    public const string OPERATOR_GREATER_THAN = 'gt';
 
     /** @var string Less than */
-    public const OPERATOR_LESS_THAN = 'lt';
+    public const string OPERATOR_LESS_THAN = 'lt';
 
     /** @var string Less or equal */
-    public const OPERATOR_LESS_OR_EQUAL = 'le';
+    public const string OPERATOR_LESS_OR_EQUAL = 'le';
 
     /** @var string In, e.g. in [1, 2, 3, 4, '123'] */
-    public const OPERATOR_IN = 'in';
+    public const string OPERATOR_IN = 'in';
 
     /** @var string Not In, e.g. ni [1, 2, 3, 4, '123'] */
-    public const OPERATOR_NOT_IN = 'ni';
+    public const string OPERATOR_NOT_IN = 'ni';
 
     /** @var string Between, e.g. in ['2023-01-01 00:00:00','2024-01-01 00:00:00'] */
-    public const OPERATOR_BETWEEN = 'bw';
+    public const string OPERATOR_BETWEEN = 'bw';
 
     /** @var string Fulltext search (MATCH AGAINST) in natural language mode */
-    public const OPERATOR_FULLTEXT = 'ft';
+    public const string OPERATOR_FULLTEXT = 'ft';
 
     /** @var string Fulltext search (MATCH AGAINST) in boolean mode */
-    public const OPERATOR_FULLTEXT_BOOLEAN = 'fb';
+    public const string OPERATOR_FULLTEXT_BOOLEAN = 'fb';
 
     /** @var string[] The operators allowed if the value is NULL */
-    public const ALLOWED_OPERATORS_ON_NULL_VALUE = [self::OPERATOR_EQUAL, self::OPERATOR_NOT_EQUAL];
+    public const array ALLOWED_OPERATORS_ON_NULL_VALUE = [self::OPERATOR_EQUAL, self::OPERATOR_NOT_EQUAL];
 
     /** @var string[] The operators allowed if the value is an array type */
-    public const ALLOWED_OPERATORS_ON_ARRAY_VALUE = [self::OPERATOR_IN, self::OPERATOR_NOT_IN, self::OPERATOR_BETWEEN];
+    public const array ALLOWED_OPERATORS_ON_ARRAY_VALUE = [self::OPERATOR_IN, self::OPERATOR_NOT_IN, self::OPERATOR_BETWEEN];
 
-    public const OPERATORS = [
+    public const array OPERATORS = [
         self::OPERATOR_EQUAL,
         self::OPERATOR_GREATER_OR_EQUAL,
         self::OPERATOR_NOT_EQUAL,
@@ -89,7 +91,7 @@ class FiltersOptions extends ObjectSet
         self::OPERATOR_FULLTEXT_BOOLEAN,
     ];
 
-    public const OPERATORS_TO_DOCTRINE_ALLOCATION = [
+    public const array OPERATORS_TO_DOCTRINE_ALLOCATION = [
         self::OPERATOR_EQUAL => 'eq',
         self::OPERATOR_NOT_EQUAL => 'neq',
         self::OPERATOR_GREATER_THAN => 'gt',
@@ -106,7 +108,7 @@ class FiltersOptions extends ObjectSet
     ];
 
     /** @var string[] Fulltext operators (MATCH AGAINST) */
-    public const FULLTEXT_OPERATORS = [self::OPERATOR_FULLTEXT, self::OPERATOR_FULLTEXT_BOOLEAN];
+    public const array FULLTEXT_OPERATORS = [self::OPERATOR_FULLTEXT, self::OPERATOR_FULLTEXT_BOOLEAN];
 
     /**
      * Registry to bridge FILTERS -> ORDER BY score (e.g. orderBy=nameScore).
@@ -114,29 +116,6 @@ class FiltersOptions extends ObjectSet
      * @var array<string, array{qualifiedColumn: string, searchTerms: string, booleanMode: bool}>
      */
     protected static array $fulltextSearchRegistry = [];
-
-    public static function registerFulltextSearch(
-        string $propertyName,
-        string $qualifiedColumn,
-        string $searchTerms,
-        bool $booleanMode
-    ): void {
-        self::$fulltextSearchRegistry[$propertyName] = [
-            'qualifiedColumn' => $qualifiedColumn,
-            'searchTerms' => $searchTerms,
-            'booleanMode' => $booleanMode,
-        ];
-    }
-
-    public static function getFulltextSearchForProperty(string $propertyName): ?array
-    {
-        return self::$fulltextSearchRegistry[$propertyName] ?? null;
-    }
-
-    public static function clearFulltextSearchRegistry(): void
-    {
-        self::$fulltextSearchRegistry = [];
-    }
 
     /** @var string Can be either expression or operation, an operation holds other operations or expressions */
     #[Choice(choices: [self::TYPE_EXPRESSION, self::TYPE_OPERATION, null])]
@@ -179,6 +158,16 @@ class FiltersOptions extends ObjectSet
 
     /** @var ExpandOption The expandOption the filter refers to in case of expanded properties */
     protected ?ExpandOption $expandOption = null;
+
+    public static function getFulltextSearchForProperty(string $propertyName): ?array
+    {
+        return self::$fulltextSearchRegistry[$propertyName] ?? null;
+    }
+
+    public static function clearFulltextSearchRegistry(): void
+    {
+        self::$fulltextSearchRegistry = [];
+    }
 
     /**
      * Parses FiltersOptions from string
@@ -723,9 +712,7 @@ class FiltersOptions extends ObjectSet
                 // target the generated stored virtual search column instead of the JSON column.
                 // Example: name -> virtualNameSearch
                 $joinAlias = $this->expandOption?->joinAlias;
-                $targetModelClass = $joinAlias
-                    ? $this->expandOption->getTargetPropertyModelClass()
-                    : $this->getBaseModelClass();
+                $targetModelClass = $joinAlias ? $this->expandOption->getTargetPropertyModelClass() : $this->getBaseModelClass();
                 if (!$targetModelClass || !is_a($targetModelClass, DoctrineModel::class, true)) {
                     return null;
                 }
@@ -752,8 +739,6 @@ class FiltersOptions extends ObjectSet
                 if (!$targetModelClass::isValidDatabaseExpression("$verifyModelAlias.$propertyName")) {
                     return null;
                 }
-
-
 
                 $baseModelAlias = $joinAlias ?: $verifyModelAlias;
                 $qualifiedColumn = "{$baseModelAlias}.{$propertyName}";
@@ -878,6 +863,19 @@ class FiltersOptions extends ObjectSet
     public function getReferenceClassRepo(): ?string
     {
         return $this->filtersDefinition->getReferenceClassRepo();
+    }
+
+    public static function registerFulltextSearch(
+        string $propertyName,
+        string $qualifiedColumn,
+        string $searchTerms,
+        bool $booleanMode
+    ): void {
+        self::$fulltextSearchRegistry[$propertyName] = [
+            'qualifiedColumn' => $qualifiedColumn,
+            'searchTerms' => $searchTerms,
+            'booleanMode' => $booleanMode,
+        ];
     }
 
     public function applyFiltersToDoctrineQueryBuilder(

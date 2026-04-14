@@ -13,6 +13,6 @@ use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
  */
 class DBCacheScopeInvalidations extends DBEntitySet
 {
-    public const BASE_REPO_CLASS = DBCacheScopeInvalidation::class;
-    public const BASE_ENTITY_SET_CLASS = CacheScopeInvalidations::class;
+    public const string BASE_REPO_CLASS = DBCacheScopeInvalidation::class;
+    public const string BASE_ENTITY_SET_CLASS = CacheScopeInvalidations::class;
 }

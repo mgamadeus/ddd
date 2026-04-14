@@ -21,23 +21,18 @@ use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPasspor
 
 class TokenAuthenticator extends AbstractAuthenticator
 {
-    protected Security $security;
-    private AccessMapInterface $accessMap;
+    public const string TOKEN_BEARER = 'Bearer';
 
-    public const TOKEN_BEARER = 'Bearer';
-    public const TOKEN_BASIC = 'Basic';
+    public const string TOKEN_BASIC = 'Basic';
+
+    protected Security $security;
+
+    private AccessMapInterface $accessMap;
 
     public function __construct(Security $security, AccessMapInterface $accessMap)
     {
         $this->security = $security;
         $this->accessMap = $accessMap;
-    }
-
-    public function isPublicAccess(Request $request): bool
-    {
-        [$config, $context] = $this->accessMap->getPatterns($request);
-        $config = $config ?? [];
-        return in_array(AuthenticatedVoter::PUBLIC_ACCESS, $config);
     }
 
     /**
@@ -66,6 +61,13 @@ class TokenAuthenticator extends AbstractAuthenticator
             return true;
         }
         return false;
+    }
+
+    public function isPublicAccess(Request $request): bool
+    {
+        [$config, $context] = $this->accessMap->getPatterns($request);
+        $config = $config ?? [];
+        return in_array(AuthenticatedVoter::PUBLIC_ACCESS, $config);
     }
 
     public function authenticate(Request $request): Passport

@@ -16,7 +16,7 @@ class DatabaseVirtualColumn extends ValueObject
     use BaseAttributeTrait;
 
     /** @var string Prefix for the virtual column, e.g. VirtualAccountId */
-    public const VIRTUAL_COLUMN_PREFIX = 'virtual';
+    public const string VIRTUAL_COLUMN_PREFIX = 'virtual';
 
     /** @var DatabaseColumn|null The column the virtual column is based on */
     public ?DatabaseColumn $referenceColumn = null;

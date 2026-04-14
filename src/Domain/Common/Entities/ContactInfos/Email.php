@@ -4,18 +4,19 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Common\Entities\ContactInfos;
 
-use DDD\Domain\Common\Entities\ContactInfos\ContactInfo;
 use DDD\Infrastructure\Validation\Constraints\Choice;
 use Symfony\Component\Validator\Constraints as Assert;
 
 class Email extends ContactInfo
 {
     /** @var string Business Email Scope */
-    public const SCOPE_EMAIL_BUSINESS = 'BUSINESS';
+    public const string SCOPE_EMAIL_BUSINESS = 'BUSINESS';
+
     /** @var string Email used for reports */
-    public const SCOPE_EMAIL_REPORTS = 'REPORTS';
+    public const string SCOPE_EMAIL_REPORTS = 'REPORTS';
+
     /** @var string Email used for invoices */
-    public const SCOPE_EMAIL_INVOICE = 'INVOICE';
+    public const string SCOPE_EMAIL_INVOICE = 'INVOICE';
 
     #[Choice(choices: [self::TYPE_EMAIL])]
     public ?string $type = self::TYPE_EMAIL;
@@ -35,7 +36,6 @@ class Email extends ContactInfo
             $this->value = $this->normalize($email);
         }
     }
-
 
     /**
      * @param string $value

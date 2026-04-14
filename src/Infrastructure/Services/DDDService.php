@@ -26,13 +26,13 @@ use Twig\Environment;
 
 class DDDService
 {
-    public const FRAMEWORK_ROOT_NAMESPACE = 'DDD';
+    public const string FRAMEWORK_ROOT_NAMESPACE = 'DDD';
 
-    public const APP_ROOT_NAMESPACE = 'App';
+    public const string APP_ROOT_NAMESPACE = 'App';
 
-    public const ENV_DEV = 'dev';
+    public const string ENV_DEV = 'dev';
 
-    public const ENV_PROD = 'prod';
+    public const string ENV_PROD = 'prod';
 
     /** @var bool If true, the service itself will throw errors */
     public bool $throwErrors = false;

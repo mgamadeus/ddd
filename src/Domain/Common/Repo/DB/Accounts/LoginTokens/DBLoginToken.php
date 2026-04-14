@@ -19,8 +19,8 @@ use ReflectionException;
  */
 class DBLoginToken extends DBEntity
 {
-    public const BASE_ENTITY_CLASS = LoginToken::class;
-    public const BASE_ORM_MODEL = DBLoginTokenModel::class;
+    public const string BASE_ENTITY_CLASS = LoginToken::class;
+    public const string BASE_ORM_MODEL = DBLoginTokenModel::class;
 
     /**
      * Deletes expired Tokens

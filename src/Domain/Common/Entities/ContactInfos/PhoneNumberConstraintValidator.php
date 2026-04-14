@@ -19,7 +19,7 @@ use Throwable;
  */
 class PhoneNumberConstraintValidator extends ConstraintValidator
 {
-    public const DEFAUL_FORMAT = PhoneNumberFormat::E164;
+    public const int DEFAUL_FORMAT = PhoneNumberFormat::E164;
 
     /**
      * @throws NumberParseException

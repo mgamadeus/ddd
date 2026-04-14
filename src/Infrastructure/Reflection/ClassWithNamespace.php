@@ -11,13 +11,13 @@ class ClassWithNamespace
     use SerializerTrait;
 
     /** @var string Regular class */
-    public const TYPE_CLASS = 'CLASS';
+    public const string TYPE_CLASS = 'CLASS';
 
     /** @var string Regular class */
-    public const TYPE_TRAIT = 'TRAIT';
+    public const string TYPE_TRAIT = 'TRAIT';
 
     /** @var string Regular class */
-    public const TYPE_INTERFACE = 'INTERFACE';
+    public const string TYPE_INTERFACE = 'INTERFACE';
 
     /** @var string Class name */
     public string $name = '';

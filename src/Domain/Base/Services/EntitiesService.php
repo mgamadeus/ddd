@@ -45,7 +45,7 @@ class EntitiesService extends Service
         if (!$repoClassInstance) {
             return null;
         }
-
+        /** @var Entity $enityInstance */
         $enityInstance = $repoClassInstance->find($entityId, $useEntityRegistrCache);
         if (!$enityInstance && $this->throwErrors) {
             /** @var Entity $entityClass */

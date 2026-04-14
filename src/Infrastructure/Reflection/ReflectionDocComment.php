@@ -6,7 +6,7 @@ namespace DDD\Infrastructure\Reflection;
 
 class ReflectionDocComment
 {
-    public const BASE_TYPES = ['string' => true, 'integer' => true, 'float' => true, 'boolean' => true];
+    public const array BASE_TYPES = ['string' => true, 'integer' => true, 'float' => true, 'boolean' => true];
 
     protected string $docComment = '';
 

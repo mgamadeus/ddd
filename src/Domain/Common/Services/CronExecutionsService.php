@@ -22,7 +22,7 @@ use ReflectionException;
 
 class CronExecutionsService extends EntitiesService
 {
-    public const DEFAULT_ENTITY_CLASS = CronExecution::class;
+    public const string DEFAULT_ENTITY_CLASS = CronExecution::class;
 
 
     /**

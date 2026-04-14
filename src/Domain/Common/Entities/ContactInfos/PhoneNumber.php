@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace DDD\Domain\Common\Entities\ContactInfos;
 
 use DDD\Domain\Base\Entities\DefaultObject;
-use DDD\Domain\Common\Entities\ContactInfos\ContactInfo;
-use DDD\Domain\Common\Entities\ContactInfos\PhoneNumberConstraint;
 use DDD\Infrastructure\Validation\Constraints\Choice;
 use libphonenumber\NumberParseException;
 use libphonenumber\PhoneNumberFormat;
@@ -16,19 +14,21 @@ use Throwable;
 #[PhoneNumberConstraint]
 class PhoneNumber extends ContactInfo
 {
-    public const DEFAULT_FORMAT = PhoneNumberFormat::E164;
+    public const int DEFAULT_FORMAT = PhoneNumberFormat::E164;
 
-    public const SCOPE_PHONE = 'PHONE';
-    public const SCOPE_MOBILE_PHONE = 'MOBILEPHONE';
-    public const SCOPE_ADDITIONAL_PHONE = 'ADDITIONALPHONE';
-    public const SCOPE_FAX = 'FAX';
+    public const string SCOPE_PHONE = 'PHONE';
+
+    public const string SCOPE_MOBILE_PHONE = 'MOBILEPHONE';
+
+    public const string SCOPE_ADDITIONAL_PHONE = 'ADDITIONALPHONE';
+
+    public const string SCOPE_FAX = 'FAX';
 
     /** @var string Validates if number is valid */
-    public const VALIDATION_EXACT = 'VALIDATION_EXACT';
+    public const string VALIDATION_EXACT = 'VALIDATION_EXACT';
 
     /** @var string Validates if number is a possible number, this is a lay validation */
-    public const VALIDATION_POSSIBLE = 'VALIDATION_POSSIBLE';
-
+    public const string VALIDATION_POSSIBLE = 'VALIDATION_POSSIBLE';
 
     /** @var string|null Type of ContactInfo */
     #[Choice(choices: [self::TYPE_PHONE])]
@@ -36,7 +36,7 @@ class PhoneNumber extends ContactInfo
 
     #[Choice(choices: [self::SCOPE_PHONE, self::SCOPE_MOBILE_PHONE, self::SCOPE_ADDITIONAL_PHONE, self::SCOPE_FAX])]
     public ?string $scope;
-    
+
     /** @var string|null The phone number itself */
     public ?string $value;
 
@@ -49,14 +49,15 @@ class PhoneNumber extends ContactInfo
 
     public function __construct(?string $phoneNumber = null, ?string $countryShortCode = null, $scope = self::SCOPE_PHONE)
     {
-        if ($phoneNumber)
+        if ($phoneNumber) {
             $this->setAndNormalizePhoneNumber($phoneNumber, countryShortCode: $countryShortCode);
-        if ($countryShortCode)
+        }
+        if ($countryShortCode) {
             $this->countryShortCode = $countryShortCode;
+        }
         $this->scope = $scope;
         return parent::__construct();
     }
-
 
     /**
      * Sets and normalizes the phone number
@@ -79,8 +80,7 @@ class PhoneNumber extends ContactInfo
             $this->countryShortCode = strtolower($phoneUtil->getRegionCodeForCountryCode($phoneNumber->getCountryCode()));
             $this->value = $phoneUtil->format($phoneNumber, self::DEFAULT_FORMAT);
             return;
-        }
-        catch (Throwable $throwable){
+        } catch (Throwable $throwable) {
         }
         try {
             $phoneNumber = $phoneUtil->parse($number, $countryShortCode ? strtoupper($countryShortCode) : null);
@@ -88,18 +88,19 @@ class PhoneNumber extends ContactInfo
             if (!$phoneUtil->isValidNumber($phoneNumber)) {
                 if (isset($countryShortCode)) {
                     // support for local numbers without city code
-                    if ($phoneUtil->isPossibleNumber(
-                        $number,
-                        $countryShortCode ? strtoupper($countryShortCode) : null
-                    )) {
+                    if (
+                        $phoneUtil->isPossibleNumber(
+                            $number,
+                            $countryShortCode ? strtoupper($countryShortCode) : null
+                        )
+                    ) {
                         $this->value = $phoneUtil->format($phoneNumber, PhoneNumberFormat::NATIONAL);
                         return;
                     }
                 }
             }
             $this->value = $phoneUtil->format($phoneNumber, self::DEFAULT_FORMAT);
-        }
-        catch (Throwable $throwable){
+        } catch (Throwable $throwable) {
             $this->value = trim($number);
         }
     }

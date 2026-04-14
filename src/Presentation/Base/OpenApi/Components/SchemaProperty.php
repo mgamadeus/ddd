@@ -31,9 +31,9 @@ class SchemaProperty
 {
     use SerializerTrait;
 
-    public const FORMAT_DATE_TIME = 'date-time';
+    public const string FORMAT_DATE_TIME = 'date-time';
 
-    public const FORMAT_DATE = 'date';
+    public const string FORMAT_DATE = 'date';
 
     public ?string $type = null;
 

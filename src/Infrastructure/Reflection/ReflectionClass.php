@@ -14,33 +14,33 @@ use stdClass;
 class ReflectionClass extends \ReflectionClass
 {
     // Scalar Data Types
-    public const STRING = 'string';
+    public const string STRING = 'string';
 
-    public const BOOL = 'bool';
+    public const string BOOL = 'bool';
 
-    public const INTEGER = 'int';
+    public const string INTEGER = 'int';
 
-    public const DOUBLE = 'double';
+    public const string DOUBLE = 'double';
 
-    public const FLOAT = 'float';
+    public const string FLOAT = 'float';
 
-    public const INTEGER_FULL_NAME = 'integer';
+    public const string INTEGER_FULL_NAME = 'integer';
 
-    public const BOOLEAN = 'boolean';
+    public const string BOOLEAN = 'boolean';
 
     // Compound Data Types
-    public const ARRAY = 'array';
+    public const string ARRAY = 'array';
 
-    public const OBJECT = 'object';
+    public const string OBJECT = 'object';
 
-    public const SCALAR_BASE_TYPES = [
+    public const array SCALAR_BASE_TYPES = [
         self::STRING => true,
         self::BOOL => true,
         self::INTEGER => true,
         self::FLOAT => true
     ];
 
-    public const GET_TYPE_ALLOCATIONS = [
+    public const array GET_TYPE_ALLOCATIONS = [
         'string' => self::STRING,
         'boolean' => self::BOOL,
         'integer' => self::INTEGER,
@@ -49,7 +49,7 @@ class ReflectionClass extends \ReflectionClass
         'object' => self::OBJECT
     ];
 
-    public const BASE_TYPES = [
+    public const array BASE_TYPES = [
         self::STRING,
         self::BOOL,
         self::INTEGER,
@@ -59,9 +59,9 @@ class ReflectionClass extends \ReflectionClass
         self::ARRAY
     ];
 
-    public const NUMERIC_TYPES = [self::INTEGER, self::FLOAT, self::DOUBLE];
+    public const array NUMERIC_TYPES = [self::INTEGER, self::FLOAT, self::DOUBLE];
 
-    public const SCALAR_TYPES = [
+    public const array SCALAR_TYPES = [
         self::STRING,
         self::BOOL,
         self::INTEGER,
@@ -71,7 +71,7 @@ class ReflectionClass extends \ReflectionClass
         self::BOOLEAN
     ];
 
-    public const NO_REFLECTION = 'no_reflection';
+    public const string NO_REFLECTION = 'no_reflection';
 
     public static $getPropertiesCache = [];
 

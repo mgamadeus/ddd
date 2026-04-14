@@ -16,7 +16,7 @@ class ReflectionEnum extends \ReflectionEnum
     public static $relectionEnumCache = [];
     public static $enumOptionsCache = [];
 
-    public const NO_REFLECTION = 'no_reflection';
+    public const string NO_REFLECTION = 'no_reflection';
 
     /**
      * returns an instance of reflection class
@@ -28,7 +28,7 @@ class ReflectionEnum extends \ReflectionEnum
     public static function instance(string $enumClassName): ?ReflectionEnum
     {
         if (isset(self::$relectionEnumCache[$enumClassName])) {
-            $cached = self::$relectionClassCache[$enumClassName];
+            $cached = self::$relectionEnumCache[$enumClassName];
             return $cached === self::NO_REFLECTION ? null : $cached;
         }
 
@@ -54,7 +54,7 @@ class ReflectionEnum extends \ReflectionEnum
         $enumClassName = $this->getName();
 
         if (isset(self::$enumOptionsCache[$enumClassName])) {
-            return $cache[$enumClassName];
+            return self::$enumOptionsCache[$enumClassName];
         }
         $cases = $enumClassName::cases();
         $options = [];

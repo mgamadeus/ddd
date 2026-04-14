@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace DDD\Infrastructure\Traits\Serializer;
 
 use DDD\Domain\Base\Entities\DefaultObject;
-use DDD\Infrastructure\Services\DDDService;
 use DDD\Domain\Base\Entities\Entity;
+use DDD\Infrastructure\Services\DDDService;
 
 class SerializerRegistry
 {
-    public const MAX_SIZE = 3000;
+    public const int MAX_SIZE = 3000;
+
     public static $marks = [];
 
     /** @var array Static cache for toObject call */
@@ -71,7 +72,8 @@ class SerializerRegistry
     /**
      * @return void Empties toObjectCache
      */
-    public static function clearToObjectCache():void {
+    public static function clearToObjectCache(): void
+    {
         self::$toOjectCache = [];
     }
 
@@ -85,7 +87,7 @@ class SerializerRegistry
     public static function setToObjectCacheForObjectId(string|int $objectId, object|array &$object): void
     {
         // if memory usage is too high, we do not store new objects
-        if (DDDService::instance()->isMemoryUsageHigh()){
+        if (DDDService::instance()->isMemoryUsageHigh()) {
             return;
         }
         self::$toOjectCache[$objectId] = $object;

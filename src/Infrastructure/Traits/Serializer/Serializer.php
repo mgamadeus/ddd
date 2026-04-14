@@ -14,7 +14,7 @@ class Serializer
     /**
      * When serializing ObjectSets, serialize elements as array instead of keeping them in 'elements' property
      */
-    public const SERIALIZE_ELEMENTS_AS_ARRAY_IN_OBJECT_SETS = 1 << 0; // 1
+    public const int SERIALIZE_ELEMENTS_AS_ARRAY_IN_OBJECT_SETS = 1 << 0; // 1
 
     /**
      * Check if a specific flag is set

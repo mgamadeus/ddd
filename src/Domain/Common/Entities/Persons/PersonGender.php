@@ -9,10 +9,13 @@ use DDD\Infrastructure\Validation\Constraints\Choice;
 
 class PersonGender extends ValueObject
 {
-    public const GENDER_MALE = 'm';
-    public const GENDER_FEMALE = 'f';
-    public const GENDER_OTHER = 'd';
-    public const GENDER_ALL = 'a';
+    public const string GENDER_MALE = 'm';
+
+    public const string GENDER_FEMALE = 'f';
+
+    public const string GENDER_OTHER = 'd';
+
+    public const string GENDER_ALL = 'a';
 
     /** @var string|null The persons gender */
     #[Choice(choices: [self::GENDER_MALE, self::GENDER_FEMALE, self::GENDER_OTHER, self::GENDER_ALL], message: 'persongender.gender.choice')]

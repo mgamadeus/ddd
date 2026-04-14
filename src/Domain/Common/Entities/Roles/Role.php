@@ -18,15 +18,15 @@ use DDD\Domain\Common\Services\RolesService;
 class Role extends Entity
 {
     /** @var string Regular login permitted */
-    public const LOGIN = 'login';
+    public const string LOGIN = 'login';
 
     /** @var string Default admin role */
-    public const ADMIN = 'admin';
+    public const string ADMIN = 'admin';
 
     /** @var string Superadmin role, includes all possible roles */
-    public const SUPERADMIN = 'superadmin';
+    public const string SUPERADMIN = 'superadmin';
 
-    public const ADMIN_ROLES = [self::ADMIN => true, self::SUPERADMIN => true];
+    public const array ADMIN_ROLES = [self::ADMIN => true, self::SUPERADMIN => true];
 
     /** @var string|null The name of the role */
     public ?string $name;

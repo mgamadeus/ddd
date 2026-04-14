@@ -14,9 +14,9 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 
 abstract class BaseController extends AbstractController
 {
-    public const FILTER_BEFORE = Before::class;
+    public const string FILTER_BEFORE = Before::class;
 
-    public const FILTER_AFTER = After::class;
+    public const string FILTER_AFTER = After::class;
 
     /**
      * Returns Methods

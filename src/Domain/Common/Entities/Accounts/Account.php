@@ -31,7 +31,7 @@ class Account extends Entity implements UserInterface, AccountDependentEntityInt
     use QueryOptionsTrait;
 
     /** @var string Agency account that can only view reports without rights to operate or change the location */
-    public const ROLE_ASSOCIATIONS = [
+    public const array ROLE_ASSOCIATIONS = [
         Role::LOGIN => 'ROLE_USER',
         Role::ADMIN => 'ROLE_ADMIN',
         Role::SUPERADMIN => 'ROLE_SUPER_ADMIN'

@@ -24,5 +24,5 @@ class Accounts extends EntitySet
 {
     use QueryOptionsTrait;
 
-    public const SERVICE_NAME = AccountsService::class;
+    public const string SERVICE_NAME = AccountsService::class;
 }

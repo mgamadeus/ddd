@@ -25,5 +25,5 @@ class EncryptionScopePasswords extends EntitySet
 {
     use QueryOptionsTrait;
 
-    public const SERVICE_NAME = EncryptionScopesService::class;
+    public const string SERVICE_NAME = EncryptionScopesService::class;
 }

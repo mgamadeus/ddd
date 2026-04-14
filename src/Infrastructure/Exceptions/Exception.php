@@ -13,7 +13,7 @@ class Exception extends \Exception
 {
     use SerializerTrait;
 
-    public const CONTENT_TYPE_JSON = 'application/json';
+    public const string CONTENT_TYPE_JSON = 'application/json';
 
     /** @var string Error message */
     public ?string $error = null;

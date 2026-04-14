@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace DDD\Domain\Common\Repo\DB\CacheScopes\Invalidations;
 
 use DateInterval;
+use DDD\Domain\Base\Entities\DefaultObject;
+use DDD\Domain\Base\Repo\DatabaseRepoEntity;
 use DDD\Domain\Base\Repo\DB\DBEntity;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
@@ -17,11 +19,12 @@ use ReflectionException;
 /**
  * @method CacheScopeInvalidation find(DoctrineQueryBuilder|string|int $idOrQueryBuilder, bool $useEntityRegistryCache = true, ?DoctrineModel &$loadedOrmInstance = null, bool $deferredCaching = false)
  * @property DBCacheScopeInvalidationModel $ormInstance
+ * @method CacheScopeInvalidation update(DefaultObject &$entity, int $depth = self::UPDATE_DEFAULT_RECURSIVE_DEPTH)
  */
 class DBCacheScopeInvalidation extends DBEntity
 {
-    public const BASE_ENTITY_CLASS = CacheScopeInvalidation::class;
-    public const BASE_ORM_MODEL = DBCacheScopeInvalidationModel::class;
+    public const string BASE_ENTITY_CLASS = CacheScopeInvalidation::class;
+    public const string BASE_ORM_MODEL = DBCacheScopeInvalidationModel::class;
 
     /**
      * Deletes expired Tokens

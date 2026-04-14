@@ -13,7 +13,7 @@ class LazyLoad
 {
     use BaseAttributeTrait;
 
-    public const DEFAULT_LAZYLOAD_METHOD = 'lazyload';
+    public const string DEFAULT_LAZYLOAD_METHOD = 'lazyload';
 
     /** @var string|null The repostiroy type used for lazy loading */
     public ?string $repoType;

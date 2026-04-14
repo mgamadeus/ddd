@@ -17,6 +17,6 @@ use DDD\Domain\Common\Entities\Encryption\EncryptionScope;
  */
 class DBEncryptionScope extends DBEntity
 {
-    public const BASE_ENTITY_CLASS = EncryptionScope::class;
-    public const BASE_ORM_MODEL = DBEncryptionScopeModel::class;
+    public const string BASE_ENTITY_CLASS = EncryptionScope::class;
+    public const string BASE_ORM_MODEL = DBEncryptionScopeModel::class;
 }

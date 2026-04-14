@@ -13,6 +13,6 @@ use DDD\Domain\Common\Entities\Crons\Crons;
  */
 class DBCrons extends DBEntitySet
 {
-    public const BASE_REPO_CLASS = DBCron::class;
-    public const BASE_ENTITY_SET_CLASS = Crons::class;
+    public const string BASE_REPO_CLASS = DBCron::class;
+    public const string BASE_ENTITY_SET_CLASS = Crons::class;
 }

@@ -19,7 +19,7 @@ class JWTPayload
      * Days the url is available
      * @var int
      */
-    public const LIFTETIME_IN_MONTHS = 2;
+    public const int LIFTETIME_IN_MONTHS = 2;
 
     public static function getPeriodEndTimestamp(
         DateTime $currentDate,

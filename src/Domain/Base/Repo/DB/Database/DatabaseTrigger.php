@@ -22,7 +22,7 @@ use ReflectionException;
  * - Trigger executeOnOperation: [INSERT]
  * => Trigger is excpected to be placed
  * Domain/Accounts/Repo/Doctrine/Tracks/TrackBeforeInsertTrigger.sql
- * 
+ *
  * multiple Operations are concatenated with And e.g. TrackBeforeInsertAndUpdateTrigger.sql
  */
 #[Attribute(Attribute::TARGET_CLASS)]
@@ -30,12 +30,15 @@ class DatabaseTrigger extends ValueObject
 {
     use BaseAttributeTrait;
 
-    public const EXECUTE_BEFORE = 'BEFORE';
-    public const EXECUTE_AFTER = 'AFTER';
+    public const string EXECUTE_BEFORE = 'BEFORE';
 
-    public const OPERATION_INSERT = 'INSERT';
-    public const OPERATION_UPDATE = 'UPDATE';
-    public const OPERATION_DELETE = 'DELETE';
+    public const string EXECUTE_AFTER = 'AFTER';
+
+    public const string OPERATION_INSERT = 'INSERT';
+
+    public const string OPERATION_UPDATE = 'UPDATE';
+
+    public const string OPERATION_DELETE = 'DELETE';
 
     /** @var string When to execute the trigger */
     #[Choice([self::EXECUTE_BEFORE, self::EXECUTE_AFTER])]
@@ -43,7 +46,6 @@ class DatabaseTrigger extends ValueObject
 
     /** @var array|string[] The operations on which to execute the trigger */
     public array $executeOnOperations = [self::OPERATION_INSERT];
-
 
     /**
      * @param string ...$columns
@@ -88,6 +90,5 @@ class DatabaseTrigger extends ValueObject
     {
         return parent::uniqueKey($this->exectutionOrder . implode($this->executeOnOperations));
     }
-
 
 }

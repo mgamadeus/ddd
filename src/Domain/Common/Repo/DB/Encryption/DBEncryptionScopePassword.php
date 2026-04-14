@@ -17,6 +17,6 @@ use DDD\Domain\Common\Entities\Encryption\EncryptionScopePassword;
  */
 class DBEncryptionScopePassword extends DBEntity
 {
-    public const BASE_ENTITY_CLASS = EncryptionScopePassword::class;
-    public const BASE_ORM_MODEL = DBEncryptionScopePasswordModel::class;
+    public const string BASE_ENTITY_CLASS = EncryptionScopePassword::class;
+    public const string BASE_ORM_MODEL = DBEncryptionScopePasswordModel::class;
 }

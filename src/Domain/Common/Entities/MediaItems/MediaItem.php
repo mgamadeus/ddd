@@ -15,13 +15,13 @@ use DDD\Infrastructure\Validation\Constraints\Choice;
 abstract class MediaItem extends Entity
 {
     /** @var string Photo type for media item */
-    public const TYPE_PHOTO = 'photo';
+    public const string TYPE_PHOTO = 'photo';
 
     /** @var string Video type for media item */
-    public const TYPE_VIDEO = 'video';
+    public const string TYPE_VIDEO = 'video';
 
     /** @var string Document type for media item */
-    public const TYPE_DOCUMENT = 'DOCUMENT';
+    public const string TYPE_DOCUMENT = 'DOCUMENT';
 
     /** @var string|null Public URL of the mediaitem */
     #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]

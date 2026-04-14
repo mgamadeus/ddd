@@ -17,6 +17,6 @@ use DDD\Domain\Common\Entities\Accounts\Account;
  */
 class DBAccount extends DBEntity
 {
-    public const BASE_ENTITY_CLASS = Account::class;
-    public const BASE_ORM_MODEL = DBAccount::class;
+    public const string BASE_ENTITY_CLASS = Account::class;
+    public const string BASE_ORM_MODEL = DBAccount::class;
 }

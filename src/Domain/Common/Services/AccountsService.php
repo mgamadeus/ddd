@@ -21,7 +21,7 @@ use Symfony\Component\HttpFoundation\RequestStack;
  */
 class AccountsService extends EntitiesService
 {
-    public const DEFAULT_ENTITY_CLASS = Account::class;
+    public const string DEFAULT_ENTITY_CLASS = Account::class;
 
     public function __construct(public ?RequestStack $requestStack = null) {}
 

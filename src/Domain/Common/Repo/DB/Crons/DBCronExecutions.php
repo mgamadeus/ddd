@@ -13,8 +13,8 @@ use DDD\Domain\Common\Entities\Crons\CronExecutions;
  */
 class DBCronExecutions extends DBEntitySet
 {
-    public const BASE_REPO_CLASS = DBCronExecution::class;
-    public const BASE_ENTITY_SET_CLASS = CronExecutions::class;
+    public const string BASE_REPO_CLASS = DBCronExecution::class;
+    public const string BASE_ENTITY_SET_CLASS = CronExecutions::class;
 
 
 }

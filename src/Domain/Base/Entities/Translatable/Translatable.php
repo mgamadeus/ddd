@@ -9,9 +9,8 @@ use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\ValueObject;
-use DDD\Infrastructure\Libs\Config;
-use DDD\Infrastructure\Services\DDDService;
 use DDD\Domain\Base\Services\TranslatableService;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Validation\Constraints\Choice;
 
 #[Attribute(Attribute::TARGET_PROPERTY)]
@@ -19,24 +18,13 @@ class Translatable extends ValueObject
 {
     use BaseAttributeTrait;
 
-    /**
-     * If enabled, the database model generator creates a stored virtual search column `virtual{Field}Search`
-     * and a FULLTEXT index on it.
-     */
-    public bool $fullTextIndex = false;
+    public const string WRITING_STYLE_FORMAL = 'FORMAL';
 
-    /**
-     * Returns the stored virtual column name used for FULLTEXT indexing of JSON-backed translatable fields.
-     */
-    public static function getFullTextSearchVirtualColumnName(string $propertyName): string
-    {
-        return 'virtual' . ucfirst($propertyName) . 'Search';
-    }
+    public const string WRITING_STYLE_INFORMAL = 'INFORMAL';
 
-    public const WRITING_STYLE_FORMAL = 'FORMAL';
-    public const WRITING_STYLE_INFORMAL = 'INFORMAL';
-    public const DEFAULT_WRITING_STYLE = self::WRITING_STYLE_FORMAL;
-    public const DEFAULT_LANGUAGE_CODE = 'en';
+    public const string DEFAULT_WRITING_STYLE = self::WRITING_STYLE_FORMAL;
+
+    public const string DEFAULT_LANGUAGE_CODE = 'en';
 
     /** @var string */
     public static string $currentLanguageCode;
@@ -70,11 +58,24 @@ class Translatable extends ValueObject
     /** @var array|null Snapshot of translation settings */
     protected static ?array $translationSettingsSnapshot = null;
 
-    protected static function getTranslatableService(): TranslatableService
+    /**
+     * If enabled, the database model generator creates a stored virtual search column `virtual{Field}Search`
+     * and a FULLTEXT index on it.
+     */
+    public bool $fullTextIndex = false;
+
+    public function __construct(bool $fullTextIndex = false)
     {
-        /** @var TranslatableService $translatableService */
-        $translatableService = DDDService::instance()->getService(TranslatableService::class);
-        return $translatableService;
+        $this->fullTextIndex = $fullTextIndex;
+        parent::__construct();
+    }
+
+    /**
+     * Returns the stored virtual column name used for FULLTEXT indexing of JSON-backed translatable fields.
+     */
+    public static function getFullTextSearchVirtualColumnName(string $propertyName): string
+    {
+        return 'virtual' . ucfirst($propertyName) . 'Search';
     }
 
     public static function setTranslationSettingsSnapshot(): void
@@ -87,6 +88,43 @@ class Translatable extends ValueObject
             'languageCode' => static::getCurrentLanguageCode(),
             'countryCode' => static::getCurrentCountryCode()
         ];
+    }
+
+    public static function getCurrentWritingStyle(): string
+    {
+        return static::getTranslatableService()->getCurrentWritingStyle();
+    }
+
+    public static function setCurrentWritingStyle(string $writingStyle): void
+    {
+        self::$currentWritingStyle = $writingStyle;
+    }
+
+    protected static function getTranslatableService(): TranslatableService
+    {
+        /** @var TranslatableService $translatableService */
+        $translatableService = DDDService::instance()->getService(TranslatableService::class);
+        return $translatableService;
+    }
+
+    public static function getCurrentLanguageCode(): string
+    {
+        return static::getTranslatableService()->getCurrentLanguageCode();
+    }
+
+    public static function setCurrentLanguageCode(string $languageCode): void
+    {
+        self::$currentLanguageCode = strtolower($languageCode);
+    }
+
+    public static function getCurrentCountryCode(): ?string
+    {
+        return static::getTranslatableService()->getCurrentCountryCode();
+    }
+
+    public static function setCurrentCountryCode(?string $countryCode): void
+    {
+        self::$currentCountryCode = $countryCode !== null ? strtolower($countryCode) : null;
     }
 
     public static function restoreTranslationSettingsSnapshot(): void
@@ -155,36 +193,6 @@ class Translatable extends ValueObject
         return static::getTranslatableService()->getDefaultWritingStyle();
     }
 
-    public static function getCurrentLanguageCode(): string
-    {
-        return static::getTranslatableService()->getCurrentLanguageCode();
-    }
-
-    public static function getCurrentWritingStyle(): string
-    {
-        return static::getTranslatableService()->getCurrentWritingStyle();
-    }
-
-    public static function getCurrentCountryCode(): ?string
-    {
-        return static::getTranslatableService()->getCurrentCountryCode();
-    }
-
-    public static function setCurrentLanguageCode(string $languageCode): void
-    {
-        self::$currentLanguageCode = strtolower($languageCode);
-    }
-
-    public static function setCurrentWritingStyle(string $writingStyle): void
-    {
-        self::$currentWritingStyle = $writingStyle;
-    }
-
-    public static function setCurrentCountryCode(?string $countryCode): void
-    {
-        self::$currentCountryCode = $countryCode !== null ? strtolower($countryCode) : null;
-    }
-
     public static function getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(
         ?string $languageCode = null,
         ?string $countryCode = null,
@@ -232,11 +240,5 @@ class Translatable extends ValueObject
         } else {
             DefaultObject::addStaticPropertiesToHide(false, 'translationInfos');
         }
-    }
-
-    public function __construct(bool $fullTextIndex = false)
-    {
-        $this->fullTextIndex = $fullTextIndex;
-        parent::__construct();
     }
 }

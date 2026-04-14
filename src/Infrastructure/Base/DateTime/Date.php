@@ -14,11 +14,13 @@ use DDD\Infrastructure\Services\DDDService;
  */
 class Date extends DateTime
 {
-    public const DATE = 'Y-m-d';
+    public const string DATE = 'Y-m-d';
 
-    public const DATE_GERMAN = 'd.m.Y';
-    public const DATE_MONTH_YEAR = 'm-Y';
-    public const YEAR_MONTH_DATE = 'Ymd';
+    public const string DATE_GERMAN = 'd.m.Y';
+
+    public const string DATE_MONTH_YEAR = 'm-Y';
+
+    public const string YEAR_MONTH_DATE = 'Ymd';
 
     private $toStringCache = null;
 
@@ -29,6 +31,23 @@ class Date extends DateTime
         $this->setTimezone(new DateTimeZone('UTC'));
     }
 
+    /**
+     * Creates Date by passing year, month and day of month
+     * @param int $year
+     * @param int $month
+     * @param int $dayOfMonth
+     * @return Date|bool
+     */
+    public static function fromYearMonthDay(int $year, int $month, int $dayOfMonth): Date|bool
+    {
+        $dateString = $year . '-' . str_pad((string)$month, 2, '0', STR_PAD_LEFT) . '-' . str_pad(
+                (string)$dayOfMonth,
+                2,
+                '0',
+                STR_PAD_LEFT
+            );
+        return self::fromString($dateString);
+    }
 
     /**
      * Creates a Date object from a string formatted date.
@@ -78,7 +97,8 @@ class Date extends DateTime
      * @param Date $other
      * @return int
      */
-    public function getDaysDiffToDisplay(Date $other): int {
+    public function getDaysDiffToDisplay(Date $other): int
+    {
         // Clone the current and other Date objects to avoid modifying the originals
         $nowClone = clone $this;
         $otherClone = clone $other;
@@ -92,24 +112,6 @@ class Date extends DateTime
 
         // Return the number of days
         return $interval->days;
-    }
-
-    /**
-     * Creates Date by passing year, month and day of month
-     * @param int $year
-     * @param int $month
-     * @param int $dayOfMonth
-     * @return Date|bool
-     */
-    public static function fromYearMonthDay(int $year, int $month, int $dayOfMonth): Date|bool
-    {
-        $dateString = $year . '-' . str_pad((string)$month, 2, '0', STR_PAD_LEFT) . '-' . str_pad(
-                (string)$dayOfMonth,
-                2,
-                '0',
-                STR_PAD_LEFT
-            );
-        return self::fromString($dateString);
     }
 
     public function jsonSerialize(): string

@@ -25,7 +25,7 @@ use ReflectionException;
 
 class CacheScopeInvalidationsService extends EntitiesService
 {
-    public const DEFAULT_ENTITY_CLASS = CacheScopeInvalidation::class;
+    public const string DEFAULT_ENTITY_CLASS = CacheScopeInvalidation::class;
 
     /** @var CacheScopeInvalidations[] CacheScopeInvalidations by accountId */
     private static array $cacheScopeInvalidationsForAccounts = [];

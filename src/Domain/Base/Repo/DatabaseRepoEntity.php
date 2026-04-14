@@ -44,13 +44,13 @@ use Throwable;
 abstract class DatabaseRepoEntity extends RepoEntity
 {
     /** @var string */
-    public const BASE_ENTITY_CLASS = null;
+    public const string|null BASE_ENTITY_CLASS = null;
 
     /** @var string */
-    public const BASE_ORM_MODEL = null;
+    public const string|null BASE_ORM_MODEL = null;
 
     /** @var int The default decursive depth for update operations */
-    public const UPDATE_DEFAULT_RECURSIVE_DEPTH = 2;
+    public const int UPDATE_DEFAULT_RECURSIVE_DEPTH = 2;
 
     protected static $applyRightsRestrictions = true;
 

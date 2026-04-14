@@ -8,8 +8,8 @@ use DDD\Domain\Base\Entities\ValueObject;
 
 abstract class ContactInfo extends ValueObject
 {
-    public const TYPE_EMAIL = 'EMAIL';
-    public const TYPE_PHONE = 'PHONE';
+    public const string TYPE_EMAIL = 'EMAIL';
+    public const string TYPE_PHONE = 'PHONE';
 
     public ?string $scope;
     public ?string $type;

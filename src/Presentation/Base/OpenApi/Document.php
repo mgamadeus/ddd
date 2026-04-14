@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace DDD\Presentation\Base\OpenApi;
 
 use DDD\Infrastructure\Reflection\ReflectionClass;
-use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
 use DDD\Infrastructure\Traits\Serializer\Attributes\OverwritePropertyName;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 use DDD\Presentation\Base\OpenApi\Attributes\Ignore;
@@ -34,16 +33,19 @@ class Document
 {
     use SerializerTrait;
 
-    public const MAX_SUMMARY_WORDS = 7;
-    public const MAX_SUMMARY_CHARS = 75;
-    public const THROW_ERRORS_ON_ENDPOINTS_WITHOUT_DESCRIPTION = true;
-    public const THROW_ERRORS_ON_ENDPOINTS_WITHOUT_SUMMARY = true;
+    public const int MAX_SUMMARY_WORDS = 7;
 
-    public const BASE_TYPES = ['string' => true, 'integer' => true, 'float' => true, 'boolean' => true];
-    
-    public const EXTERNAL_SCHEMA_URL_NAME_PLACEHOLER = '{{SCHEMA_NAME}}';
+    public const int MAX_SUMMARY_CHARS = 75;
 
-    public const MODELS_TAG_GROUP_NAME = 'Models';
+    public const bool THROW_ERRORS_ON_ENDPOINTS_WITHOUT_DESCRIPTION = true;
+
+    public const bool THROW_ERRORS_ON_ENDPOINTS_WITHOUT_SUMMARY = true;
+
+    public const array BASE_TYPES = ['string' => true, 'integer' => true, 'float' => true, 'boolean' => true];
+
+    public const string EXTERNAL_SCHEMA_URL_NAME_PLACEHOLER = '{{SCHEMA_NAME}}';
+
+    public const string MODELS_TAG_GROUP_NAME = 'Models';
 
     private static Document $instance;
 
@@ -90,8 +92,13 @@ class Document
      * @throws ReflectionException
      * @throws TypeDefinitionMissingOrWrong
      */
-    public function __construct(RouteCollection &$routeCollection, string $routePrefix = '', ?int $maxRecursiveSchemaDepth = null, bool $useExternalSchemaReferences = false, ?string $externalSchemaReferenceUrl = null)
-    {
+    public function __construct(
+        RouteCollection &$routeCollection,
+        string $routePrefix = '',
+        ?int $maxRecursiveSchemaDepth = null,
+        bool $useExternalSchemaReferences = false,
+        ?string $externalSchemaReferenceUrl = null
+    ) {
         $this->routeCollection = $routeCollection;
         $this->components = new Components($this);
         $this->routePrefix = $routePrefix;
@@ -101,15 +108,27 @@ class Document
         self::$instance = $this;
     }
 
-    public function getMaxRecursiveSchemaDepth(): ?int {
+    /**
+     * returns instance singleton instance of the document
+     * @return Document
+     */
+    public static function getInstance(): Document
+    {
+        return self::$instance;
+    }
+
+    public function getMaxRecursiveSchemaDepth(): ?int
+    {
         return $this->maxRecursiveSchemaDepth;
     }
 
-    public function useExternalSchemaReferences(): bool {
+    public function useExternalSchemaReferences(): bool
+    {
         return $this->useExternalSchemaReferences;
     }
 
-    public function getExternalSchemaReferenceUrl(): ?string {
+    public function getExternalSchemaReferenceUrl(): ?string
+    {
         return $this->externalSchemaReferenceUrl;
     }
 
@@ -187,15 +206,32 @@ class Document
             }
             foreach ($route->getMethods() as $httpMethod) {
                 $this->paths[$path][strtolower($httpMethod)] = new Path(
-                    $route,
-                    $httpMethod,
-                    $controllerReflectionClass,
-                    $controllerReflectionMethod
+                    $route, $httpMethod, $controllerReflectionClass, $controllerReflectionMethod
                 );
             }
         }
         // sort tags if present by name
         $this?->tags?->sortByName();
+    }
+
+    public static function getControllerClassForRoute(Route $route): ?string
+    {
+        $default = $route->getDefaults();
+        if (isset($default['_controller'])) {
+            $controllerClass = substr($default['_controller'], 0, strpos($default['_controller'], '::'));
+            return $controllerClass;
+        }
+        return null;
+    }
+
+    public static function getControllerMethodForRoute(Route $route): ?string
+    {
+        $default = $route->getDefaults();
+        if (isset($default['_controller'])) {
+            $controllerMethod = substr($default['_controller'], strpos($default['_controller'], '::') + 2);
+            return $controllerMethod;
+        }
+        return null;
     }
 
     /**
@@ -233,35 +269,6 @@ class Document
             }
             return strcasecmp($a->name, $b->name);
         });
-    }
-
-    /**
-     * returns instance singleton instance of the document
-     * @return Document
-     */
-    public static function getInstance(): Document
-    {
-        return self::$instance;
-    }
-
-    public static function getControllerClassForRoute(Route $route): ?string
-    {
-        $default = $route->getDefaults();
-        if (isset($default['_controller'])) {
-            $controllerClass = substr($default['_controller'], 0, strpos($default['_controller'], '::'));
-            return $controllerClass;
-        }
-        return null;
-    }
-
-    public static function getControllerMethodForRoute(Route $route): ?string
-    {
-        $default = $route->getDefaults();
-        if (isset($default['_controller'])) {
-            $controllerMethod = substr($default['_controller'], strpos($default['_controller'], '::') + 2);
-            return $controllerMethod;
-        }
-        return null;
     }
 
     /**

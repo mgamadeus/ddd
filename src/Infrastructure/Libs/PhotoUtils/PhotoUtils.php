@@ -11,7 +11,7 @@ use ImagickException;
 
 class PhotoUtils
 {
-    public const SUPPORTED_FORMATS = [IMAGETYPE_PNG, IMAGETYPE_JPEG, IMAGETYPE_GIF];
+    public const array SUPPORTED_FORMATS = [IMAGETYPE_PNG, IMAGETYPE_JPEG, IMAGETYPE_GIF];
 
     /**
      * Returns the file mime type from a base64

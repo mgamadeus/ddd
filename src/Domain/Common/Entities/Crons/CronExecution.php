@@ -32,16 +32,16 @@ class CronExecution extends Entity
     use QueryOptionsTrait, ChangeHistoryTrait;
 
     /** @var string Cron is started and running */
-    public const STATE_RUNNING = 'RUNNING';
+    public const string STATE_RUNNING = 'RUNNING';
 
     /** @var string Cron has been executed and ended */
-    public const STATE_ENDED = 'ENDED';
+    public const string STATE_ENDED = 'ENDED';
 
     /** @var string Cron has been executed successfully */
-    public const EXECUTION_STATE_SUCCESSFUL = 'SUCCESSFUL';
+    public const string EXECUTION_STATE_SUCCESSFUL = 'SUCCESSFUL';
 
     /** @var string Cron has been executed with errors */
-    public const EXECUTION_STATE_FAILED = 'FAILED';
+    public const string EXECUTION_STATE_FAILED = 'FAILED';
 
     /** @var int The id of the executed Cron */
     public int $cronId;

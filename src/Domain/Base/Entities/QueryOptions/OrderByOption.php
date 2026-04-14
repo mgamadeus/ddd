@@ -10,8 +10,9 @@ use DDD\Infrastructure\Validation\Constraints\Choice;
 
 class OrderByOption extends ValueObject
 {
-    public const ASC = 'ASC';
-    public const DESC = 'DESC';
+    public const string ASC = 'ASC';
+
+    public const string DESC = 'DESC';
 
     /** @var string The orderBy property name */
     public ?string $propertyName;
@@ -25,6 +26,24 @@ class OrderByOption extends ValueObject
 
     /** @var ExpandOption The expandOption the orderByOption refers to in case of expanded properties */
     protected ?ExpandOption $expandOption = null;
+
+    /**
+     * @param string $propertyName
+     * @param string $direction
+     * @throws BadRequestException
+     */
+    public function __construct(string $propertyName = null, string $direction = self::ASC)
+    {
+        $this->propertyName = $propertyName;
+        $direction = strtoupper($direction);
+        if (!in_array($direction, [self::ASC, self::DESC])) {
+            throw new BadRequestException(
+                'OrderBy direction has to be one of [' . implode(', ', [self::ASC, self::DESC]) . ']'
+            );
+        }
+        $this->direction = $direction;
+        parent::__construct();
+    }
 
     /**
      * @return FiltersDefinition
@@ -45,7 +64,8 @@ class OrderByOption extends ValueObject
     /**
      * @return ExpandOption|null
      */
-    public function getExpandOption(): ?ExpandOption {
+    public function getExpandOption(): ?ExpandOption
+    {
         return $this->expandOption;
     }
 
@@ -53,32 +73,14 @@ class OrderByOption extends ValueObject
      * @param ExpandOption $expandOption
      * @return void
      */
-    public function setExpandOption(ExpandOption $expandOption): void {
-        $this->expandOption = $expandOption;
-    }
-
-    /**
-     * @param string $propertyName
-     * @param string $direction
-     * @throws BadRequestException
-     */
-    public function __construct(string $propertyName = null, string $direction = self::ASC)
+    public function setExpandOption(ExpandOption $expandOption): void
     {
-        $this->propertyName = $propertyName;
-        $direction = strtoupper($direction);
-        if (!in_array($direction, [self::ASC, self::DESC])) {
-            throw new BadRequestException(
-                'OrderBy direction has to be one of [' . implode(', ', [self::ASC, self::DESC]) . ']'
-            );
-        }
-        $this->direction = $direction;
-        parent::__construct();
+        $this->expandOption = $expandOption;
     }
 
     public function uniqueKey(): string
     {
         return $this->propertyName . '_' . $this->direction;
     }
-
 
 }

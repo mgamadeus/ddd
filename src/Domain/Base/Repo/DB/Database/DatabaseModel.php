@@ -28,9 +28,9 @@ use ReflectionNamedType;
 
 class DatabaseModel extends ValueObject
 {
-    public const DEFAULT_COLLATION = 'utf8mb4_unicode_ci';
+    public const string DEFAULT_COLLATION = 'utf8mb4_unicode_ci';
 
-    public const MODEL_SUFFIX = 'Model';
+    public const string MODEL_SUFFIX = 'Model';
 
     /**
      * @var string|null Optional: If Entity inherits another Entity, then, a Database Model is generated that inherits the one of the parent Entity, but no SQL Table.

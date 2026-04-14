@@ -17,6 +17,6 @@ use DDD\Domain\Common\Entities\Roles\Role;
  */
 class DBRole extends DBEntity
 {
-    public const BASE_ENTITY_CLASS = Role::class;
-    public const BASE_ORM_MODEL = DBRoleModel::class;
+    public const string BASE_ENTITY_CLASS = Role::class;
+    public const string BASE_ORM_MODEL = DBRoleModel::class;
 }

@@ -8,9 +8,10 @@ use DDD\Infrastructure\Exceptions\BadRequestException;
 
 class FiltersOptionsParser
 {
-    protected const BRACKETS = ['(', ')'];
+    protected const array BRACKETS = ['(', ')'];
 
     protected string $input;
+
     protected int $index;
 
     protected int $inputLength;
@@ -55,7 +56,6 @@ class FiltersOptionsParser
         return $left;
     }
 
-
     protected function parseTerm(): FiltersOptions
     {
         if ($this->match('(')) {
@@ -65,6 +65,80 @@ class FiltersOptionsParser
         } else {
             return $this->parseComparison();
         }
+    }
+
+    /**
+     * Check if the current input matches the given token
+     * @param string $token
+     * @return bool
+     */
+    protected function match(string $token): bool
+    {
+        $tIndex = $this->index + $this->getWhiteSpaceCharactersCountAtBeginning();
+
+        $tokenLength = strlen($token);
+
+        // Get the part of the input that starts with the current index and has the same length as the token
+        $substring = substr($this->input, $tIndex, $tokenLength);
+
+        // operands are not case sensitive
+        if (in_array($token, FiltersOptions::OPERATORS)) {
+            $substring = strtolower($substring);
+        }
+
+        // If the substring matches the token...
+        if (strtolower($substring) === strtolower($token)) {
+            // if we find a bracket, it is irrelevant what comes after
+            $tIndex += $tokenLength;
+            if (in_array($token, self::BRACKETS)) {
+                $this->index = $tIndex;
+                return true;
+            }
+            // Check the character immediately after the token (if it exists)
+            $nextChar = $this->input[$tIndex] ?? null;
+
+            // Check if the next character is whitespace, an opening bracket, a closing bracket, or null (end of input)
+            // only these characters are valid after an operand
+            if ($nextChar === null || ctype_space($nextChar) || $nextChar === '(' || $nextChar === ')') {
+                // If it is, consume the token and return true
+                $this->index = $tIndex;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return int Returns the number of whitespace characters at the beginning of current index position
+     */
+    protected function getWhiteSpaceCharactersCountAtBeginning(): int
+    {
+        $tIndex = $this->index;
+        while (true) {
+            // current index exceeding input length
+            if ($tIndex > $this->inputLength - 1) {
+                return $tIndex;
+            }
+            if ($this->isWhitespace($tIndex)) {
+                $tIndex++;
+            } else {
+                break;
+            }
+        }
+        return $tIndex - $this->index;
+    }
+
+    /**
+     * Checks if char at index is whitespace
+     * @param int $index
+     * @return bool
+     */
+    protected function isWhitespace(int $index): bool
+    {
+        // Get the current character
+        $char = $this->input[$index];
+        // Check if it's a whitespace character
+        return ctype_space($char);
     }
 
     /**
@@ -232,8 +306,7 @@ class FiltersOptionsParser
                     throw new BadRequestException(
                         "Parsing of FiltersOptions failed: invalid formatted array literal found at index {$this->index} for input: {$this->input}"
                     );
-                }
-                elseif ($stringDefiner === false && ($curChar === '"' || $curChar === "'")) {
+                } elseif ($stringDefiner === false && ($curChar === '"' || $curChar === "'")) {
                     // a string starts
                     $stringDefiner = $curChar;
                     // in order to have valid json, we convert ' to "
@@ -268,79 +341,5 @@ class FiltersOptionsParser
             "Parsing of FiltersOptions failed: literal expected at index {$this->index} for input: {$this->input}"
         );
         // Parse literal (e.g., '2023-01-01')
-    }
-
-    /**
-     * Check if the current input matches the given token
-     * @param string $token
-     * @return bool
-     */
-    protected function match(string $token): bool
-    {
-        $tIndex = $this->index + $this->getWhiteSpaceCharactersCountAtBeginning();
-
-        $tokenLength = strlen($token);
-
-        // Get the part of the input that starts with the current index and has the same length as the token
-        $substring = substr($this->input, $tIndex, $tokenLength);
-
-        // operands are not case sensitive
-        if (in_array($token, FiltersOptions::OPERATORS)) {
-            $substring = strtolower($substring);
-        }
-
-        // If the substring matches the token...
-        if (strtolower($substring) === strtolower($token)) {
-            // if we find a bracket, it is irrelevant what comes after
-            $tIndex += $tokenLength;
-            if (in_array($token, self::BRACKETS)) {
-                $this->index = $tIndex;
-                return true;
-            }
-            // Check the character immediately after the token (if it exists)
-            $nextChar = $this->input[$tIndex] ?? null;
-
-            // Check if the next character is whitespace, an opening bracket, a closing bracket, or null (end of input)
-            // only these characters are valid after an operand
-            if ($nextChar === null || ctype_space($nextChar) || $nextChar === '(' || $nextChar === ')') {
-                // If it is, consume the token and return true
-                $this->index = $tIndex;
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Checks if char at index is whitespace
-     * @param int $index
-     * @return bool
-     */
-    protected function isWhitespace(int $index): bool
-    {
-        // Get the current character
-        $char = $this->input[$index];
-        // Check if it's a whitespace character
-        return ctype_space($char);
-    }
-
-    /**
-     * @return int Returns the number of whitespace characters at the beginning of current index position
-     */
-    protected function getWhiteSpaceCharactersCountAtBeginning(): int
-    {
-        $tIndex = $this->index;
-        while (true) {
-            // current index exceeding input length
-            if ($tIndex > $this->inputLength - 1) {
-                return $tIndex;
-            }
-            if ($this->isWhitespace($tIndex)) {
-                $tIndex++;
-            } else {
-                break;
-            }
-        }
-        return $tIndex - $this->index;
     }
 }

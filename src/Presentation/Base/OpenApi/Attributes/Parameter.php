@@ -12,14 +12,21 @@ class Parameter extends Base
 {
     use BaseAttributeTrait;
 
-    public const RESPONSE = 'response';
-    public const BODY = 'body';
-    public const POST = 'post';
-    public const PATH = 'path';
-    public const QUERY = 'query';
-    public const COOKIE = 'cookie';
-    public const HEADER = 'header';
-    public const FILES = 'files';
+    public const string RESPONSE = 'response';
+
+    public const string BODY = 'body';
+
+    public const string POST = 'post';
+
+    public const string PATH = 'path';
+
+    public const string QUERY = 'query';
+
+    public const string COOKIE = 'cookie';
+
+    public const string HEADER = 'header';
+
+    public const string FILES = 'files';
 
     public string $in = 'query';
 

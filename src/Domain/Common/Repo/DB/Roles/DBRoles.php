@@ -13,6 +13,6 @@ use DDD\Domain\Common\Entities\Roles\Roles;
  */
 class DBRoles extends DBEntitySet
 {
-    public const BASE_REPO_CLASS = DBRole::class;
-    public const BASE_ENTITY_SET_CLASS = Roles::class;
+    public const string BASE_REPO_CLASS = DBRole::class;
+    public const string BASE_ENTITY_SET_CLASS = Roles::class;
 }

@@ -21,7 +21,7 @@ use DDD\Domain\Common\Services\CacheScopeInvalidationsService;
 #[QueryOptions(top: 10)]
 class CacheScopeInvalidations extends EntitySet
 {
-    public const SERVICE_NAME = CacheScopeInvalidationsService::class;
+    public const string SERVICE_NAME = CacheScopeInvalidationsService::class;
 
     /**
      * Returns CacheScopeInvalidation by parameters

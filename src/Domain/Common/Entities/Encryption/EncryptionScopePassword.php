@@ -31,7 +31,7 @@ class EncryptionScopePassword extends Entity
 {
     use QueryOptionsTrait, ChangeHistoryTrait;
 
-    public const COOKIE_NAME = 'encryptionPassword';
+    public const string COOKIE_NAME = 'encryptionPassword';
 
     /** @var int The id of the EncryptionScope */
     public int $encryptionScopeId;

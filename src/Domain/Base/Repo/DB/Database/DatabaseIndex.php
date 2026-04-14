@@ -14,19 +14,25 @@ class DatabaseIndex extends ValueObject
 {
     use BaseAttributeTrait;
 
-    public const TYPE_NONE = 'NONE';
-    public const TYPE_INDEX = 'INDEX';
-    public const TYPE_UNIQUE = 'UNIQUE INDEX';
-    public const TYPE_FULLTEXT = 'FULLTEXT INDEX';
-    public const TYPE_SPATIAL = 'SPATIAL INDEX';
-    public const TYPE_VECTOR = 'VECTOR INDEX';
+    public const string TYPE_NONE = 'NONE';
 
-    public const DISTANCE_METRIC_COSINE = 'cosine';
-    public const DISTANCE_METRIC_EUCLIDEAN = 'euclidean';
+    public const string TYPE_INDEX = 'INDEX';
+
+    public const string TYPE_UNIQUE = 'UNIQUE INDEX';
+
+    public const string TYPE_FULLTEXT = 'FULLTEXT INDEX';
+
+    public const string TYPE_SPATIAL = 'SPATIAL INDEX';
+
+    public const string TYPE_VECTOR = 'VECTOR INDEX';
+
+    public const string DISTANCE_METRIC_COSINE = 'cosine';
+
+    public const string DISTANCE_METRIC_EUCLIDEAN = 'euclidean';
 
     public const int DEFAULT_VECTOR_MAX_NEIGHBORS = 8;
 
-    public const TYPE_NAME_ALLOCATION = [
+    public const array TYPE_NAME_ALLOCATION = [
         self::TYPE_INDEX => 'idx',
         self::TYPE_SPATIAL => 'spx',
         self::TYPE_UNIQUE => 'uniq',
@@ -58,6 +64,31 @@ class DatabaseIndex extends ValueObject
      */
     public ?int $maxNeighbors = null;
 
+    /**
+     * @param string $indexType
+     * @param array $indexColumns
+     */
+    public function __construct(
+        string $indexType = self::TYPE_INDEX,
+        array $indexColumns = [],
+        ?string $distanceMetric = null,
+        ?int $maxNeighbors = null
+    ) {
+        $this->indexType = $indexType;
+        $this->indexColumns = $indexColumns;
+
+        // Only apply defaults for VECTOR indexes.
+        if ($indexType === self::TYPE_VECTOR) {
+            $this->distanceMetric = $distanceMetric ?? self::DISTANCE_METRIC_COSINE;
+            $this->maxNeighbors = $maxNeighbors ?? self::DEFAULT_VECTOR_MAX_NEIGHBORS;
+        } else {
+            $this->distanceMetric = $distanceMetric;
+            $this->maxNeighbors = $maxNeighbors;
+        }
+
+        parent::__construct();
+    }
+
     public function getSql(string $tableName): string
     {
         $indexName = self::TYPE_NAME_ALLOCATION[$this->indexType] . '_';
@@ -67,7 +98,11 @@ class DatabaseIndex extends ValueObject
             $columnsShort = '';
             foreach ($this->indexColumns as $indexColumn) {
                 // in case of virtual Columns e.g. virtualAccountid, we use vAcc instead of vir
-                $currentColumnShort = str_starts_with($indexColumn, DatabaseVirtualColumn::VIRTUAL_COLUMN_PREFIX)?substr(DatabaseVirtualColumn::VIRTUAL_COLUMN_PREFIX,0,1) . substr($indexColumn, strlen(DatabaseVirtualColumn::VIRTUAL_COLUMN_PREFIX), 3):substr($indexColumn, 0, 3);
+                $currentColumnShort = str_starts_with($indexColumn, DatabaseVirtualColumn::VIRTUAL_COLUMN_PREFIX) ? substr(
+                        DatabaseVirtualColumn::VIRTUAL_COLUMN_PREFIX,
+                        0,
+                        1
+                    ) . substr($indexColumn, strlen(DatabaseVirtualColumn::VIRTUAL_COLUMN_PREFIX), 3) : substr($indexColumn, 0, 3);
                 $columnsShort .= ($columnsShort ? '_' : '') . $currentColumnShort;
             }
             $indexName .= $columnsShort;
@@ -102,30 +137,5 @@ class DatabaseIndex extends ValueObject
             $key .= '_maxNeighbors=' . ($this->maxNeighbors ?? '');
         }
         return self::uniqueKeyStatic($key);
-    }
-
-    /**
-     * @param string $indexType
-     * @param array $indexColumns
-     */
-    public function __construct(
-        string $indexType = self::TYPE_INDEX,
-        array $indexColumns = [],
-        ?string $distanceMetric = null,
-        ?int $maxNeighbors = null
-    ) {
-        $this->indexType = $indexType;
-        $this->indexColumns = $indexColumns;
-
-        // Only apply defaults for VECTOR indexes.
-        if ($indexType === self::TYPE_VECTOR) {
-            $this->distanceMetric = $distanceMetric ?? self::DISTANCE_METRIC_COSINE;
-            $this->maxNeighbors = $maxNeighbors ?? self::DEFAULT_VECTOR_MAX_NEIGHBORS;
-        } else {
-            $this->distanceMetric = $distanceMetric;
-            $this->maxNeighbors = $maxNeighbors;
-        }
-
-        parent::__construct();
     }
 }

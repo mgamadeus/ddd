@@ -17,9 +17,9 @@ use kamermans\OAuth2\Signer\ClientCredentials\PostFormData;
 
 class OauthHttpClientService extends HttpClientService
 {
-    public const SIGNER_TYPE_POST_FORM_DATA = PostFormData::class;
+    public const string SIGNER_TYPE_POST_FORM_DATA = PostFormData::class;
 
-    public const SIGNER_TYPE_BASIC_AUTH = BasicAuth::class;
+    public const string SIGNER_TYPE_BASIC_AUTH = BasicAuth::class;
 
     protected Client $client;
 

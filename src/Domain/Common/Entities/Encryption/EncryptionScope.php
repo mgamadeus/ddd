@@ -34,19 +34,19 @@ class EncryptionScope extends Entity
     use QueryOptionsTrait, ChangeHistoryTrait;
 
     /** @var string Access to Google Workspace Service Account data */
-    public const SCOPE_INTERNAL_GOOGLE_WORKSPACE_SERVICE_ACCOUNT = 'INTERNAL.GOOGLE_WORKSPACE.SERVICE_ACCOUNT';
+    public const string SCOPE_INTERNAL_GOOGLE_WORKSPACE_SERVICE_ACCOUNT = 'INTERNAL.GOOGLE_WORKSPACE.SERVICE_ACCOUNT';
 
     /** @var string Access to Contractor base data */
-    public const SCOPE_INTERNAL_CONTRACTORS_DATA = 'INTERNAL.CONTRACTORS.DATA';
+    public const string SCOPE_INTERNAL_CONTRACTORS_DATA = 'INTERNAL.CONTRACTORS.DATA';
 
     /** @var string Access to Contractor invoices */
-    public const SCOPE_INTERNAL_CONTRACTORS_INVOICES = 'INTERNAL.CONTRACTORS.INVOICES';
+    public const string SCOPE_INTERNAL_CONTRACTORS_INVOICES = 'INTERNAL.CONTRACTORS.INVOICES';
 
     /** @var string Access to Contractor contracts */
-    public const SCOPE_INTERNAL_CONTRACTORS_CONTRACTS = 'INTERNAL.CONTRACTORS.CONTRACTS';
+    public const string SCOPE_INTERNAL_CONTRACTORS_CONTRACTS = 'INTERNAL.CONTRACTORS.CONTRACTS';
 
     /** @var string Access to Contractor remuneration */
-    public const SCOPE_INTERNAL_CONTRACTORS_REMUNERATION = 'INTERNAL.CONTRACTORS.REMUNERATION';
+    public const string SCOPE_INTERNAL_CONTRACTORS_REMUNERATION = 'INTERNAL.CONTRACTORS.REMUNERATION';
 
     /** @var string The Scope's name */
     #[DatabaseIndex(indexType: DatabaseIndex::TYPE_UNIQUE)]

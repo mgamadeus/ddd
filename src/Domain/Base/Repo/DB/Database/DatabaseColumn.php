@@ -7,7 +7,6 @@ namespace DDD\Domain\Base\Repo\DB\Database;
 use Attribute;
 use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
 use DDD\Domain\Base\Entities\DefaultObject;
-use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
@@ -19,7 +18,6 @@ use DDD\Domain\Common\Entities\MathEntities\Vector;
 use DDD\Infrastructure\Base\DateTime\Date;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
-use DDD\Infrastructure\Reflection\ReflectionAttribute;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
 use ReflectionNamedType;
@@ -33,31 +31,47 @@ class DatabaseColumn extends ValueObject
 {
     use BaseAttributeTrait;
 
-    public const PROPERTIES_TO_SKIP = ['objectType' => true, 'changeHistory' => true, 'queryOptions' => true];
+    public const array PROPERTIES_TO_SKIP = ['objectType' => true, 'changeHistory' => true, 'queryOptions' => true];
 
-    public const MAP_CHOICES_TO_ENUMS = false;
+    public const bool MAP_CHOICES_TO_ENUMS = false;
 
-    public const PRIMARY_KEY_NAME = 'id';
+    public const string PRIMARY_KEY_NAME = 'id';
 
-    public const SQL_TYPE_INT = 'INT';
-    public const SQL_TYPE_BIGINT = 'BIGINT';
-    public const SQL_TYPE_FLOAT = 'FLOAT';
-    public const SQL_TYPE_DOUBLE = 'DOUBLE';
-    public const SQL_TYPE_BOOL = 'BOOLEAN';
-    public const SQL_TYPE_VARCHAR = 'VARCHAR';
-    public const SQL_TYPE_DATE = 'DATE';
-    public const SQL_TYPE_DATETIME = 'DATETIME';
-    public const SQL_TYPE_TEXT = 'TEXT';
-    public const SQL_TYPE_MEDIUMTEXT = 'MEDIUMTEXT';
-    public const SQL_TYPE_LONGTEXT = 'LONGTEXT';
-    public const SQL_TYPE_BLOB = 'BLOB';
-    public const SQL_TYPE_MEDIUMBLOB = 'MEDIUMBLOB';
-    public const SQL_TYPE_LONGBLOB = 'LONGBLOB';
-    public const SQL_TYPE_JSON = 'JSON';
-    public const SQL_TYPE_POINT = 'POINT';
-    public const SQL_TYPE_VECTOR = 'VECTOR';
+    public const string SQL_TYPE_INT = 'INT';
 
-    public const SQL_TYPE_ALLOCATION = [
+    public const string SQL_TYPE_BIGINT = 'BIGINT';
+
+    public const string SQL_TYPE_FLOAT = 'FLOAT';
+
+    public const string SQL_TYPE_DOUBLE = 'DOUBLE';
+
+    public const string SQL_TYPE_BOOL = 'BOOLEAN';
+
+    public const string SQL_TYPE_VARCHAR = 'VARCHAR';
+
+    public const string SQL_TYPE_DATE = 'DATE';
+
+    public const string SQL_TYPE_DATETIME = 'DATETIME';
+
+    public const string SQL_TYPE_TEXT = 'TEXT';
+
+    public const string SQL_TYPE_MEDIUMTEXT = 'MEDIUMTEXT';
+
+    public const string SQL_TYPE_LONGTEXT = 'LONGTEXT';
+
+    public const string SQL_TYPE_BLOB = 'BLOB';
+
+    public const string SQL_TYPE_MEDIUMBLOB = 'MEDIUMBLOB';
+
+    public const string SQL_TYPE_LONGBLOB = 'LONGBLOB';
+
+    public const string SQL_TYPE_JSON = 'JSON';
+
+    public const string SQL_TYPE_POINT = 'POINT';
+
+    public const string SQL_TYPE_VECTOR = 'VECTOR';
+
+    public const array SQL_TYPE_ALLOCATION = [
         ReflectionClass::INTEGER => self::SQL_TYPE_INT,
         ReflectionClass::FLOAT => self::SQL_TYPE_DOUBLE,
         ReflectionClass::BOOL => self::SQL_TYPE_BOOL,
@@ -69,7 +83,7 @@ class DatabaseColumn extends ValueObject
         ValueObject::class => self::SQL_TYPE_JSON,
     ];
 
-    public const DOCTRINE_COLUMN_TYPE_ALLOCATIONS = [
+    public const array DOCTRINE_COLUMN_TYPE_ALLOCATIONS = [
         ReflectionClass::BOOL => 'boolean',
         ReflectionClass::INTEGER => 'integer',
         ReflectionClass::STRING => 'string',
@@ -81,7 +95,7 @@ class DatabaseColumn extends ValueObject
         ValueObject::class => 'json',
     ];
 
-    public const DOCTRINE_SQL_TYPE_ALLOCATIONS = [
+    public const array DOCTRINE_SQL_TYPE_ALLOCATIONS = [
         self::SQL_TYPE_BOOL => 'boolean',
         self::SQL_TYPE_INT => 'integer',
         self::SQL_TYPE_VARCHAR => 'string',
@@ -95,7 +109,7 @@ class DatabaseColumn extends ValueObject
         self::SQL_TYPE_JSON => 'json',
     ];
 
-    public const DOCTRINE_PHP_TYPE_ALLOCATIONS = [
+    public const array DOCTRINE_PHP_TYPE_ALLOCATIONS = [
         ReflectionClass::BOOL => 'bool',
         ReflectionClass::INTEGER => 'int',
         ReflectionClass::STRING => 'string',
@@ -107,7 +121,7 @@ class DatabaseColumn extends ValueObject
         Vector::class => 'mixed',
     ];
 
-    public const SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS = [
+    public const array SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS = [
         self::SQL_TYPE_INT => DatabaseIndex::TYPE_INDEX,
         self::SQL_TYPE_BIGINT => DatabaseIndex::TYPE_INDEX,
         self::SQL_TYPE_FLOAT => DatabaseIndex::TYPE_INDEX,
@@ -127,7 +141,7 @@ class DatabaseColumn extends ValueObject
         self::SQL_TYPE_VECTOR => DatabaseIndex::TYPE_VECTOR,
     ];
 
-    public const SPATIAL_SQL_TYPES = [
+    public const array SPATIAL_SQL_TYPES = [
         'point' => true
     ];
 
@@ -192,6 +206,33 @@ class DatabaseColumn extends ValueObject
     /** @var DatabaseVirtualColumns Database VirtualColumns based on current column */
     public DatabaseVirtualColumns $virtualColumnsBasedOnCurrentColumn;
 
+    public function __construct(
+        string $sqlType = null,
+        bool $allowsNull = null,
+        bool $hasAutoIncrement = null,
+        bool $isUnsigned = null,
+        int $varCharLength = null,
+        int $vectorDimensions = null,
+        bool $encrypted = false,
+        ?string $encryptionScope = null,
+        ?string $onUpdateAction = null,
+        bool $ignoreProperty = false,
+        bool $isMergableJSONColumn = false,
+    ) {
+        $this->sqlType = $sqlType;
+        $this->allowsNull = $allowsNull;
+        $this->hasAutoIncrement = $hasAutoIncrement;
+        $this->isUnsigned = $isUnsigned;
+        $this->varCharLength = $varCharLength;
+        $this->vectorDimensions = $vectorDimensions;
+        $this->encrypted = $encrypted;
+        $this->onUpdateAction = $onUpdateAction;
+        $this->enryptionScope = $encryptionScope;
+        $this->ignoreProperty = $ignoreProperty;
+        $this->isMergableJSONColumn = $isMergableJSONColumn;
+        parent::__construct();
+    }
+
     public static function createFromReflectionProperty(
         ReflectionClass $reflectionClass,
         ReflectionProperty $reflectionProperty
@@ -205,7 +246,6 @@ class DatabaseColumn extends ValueObject
                 return null;
             }
         }
-
 
         $type = $reflectionProperty->getType();
         $propertyName = $reflectionProperty->getName();
@@ -247,10 +287,10 @@ class DatabaseColumn extends ValueObject
         $databaseColum->isBuildinType = $type->isBuiltin();
 
         if ($databaseColum->isBuildinType) {
-            if (!isset(self::SQL_TYPE_ALLOCATION[$type->getName()])){
+            if (!isset(self::SQL_TYPE_ALLOCATION[$type->getName()])) {
                 throw new InternalErrorException(
-                    'DatabaseColumn ' . $reflectionProperty->getName() . ' in ' . $reflectionClass->getName(
-                    ) . ' is defined '. $type->getName(). ' but no SQL TYPE allocation is present for this type'
+                    'DatabaseColumn ' . $reflectionProperty->getName() . ' in ' . $reflectionClass->getName() . ' is defined ' . $type->getName(
+                    ) . ' but no SQL TYPE allocation is present for this type'
                 );
             }
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[$type->getName()];
@@ -268,8 +308,10 @@ class DatabaseColumn extends ValueObject
             }
         }
         if (
-            ($choicesAttributeInstance = $reflectionProperty->getAttributeInstance(Choice::class, \ReflectionAttribute::IS_INSTANCEOF)) &&
-            self::MAP_CHOICES_TO_ENUMS
+            ($choicesAttributeInstance = $reflectionProperty->getAttributeInstance(
+                Choice::class,
+                \ReflectionAttribute::IS_INSTANCEOF
+            )) && self::MAP_CHOICES_TO_ENUMS
         ) {
             /** @var Choice $choicesAttributeInstance */
             $databaseColum->sqlType = 'ENUM(' . implode(
@@ -280,7 +322,10 @@ class DatabaseColumn extends ValueObject
                 ) . ')';
         } // handle length limits
         elseif (
-            $type->getName() == ReflectionClass::STRING && ($lengthAttributeInstance = $reflectionProperty->getAttributeInstance(Length::class, \ReflectionAttribute::IS_INSTANCEOF))
+            $type->getName() == ReflectionClass::STRING && ($lengthAttributeInstance = $reflectionProperty->getAttributeInstance(
+                Length::class,
+                \ReflectionAttribute::IS_INSTANCEOF
+            ))
         ) {
             /** @var Length $lengthAttributeInstance */
             if ($lengthAttributeInstance->max) {
@@ -292,11 +337,9 @@ class DatabaseColumn extends ValueObject
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[Date::class];
         } elseif (is_a($type->getName(), GeoPoint::class, true)) {
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[GeoPoint::class];
-        }
-        elseif (is_a($type->getName(), Vector::class, true)) {
+        } elseif (is_a($type->getName(), Vector::class, true)) {
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[Vector::class];
-        }
-        elseif (DefaultObject::isValueObject($type->getName())) {
+        } elseif (DefaultObject::isValueObject($type->getName())) {
             // ignore Lazyload Repos ValueObject e.g. Virtual Repotype
             if ($lazyloadAttributes = $reflectionProperty->getAttributes(LazyLoad::class, \ReflectionAttribute::IS_INSTANCEOF)) {
                 foreach ($lazyloadAttributes as $lazyloadAttribute) {
@@ -428,7 +471,7 @@ class DatabaseColumn extends ValueObject
         if (DefaultObject::isValueObject($this->phpType)) {
             return self::DOCTRINE_PHP_TYPE_ALLOCATIONS[ValueObject::class];
         }
-        if (!isset(self::DOCTRINE_PHP_TYPE_ALLOCATIONS[$this->phpType])){
+        if (!isset(self::DOCTRINE_PHP_TYPE_ALLOCATIONS[$this->phpType])) {
             throw new InternalErrorException("No Doctrine to PHP type allocation for php type {$this->phpType} found");
         }
         return self::DOCTRINE_PHP_TYPE_ALLOCATIONS[$this->phpType];
@@ -437,38 +480,6 @@ class DatabaseColumn extends ValueObject
     public function uniqueKey(): string
     {
         return self::uniqueKeyStatic($this->name);
-    }
-
-    public function getSqlType(): string
-    {
-        if ($this->encrypted) {
-            // in case of encrypted properties, we use varchar always, e.g. convert int to varchar
-            if (
-                !in_array(
-                    $this->sqlType, [
-                        self::SQL_TYPE_VARCHAR,
-                        self::SQL_TYPE_TEXT,
-                        self::SQL_TYPE_MEDIUMTEXT,
-                        self::SQL_TYPE_LONGTEXT,
-                        self::SQL_TYPE_JSON
-                    ]
-                )
-            ) {
-                return self::SQL_TYPE_VARCHAR . '(255)';
-            } // JSON is treated as text, as on encryption JSON is not persisted
-            elseif ($this->sqlType == self::SQL_TYPE_JSON) {
-                return self::SQL_TYPE_TEXT;
-            }
-        }
-        if ($this->sqlType == self::SQL_TYPE_VARCHAR) {
-            return self::SQL_TYPE_VARCHAR . "({$this->varCharLength})";
-        }
-        elseif ($this->sqlType == self::SQL_TYPE_VECTOR) {
-            return self::SQL_TYPE_VECTOR . "({$this->vectorDimensions})";
-        }
-        $unsigned = in_array($this->sqlType, [self::SQL_TYPE_INT, self::SQL_TYPE_BIGINT]
-        ) && $this->isUnsigned ? ' UNSIGNED' : '';
-        return $this->sqlType . $unsigned;
     }
 
     public function getSql(bool $asUpdate = false): ?string
@@ -497,6 +508,37 @@ class DatabaseColumn extends ValueObject
         return $sql;
     }
 
+    public function getSqlType(): string
+    {
+        if ($this->encrypted) {
+            // in case of encrypted properties, we use varchar always, e.g. convert int to varchar
+            if (
+                !in_array(
+                    $this->sqlType,
+                    [
+                        self::SQL_TYPE_VARCHAR,
+                        self::SQL_TYPE_TEXT,
+                        self::SQL_TYPE_MEDIUMTEXT,
+                        self::SQL_TYPE_LONGTEXT,
+                        self::SQL_TYPE_JSON
+                    ]
+                )
+            ) {
+                return self::SQL_TYPE_VARCHAR . '(255)';
+            } // JSON is treated as text, as on encryption JSON is not persisted
+            elseif ($this->sqlType == self::SQL_TYPE_JSON) {
+                return self::SQL_TYPE_TEXT;
+            }
+        }
+        if ($this->sqlType == self::SQL_TYPE_VARCHAR) {
+            return self::SQL_TYPE_VARCHAR . "({$this->varCharLength})";
+        } elseif ($this->sqlType == self::SQL_TYPE_VECTOR) {
+            return self::SQL_TYPE_VECTOR . "({$this->vectorDimensions})";
+        }
+        $unsigned = in_array($this->sqlType, [self::SQL_TYPE_INT, self::SQL_TYPE_BIGINT]) && $this->isUnsigned ? ' UNSIGNED' : '';
+        return $this->sqlType . $unsigned;
+    }
+
     public function getPhpDefaultValueAsString(): string
     {
         if (!isset($this->phpDefaultValue)) {
@@ -509,32 +551,5 @@ class DatabaseColumn extends ValueObject
             return "'{$this->phpDefaultValue}'";
         }
         return (string)$this->phpDefaultValue;
-    }
-
-    public function __construct(
-        string $sqlType = null,
-        bool $allowsNull = null,
-        bool $hasAutoIncrement = null,
-        bool $isUnsigned = null,
-        int $varCharLength = null,
-        int $vectorDimensions = null,
-        bool $encrypted = false,
-        ?string $encryptionScope = null,
-        ?string $onUpdateAction = null,
-        bool $ignoreProperty = false,
-        bool $isMergableJSONColumn = false,
-    ) {
-        $this->sqlType = $sqlType;
-        $this->allowsNull = $allowsNull;
-        $this->hasAutoIncrement = $hasAutoIncrement;
-        $this->isUnsigned = $isUnsigned;
-        $this->varCharLength = $varCharLength;
-        $this->vectorDimensions = $vectorDimensions;
-        $this->encrypted = $encrypted;
-        $this->onUpdateAction = $onUpdateAction;
-        $this->enryptionScope = $encryptionScope;
-        $this->ignoreProperty = $ignoreProperty;
-        $this->isMergableJSONColumn = $isMergableJSONColumn;
-        parent::__construct();
     }
 }

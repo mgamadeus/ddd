@@ -12,7 +12,7 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
  */
 class RedirectResponseDto extends RedirectResponse
 {
-    public const DEFAULT_HTTP_CODE = 302;
+    public const int DEFAULT_HTTP_CODE = 302;
 
     /**
      * Creates a redirect response so that it conforms to the rules defined for a redirect status code.

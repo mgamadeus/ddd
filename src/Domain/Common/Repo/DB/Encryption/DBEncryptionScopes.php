@@ -13,6 +13,6 @@ use DDD\Domain\Common\Entities\Encryption\EncryptionScopes;
  */
 class DBEncryptionScopes extends DBEntitySet
 {
-    public const BASE_REPO_CLASS = DBEncryptionScope::class;
-    public const BASE_ENTITY_SET_CLASS = EncryptionScopes::class;
+    public const string BASE_REPO_CLASS = DBEncryptionScope::class;
+    public const string BASE_ENTITY_SET_CLASS = EncryptionScopes::class;
 }

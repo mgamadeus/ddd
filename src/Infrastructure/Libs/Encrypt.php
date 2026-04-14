@@ -8,7 +8,7 @@ use function openssl_digest;
 
 class Encrypt
 {
-    public const METHOD = 'AES-256-CBC';
+    public const string METHOD = 'AES-256-CBC';
 
     /** @var string Current password used for encrpytion */
     public static ?string $password = null;

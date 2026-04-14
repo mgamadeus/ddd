@@ -14,7 +14,7 @@ class Enum extends Base
     use BaseAttributeTrait;
 
     /** @var mixed[] */
-    private array $enumValues = [];
+    protected array $enumValues = [];
 
     public function __construct(mixed ...$enumValues)
     {

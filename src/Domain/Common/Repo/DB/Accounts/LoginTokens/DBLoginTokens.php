@@ -13,6 +13,6 @@ use DDD\Domain\Common\Entities\Accounts\LoginTokens\LoginTokens;
  */
 class DBLoginTokens extends DBEntitySet
 {
-    public const BASE_REPO_CLASS = DBLoginToken::class;
-    public const BASE_ENTITY_SET_CLASS = LoginTokens::class;
+    public const string BASE_REPO_CLASS = DBLoginToken::class;
+    public const string BASE_ENTITY_SET_CLASS = LoginTokens::class;
 }
