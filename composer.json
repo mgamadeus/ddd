@@ -3,7 +3,7 @@
   "description": "A DDD Entity Framework on top of symfony and doctrine",
   "minimum-stability": "stable",
   "license": "MIT",
-  "version": "2.10.0",
+  "version": "2.10.1",
   "authors": [
     {
       "name": "Marius-Eugen Gerdan",
@@ -38,6 +38,7 @@
     "symfony/messenger": "7.3.*",
     "symfony/dependency-injection": "7.3.*",
     "symfony/var-exporter": "7.3.*",
+    "symfony/monolog-bridge": "7.3.*",
     "symfony/monolog-bundle": "^4.0",
     "symfony/proxy-manager-bridge": ">=6.4 <7.0",
     "symfony/process": "7.3.*",
