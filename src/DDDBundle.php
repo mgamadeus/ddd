@@ -28,8 +28,11 @@ class DDDBundle extends Bundle
         }
         self::$defaultContainer = $this->container;
 
+        // Load application config (app-level: highest priority)
+        Config::addConfigDirectory(DDDService::instance()->getRootDir() . '/config/app');
+
         // Load DDD framework config (module-level: lower priority than app configs)
-        Config::addConfigDirectory(DDDService::instance()->getRootDir() . '/config/app', isModule: true);
+        Config::addConfigDirectory(DDDService::instance()->getFrameworkRootDir() . '/config/app', isModule: true);
 
         // Load module configs (module-level: lower priority than app configs)
         $containerBuilder = new ContainerBuilder();
