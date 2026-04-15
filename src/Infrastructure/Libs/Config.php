@@ -38,8 +38,10 @@ class Config
      */
     protected function addConfigRootDirectory(string $configRootDirectory, bool $isModule = false): void
     {
+        // Silently ignore non-existent directories — not every package (e.g. DDD framework
+        // itself, or a module without config) ships a config/app folder.
         if (!is_dir($configRootDirectory)) {
-            throw new RuntimeException('Please provide a valid directory path for config');
+            return;
         }
 
         $target = $isModule ? 'moduleRootDirectories' : 'appRootDirectories';
