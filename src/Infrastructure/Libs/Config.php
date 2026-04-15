@@ -12,49 +12,70 @@ class Config
     use SingletonTrait;
 
     /**
-     * Array containing the configuration root folders
+     * Application-level config root folders. Always searched before module-level roots.
      * @var string[]
      */
-    protected static array $rootDirectories;
+    protected static array $appRootDirectories = [];
+
+    /**
+     * Module-level config root folders (DDD framework + modules). Searched after app roots.
+     * @var string[]
+     */
+    protected static array $moduleRootDirectories = [];
+
     protected static array $configTree;
     protected static ?array $env = null;
 
     /**
-     * Add new config directory in which we can search for values
-     * Newer config directories will be searched first
+     * Add new config directory in which we can search for values.
+     * Newer config directories within the same tier are searched first.
+     * App-level directories are always searched before module-level directories.
      *
      * @param string $configRootDirectory
+     * @param bool $isModule True for DDD framework / module configs (lower priority),
+     *                       false for application configs (higher priority).
      * @return void
      */
-    protected function addConfigRootDirectory(string $configRootDirectory): void
+    protected function addConfigRootDirectory(string $configRootDirectory, bool $isModule = false): void
     {
-        if (!isset(self::$rootDirectories)) {
-            self::$rootDirectories = [];
-        }
-
         if (!is_dir($configRootDirectory)) {
             throw new RuntimeException('Please provide a valid directory path for config');
         }
 
-        if (in_array($configRootDirectory, self::$rootDirectories, true)) {
+        $target = $isModule ? 'moduleRootDirectories' : 'appRootDirectories';
+
+        if (in_array($configRootDirectory, self::$$target, true)) {
             return;
         }
 
-        // Add the new root directory at the beginning of the array
-        array_unshift(self::$rootDirectories, $configRootDirectory);
+        // Add the new root directory at the beginning of its tier
+        array_unshift(self::$$target, $configRootDirectory);
     }
 
     /**
      * Public method to add config directory that also handles the Config instance creation
      *
      * @param string $configRootDirectory
+     * @param bool $isModule True for DDD framework / module configs (lower priority),
+     *                       false for application configs (higher priority).
      * @return void
      */
-    public static function addConfigDirectory(string $configRootDirectory): void
+    public static function addConfigDirectory(string $configRootDirectory, bool $isModule = false): void
     {
         /** @var Config $configInstance */
         $configInstance = self::getInstance();
-        $configInstance->addConfigRootDirectory($configRootDirectory);
+        $configInstance->addConfigRootDirectory($configRootDirectory, $isModule);
+    }
+
+    /**
+     * Returns the merged list of root directories in search-priority order:
+     * app-level first, then module-level.
+     *
+     * @return string[]
+     */
+    protected static function getRootDirectories(): array
+    {
+        return [...self::$appRootDirectories, ...self::$moduleRootDirectories];
     }
 
     /**
@@ -114,7 +135,7 @@ class Config
         string $searchString,
         bool $prioritizeDirectorySearch
     ): array|null {
-        foreach (self::$rootDirectories as $configRoot) {
+        foreach (self::getRootDirectories() as $configRoot) {
             $result = $this->searchForFileInRootDirectory($configRoot, $searchString, $prioritizeDirectorySearch);
             if (!$result) {
                 continue;

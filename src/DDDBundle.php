@@ -28,17 +28,17 @@ class DDDBundle extends Bundle
         }
         self::$defaultContainer = $this->container;
 
-        // Load DDD framework config
-        Config::addConfigDirectory(DDDService::instance()->getRootDir() . '/config/app');
+        // Load DDD framework config (module-level: lower priority than app configs)
+        Config::addConfigDirectory(DDDService::instance()->getRootDir() . '/config/app', isModule: true);
 
-        // Load module configs (modules registered first = lower priority than app)
+        // Load module configs (module-level: lower priority than app configs)
         $containerBuilder = new ContainerBuilder();
         $containerBuilder->setParameter('kernel.project_dir', $projectDirectory);
         foreach (ModuleCompilerPass::discoverModules($containerBuilder) as $moduleClass) {
             /** @var DDDModule $moduleClass */
             $configPath = $moduleClass::getConfigPath();
             if ($configPath !== null && is_dir($configPath)) {
-                Config::addConfigDirectory($configPath);
+                Config::addConfigDirectory($configPath, isModule: true);
             }
         }
 
