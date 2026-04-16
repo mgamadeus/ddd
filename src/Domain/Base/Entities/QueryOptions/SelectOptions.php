@@ -78,6 +78,10 @@ class SelectOptions extends ObjectSet
      * @param string $baseModelClass
      * @param callable|null $mappingFunction
      * @param string|null $baseModelAlias
+     * @param string|null $joinPath Explicit join path (e.g. "account", "account.world"). When provided,
+     *                              used directly for property-hiding instead of parsing the alias string.
+     *                              This decouples property hiding from alias naming conventions, so
+     *                              applyReadRightsQuery() can use any alias without breaking expand+select.
      * @return DoctrineQueryBuilder
      * @throws ReflectionException
      */
@@ -86,6 +90,7 @@ class SelectOptions extends ObjectSet
         string $baseModelClass = '',
         callable $mappingFunction = null,
         ?string $baseModelAlias = null,
+        ?string $joinPath = null,
     ): DoctrineQueryBuilder {
         // if a baseModelAlias is provided, we are usually applying select options within expand options of of the following kind:
         // expand=worldMembers(expand=world(select=id,name))
@@ -169,9 +174,24 @@ class SelectOptions extends ObjectSet
                 $fieldsToKeepInEntity[] = 'id';
             }
             // Build a partial select clause for the main entity.
+            // e.g. "partial RouteProblem_account_rights.{deviceGeneratedId, nickname, id}"
             $partialClause = sprintf('partial %s.{%s}', $alias, implode(', ', $fieldsForDBSelect));
             $queryBuilder->addSelect($partialClause);
-            self::addPropertiesToHideByByJoinPath($baseModelClass::ENTITY_CLASS, self::extractJoinPathFromJoinAlias($alias ?? ''), $fieldsToKeepInEntity);
+
+            // Determine the join path for property-hiding rules.
+            // When called from ExpandOptions, $joinPath is passed explicitly from the expand tree
+            // (e.g. "account", "account.world") via ExpandOption::getPropertyPathRecursively().
+            // This is reliable regardless of the Doctrine alias used.
+            // Fallback: parse the alias string (e.g. "RouteProblem_account" → "account").
+            // The explicit $joinPath was introduced because any code that modifies the
+            // QueryBuilder before applyQueryOptions() runs — applyReadRightsQuery(), service
+            // methods, custom QueryBuilder logic — can create joins with arbitrary aliases
+            // that the expand system may later reuse. Without the explicit path,
+            // extractJoinPathFromJoinAlias() could return '' (root) for plain aliases,
+            // causing property-hiding rules to be applied to the root entity instead of
+            // the joined entity.
+            $resolvedJoinPath = $joinPath ?? self::extractJoinPathFromJoinAlias($alias ?? '');
+            self::addPropertiesToHideByByJoinPath($baseModelClass::ENTITY_CLASS, $resolvedJoinPath, $fieldsToKeepInEntity);
         }
 
         return $queryBuilder;

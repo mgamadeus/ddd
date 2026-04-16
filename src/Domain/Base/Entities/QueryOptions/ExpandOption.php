@@ -255,6 +255,38 @@ class ExpandOption extends ValueObject
     }
 
     /**
+     * Computes the expand property path by walking up the parent ExpandOption tree.
+     * Unlike SelectOptions::extractJoinPathFromJoinAlias(), this does not depend on alias
+     * naming conventions — it derives the path from the expand option structure itself.
+     *
+     * This is used by applyExpandOptionsToDoctrineQueryBuilder() to pass an explicit join path
+     * to SelectOptions::applySelectToDoctrineQueryBuilder(), ensuring that property-hiding rules
+     * are applied to the correct entity even when the Doctrine join alias was adopted from a
+     * pre-existing join created by any code that modifies the QueryBuilder before expand
+     * processing (applyReadRightsQuery(), service methods, custom QueryBuilder logic).
+     *
+     * Given expand=account(select=id,nickname;expand=world(select=id,name)):
+     *   - ExpandOption(account)->getPropertyPathRecursively()        => "account"
+     *   - ExpandOption(world)->getPropertyPathRecursively()          => "account.world"
+     *
+     * Given expand=account(expand=world(expand=partner(select=name))):
+     *   - ExpandOption(partner)->getPropertyPathRecursively()        => "account.world.partner"
+     *
+     * @return string Dot-separated property path (e.g. "account", "account.world")
+     */
+    public function getPropertyPathRecursively(): string
+    {
+        $parent = $this->getParent();
+        if ($parent && $parent instanceof ExpandOptions) {
+            $expandOptionsParent = $parent->getParent();
+            if ($expandOptionsParent && $expandOptionsParent instanceof ExpandOption) {
+                return $expandOptionsParent->getPropertyPathRecursively() . '.' . $this->propertyName;
+            }
+        }
+        return $this->propertyName;
+    }
+
+    /**
      * Returns Doctrine Model Alias from Doctrine Model for reference class
      * @return string|null
      * @throws MethodNotAllowedException

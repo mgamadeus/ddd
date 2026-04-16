@@ -1,7 +1,6 @@
 <?php
 
 use DDD\Domain\Base\Entities\Translatable\Translatable;
-use DDD\Domain\Base\Services\TranslatableService;
 
 if (!function_exists('__')) {
     /**

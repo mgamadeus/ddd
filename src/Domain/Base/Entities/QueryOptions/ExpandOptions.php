@@ -235,7 +235,13 @@ class ExpandOptions extends ObjectSet
             $existingJoins = $queryBuilder->getDQLPart('join');
             $joinString = "{$parentJoinAlias}.$propertyName";
 
-            // Check if the join for the current alias already exists
+            // Check if a join on the same relation path already exists — it may have been
+            // added by applyReadRightsQuery(), service methods, or other QueryBuilder logic
+            // that ran before expand processing. If so, reuse it to avoid duplicate SQL JOINs.
+            // The existing alias may differ from the expand convention — e.g. rights queries
+            // use "{ModelAlias}_{property}_rights" while expand would generate "{ModelAlias}_{property}".
+            // This is safe because property-hiding uses getPropertyPathRecursively() (explicit
+            // path from the expand tree), not the Doctrine alias.
             if (!empty($existingJoins) && isset($existingJoins[$rootModelAlias])) {
                 foreach ($existingJoins[$rootModelAlias] as $joinPart) {
                     /** @var Join $joinPart */
@@ -246,7 +252,7 @@ class ExpandOptions extends ObjectSet
                         $joinPart->getJoin() == $joinString
                     ) {
                         $joinAlreadyExists = true;
-                        // we have to use the already existing alias instead of creating a dynamic one
+                        // Reuse the existing alias (could be "account", "RouteProblem_account_rights", etc.)
                         $expandOption->joinAlias = $joinPart->getAlias();
                         break;
                     }
@@ -259,12 +265,23 @@ class ExpandOptions extends ObjectSet
             if (!$joinAlreadyExists) {
                 $queryBuilder->leftJoin($joinString, $expandOption->joinAlias);
             }
-            // Apply nested select options to the joined entity, if provided
+            // Apply nested select options to the joined entity, if provided.
+            // Example: expand=account(select=deviceGeneratedId,nickname) produces a partial
+            // select on the joined alias and hides all other Account properties from the response.
+            //
+            // We pass joinPath explicitly (e.g. "account", "account.world") so that
+            // addPropertiesToHideByByJoinPath() uses the correct path regardless of the
+            // Doctrine alias. This matters when the join was pre-created by other code
+            // (applyReadRightsQuery(), service methods, custom QueryBuilder logic) with an
+            // arbitrary alias (e.g. "RouteProblem_account_rights") that the expand reuses —
+            // without the explicit path, the alias would be parsed and could map to the
+            // wrong join path.
             if (isset($expandOption->selectOptions)) {
                 $expandOption->selectOptions->applySelectToDoctrineQueryBuilder(
                     queryBuilder: $queryBuilder,
                     baseModelClass: $targetPropertyModelClass,
                     baseModelAlias: $expandOption->joinAlias,
+                    joinPath: $expandOption->getPropertyPathRecursively(),
                 );
             }
             if (isset($expandOption->filters)) {
