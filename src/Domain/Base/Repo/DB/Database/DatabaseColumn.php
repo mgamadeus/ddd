@@ -20,6 +20,7 @@ use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
+use ReflectionAttribute;
 use ReflectionNamedType;
 use ReflectionUnionType;
 use Symfony\Component\Validator\Constraints\Choice;
@@ -114,8 +115,8 @@ class DatabaseColumn extends ValueObject
         ReflectionClass::INTEGER => 'int',
         ReflectionClass::STRING => 'string',
         ReflectionClass::FLOAT => 'float',
-        DateTime::class => '\DateTime',
-        Date::class => '\DateTime',
+        DateTime::class => 'DateTime',
+        Date::class => 'DateTime',
         GeoPoint::class => 'mixed',
         ValueObject::class => 'mixed',
         Vector::class => 'mixed',
@@ -241,7 +242,7 @@ class DatabaseColumn extends ValueObject
 
         /** @var LazyLoad $lazyloadAttributeInstance */
         // we ignore lazyloaded properties of type ClASS_METHOD
-        if ($lazyloadAttributeInstance = $reflectionProperty?->getAttributeInstance(LazyLoad::class, \ReflectionAttribute::IS_INSTANCEOF) ?? null) {
+        if ($lazyloadAttributeInstance = $reflectionProperty?->getAttributeInstance(LazyLoad::class, ReflectionAttribute::IS_INSTANCEOF) ?? null) {
             if ($lazyloadAttributeInstance->repoType == LazyLoadRepo::CLASS_METHOD) {
                 return null;
             }
@@ -310,7 +311,7 @@ class DatabaseColumn extends ValueObject
         if (
             ($choicesAttributeInstance = $reflectionProperty->getAttributeInstance(
                 Choice::class,
-                \ReflectionAttribute::IS_INSTANCEOF
+                ReflectionAttribute::IS_INSTANCEOF
             )) && self::MAP_CHOICES_TO_ENUMS
         ) {
             /** @var Choice $choicesAttributeInstance */
@@ -324,7 +325,7 @@ class DatabaseColumn extends ValueObject
         elseif (
             $type->getName() == ReflectionClass::STRING && ($lengthAttributeInstance = $reflectionProperty->getAttributeInstance(
                 Length::class,
-                \ReflectionAttribute::IS_INSTANCEOF
+                ReflectionAttribute::IS_INSTANCEOF
             ))
         ) {
             /** @var Length $lengthAttributeInstance */
@@ -341,7 +342,7 @@ class DatabaseColumn extends ValueObject
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[Vector::class];
         } elseif (DefaultObject::isValueObject($type->getName())) {
             // ignore Lazyload Repos ValueObject e.g. Virtual Repotype
-            if ($lazyloadAttributes = $reflectionProperty->getAttributes(LazyLoad::class, \ReflectionAttribute::IS_INSTANCEOF)) {
+            if ($lazyloadAttributes = $reflectionProperty->getAttributes(LazyLoad::class, ReflectionAttribute::IS_INSTANCEOF)) {
                 foreach ($lazyloadAttributes as $lazyloadAttribute) {
                     /** @var LazyLoad $lazyloadAttributeInstance */
                     $lazyloadAttributeInstance = $lazyloadAttribute->newInstance();
@@ -372,7 +373,7 @@ class DatabaseColumn extends ValueObject
 
         // if DatabaseColumn attribute is present, we overwrite definitions from attribute
         if (
-            $columnAttributeInstance = $reflectionProperty->getAttributeInstance(DatabaseColumn::class, \ReflectionAttribute::IS_INSTANCEOF)
+            $columnAttributeInstance = $reflectionProperty->getAttributeInstance(DatabaseColumn::class, ReflectionAttribute::IS_INSTANCEOF)
         ) {
             /** @var DatabaseColumn $columnAttributeInstance */
             if ($columnAttributeInstance->sqlType !== null) {

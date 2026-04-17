@@ -739,7 +739,8 @@ class DatabaseModel extends ValueObject
                 $dataBasecolumnProperties[] = 'isMergableJSONColumn: true';
             }
             if ($column->onUpdateAction) {
-                $dataBasecolumnProperties[] = 'onUpdateAction:"' . $column->onUpdateAction . '"';
+                $quote = str_contains($column->onUpdateAction, "'") ? '"' : "'";
+                $dataBasecolumnProperties[] = "onUpdateAction:{$quote}" . $column->onUpdateAction . $quote;
             }
             if ($dataBasecolumnProperties) {
                 $modelClassContent .= "\t#[DatabaseColumn(" . implode(', ', $dataBasecolumnProperties) . ")]\n";
