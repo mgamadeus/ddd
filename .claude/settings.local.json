@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(grep -l \"Translatable\\\\|TranslatableTrait\" \"/Users/marius/Development/Own Packages/Composer/DDD/Core/src/Domain/Common/Entities\"/*/*.php)"
+    ]
+  }
+}
