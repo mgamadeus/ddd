@@ -156,17 +156,9 @@ When releasing multiple DDD modules, process in dependency order:
 
 If updating dependency version constraints (e.g., requiring a new core version), update `composer.json` `require` entries before bumping.
 
-## DDD Module Locations
+## DDD Module Packages
 
-| Package | Path |
-|---------|------|
-| `mgamadeus/ddd` | `/Users/marius/Development/Own Packages/Composer/DDD/Core` |
-| `mgamadeus/ddd-common-money` | `/Users/marius/Development/Own Packages/Composer/DDD/Modules/Money` |
-| `mgamadeus/ddd-argus` | `/Users/marius/Development/Own Packages/Composer/DDD/Modules/Argus` |
-| `mgamadeus/ddd-common-political` | `/Users/marius/Development/Own Packages/Composer/DDD/Modules/Political` |
-| `mgamadeus/ddd-ai` | `/Users/marius/Development/Own Packages/Composer/DDD/Modules/AI` |
-| `mgamadeus/ddd-common-geo` | `/Users/marius/Development/Own Packages/Composer/DDD/Modules/Geo` |
-| `mgamadeus/ddd-common-translations` | `/Users/marius/Development/Own Packages/Composer/DDD/Modules/Translations` |
+See the `ddd-module-orchestrator` skill for the complete module ecosystem, dependency graph, and release order.
 
 ## Rules
 
