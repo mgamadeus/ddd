@@ -10,12 +10,15 @@ use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModels;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Libs\ClassFinder;
+use DDD\Infrastructure\Modules\DDDModule;
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Services\DDDService;
+use DDD\Symfony\CompilerPasses\ModuleCompilerPass;
 use Doctrine\DBAL\Exception;
 use ReflectionAttribute;
 use ReflectionException;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Service for generation of SQL table definitions and Doctrine models based on Entites
@@ -65,6 +68,18 @@ class EntityModelGeneratorService
         $classesFromFramework = ClassFinder::getClassesInDirectory(DDDService::instance()->getFrameworkRootDir() . '/Domain');
         $classesFromApplication = ClassFinder::getClassesInDirectory(DDDService::instance()->getRootDir() . '/src/Domain');
         $allClasses = array_merge($classesFromFramework, $classesFromApplication);
+
+        // Include entity classes from registered DDD modules
+        $containerBuilder = new ContainerBuilder();
+        $containerBuilder->setParameter('kernel.project_dir', DDDService::instance()->getRootDir());
+        foreach (ModuleCompilerPass::discoverModules($containerBuilder) as $moduleClass) {
+            /** @var DDDModule $moduleClass */
+            $moduleDomainPath = $moduleClass::getSourcePath() . '/Domain';
+            if (is_dir($moduleDomainPath)) {
+                $classesFromModule = ClassFinder::getClassesInDirectory($moduleDomainPath);
+                $allClasses = array_merge($allClasses, $classesFromModule);
+            }
+        }
         //header('content-type:application/json');
         //echo json_encode($allClasses);die();
         /** @var ClassWithNamespace[] $entityClasses */
