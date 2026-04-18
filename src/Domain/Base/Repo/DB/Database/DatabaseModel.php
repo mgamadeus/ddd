@@ -429,7 +429,7 @@ class DatabaseModel extends ValueObject
                         $tableAttributeInstance = $foreignModelReflectionClass->getAttributeInstance(Table::class, ReflectionAttribute::IS_INSTANCEOF);
                         if (!$tableAttributeInstance) {
                             throw new InternalErrorException(
-                                "Model {$foreignModelClassName} has no ORM\Table attribute"
+                                "Model $foreignModelClassName has no ORM\Table attribute"
                             );
                         }
                         /** @var Table $tableAttributeInstance */
@@ -466,8 +466,8 @@ class DatabaseModel extends ValueObject
                         )->allowsNull()
                     ) {
                         throw new InternalErrorException(
-                            "{$entityClassName}.{$internalColumn} does not allow null, 
-                        but foreign reference definitions applied by attribute on {$entityClassName}.{$reflectionProperty->getName()} define SET NULL on DELTE or UPDATE"
+                            "$entityClassName.$internalColumn does not allow null,
+                        but foreign reference definitions applied by attribute on $entityClassName.{$reflectionProperty->getName()} define SET NULL on DELTE or UPDATE"
                         );
                     }
                     // If there is a stored virtual Column present newer SQL Versions are not supporting Contraints that update the stored virtual Columns due to performance reasons
@@ -579,7 +579,7 @@ class DatabaseModel extends ValueObject
             return '';
         }
 
-        $sql = "#################### {$this->sqlTableName} ####################\n";
+        $sql = "#################### $this->sqlTableName ####################\n";
         $statements = [];
         $databaseColumns = $this->columns->getElements();
         usort($databaseColumns, function (DatabaseColumn $a, DatabaseColumn $b) {
@@ -598,9 +598,9 @@ class DatabaseModel extends ValueObject
             }
         }
         if ($primaryKey = $this->columns->getPrimaryKeyColumn()) {
-            $statements[] = "PRIMARY KEY (`{$primaryKey->name}`)";
+            $statements[] = "PRIMARY KEY (`$primaryKey->name`)";
         }
-        $sql .= "CREATE TABLE IF NOT EXISTS `{$this->sqlTableName}`(\n";
+        $sql .= "CREATE TABLE IF NOT EXISTS `$this->sqlTableName`(\n";
         $sql .= implode(
             ",\n",
             array_map(function ($statement) {
@@ -611,7 +611,7 @@ class DatabaseModel extends ValueObject
 
         $addedColumns = [];
 
-        $sql .= "ALTER TABLE `{$this->sqlTableName}`\n";
+        $sql .= "ALTER TABLE `$this->sqlTableName`\n";
         foreach ($this->columns->getElements() as $column) {
             $columnSQL = $column->getSql(true);
             if ($columnSQL !== null) {
@@ -636,7 +636,7 @@ class DatabaseModel extends ValueObject
         $sql .= "\n";
 
         foreach ($this->foreignKeys->getElements() as $foreignKey) {
-            $sql .= "ALTER TABLE `{$this->sqlTableName}` " . $foreignKey->getSql($this->sqlTableName) . ";\n";
+            $sql .= "ALTER TABLE `$this->sqlTableName` " . $foreignKey->getSql($this->sqlTableName) . ";\n";
         }
         if ($this->foreignKeys->count()) {
             $sql .= "\n";
@@ -665,7 +665,7 @@ class DatabaseModel extends ValueObject
             $parentModelClassWithNamespace = self::getModelClassWithNamespaceForEntityClassWithNamespace(
                 $this->parentEntityCLassWithNamespace
             );
-            $modelClassContent = "#[ORM\Entity]\nclass {$this->getModelClassNameWithNameSpace()->name} extends {$parentModelClassWithNamespace->name}\n{\n\tpublic const ENTITY_CLASS = '{$this->entityClassWithNamespace->getNameWithNamespace()}';\n\n";
+            $modelClassContent = "#[ORM\Entity]\nclass {$this->getModelClassNameWithNameSpace()->name} extends $parentModelClassWithNamespace->name\n{\n\tpublic const ENTITY_CLASS = '{$this->entityClassWithNamespace->getNameWithNamespace()}';\n\n";
         } else {
             $subclassIndicatorDeclarations = '';
             if ($this->subclassIndicator) {
@@ -673,7 +673,7 @@ class DatabaseModel extends ValueObject
                     $this->subclassIndicator->indicatorPropertyName
                 );
                 $doctrineClassDiscriminatorMapPHPCode = $this->subclassIndicator->getDoctrineClassDiscriminatorMapPHPCode();
-                $subclassIndicatorDeclarations = "\n#[ORM\InheritanceType('SINGLE_TABLE')]\n#[ORM\DiscriminatorColumn(name: '{$this->subclassIndicator->indicatorPropertyName}', type: '{$singleClassIndicatorColumn->phpType}')]\n{$doctrineClassDiscriminatorMapPHPCode}\n";
+                $subclassIndicatorDeclarations = "\n#[ORM\InheritanceType('SINGLE_TABLE')]\n#[ORM\DiscriminatorColumn(name: '{$this->subclassIndicator->indicatorPropertyName}', type: '$singleClassIndicatorColumn->phpType')]\n$doctrineClassDiscriminatorMapPHPCode\n";
 
                 // if one of the subclass indicator model classes has a different namespace than current model, we need to add it as import
                 $modelImportsFromSubclassIndicators = $this->subclassIndicator->getDatabaseModelImportsBasedOnSubclassIndicatorsForDatabaseModel(
@@ -681,7 +681,7 @@ class DatabaseModel extends ValueObject
                 );
                 $this->modelImports->mergeFromOtherSet($modelImportsFromSubclassIndicators);
             }
-            $modelClassContent = "#[ORM\Entity]\n#[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]\n#[ORM\Table(name: '{$this->sqlTableName}')]{$subclassIndicatorDeclarations}\nclass {$this->getModelClassNameWithNameSpace()->name} extends DoctrineModel\n{\n\tpublic const string MODEL_ALIAS = '{$this->name}';\n\n\tpublic const string TABLE_NAME = '{$this->sqlTableName}';\n\n\tpublic const string ENTITY_CLASS = '{$this->entityClassWithNamespace->getNameWithNamespace()}';\n\n";
+            $modelClassContent = "#[ORM\Entity]\n#[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]\n#[ORM\Table(name: '$this->sqlTableName')]$subclassIndicatorDeclarations\nclass {$this->getModelClassNameWithNameSpace()->name} extends DoctrineModel\n{\n\tpublic const string MODEL_ALIAS = '$this->name';\n\n\tpublic const string TABLE_NAME = '$this->sqlTableName';\n\n\tpublic const string ENTITY_CLASS = '{$this->entityClassWithNamespace->getNameWithNamespace()}';\n\n";
         }
 
         if ($this->virtualColumns->count()) {
@@ -740,7 +740,7 @@ class DatabaseModel extends ValueObject
             }
             if ($column->onUpdateAction) {
                 $quote = str_contains($column->onUpdateAction, "'") ? '"' : "'";
-                $dataBasecolumnProperties[] = "onUpdateAction:{$quote}" . $column->onUpdateAction . $quote;
+                $dataBasecolumnProperties[] = "onUpdateAction:$quote" . $column->onUpdateAction . $quote;
             }
             if ($dataBasecolumnProperties) {
                 $modelClassContent .= "\t#[DatabaseColumn(" . implode(', ', $dataBasecolumnProperties) . ")]\n";
@@ -754,7 +754,7 @@ class DatabaseModel extends ValueObject
                 $isNullable = $column->allowsNull && $column->getDoctrinePhpType() != 'mixed';
             } catch (InternalErrorException $e) {
                 throw new InternalErrorException(
-                    "Could not determine Doctrine PHP type for column {$column->name} in Model {$this->modelClassWithNamespace->getNameWithNamespace()} "
+                    "Could not determine Doctrine PHP type for column $column->name in Model {$this->modelClassWithNamespace->getNameWithNamespace()} "
                 );
             }
             $modelClassContent .= "\tpublic " . ($isNullable ? '?' : '') . $column->getDoctrinePhpType(
@@ -774,20 +774,20 @@ class DatabaseModel extends ValueObject
         // belongs to
         // Belongs-to / ManyToOne Relationsships
         foreach ($this->foreignKeys->getElements() as $foreignKey) {
-            $modelClassContent .= "\t#[ORM\ManyToOne(targetEntity: {$foreignKey->foreignModelClassName}::class)]\n";
-            $modelClassContent .= "\t#[ORM\JoinColumn(name: '{$foreignKey->internalIdColumn}', referencedColumnName: '{$foreignKey->foreignIdColumn}')]\n";
+            $modelClassContent .= "\t#[ORM\ManyToOne(targetEntity: $foreignKey->foreignModelClassName::class)]\n";
+            $modelClassContent .= "\t#[ORM\JoinColumn(name: '$foreignKey->internalIdColumn', referencedColumnName: '$foreignKey->foreignIdColumn')]\n";
             $modelClassContent .= "\tpublic " . ($this->columns->getColumnByName(
                     $foreignKey->internalIdColumn
-                )->allowsNull ? '?' : '') . "{$foreignKey->foreignModelClassName} $" . "{$foreignKey->internalColumn};\n\n";
+                )->allowsNull ? '?' : '') . "$foreignKey->foreignModelClassName $" . "$foreignKey->internalColumn;\n\n";
         }
         // one to many relationships
         foreach ($this->getOneToManyRelationsShips()->getElements() as $oneToManyRelationship) {
-            $modelClassContent .= "\t#[ORM\OneToMany(targetEntity: {$oneToManyRelationship->targetModelName}::class, mappedBy: '{$oneToManyRelationship->mappedByPropertyName}')]\n";
+            $modelClassContent .= "\t#[ORM\OneToMany(targetEntity: $oneToManyRelationship->targetModelName::class, mappedBy: '$oneToManyRelationship->mappedByPropertyName')]\n";
             $modelClassContent .= "\tpublic PersistentCollection $" . $oneToManyRelationship->propertyName . ";\n\n";
         }
         // imports need to be generated after getOneToManyRelationShips, as within the generation of oneToManyRelationShips
         // additional imports of Models from foreign namespaces can be added
-        $imports = "use {$doctrineModelClass};\nuse Doctrine\ORM\Mapping as ORM;\nuse Doctrine\ORM\PersistentCollection;\nuse DateTime;\n";
+        $imports = "use $doctrineModelClass;\nuse Doctrine\ORM\Mapping as ORM;\nuse Doctrine\ORM\PersistentCollection;\nuse DateTime;\n";
         foreach ($this->modelImports->getElements() as $modelImport) {
             $imports .= $modelImport->getImportDefinition() . "\n";
         }

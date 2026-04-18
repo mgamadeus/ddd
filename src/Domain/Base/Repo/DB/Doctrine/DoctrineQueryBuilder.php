@@ -229,8 +229,8 @@ class DoctrineQueryBuilder extends QueryBuilder
         // Duplicate the main query to create a subquery
         $mainQueryDQL = $this->getDQL();
         $query = $this->getQuery();
-        $query->setHint(\Doctrine\ORM\Query::HINT_FORCE_PARTIAL_LOAD, true);
-        $query->setHint(\Doctrine\ORM\Query::HINT_INCLUDE_META_COLUMNS, false);
+        $query->setHint(Query::HINT_FORCE_PARTIAL_LOAD, true);
+        $query->setHint(Query::HINT_INCLUDE_META_COLUMNS, false);
         $mainQuerySQL = $query->getSQL();
 
         // We require parameterMapping to know the exact order of paramters
@@ -451,7 +451,7 @@ class DoctrineQueryBuilder extends QueryBuilder
      */
     public function setCacheable($cacheable)
     {
-        $this->cacheable = (bool)$cacheable;
+        $this->cacheable = $cacheable;
 
         return $this;
     }
@@ -473,7 +473,7 @@ class DoctrineQueryBuilder extends QueryBuilder
      */
     public function setCacheRegion($cacheRegion)
     {
-        $this->cacheRegion = (string)$cacheRegion;
+        $this->cacheRegion = $cacheRegion;
 
         return $this;
     }
@@ -503,7 +503,7 @@ class DoctrineQueryBuilder extends QueryBuilder
      */
     public function setLifetime($lifetime)
     {
-        $this->lifetime = (int)$lifetime;
+        $this->lifetime = $lifetime;
 
         return $this;
     }
@@ -525,7 +525,7 @@ class DoctrineQueryBuilder extends QueryBuilder
      */
     public function setCacheMode($cacheMode)
     {
-        $this->cacheMode = (int)$cacheMode;
+        $this->cacheMode = $cacheMode;
 
         return $this;
     }
@@ -1063,7 +1063,7 @@ class DoctrineQueryBuilder extends QueryBuilder
      */
     public function distinct($flag = true)
     {
-        $this->dqlParts['distinct'] = (bool)$flag;
+        $this->dqlParts['distinct'] = $flag;
 
         return $this;
     }

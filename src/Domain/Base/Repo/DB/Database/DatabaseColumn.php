@@ -192,8 +192,8 @@ class DatabaseColumn extends ValueObject
     public bool $isMergableJSONColumn = false;
 
     /**
-     * @var string * If set, on duplicate, the update action is applioed instead of {$column} = VALUES({$column})
-     * Usefull e.g. if a counter has to be incremented on update
+     * @var string * If set, on duplicate, the update action is applied instead of {$column} = VALUES({$column})
+     * Useful e.g. if a counter has to be incremented on update
      * */
     public ?string $onUpdateAction;
 
@@ -281,7 +281,7 @@ class DatabaseColumn extends ValueObject
         }
         if (!$type instanceof ReflectionNamedType) {
             throw new InternalErrorException(
-                "No type specified in {$reflectionClass->getName()}.{$propertyName}"
+                "No type specified in {$reflectionClass->getName()}.$propertyName"
             );
         }
         $databaseColum->phpType = $type->getName();
@@ -444,7 +444,7 @@ class DatabaseColumn extends ValueObject
         $json = '[' . ($dimensions === 1 ? '0' : (rtrim(str_repeat('0,', $dimensions), ','))) . ']';
 
         // MariaDB expects the JSON array as a string argument.
-        return new DatabaseSqlExpression("(VEC_FromText(CONCAT('[', REPEAT('0,', {$dimensions}-1), '0]')))");
+        return new DatabaseSqlExpression("(VEC_FromText(CONCAT('[', REPEAT('0,', $dimensions-1), '0]')))");
     }
 
     /**
@@ -473,7 +473,7 @@ class DatabaseColumn extends ValueObject
             return self::DOCTRINE_PHP_TYPE_ALLOCATIONS[ValueObject::class];
         }
         if (!isset(self::DOCTRINE_PHP_TYPE_ALLOCATIONS[$this->phpType])) {
-            throw new InternalErrorException("No Doctrine to PHP type allocation for php type {$this->phpType} found");
+            throw new InternalErrorException("No Doctrine to PHP type allocation for php type $this->phpType found");
         }
         return self::DOCTRINE_PHP_TYPE_ALLOCATIONS[$this->phpType];
     }
@@ -495,7 +495,7 @@ class DatabaseColumn extends ValueObject
         if (isset($this->sqlDefaultValue)) {
             $defaultValueSet = true;
             if (is_string($this->sqlDefaultValue)) {
-                $defaultValue = "'{$this->sqlDefaultValue}'";
+                $defaultValue = "'$this->sqlDefaultValue'";
             } else {
                 $defaultValue = $this->sqlDefaultValue;
             }
@@ -532,9 +532,9 @@ class DatabaseColumn extends ValueObject
             }
         }
         if ($this->sqlType == self::SQL_TYPE_VARCHAR) {
-            return self::SQL_TYPE_VARCHAR . "({$this->varCharLength})";
+            return self::SQL_TYPE_VARCHAR . "($this->varCharLength)";
         } elseif ($this->sqlType == self::SQL_TYPE_VECTOR) {
-            return self::SQL_TYPE_VECTOR . "({$this->vectorDimensions})";
+            return self::SQL_TYPE_VECTOR . "($this->vectorDimensions)";
         }
         $unsigned = in_array($this->sqlType, [self::SQL_TYPE_INT, self::SQL_TYPE_BIGINT]) && $this->isUnsigned ? ' UNSIGNED' : '';
         return $this->sqlType . $unsigned;
@@ -549,7 +549,7 @@ class DatabaseColumn extends ValueObject
             return $this->phpDefaultValue ? 'true' : 'false';
         }
         if (is_string($this->phpDefaultValue)) {
-            return "'{$this->phpDefaultValue}'";
+            return "'$this->phpDefaultValue'";
         }
         return (string)$this->phpDefaultValue;
     }

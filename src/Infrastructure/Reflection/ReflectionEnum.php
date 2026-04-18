@@ -50,7 +50,6 @@ class ReflectionEnum extends \ReflectionEnum
      */
     public function getEnumValues(): array
     {
-        /** @var Enum $enumClassName */
         $enumClassName = $this->getName();
 
         if (isset(self::$enumOptionsCache[$enumClassName])) {
@@ -61,7 +60,7 @@ class ReflectionEnum extends \ReflectionEnum
 
         foreach ($cases as $case) {
             $value = $this->isBacked() ? $case->value : $case->name;
-            $options[$value] = $case;
+            $options[(string)$value] = $case;
         }
 
         self::$enumOptionsCache[$enumClassName] = $options;

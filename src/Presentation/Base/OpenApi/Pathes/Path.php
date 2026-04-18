@@ -246,7 +246,7 @@ class Path
             $summaryChars = strlen($this->summary);
             if ($summaryWords > Document::MAX_SUMMARY_WORDS) {
                 throw new TypeDefinitionMissingOrWrong(
-                    'Summary exceeds ' . Document::MAX_SUMMARY_WORDS . " words on {$controllerClass}->{$controllerReflectionMethod->getName()} ({$this->summary})"
+                    'Summary exceeds ' . Document::MAX_SUMMARY_WORDS . " words on {$controllerClass}->{$controllerReflectionMethod->getName()} ($this->summary)"
                 );
             }
             if ($summaryChars > Document::MAX_SUMMARY_CHARS) {

@@ -131,7 +131,7 @@ class PathParameterSchema
                         foreach ($choiceAttribute->choices as $choice) {
                             $choicesAssoc[$choice] = true;
                             $constantDescription = $constantDescriptions[$choice] ?? '';
-                            $choicesDescripton .= "-   `{$choice}`" . ($constantDescription ? ': ' . $constantDescription : '') . "\n";
+                            $choicesDescripton .= "-   `$choice`" . ($constantDescription ? ': ' . $constantDescription : '') . "\n";
                         }
                         if ($choicesDescripton) {
                             $parameter->description .= "  \nAllowed Values:  \n" . $choicesDescripton;
@@ -160,7 +160,7 @@ class PathParameterSchema
                         $queryOptions = $dtoQueryOptions->getQueryOptions();
                         if (!$queryOptions) {
                             throw new TypeDefinitionMissingOrWrong(
-                                "Class {$requestDtoReflectionClass->getName()} uses QueryOptions with a reference to base entity {$dtoQueryOptions->baseEntity}, but base entity has no QueryOptions attribute set on class"
+                                "Class {$requestDtoReflectionClass->getName()} uses QueryOptions with a reference to base entity $dtoQueryOptions->baseEntity, but base entity has no QueryOptions attribute set on class"
                             );
                         }
                         // Special handling for Filters
@@ -176,7 +176,7 @@ class PathParameterSchema
 
                             foreach ($queryOptions?->getFiltersDefinitions()?->getElements() as $allowedField) {
                                 $constantDescription = $constantDescriptions[$allowedField->propertyName] ?? '';
-                                $parameter->description .= "\n- `{$allowedField->propertyName}`" . ($constantDescription ? ': ' . $constantDescription : '');
+                                $parameter->description .= "\n- `$allowedField->propertyName`" . ($constantDescription ? ': ' . $constantDescription : '');
                                 if ($allowedField->options) {
                                     $parameter->description .= ' - one of [';
                                     $i = 0;
@@ -196,7 +196,7 @@ class PathParameterSchema
                             $this->pattern = OrderByOptions::getRegexForOpenApi();
                             $parameter->description .= "\n\n<details><summary>Allowed orderBy properties:</summary>  \n\n";
                             foreach ($queryOptions->getOrderByDefinitions() as $allowedField) {
-                                $parameter->description .= "\n- `{$allowedField}`";
+                                $parameter->description .= "\n- `$allowedField`";
                             }
                             $parameter->description .= '</details>';
                         } elseif ($typeName == ExpandOptions::class) {
@@ -217,13 +217,13 @@ class PathParameterSchema
                             $parameter->description .= "\n\n<details><summary>Allowed expand properties:</summary>  \n\n";
 
                             foreach ($expandDefinitions->getElements() as $expandDefinition) {
-                                $parameter->description .= "\n- `{$expandDefinition->propertyName}`";
+                                $parameter->description .= "\n- `$expandDefinition->propertyName`";
                                 if ($expandDefinition->getFiltersDefinitions()) {
                                     $parameter->description .= "\n  - Allowed filter properties are:";
                                     foreach (
                                         $expandDefinition->getFiltersDefinitions()->getElements() as $allowedField
                                     ) {
-                                        $parameter->description .= "\n    - `{$allowedField->propertyName}`";
+                                        $parameter->description .= "\n    - `$allowedField->propertyName`";
                                         if ($allowedField->options) {
                                             $parameter->description .= ': one of [';
                                             $i = 0;
@@ -238,7 +238,7 @@ class PathParameterSchema
                                 if ($expandDefinition->getOrderbyDefinitions()) {
                                     $parameter->description .= "\n  - Allowed orderBy properties are:";
                                     foreach ($expandDefinition->getOrderbyDefinitions() as $allowedField) {
-                                        $parameter->description .= "\n    - `{$allowedField}`";
+                                        $parameter->description .= "\n    - `$allowedField`";
                                     }
                                 }
                             }

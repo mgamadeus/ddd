@@ -21,6 +21,7 @@ use Doctrine\ORM\Mapping\MappingException;
 use Doctrine\ORM\QueryBuilder;
 use ReflectionException;
 
+/** @noinspection PhpDocFinalChecksInspection */
 class DoctrineEntityManager extends EntityManager
 {
     // The interval in seconds to check if the connection is still pingable
@@ -97,7 +98,7 @@ class DoctrineEntityManager extends EntityManager
                     $hasId = true;
                 } else {
                     // we need to set this explicitely, otherwise in case of updates we cannot access the id with lastInsertId();
-                    $update[] = "{$column} = LAST_INSERT_ID({$column})";
+                    $update[] = "$column = LAST_INSERT_ID($column)";
                     continue;
                 }
             }
@@ -138,17 +139,17 @@ class DoctrineEntityManager extends EntityManager
                 )) {
                 // If the column is marked for full replacement (e.g. replaceExistingTranslations), skip JSON_MERGE_PATCH
                 if (in_array($fieldName, $doctrineModel->columnsToReplaceInsteadOfMerge, true)) {
-                    $update[] = "{$column} = VALUES({$column})";
+                    $update[] = "$column = VALUES($column)";
                 } else {
-                    $update[] = "{$column} = JSON_MERGE_PATCH(COALESCE($column,'{}'), VALUES($column))";
+                    $update[] = "$column = JSON_MERGE_PATCH(COALESCE($column,'{}'), VALUES($column))";
                 }
             } elseif ($fieldName == $createdColumn) {
                 // we do not execute updates on created columns
-                $update[] = "{$column} = COALESCE(VALUES($column), $column)";
+                $update[] = "$column = COALESCE(VALUES($column), $column)";
             } elseif (isset($databaseColumnAttributeInstance->onUpdateAction)) {
-                $update[] = "{$column} = " . $databaseColumnAttributeInstance->onUpdateAction;
+                $update[] = "$column = " . $databaseColumnAttributeInstance->onUpdateAction;
             } else {
-                $update[] = "{$column} = VALUES({$column})";
+                $update[] = "$column = VALUES($column)";
             }
         }
 
@@ -164,7 +165,7 @@ class DoctrineEntityManager extends EntityManager
         if ($checkUpdateRights && isset($doctrineModel->id)) {
             $checkedRightsOnUpdateOperation = true;
             $checkRightsQueryBuilder = clone $updateRightsQueryBuilder;
-            $checkRightsQueryBuilder->andWhere("{$modelAlias}.id = :entityId");
+            $checkRightsQueryBuilder->andWhere("$modelAlias.id = :entityId");
             $checkRightsQueryBuilder->setParameter('entityId', $doctrineModel->id);
             $loadedOrmInstanceWithUpdateRightsQueryApplied = $checkRightsQueryBuilder->getQuery()->setMaxResults(
                 1
@@ -207,7 +208,7 @@ class DoctrineEntityManager extends EntityManager
             $modelAlias = $doctrineModel::MODEL_ALIAS;
 
             $checkRightsQueryBuilder = clone $updateRightsQueryBuilder;
-            $checkRightsQueryBuilder->andWhere("{$modelAlias}.id = :entityId");
+            $checkRightsQueryBuilder->andWhere("$modelAlias.id = :entityId");
             $checkRightsQueryBuilder->setParameter('entityId', $entityId);
 
             $loadedOrmInstanceWithUpdateRightsQueryApplied = $checkRightsQueryBuilder->getQuery()->setMaxResults(
@@ -277,17 +278,17 @@ class DoctrineEntityManager extends EntityManager
                 $isIdentifier = true;
             }
             if ($fieldName == $createdColumn) {
-                $update[] = "{$column} = COALESCE(VALUES($column), $column)";
+                $update[] = "$column = COALESCE(VALUES($column), $column)";
             } elseif ($isIdentifier) {
                 // we need to set this explicitely, otherwise in case of updates we cannot access the id with lastInsertId();
-                $update[] = "{$column} = LAST_INSERT_ID({$column})";
+                $update[] = "$column = LAST_INSERT_ID($column)";
             } elseif ($databaseColumnAttributeInstance?->isMergableJSONColumn) {
-                $update[] = "{$column} = JSON_MERGE_PATCH(COALESCE({$column},'{}'), COALESCE(VALUES({$column}),'{}'))";
+                $update[] = "$column = JSON_MERGE_PATCH(COALESCE($column,'{}'), COALESCE(VALUES($column),'{}'))";
             }
             elseif (isset($databaseColumnAttributeInstance->onUpdateAction)) {
-                $update[] = "{$column} = " . $databaseColumnAttributeInstance->onUpdateAction;
+                $update[] = "$column = " . $databaseColumnAttributeInstance->onUpdateAction;
             } else {
-                $update[] = "{$column} = VALUES({$column})";
+                $update[] = "$column = VALUES($column)";
             }
         }
 
@@ -316,7 +317,7 @@ class DoctrineEntityManager extends EntityManager
             $types = array_merge($types, $typesRow);
         }
         $ignoreStatement = $useInsertIgnore ? 'IGNORE' : '';
-        $sql = "INSERT {$ignoreStatement} INTO " . reset($doctrineModels)->getTableName() . ' (' . implode(
+        $sql = "INSERT $ignoreStatement INTO " . reset($doctrineModels)->getTableName() . ' (' . implode(
                 ', ',
                 $columns
             ) . ')' . ' VALUES ' . implode(

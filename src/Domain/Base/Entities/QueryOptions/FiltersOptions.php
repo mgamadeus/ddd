@@ -485,7 +485,7 @@ class FiltersOptions extends ObjectSet
                             $remainingFilterPropertyExploded = array_slice($filterPropertyExploded, 1);
                             $remainingFiltersOptions->property = implode('.', $remainingFilterPropertyExploded);
                             $remainingFiltersOptions->value = $this->value;
-                            $subExpandOptions = isset($expandOption->expandOptions) ? $expandOption->expandOptions : null;
+                            $subExpandOptions = $expandOption->expandOptions ?? null;
                             $valid = $remainingFiltersOptions->validateAgainstDefinitions($filtersDefinitionsForTargetProperty, $subExpandOptions);
                             if (count($remainingFilterPropertyExploded) == 1) {
                                 // we are on the second deepest lavel of a account.world.id => currrent level = world and remaining is id
@@ -510,7 +510,7 @@ class FiltersOptions extends ObjectSet
                 $allowedPropertyNames[] = $filterDefinition->propertyName;
             }
             throw new BadRequestException(
-                "Property name used to filter '{$this->property}' is not allowed. Allowed property names are: [" . implode(
+                "Property name used to filter '$this->property' is not allowed. Allowed property names are: [" . implode(
                     ', ',
                     $allowedPropertyNames
                 ) . ']'
@@ -521,7 +521,7 @@ class FiltersOptions extends ObjectSet
             $expandOption = $expandOptions->getExpandOptionByPropertyName($expandDefinition->propertyName);
             if ($expandDefinition && !$expandOption) {
                 throw new BadRequestException(
-                    "Property name used to filter '{$this->property}' references a property that has to be expanded ({$expandDefinition->propertyName}), but an expand option for '{$expandDefinition->propertyName}' is not present."
+                    "Property name used to filter '$this->property' references a property that has to be expanded ($expandDefinition->propertyName), but an expand option for '$expandDefinition->propertyName' is not present."
                 );
             }
         }
@@ -532,7 +532,7 @@ class FiltersOptions extends ObjectSet
             )
         ) {
             throw new BadRequestException(
-                "Filter applied to property name '{$this->property}' is not allowed. Allowed values are: [" . implode(
+                "Filter applied to property name '$this->property' is not allowed. Allowed values are: [" . implode(
                     ', ',
                     $filterDefinition->options
                 ) . ']'
@@ -541,7 +541,7 @@ class FiltersOptions extends ObjectSet
             $arrayDiff = $diff = array_diff($this->value, $filterDefinition->options);
             if (!empty($arrayDiff)) {
                 throw new BadRequestException(
-                    "The following Filters applied to property name '{$this->property}' are not allowed: [" . implode(
+                    "The following Filters applied to property name '$this->property' are not allowed: [" . implode(
                         ', ',
                         $arrayDiff
                     ) . ']. Allowed values are: [' . implode(
@@ -741,7 +741,7 @@ class FiltersOptions extends ObjectSet
                 }
 
                 $baseModelAlias = $joinAlias ?: $verifyModelAlias;
-                $qualifiedColumn = "{$baseModelAlias}.{$propertyName}";
+                $qualifiedColumn = "$baseModelAlias.$propertyName";
 
                 $parameterCount = $queryBuilder->getParameters()->count() + 1;
                 $queryBuilder->setParameter($parameterCount, $value);
@@ -753,7 +753,7 @@ class FiltersOptions extends ObjectSet
                     $booleanMode
                 );
 
-                return "MATCH({$qualifiedColumn}) AGAINST (?{$parameterCount}{$booleanModeClause}) > 0";
+                return "MATCH($qualifiedColumn) AGAINST (?$parameterCount$booleanModeClause) > 0";
             }
 
             $operator = self::OPERATORS_TO_DOCTRINE_ALLOCATION[$this->operator];
@@ -801,11 +801,11 @@ class FiltersOptions extends ObjectSet
                 } elseif ($this->operator == self::OPERATOR_NOT_EQUAL) {
                     $operator = 'isNotNull';
                 }
-                return $queryBuilder->expr()->$operator("{$baseModelAliasApplied}{$propertyName}");
+                return $queryBuilder->expr()->$operator("$baseModelAliasApplied$propertyName");
             }
 
             $parameterCount = $queryBuilder->getParameters()->count() + 1;
-            $operatorParams = ["{$baseModelAliasApplied}{$propertyName}", '?' . $parameterCount];
+            $operatorParams = ["$baseModelAliasApplied$propertyName", '?' . $parameterCount];
             $parameters = [$parameterCount => $value];
             if ($this->operator == self::OPERATOR_BETWEEN) {
                 $operatorParams[] = '?' . $parameterCount + 1;

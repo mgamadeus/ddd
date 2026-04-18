@@ -26,15 +26,13 @@ class JWTPayload
         int $periodInMonths = self::LIFTETIME_IN_MONTHS
     ): DateTime {
         $endOfMonth = (clone $currentDate)->modify('last day of this month')->setTime(23, 59, 59);
-        $monthDifference = (($endOfMonth->format('Y') - $currentDate->format('Y')) * 12) + ($endOfMonth->format(
-                    'n'
-                ) - $currentDate->format('n'));
+        $monthDifference = ((int)$endOfMonth->format('Y') - (int)$currentDate->format('Y')) * 12
+            + ((int)$endOfMonth->format('n') - (int)$currentDate->format('n'));
 
         while ($monthDifference < $periodInMonths) {
             $endOfMonth->modify('+1 month')->modify('last day of this month');
-            $monthDifference = (($endOfMonth->format('Y') - $currentDate->format('Y')) * 12) + ($endOfMonth->format(
-                        'n'
-                    ) - $currentDate->format('n'));
+            $monthDifference = ((int)$endOfMonth->format('Y') - (int)$currentDate->format('Y')) * 12
+                + ((int)$endOfMonth->format('n') - (int)$currentDate->format('n'));
         }
 
         return $endOfMonth;

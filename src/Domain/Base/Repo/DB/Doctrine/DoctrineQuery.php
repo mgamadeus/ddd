@@ -47,6 +47,7 @@ use function stripos;
 /**
  * A Query object represents a DQL query.
  */
+/** @noinspection PhpDocFinalChecksInspection */
 class DoctrineQuery extends Query
 {
     /**
@@ -104,7 +105,7 @@ class DoctrineQuery extends Query
      * A string with a class name that implements \Doctrine\ORM\Query\TreeWalker
      * and is used for generating the target SQL from any DQL AST tree.
      */
-    public const HINT_CUSTOM_OUTPUT_WALKER = 'doctrine.customOutputWalker';
+    public const string HINT_CUSTOM_OUTPUT_WALKER = 'doctrine.customOutputWalker';
 
     /**
      * Marks queries as creating only read only objects.

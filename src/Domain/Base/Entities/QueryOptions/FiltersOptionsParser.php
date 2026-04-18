@@ -183,7 +183,7 @@ class FiltersOptionsParser
             return $identifier;
         }
         throw new BadRequestException(
-            "Parsing of FiltersOptions failed: variable/filter identifier (e.g. varName) expected at index {$this->index} for input: {$this->input}"
+            "Parsing of FiltersOptions failed: variable/filter identifier (e.g. varName) expected at index $this->index for input: $this->input"
         );
     }
 
@@ -213,7 +213,7 @@ class FiltersOptionsParser
             }
         }
         throw new BadRequestException(
-            "Parsing of FiltersOptions failed: operator (e.g. eq, lq, gt ...) expected at index {$this->index} for input: {$this->input}"
+            "Parsing of FiltersOptions failed: operator (e.g. eq, lq, gt ...) expected at index $this->index for input: $this->input"
         );
     }
 
@@ -248,7 +248,7 @@ class FiltersOptionsParser
                     // only valid options after end of number sequence
                     if (!(ctype_space($curChar) || $curChar == ')' || $curChar === null)) {
                         throw new BadRequestException(
-                            "Parsing of FiltersOptions failed: invalid number literal at index {$this->index} for input: {$this->input}"
+                            "Parsing of FiltersOptions failed: invalid number literal at index $this->index for input: $this->input"
                         );
                     }
                     $this->index = $tIndex;
@@ -264,7 +264,7 @@ class FiltersOptionsParser
                 return null;
             }
             throw new BadRequestException(
-                "Parsing of FiltersOptions failed: string literal without quotes at index {$this->index} for input: {$this->input}"
+                "Parsing of FiltersOptions failed: string literal without quotes at index $this->index for input: $this->input"
             );
         } // string literal
         elseif ($curChar == "'") {
@@ -276,7 +276,7 @@ class FiltersOptionsParser
 
                 if ($curChar === null) {
                     throw new BadRequestException(
-                        "Parsing of FiltersOptions failed: not ending string literal found at index {$this->index} for input: {$this->input}"
+                        "Parsing of FiltersOptions failed: not ending string literal found at index $this->index for input: $this->input"
                     );
                 }
 
@@ -304,7 +304,7 @@ class FiltersOptionsParser
                 // we skip the first one as it is a single bracket [
                 if ($curChar === null) {
                     throw new BadRequestException(
-                        "Parsing of FiltersOptions failed: invalid formatted array literal found at index {$this->index} for input: {$this->input}"
+                        "Parsing of FiltersOptions failed: invalid formatted array literal found at index $this->index for input: $this->input"
                     );
                 } elseif ($stringDefiner === false && ($curChar === '"' || $curChar === "'")) {
                     // a string starts
@@ -327,7 +327,7 @@ class FiltersOptionsParser
                     $jsonDecodedLiteral = json_decode($literal);
                     if (json_last_error() !== JSON_ERROR_NONE) {
                         throw new BadRequestException(
-                            "Parsing of FiltersOptions failed: invalid formatted array literal found at index {$this->index} for input: {$this->input}"
+                            "Parsing of FiltersOptions failed: invalid formatted array literal found at index $this->index for input: $this->input"
                         );
                     }
                     $this->index = $tIndex;
@@ -338,7 +338,7 @@ class FiltersOptionsParser
             }
         }
         throw new BadRequestException(
-            "Parsing of FiltersOptions failed: literal expected at index {$this->index} for input: {$this->input}"
+            "Parsing of FiltersOptions failed: literal expected at index $this->index for input: $this->input"
         );
         // Parse literal (e.g., '2023-01-01')
     }

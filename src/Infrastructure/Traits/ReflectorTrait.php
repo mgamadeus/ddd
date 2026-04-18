@@ -58,10 +58,10 @@ trait ReflectorTrait
                 foreach ($unionTypes as $unionType) {
                     if ($unionType->isBuiltin()) {
                         continue;
-                        $typeName = $unionType->getName();
-                        if ($typeName == $className || '\\' . $typeName == $className) {
-                            return $property;
-                        }
+                    }
+                    $typeName = $unionType->getName();
+                    if ($typeName == $className || '\\' . $typeName == $className) {
+                        return $property;
                     }
                 }
             } else {

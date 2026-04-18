@@ -103,12 +103,12 @@ trait SerializerTrait
             $segments = array_filter(explode('.', $path), static fn($s) => $s !== '');
             foreach ($segments as $seg) {
                 // Property must exist and be non-null object to continue descending
-                if (!isset($cursor->{$seg}) || !is_object($cursor->{$seg})) {
+                if (!isset($cursor->$seg) || !is_object($cursor->$seg)) {
                     // Stop delegating for this path
                     $cursor = null;
                     break;
                 }
-                $cursor = $cursor->{$seg};
+                $cursor = $cursor->$seg;
             }
 
             // Delegate if the final target supports the same API
@@ -419,7 +419,7 @@ trait SerializerTrait
         ) {
             // Handle Enums
             if ($propertyValueIsObject && enum_exists($propertyValue::class)) {
-                return isset($propertyValue->value) ? $propertyValue->value : $propertyValue->name;
+                return $propertyValue->value ?? $propertyValue->name;
             }
 
             // we have an unkown object which has a toString function, return string number
@@ -960,7 +960,7 @@ trait SerializerTrait
                     if (is_int($index)) {
                         $this->$propertyName[] = $arrayItem;
                     } else {
-                        $this->{$propertyName}[$index] = $arrayItem;
+                        $this->$propertyName[$index] = $arrayItem;
                     }
                     continue;
                 }

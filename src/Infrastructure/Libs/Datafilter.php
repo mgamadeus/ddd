@@ -1566,7 +1566,7 @@ class Datafilter
 
         return (object)[
             'domain' => $domain,
-            'path' => (string)$path
+            'path' => $path
         ];
     }
 
@@ -2020,8 +2020,8 @@ class Datafilter
     {
         preg_match('#(?P<domain>.*?)\.(?P<tld>[a-z]{2,6})$#', $domain, $match);
         $return = new stdClass();
-        $return->domain = isset($match['domain']) ? $match['domain'] : null;
-        $return->tld = isset($match['tld']) ? $match['tld'] : null;
+        $return->domain = $match['domain'] ?? null;
+        $return->tld = $match['tld'] ?? null;
         return $return;
     }
 
@@ -2542,7 +2542,7 @@ class Datafilter
     {
         $whiteList = self::escapeRegexSpecialChars($whiteList);
         // remove all that is not a letter or number . \p{L} match any letter with diacritics too
-        $text = preg_replace("#[^\p{L}0-9{$whiteList}]#uis", ' ', $text);
+        $text = preg_replace("#[^\p{L}0-9$whiteList]#uis", ' ', $text);
         $text = preg_replace('#\s{2,}#', ' ', $text);
         return $text;
     }
@@ -2640,7 +2640,7 @@ class Datafilter
         }
 
         if ($returnUnmatched) {
-            return (object)['valid' => $valid, 'unmatched' => (isset($matches[0]) ? $matches[0] : '')];
+            return (object)['valid' => $valid, 'unmatched' => $matches[0] ?? ''];
         }
 
         return $valid;

@@ -97,12 +97,10 @@ class DDDKernel extends Kernel
             } elseif (is_file($configDir . '/{routes}.php')) {
                 $routes->import($defaultConfigDir . '/{routes}.php');
             }
-        } else {
-            if (is_file($defaultConfigDir . '/routes.yaml')) {
-                $routes->import($defaultConfigDir . '/routes.yaml');
-            } elseif (is_file($defaultConfigDir . '/{routes}.php')) {
-                $routes->import($defaultConfigDir . '/{routes}.php');
-            }
+        } elseif (is_file($defaultConfigDir . '/routes.yaml')) {
+            $routes->import($defaultConfigDir . '/routes.yaml');
+        } elseif (is_file($defaultConfigDir . '/{routes}.php')) {
+            $routes->import($defaultConfigDir . '/{routes}.php');
         }
     }
 
@@ -118,19 +116,19 @@ class DDDKernel extends Kernel
         }
 
         // Import environment-specific package configuration
-        $container->import("$configDir/{packages}/{$this->environment}/*.yaml");
+        $container->import("$configDir/{packages}/$this->environment/*.yaml");
         if ($configDir !== $defaultConfigDir) {
-            $container->import("$defaultConfigDir/{packages}/{$this->environment}/*.yaml");
+            $container->import("$defaultConfigDir/{packages}/$this->environment/*.yaml");
         }
 
         // Import services configuration if present
         if (is_file("$configDir/services.yaml")) {
             $container->import("$configDir/services.yaml");
-            $container->import("$configDir/{services}_{$this->environment}.yaml");
+            $container->import("$configDir/{services}_$this->environment.yaml");
         }
         if ($configDir !== $defaultConfigDir && is_file("$defaultConfigDir/services.yaml")) {
             $container->import("$defaultConfigDir/services.yaml");
-            $container->import("$defaultConfigDir/{services}_{$this->environment}.yaml");
+            $container->import("$defaultConfigDir/{services}_$this->environment.yaml");
         }
     }
 

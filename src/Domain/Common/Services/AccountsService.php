@@ -42,7 +42,7 @@ class AccountsService extends EntitiesService
         }
         /** @var Account $entityClass */
         $entityClass = DDDService::instance()->getContainerServiceClassNameForClass(
-            (string)static::DEFAULT_ENTITY_CLASS
+            static::DEFAULT_ENTITY_CLASS
         );
         $repoClassInstance = $entityClass::getRepoClassInstance();
 

@@ -31,7 +31,7 @@ class DateValueSequence extends ObjectSet
         return self::uniqueKeyStatic($this->name??'');
     }
 
-    function orderByDate(): DateValueSequence {
+    public function orderByDate(): DateValueSequence {
         $elements = $this->getElements();
         usort($elements, function($a, $b) {
             return $a->x <=> $b->x;

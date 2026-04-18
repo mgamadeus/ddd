@@ -2,13 +2,21 @@
 
 namespace DDD\Symfony\Loaders;
 
+use Exception;
+use FilesystemIterator;
+use InvalidArgumentException;
+use RecursiveCallbackFilterIterator;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use ReflectionClass;
+use SplFileInfo;
 use Symfony\Component\Config\Resource\DirectoryResource;
 use Symfony\Component\Routing\RouteCollection;
 
 class CustomAnnotationDirectoryLoader extends CustomAnnotationFileLoader
 {
     /**
-     * @throws \InvalidArgumentException When the directory does not exist or its routes cannot be parsed
+     * @throws InvalidArgumentException When the directory does not exist or its routes cannot be parsed
      */
     public function load(mixed $path, ?string $type = null): ?RouteCollection
     {
@@ -18,16 +26,16 @@ class CustomAnnotationDirectoryLoader extends CustomAnnotationFileLoader
 
         $collection = new RouteCollection();
         $collection->addResource(new DirectoryResource($dir, '/\.php$/'));
-        $files = iterator_to_array(new \RecursiveIteratorIterator(
-            new \RecursiveCallbackFilterIterator(
-                new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::FOLLOW_SYMLINKS),
-                function (\SplFileInfo $current) {
+        $files = iterator_to_array(new RecursiveIteratorIterator(
+            new RecursiveCallbackFilterIterator(
+                new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS | FilesystemIterator::FOLLOW_SYMLINKS),
+                function (SplFileInfo $current) {
                     return '.' !== substr($current->getBasename(), 0, 1);
                 }
             ),
-            \RecursiveIteratorIterator::LEAVES_ONLY
+            RecursiveIteratorIterator::LEAVES_ONLY
         ));
-        usort($files, function (\SplFileInfo $a, \SplFileInfo $b) {
+        usort($files, function (SplFileInfo $a, SplFileInfo $b) {
             return (string) $a > (string) $b ? 1 : -1;
         });
 
@@ -37,7 +45,7 @@ class CustomAnnotationDirectoryLoader extends CustomAnnotationFileLoader
             }
 
             if ($class = $this->findClass($file)) {
-                $refl = new \ReflectionClass($class);
+                $refl = new ReflectionClass($class);
                 if ($refl->isAbstract()) {
                     continue;
                 }
@@ -64,7 +72,7 @@ class CustomAnnotationDirectoryLoader extends CustomAnnotationFileLoader
 
         try {
             return is_dir($this->locator->locate($resource));
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return false;
         }
     }

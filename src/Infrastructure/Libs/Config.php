@@ -260,7 +260,7 @@ class Config
      */
     public static function getEnv(string $varname): bool|int|float|string|null
     {
-        if (isset(self::$env) && isset(self::$env[$varname])) {
+        if (isset(self::$env[$varname])) {
             $value = self::$env[$varname] ?? null;
         }
         else {

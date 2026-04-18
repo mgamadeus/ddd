@@ -10,9 +10,9 @@ namespace DDD\Domain\Base\Repo\DB\Database;
  * Used for column defaults like MariaDB VECTOR defaults:
  *   DEFAULT VEC_FromText('[0,0,0]')
  */
-class DatabaseSqlExpression
+readonly class DatabaseSqlExpression
 {
-    public function __construct(private readonly string $sql)
+    public function __construct(private string $sql)
     {
     }
 

@@ -109,7 +109,7 @@ class ExpandOptions extends ObjectSet
                 ))
             ) {
                 throw new BadRequestException(
-                    "Property name used to expand ({$expandOption->propertyName}) is not allowed. Allowed field names are: [" . implode(
+                    "Property name used to expand ($expandOption->propertyName) is not allowed. Allowed field names are: [" . implode(
                         ', ',
                         array_map(function (ExpandDefinition $expandDefinition) {
                             return $expandDefinition->propertyName;
@@ -121,7 +121,7 @@ class ExpandOptions extends ObjectSet
             if (isset($expandOption->filters)) {
                 if (!$expandDefinition->getFiltersDefinitions()) {
                     throw new BadRequestException(
-                        "Expand property ({$expandOption->propertyName}) has no filters definitions"
+                        "Expand property ($expandOption->propertyName) has no filters definitions"
                     );
                 }
                 $expandOption->filters->validateAgainstDefinitions($expandDefinition->getFiltersDefinitions());
@@ -129,7 +129,7 @@ class ExpandOptions extends ObjectSet
             if (isset($expandOption->orderByOptions)) {
                 if (!$expandDefinition->getOrderbyDefinitions()) {
                     throw new BadRequestException(
-                        "Expand property ({$expandOption->propertyName}) has no orderBy definitions"
+                        "Expand property ($expandOption->propertyName) has no orderBy definitions"
                     );
                 }
                 $expandOption->orderByOptions->validateAgainstDefinitions($expandDefinition->getOrderbyDefinitions());
@@ -140,7 +140,7 @@ class ExpandOptions extends ObjectSet
                 $propertiesToLazyLoad = $propertyReferenceClassName::getPropertiesToLazyLoad();
                 if (!isset($propertiesToLazyLoad[$expandOption->propertyName])) {
                     throw new BadRequestException(
-                        "Expand property ({$expandOption->propertyName}) is not valid in {$referenceClassName} as property Name has no LazyLoad"
+                        "Expand property ($expandOption->propertyName) is not valid in $referenceClassName as property Name has no LazyLoad"
                     );
                 }
                 /** @var string $propertyReferenceClassName */
@@ -156,7 +156,7 @@ class ExpandOptions extends ObjectSet
                 $targetPropertyHasQueryOptions = false;
                 foreach ($targetPropertyTypes as $propertyType) {
                     $targetPropertyClass = $propertyType->getName();
-                    $targetPropertyReflectionClass = ReflectionClass::instance((string)$targetPropertyClass);
+                    $targetPropertyReflectionClass = ReflectionClass::instance($targetPropertyClass);
                     $validationError = null;
                     try {
                         if ($targetPropertyReflectionClass->hasTrait(QueryOptionsTrait::class)) {
@@ -175,7 +175,7 @@ class ExpandOptions extends ObjectSet
                     // If we have an EntitySet, we also consider the particular Entity classes from its elements
                     if ($validationError && is_a($targetPropertyClass, EntitySet::class, true)) {
                         $targetPropertyClass = $targetPropertyClass::getEntityClass();
-                        $targetPropertyReflectionClass = ReflectionClass::instance((string)$targetPropertyClass);
+                        $targetPropertyReflectionClass = ReflectionClass::instance($targetPropertyClass);
                         if ($targetPropertyReflectionClass->hasTrait(QueryOptionsTrait::class)) {
                             $targetPropertyHasQueryOptions = true;
                             /** @var QueryOptionsTrait $targetPropertyClass */
@@ -190,7 +190,7 @@ class ExpandOptions extends ObjectSet
                 }
                 if (!$targetPropertyHasQueryOptions) {
                     throw new BadRequestException(
-                        "Expand property ({$expandOption->propertyName}) is not valid in {$referenceClassName} as target class has no QueryOptions"
+                        "Expand property ($expandOption->propertyName) is not valid in $referenceClassName as target class has no QueryOptions"
                     );
                 }
             }
@@ -233,7 +233,7 @@ class ExpandOptions extends ObjectSet
             $propertyName = $expandOption->propertyName;
             $joinAlreadyExists = false;
             $existingJoins = $queryBuilder->getDQLPart('join');
-            $joinString = "{$parentJoinAlias}.$propertyName";
+            $joinString = "$parentJoinAlias.$propertyName";
 
             // Check if a join on the same relation path already exists — it may have been
             // added by applyReadRightsQuery(), service methods, or other QueryBuilder logic

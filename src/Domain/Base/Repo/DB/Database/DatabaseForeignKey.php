@@ -57,7 +57,7 @@ class DatabaseForeignKey extends ValueObject
 
     public function getSql(string $tableName): string
     {
-        return "ADD CONSTRAINT `fk_{$tableName}_{$this->internalIdColumn}` FOREIGN KEY IF NOT EXISTS (`{$this->internalIdColumn}`) REFERENCES `{$this->foreignTable}` (`{$this->foreignIdColumn}`) ON UPDATE {$this->onUpdateAction} ON DELETE {$this->onDeleteAction}";
+        return "ADD CONSTRAINT `fk_{$tableName}_$this->internalIdColumn` FOREIGN KEY IF NOT EXISTS (`$this->internalIdColumn`) REFERENCES `$this->foreignTable` (`$this->foreignIdColumn`) ON UPDATE $this->onUpdateAction ON DELETE $this->onDeleteAction";
     }
 
     public function uniqueKey(): string

@@ -66,13 +66,13 @@ class UniquePropertyValidator extends ConstraintValidator
                 $alias = $repoClassName::getBaseModelAlias();
                 $entityHasId = isset($entity->id);
                 $queryBuidler
-                    ->select("COUNT({$alias}.id)")
+                    ->select("COUNT($alias.id)")
                     ->from($repoClassName::BASE_ORM_MODEL, $alias);
                 if (isset($entity->id)){
-                    $queryBuidler->andWhere("{$alias}.id != :currentId")
+                    $queryBuidler->andWhere("$alias.id != :currentId")
                         ->setParameter("currentId", $entity->id);
                 }
-                $count = $queryBuidler->andWhere("{$alias}.{$propertyName} = :propertyValue")
+                $count = $queryBuidler->andWhere("$alias.$propertyName = :propertyValue")
                     ->setParameter('propertyValue', $value)
                     ->getQuery()
                     ->getSingleScalarResult();

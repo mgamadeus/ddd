@@ -343,6 +343,7 @@ class DBEntity extends DatabaseRepoEntity
                 DefaultObject::isValueObject($possibleEntityTypeName)
             ) {
                 // handle object type migrations
+                /** @noinspection PhpIllegalStringOffsetInspection -- dynamic property access, is_array() guards the string offset */
                 if (
                     is_array($this->ormInstance->$propertyName) && isset($this->ormInstance->$propertyName['objectType']) && isset(
                         ReflectionClass::getObjectTypeMigrations()[$this->ormInstance->$propertyName['objectType']]

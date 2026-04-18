@@ -75,7 +75,7 @@ class ExpandOption extends ValueObject
     public function parseExpandParameters(string $expandParameters)
     {
         // Detect expand options.
-        $expandPattern = '/expand\s*=\s*(?P<expandOptions>((\s*\w+\s*(?P<expandParameters>\((?:[^()]+|(?&expandParameters))*\))?)+,?)+)/mi';
+        $expandPattern = '/expand\s*=\s*(?P<expandOptions>((\s*\w+\s*(?P<expandParameters>\((?:[^()]+|(?&expandParameters))*\))?)+,?)+)/i';
         preg_match_all($expandPattern, $expandParameters, $matches);
         if (isset($matches['expandOptions'])) {
             foreach ($matches['expandOptions'] as $currentMatch) {
@@ -83,14 +83,14 @@ class ExpandOption extends ValueObject
                 $this->addChildren($this->expandOptions);
             }
             $expandParameters = preg_replace(
-                '/(?P<expandText>expand\s*=\s*(?P<expandOptions>((\s*\w+\s*(?P<expandParameters>\((?:[^()]+|(?&expandParameters))*\))?)+,?)+))/mi',
+                '/(?P<expandText>expand\s*=\s*(?P<expandOptions>((\s*\w+\s*(?P<expandParameters>\((?:[^()]+|(?&expandParameters))*\))?)+,?)+))/i',
                 '',
                 $expandParameters
             );
         }
         // Parse filters, orderBy, top, skip, and select.
         preg_match_all(
-            '/filters\s*=\s*(?P<filters>[^;]+)|orderBy\s*=\s*(?P<orderBy>[^;]+)|top\s*=\s*(?P<top>[^;]+)|skip\s*=\s*(?P<skip>[^;]+)|skiptoken\s*=\s*(?P<skiptoken>[^;]+)|select\s*=\s*(?P<select>[^;]+)/mi',
+            '/filters\s*=\s*(?P<filters>[^;]+)|orderBy\s*=\s*(?P<orderBy>[^;]+)|top\s*=\s*(?P<top>[^;]+)|skip\s*=\s*(?P<skip>[^;]+)|skiptoken\s*=\s*(?P<skiptoken>[^;]+)|select\s*=\s*(?P<select>[^;]+)/i',
             $expandParameters,
             $matches
         );

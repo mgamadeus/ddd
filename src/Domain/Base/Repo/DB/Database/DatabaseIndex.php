@@ -115,7 +115,7 @@ class DatabaseIndex extends ValueObject
             }, $this->indexColumns)
         );
 
-        $sql = "CREATE {$this->indexType} IF NOT EXISTS `{$indexName}` ON `{$tableName}` ({$columnsSql})";
+        $sql = "CREATE $this->indexType IF NOT EXISTS `$indexName` ON `$tableName` ($columnsSql)";
 
         // MariaDB VECTOR INDEX options
         if ($this->indexType === self::TYPE_VECTOR) {
@@ -123,7 +123,7 @@ class DatabaseIndex extends ValueObject
             $maxNeighbors = $this->maxNeighbors ?? self::DEFAULT_VECTOR_MAX_NEIGHBORS;
 
             $sql .= ' DISTANCE=' . $distanceMetric;
-            $sql .= ' M=' . (int)$maxNeighbors;
+            $sql .= ' M=' . $maxNeighbors;
         }
 
         return $sql;

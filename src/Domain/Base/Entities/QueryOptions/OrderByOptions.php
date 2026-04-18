@@ -23,7 +23,7 @@ class OrderByOptions extends ObjectSet
             return null;
         }
         $result = preg_match_all(
-            '/(?:(?:\s*,\s*)?(?<property>[a-z]+)(\s+?<direction>asc|desc)?)+?/si',
+            '/(?:(?:\s*,\s*)?(?<property>[a-z]+)(\s+?<direction>asc|desc)?)+?/i',
             $orderByQuery,
             $matches
         );
@@ -86,7 +86,7 @@ class OrderByOptions extends ObjectSet
                 }
                 if (!$expandOptionForPropertyName) {
                     throw new BadRequestException(
-                        "Property name used to orderBy ({$orderByOption->propertyName}), cannot be found scanning the expand path '{$expandPath}', check if you expanded necesary properties."
+                        "Property name used to orderBy ($orderByOption->propertyName), cannot be found scanning the expand path '$expandPath', check if you expanded necesary properties."
                     );
                 }
                 $orderByDefinitionsForPropertyName = $expandOptionForPropertyName->expandDefinition->getOrderbyDefinitions();
@@ -99,7 +99,7 @@ class OrderByOptions extends ObjectSet
                 }
                 if (!$optionExists) {
                     throw new BadRequestException(
-                        "OrderBy option used with expand path '{$expandPath}' does not allow for property '{$propertyNameInExpandPath}'. Allowed property names under this path are: [" . implode(
+                        "OrderBy option used with expand path '$expandPath' does not allow for property '$propertyNameInExpandPath'. Allowed property names under this path are: [" . implode(
                             ', ',
                             $orderByDefinitionsForPropertyName
                         ) . ']'
@@ -118,7 +118,7 @@ class OrderByOptions extends ObjectSet
             }
             if (!in_array($orderByOption->propertyName, $orderByDefinitions)) {
                 throw new BadRequestException(
-                    "Property name used to orderBy '{$orderByOption->propertyName}' is not allowed. Allowed property names are: [" . implode(
+                    "Property name used to orderBy '$orderByOption->propertyName' is not allowed. Allowed property names are: [" . implode(
                         ', ',
                         $orderByDefinitions
                     ) . ']'
@@ -160,7 +160,7 @@ class OrderByOptions extends ObjectSet
                 $fulltextSearchInfo = FiltersOptions::getFulltextSearchForProperty($basePropertyName);
                 if (!$fulltextSearchInfo) {
                     throw new BadRequestException(
-                        "OrderBy score option '{$propertyName}' requires a corresponding fulltext filter on '{$basePropertyName}' (operator ft or fb)."
+                        "OrderBy score option '$propertyName' requires a corresponding fulltext filter on '$basePropertyName' (operator ft or fb)."
                     );
                 }
 
@@ -169,7 +169,7 @@ class OrderByOptions extends ObjectSet
                 $queryBuilder->setParameter($parameterCount, $fulltextSearchInfo['searchTerms']);
 
                 $queryBuilder->addSelect(
-                    "MATCH({$fulltextSearchInfo['qualifiedColumn']}) AGAINST (?{$parameterCount}{$booleanModeClause}) AS HIDDEN {$scoreAlias}"
+                    "MATCH({$fulltextSearchInfo['qualifiedColumn']}) AGAINST (?$parameterCount$booleanModeClause) AS HIDDEN $scoreAlias"
                 );
                 $queryBuilder->addOrderBy($scoreAlias, $orderByOption->direction);
                 continue;
@@ -194,7 +194,7 @@ class OrderByOptions extends ObjectSet
                     if (!$verifyModelClass::isValidDatabaseExpression("$verifyModelAlias.$propertyNameInExpandPath")) {
                         continue;
                     }
-                    $orderByExpression = "{$joinAlias}.{$propertyNameInExpandPath}";
+                    $orderByExpression = "$joinAlias.$propertyNameInExpandPath";
                 } else {
                     continue;
                 }

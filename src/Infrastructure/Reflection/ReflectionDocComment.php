@@ -4,20 +4,26 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Reflection;
 
+use ReflectionClass as NativeReflectionClass;
+use ReflectionConstant;
+use ReflectionMethod;
+use ReflectionProperty as NativeReflectionProperty;
+use ReflectionTrait;
+
 class ReflectionDocComment
 {
     public const array BASE_TYPES = ['string' => true, 'integer' => true, 'float' => true, 'boolean' => true];
 
     protected string $docComment = '';
 
-    protected ?\ReflectionClass $reflectionClass = null;
+    protected ?NativeReflectionClass $reflectionClass = null;
 
-    protected \ReflectionProperty|\ReflectionMethod|\ReflectionConstant|null $target = null;
+    protected NativeReflectionProperty|ReflectionMethod|ReflectionConstant|null $target = null;
 
     public function __construct(
         string $docComment,
-        ?\ReflectionClass $reflectionClass = null,
-        \ReflectionProperty|\ReflectionMethod|\ReflectionConstant|null $target = null
+        ?NativeReflectionClass $reflectionClass = null,
+        NativeReflectionProperty|ReflectionMethod|ReflectionConstant|null $target = null
     )
     {
         $this->docComment = $docComment;
@@ -52,7 +58,7 @@ class ReflectionDocComment
             // Also handle the case where "@example" is the first meaningful line (no leading newline).
             $doccomment = preg_replace(
                 '/^\s*\/\*\*\s*(?:\r?\n)\s*\*\s*@example\b.*?(?=(?:\r?\n)\s*\*\s*@\w+\b|(?:\r?\n)\s*\*\/|\*\/\s*$)/si',
-                "/**",
+                '/**',
                 $doccomment
             );
         }
@@ -65,17 +71,17 @@ class ReflectionDocComment
 
         // Remove everything after the first @xxx declaration (including the declaration itself)
         // \W (any non-word char) is used to not detect mail@asd.com as @var term
-        $doccomment = preg_replace('/\W\@([0-9a-zA-Z_]*)\s+([0-9a-zA-Z_]+)(\s+\$([0-9a-zA-Z_]+))?/is', '', $doccomment);
+        $doccomment = preg_replace('/\W\@([0-9a-zA-Z_]*)\s+([0-9a-zA-Z_]+)(\s+\$([0-9a-zA-Z_]+))?/', '', $doccomment);
 
         // Remove the /** comment delimiter at the start of a line, the */ comment delimiter at the start of a line (possibly preceded by whitespace),
         // and a * character at the start of a line (possibly preceded by whitespace)
         $doccomment = preg_replace('/^\/\*\*|^\s*\*\/|^\s*\*/m', '', $doccomment);
 
         // Remove leading whitespace from each line
-        $doccomment = preg_replace('/^ +/sm', '', $doccomment);
+        $doccomment = preg_replace('/^ +/m', '', $doccomment);
 
         // Markdown requires newlines to have 2 empty spaces followed by \n
-        $doccomment = preg_replace("/\n[^\n]]/sm", "  \n", $doccomment);
+        $doccomment = preg_replace("/\n[^\n]]/", "  \n", $doccomment);
 
         // remove final */
         $doccomment = preg_replace('/\*\/$/', '', $doccomment);
@@ -113,11 +119,11 @@ class ReflectionDocComment
             $upstream = $this->findUpstreamClassDoc($this->reflectionClass);
         } else {
             // Member-level doc
-            if ($this->target instanceof \ReflectionMethod) {
+            if ($this->target instanceof ReflectionMethod) {
                 $upstream = $this->findUpstreamMethodDoc($this->reflectionClass, $this->target->getName());
-            } elseif ($this->target instanceof \ReflectionProperty) {
+            } elseif ($this->target instanceof NativeReflectionProperty) {
                 $upstream = $this->findUpstreamPropertyDoc($this->reflectionClass, $this->target->getName());
-            } elseif ($this->target instanceof \ReflectionConstant) {
+            } elseif ($this->target instanceof ReflectionConstant) {
                 $upstream = $this->findUpstreamConstantDoc($this->reflectionClass, $this->target->getName());
             }
         }
@@ -148,14 +154,14 @@ class ReflectionDocComment
     /**
      * Finds the first non-empty class-level docComment from parent classes
      *
-     * @param \ReflectionClass $reflectionClass The class to search from
+     * @param NativeReflectionClass $reflectionClass The class to search from
      * @return string|null The first non-empty parent docComment, or null if none found
      */
-    protected function findUpstreamClassDoc(\ReflectionClass $reflectionClass): ?string
+    protected function findUpstreamClassDoc(NativeReflectionClass $reflectionClass): ?string
     {
         // Walk up the inheritance chain
         $parentClass = $reflectionClass->getParentClass();
-        while ($parentClass instanceof \ReflectionClass) {
+        while ($parentClass instanceof NativeReflectionClass) {
             $docComment = $parentClass->getDocComment();
 
             // Return the first non-empty docComment found
@@ -174,11 +180,11 @@ class ReflectionDocComment
      *
      * Search order: interfaces first (common for contracts), then parent classes, then traits
      *
-     * @param \ReflectionClass $reflectionClass The class containing the method
+     * @param NativeReflectionClass $reflectionClass The class containing the method
      * @param string $methodName The name of the method to search for
      * @return string|null The first non-empty docComment found, or null if none found
      */
-    protected function findUpstreamMethodDoc(\ReflectionClass $reflectionClass, string $methodName): ?string
+    protected function findUpstreamMethodDoc(NativeReflectionClass $reflectionClass, string $methodName): ?string
     {
         // 1) Check interfaces first (common inheritdoc expectation for contracts)
         foreach ($reflectionClass->getInterfaces() as $interface) {
@@ -194,7 +200,7 @@ class ReflectionDocComment
 
         // 2) Walk up parent classes
         $parentClass = $reflectionClass->getParentClass();
-        while ($parentClass instanceof \ReflectionClass) {
+        while ($parentClass instanceof NativeReflectionClass) {
             if ($parentClass->hasMethod($methodName)) {
                 $parentMethod = $parentClass->getMethod($methodName);
                 $docComment = $parentMethod->getDocComment();
@@ -229,15 +235,15 @@ class ReflectionDocComment
      * - Traits used by parent classes
      * - Traits used by other traits (nested)
      *
-     * @param \ReflectionClass $reflectionClass The class to collect traits from
-     * @return array<string,\ReflectionTrait> Map of trait names to ReflectionTrait objects
+     * @param NativeReflectionClass $reflectionClass The class to collect traits from
+     * @return array<string,ReflectionTrait> Map of trait names to ReflectionTrait objects
      */
-    protected function allTraitsRecursive(\ReflectionClass $reflectionClass): array
+    protected function allTraitsRecursive(NativeReflectionClass $reflectionClass): array
     {
         $traits = [];
 
         // Recursive closure to collect traits and their nested traits
-        $collectTraits = static function (\ReflectionClass|\ReflectionTrait $reflection) use (
+        $collectTraits = static function (NativeReflectionClass|ReflectionTrait $reflection) use (
             &$traits,
             &$collectTraits
         ): void {
@@ -256,7 +262,7 @@ class ReflectionDocComment
 
         // Walk up the inheritance chain and collect traits from each class
         $currentClass = $reflectionClass;
-        while ($currentClass instanceof \ReflectionClass) {
+        while ($currentClass instanceof NativeReflectionClass) {
             $collectTraits($currentClass);
             $currentClass = $currentClass->getParentClass();
         }
@@ -267,15 +273,15 @@ class ReflectionDocComment
     /**
      * Finds the first non-empty property docComment from parent classes or traits
      *
-     * @param \ReflectionClass $reflectionClass The class containing the property
+     * @param NativeReflectionClass $reflectionClass The class containing the property
      * @param string $propertyName The name of the property to search for
      * @return string|null The first non-empty docComment found, or null if none found
      */
-    protected function findUpstreamPropertyDoc(\ReflectionClass $reflectionClass, string $propertyName): ?string
+    protected function findUpstreamPropertyDoc(NativeReflectionClass $reflectionClass, string $propertyName): ?string
     {
         // Walk up parent classes
         $parentClass = $reflectionClass->getParentClass();
-        while ($parentClass instanceof \ReflectionClass) {
+        while ($parentClass instanceof NativeReflectionClass) {
             if ($parentClass->hasProperty($propertyName)) {
                 $parentProperty = $parentClass->getProperty($propertyName);
                 $docComment = $parentProperty->getDocComment();
@@ -305,15 +311,15 @@ class ReflectionDocComment
     /**
      * Finds the first non-empty constant docComment from parent classes or traits
      *
-     * @param \ReflectionClass $reflectionClass The class containing the constant
+     * @param NativeReflectionClass $reflectionClass The class containing the constant
      * @param string $constantName The name of the constant to search for
      * @return string|null The first non-empty docComment found, or null if none found
      */
-    protected function findUpstreamConstantDoc(\ReflectionClass $reflectionClass, string $constantName): ?string
+    protected function findUpstreamConstantDoc(NativeReflectionClass $reflectionClass, string $constantName): ?string
     {
         // Walk up parent classes
         $parentClass = $reflectionClass->getParentClass();
-        while ($parentClass instanceof \ReflectionClass) {
+        while ($parentClass instanceof NativeReflectionClass) {
             if ($parentClass->hasConstant($constantName)) {
                 $parentConstant = $parentClass->getReflectionConstant($constantName);
 

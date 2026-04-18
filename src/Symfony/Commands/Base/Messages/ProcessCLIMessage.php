@@ -37,7 +37,7 @@ class ProcessCLIMessage extends Command
         }
 
         if (!$message) {
-            $output->writeln("<error>Failed to decode message.</error>");
+            $output->writeln('<error>Failed to decode message.</error>');
             return Command::FAILURE;
         }
 
