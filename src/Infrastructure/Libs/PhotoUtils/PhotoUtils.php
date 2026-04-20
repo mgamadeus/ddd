@@ -83,7 +83,7 @@ class PhotoUtils
      * @return string
      * @throws ImagickException
      */
-    public static function adjustImageToRequriements(
+    public static function adjustImageToRequirements(
         string $imageBlob,
         int $minWidth,
         int $minHeight,
