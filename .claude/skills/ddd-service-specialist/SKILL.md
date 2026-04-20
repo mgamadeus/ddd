@@ -156,6 +156,34 @@ $queryBuilder->select("COUNT({$baseModelAlias}.id)")
     ->setParameter('name', $name);
 ```
 
+### CRITICAL: `createQueryBuilder(true)` -- when to pass `true`
+
+`createQueryBuilder(bool $includeModelSelectFromClause = false)` -- the `true` parameter adds the `SELECT ... FROM ...` clause, which establishes the **root alias**. You **MUST** pass `true` when:
+
+1. **Using JOINs** (`leftJoin`, `innerJoin`, `join`) -- joins require a root alias. Without `true`: `RuntimeException: No alias was set before invoking getRootAlias()`
+2. **Using `->select()` with scalar aggregates** (`COUNT`, `MAX`, `SUM`) followed by `->getQuery()->getSingleScalarResult()`
+3. **Using `->groupBy()`**
+
+When in doubt, **always pass `true`** -- it never hurts. The only case where omitting it is fine is simple filter queries where the framework's `find()` method adds its own SELECT/FROM clause internally.
+
+```php
+// Simple filter -- find() adds SELECT/FROM, so false (default) is fine
+$qb = $repoClass::createQueryBuilder();
+$qb->andWhere("{$a}.status = :s")->setParameter('s', 'ACTIVE');
+return $repoClass->find($qb);
+
+// JOIN -- MUST pass true
+$qb = $repoClass::createQueryBuilder(true);
+$qb->leftJoin("{$a}.children", $a . '_children')
+   ->andWhere("{$a}.worldId = :wid")->setParameter('wid', $worldId);
+return $repoClass->find($qb);
+
+// Scalar aggregate -- MUST pass true
+$qb = $repoClass::createQueryBuilder(true);
+$qb->select("COUNT({$a}.id)")->where("{$a}.parentId = :pid")->setParameter('pid', $id);
+return (int) $qb->getQuery()->getSingleScalarResult();
+```
+
 ### Key Rules
 
 - `createQueryBuilder()` and `getBaseModelAlias()` are called **statically** on the repo class (`$repoClass::`)
