@@ -50,7 +50,58 @@ Store only IDs and primitive values in the message. Re-fetch the entity in the h
 
 **Exception:** When the object is not yet stored (no ID) or serialization is explicitly desired.
 
-### 2. Service Method Pattern: `bool $async = false`
+### 2. Handler is Ultra-Slim — ALL Logic Lives in the Service
+
+**The handler is a thin dispatcher. It MUST NOT contain business logic.** Its only job is:
+1. Set auth context
+2. Check workspace routing
+3. Load entity by ID
+4. Call a single service method with `async: false`
+5. Catch and log errors
+
+**NEVER** put moderation logic, translation calls, notification dispatch, rate limiting, DB queries, or any other business logic directly in the handler. All of that belongs in the service method. The handler should be ~20-30 lines max.
+
+**Anti-pattern (WRONG):**
+```php
+// WRONG — handler doing business logic
+class FooBarHandler extends AppMessageHandler {
+    public function __invoke(FooBarMessage $message): void {
+        // ...auth, workspace...
+        $entity = FooBar::byId($message->id);
+        // ❌ Business logic in handler:
+        $this->doStep1($entity);
+        $this->doStep2($entity);
+        $this->doStep3($entity);
+    }
+    protected function doStep1(...) { /* 50 lines */ }
+    protected function doStep2(...) { /* 80 lines */ }
+}
+```
+
+**Correct pattern (RIGHT):**
+```php
+// Handler — thin
+class FooBarHandler extends AppMessageHandler {
+    public function __invoke(FooBarMessage $message): void {
+        // ...auth, workspace...
+        $service = FooBars::getService();
+        $entity = $service->find($message->id);
+        $service->processFooBar($entity, async: false); // ✅ One call
+    }
+}
+
+// Service — all logic here
+class FooBarsService extends EntitiesService {
+    public function processFooBar(FooBar $entity, bool $async = true): void {
+        if ($async) { (new FooBarMessage($entity->id))->dispatch(); return; }
+        $this->doStep1($entity);
+        $this->doStep2($entity);
+        $this->doStep3($entity);
+    }
+}
+```
+
+### 3. Service Method Pattern: `bool $async = false`
 
 Business logic lives in a service method that accepts `$async`. The caller decides whether to run immediately or enqueue:
 
@@ -68,7 +119,7 @@ public function doSomething(int $entityId, bool $async = false): void
 
 **Handler side:** always calls the service method with `async: false` to avoid re-dispatch loops.
 
-### 3. Always Propagate Auth Context
+### 4. Always Propagate Auth Context
 
 In every handler, call:
 
@@ -78,7 +129,7 @@ $this->setAuthAccountFromMessage($message);
 
 This ensures the message is processed with the rights of the account that dispatched it.
 
-### 4. Workspace Routing Guard
+### 5. Workspace Routing Guard
 
 Handlers must check workspace routing before processing:
 
@@ -90,7 +141,7 @@ if ($message->processOnWorkspaceIfNecessary()) {
 
 **Order:** set auth -> workspace guard -> run.
 
-### 5. Logging Pattern
+### 6. Logging Pattern
 
 - Use `$this->getLogger()` for all logging -- **never** `DDDService::instance()->getLogger()` directly in handlers
 - Log an `info` line before work starts with identifying IDs
@@ -110,14 +161,14 @@ try {
 }
 ```
 
-### 6. Time/Memory Limits for Heavy Jobs
+### 7. Time/Memory Limits for Heavy Jobs
 
 ```php
 set_time_limit(120);           // 120s for standard tasks, 500s for heavy imports
 ini_set('memory_limit', '1024M');
 ```
 
-### 7. Admin Privilege Escalation (When Required)
+### 8. Admin Privilege Escalation (When Required)
 
 Some async operations must run with admin privileges (e.g., cross-tenant data access):
 
