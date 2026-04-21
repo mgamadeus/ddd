@@ -304,22 +304,43 @@ framework:
 
 ### Step 5: Add Supervisor Consumer
 
-Update `config/system/supervisorWorkers.conf`:
+**IMPORTANT:** Search the project for an existing supervisor config file. Common locations:
+
+```
+config/system/supervisorWorkers.conf
+config/supervisor/*.conf
+docker/supervisor/*.conf
+```
+
+Use `Glob` with patterns like `**/*supervisor*` or `**/*Workers.conf` to find it.
+
+Once found:
+1. **Read the existing file** to learn the project's conventions — the `command=` path, `user=`, `numprocs` patterns, etc. Every project is different.
+2. **Copy an existing `[program:]` block** as a template for the new entry.
+3. **Replace only** the transport name (in `[program:]` and `messenger:consume` argument) with the new transport name from Step 4.
+4. **Append** the new block to the end of the file.
+
+**General structure of a supervisor consumer block:**
 
 ```ini
-[program:process_foo_bar]
-command=php /path/to/project/bin/console messenger:consume process_foo_bar --no-debug
+[program:{transport_name}]
+command=php {path_from_existing_entries}/bin/console messenger:consume {transport_name} --no-debug
 process_name=%(program_name)s_%(process_num)02d
-numprocs=1
+numprocs={see below}
 autostart=true
 autorestart=true
-user=www-data
+user={copy from existing entries}
 redirect_stderr=true
 ```
 
-Set `numprocs` based on job cost:
-- IO-bound / short tasks: more workers (e.g., push notifications: 10)
-- Heavy CPU/memory: fewer workers (e.g., imports: 1)
+**Rules:**
+- **Never hardcode paths** — always copy the `command=` path prefix from an existing entry in the same file
+- **Never guess `user=`** — copy from existing entries
+- Transport name in `[program:]` and `messenger:consume` must match the transport name in `messenger.yaml`
+- Set `numprocs` based on job cost:
+  - IO-bound / short tasks: more workers (e.g., push notifications: 5-10)
+  - Heavy CPU/memory: fewer workers (e.g., imports: 1)
+  - Standard async processing: 1-2
 
 ### Step 6: Use From Service
 
