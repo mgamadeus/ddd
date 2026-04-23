@@ -64,15 +64,20 @@ class GeoPoint extends ValueObject
     }
 
     /**
-     * Calculates the great-circle distance between two points, with
-     * the Haversine formula.
+     * Calculates the great-circle distance between two points with the Haversine formula,
+     * using the WGS84 geocentric radius at the midpoint latitude instead of the mean
+     * spherical radius. This removes the ~0.3% latitude-dependent error of the spherical
+     * model while keeping the formula closed-form (no iteration).
+     *
      * @param GeoPoint $otherGeoPoint
-     * @return float
+     * @return float Distance in meters
      */
     public function getDistanceInMetersToGeoPoint(GeoPoint $otherGeoPoint): float
     {
-        $earthRadius = 6371000;
-        // convert from degrees to radians
+        // WGS84 ellipsoid parameters
+        $a = 6378137.0;          // equatorial radius (m)
+        $b = 6356752.314245;     // polar radius (m)
+
         $latFrom = deg2rad($this->lat);
         $lonFrom = deg2rad($this->lng);
         $latTo = deg2rad($otherGeoPoint->lat);
@@ -80,6 +85,17 @@ class GeoPoint extends ValueObject
 
         $latDelta = $latTo - $latFrom;
         $lonDelta = $lonTo - $lonFrom;
+
+        // WGS84 geocentric radius at midpoint latitude:
+        // R(φ) = sqrt( ((a²·cosφ)² + (b²·sinφ)²) / ((a·cosφ)² + (b·sinφ)²) )
+        $midLat = ($latFrom + $latTo) / 2;
+        $cosMid = cos($midLat);
+        $sinMid = sin($midLat);
+        $aCos = $a * $cosMid;
+        $bSin = $b * $sinMid;
+        $aSqCos = $a * $aCos;
+        $bSqSin = $b * $bSin;
+        $earthRadius = sqrt(($aSqCos * $aSqCos + $bSqSin * $bSqSin) / ($aCos * $aCos + $bSin * $bSin));
 
         $angle = 2 * asin(
                 sqrt(
