@@ -171,22 +171,22 @@ PYEOF
 | `PhpUndefinedVariableInspection` | Initialize variable before conditional blocks |
 | `PhpUndefinedFieldInspection` | Add curly braces: `"track_{$track->id}_export"` -- real bug |
 | `PhpUnreachableStatementInspection` | Remove dead code after throw/return |
-| `PhpUnnecessaryCurlyVarSyntaxInspection` | Remove `{}` from `"{$simpleVar}"` (keep for complex expressions) |
+| `PhpUnnecessaryCurlyVarSyntaxInspection` | Remove `{}` from `"{$simpleVar}"` → `"$simpleVar"`. Do NOT concatenate with `.` — use direct interpolation: `"From: $var"` not `'From: ' . $var` |
 
 #### Suppress with `@noinspection` (intentional patterns):
 
 | Inspection | When to suppress |
 |---|---|
-| `PhpVariableIsUsedOnlyInClosureInspection` | Variable shared across closures |
 | `PhpDynamicFieldDeclarationInspection` | Property inherited from parent (false positive) |
 | `PhpDocFinalChecksInspection` | Intentionally extending `@final` class |
 
-#### Skip (not code issues):
+#### Skip (not code issues or unfixable):
 
 | Inspection | Reason |
 |---|---|
 | `GrazieStyle` | Grammar suggestions, not code |
 | `SqlNoDataSourceInspection` | IDE config, not code |
+| `PhpVariableIsUsedOnlyInClosureInspection` | False positive — variables used in closures within match arms or shared across multiple closures. `@noinspection` does NOT work for this inspection in Qodana. Ignore these. |
 | Files matching `DB*Model.php` | Auto-generated -- never edit |
 
 ### Suppression syntax
