@@ -93,10 +93,19 @@ class {Resource}Controller extends {Audience}Controller
 #[Update]                    // PUT full update
 #[Delete('/{resourceId}')]   // DELETE
 
-// Summary convention: Subject first, max 7 words
+// Summary convention: EntityName + Action, max 7 words
 // CRUD: 'Resources List', 'Resource Details', 'Resource Creation', 'Resource Update', 'Resource Deletion'
 // Custom: 'SupportTicket Create AI Resolution'
 #[Summary('Resource Details')]
+
+// Tag name convention: MUST match the entity name, NOT an abbreviation
+// WRONG: name: 'ChatAttachments' — RIGHT: name: 'ChatMessageAttachments'
+// WRONG: name: 'Tickets' — RIGHT: name: 'SupportTickets'
+
+// If an endpoint operates on a sub-entity (e.g. attachment delete within a messages controller),
+// keep it under the parent controller's tag — do NOT add a method-level #[Tag] override,
+// as this creates an empty group in the OpenAPI documentation.
+// Instead, just use a descriptive Summary: 'ChatMessageAttachment Delete'
 
 // Route with regex requirement
 #[Get('/{accessCodeOrId}', requirements: ['accessCodeOrId' => '[^/]+'])]
@@ -138,11 +147,36 @@ use DDD\Presentation\Base\OpenApi\Attributes\{Info, SecurityScheme, Server, Igno
 > - Always set `$service->throwErrors = true;` before any service call
 > - Use pass-by-reference (`&$requestDto`) for DTOs with `DtoQueryOptionsTrait`
 > - Services are auto-injected via Symfony DI
-> - Document all exceptions in PHPDoc (`@throws`)
+> - Every method MUST have complete PHPDoc: `@param`, `@return`, and `@throws`
+> - `@throws` propagate from service methods — if the service throws `BadRequestException`, the controller method must declare it too
+> - Standard `@throws` for methods calling service find/update/delete: `BadRequestException`, `InternalErrorException`, `InvalidArgumentException`, `ReflectionException`, plus `ORMException`/`OptimisticLockException` for update, plus `NonUniqueResultException` for delete
+> - Controller class MUST have a class-level PHPDoc describing its purpose
+
+### Class-Level PHPDoc
+
+```php
+/**
+ * Admin resource management.
+ * Handles CRUD operations for Resources.
+ */
+#[Route('/domain/resources')]
+#[Tag(group: 'Domain', name: 'Resources', description: 'Resource operations')]
+#[LogRequest(logTemplate: LogRequest::LOG_TEMPLATE_LOG_400_500)]
+class AdminResourcesController extends AdminController
+```
 
 ### List (GET /list)
 
 ```php
+/**
+ * @param ResourcesGetRequestDto $requestDto
+ * @param ResourcesService $resourcesService
+ * @return ResourcesGetResponseDto
+ * @throws BadRequestException
+ * @throws InternalErrorException
+ * @throws InvalidArgumentException
+ * @throws ReflectionException
+ */
 #[Get('/list')]
 #[Summary('Resources List')]
 public function list(

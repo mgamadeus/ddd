@@ -193,11 +193,73 @@ return (int) $qb->getQuery()->getSingleScalarResult();
 
 ---
 
+## PHPDoc & @throws Convention
+
+Every public service method MUST have complete PHPDoc with `@param`, `@return`, and `@throws`. The `@throws` declarations propagate upward — controllers that call service methods must declare the same exceptions.
+
+### Standard @throws for DB operations:
+
+```php
+// Methods that call find() / findAll() / createQueryBuilder:
+@throws BadRequestException
+@throws InternalErrorException
+@throws InvalidArgumentException
+@throws ReflectionException
+
+// Methods that additionally call $this->update():
+@throws ORMException
+@throws OptimisticLockException
+
+// Methods that additionally call $this->delete():
+@throws ORMException
+@throws NonUniqueResultException
+@throws OptimisticLockException
+```
+
+### Required imports:
+
+```php
+use DDD\Infrastructure\Exceptions\BadRequestException;
+use DDD\Infrastructure\Exceptions\InternalErrorException;
+use Doctrine\ORM\Exception\ORMException;
+use Doctrine\ORM\NonUniqueResultException;
+use Doctrine\ORM\OptimisticLockException;
+use Psr\Cache\InvalidArgumentException;
+use ReflectionException;
+```
+
+### Example with complete PHPDoc:
+
+```php
+/**
+ * Finds a membership record for a specific account and channel.
+ *
+ * @param int $accountId
+ * @param int $channelId
+ * @return ChatChannelMember|null
+ * @throws BadRequestException
+ * @throws InternalErrorException
+ * @throws InvalidArgumentException
+ * @throws ReflectionException
+ */
+public function findMembership(int $accountId, int $channelId): ?ChatChannelMember
+```
+
+---
+
 ## Service Method Examples
 
 ### Find Single Entity by Unique Field
 
 ```php
+/**
+ * @param string $languageCode
+ * @return Language|null
+ * @throws BadRequestException
+ * @throws InternalErrorException
+ * @throws InvalidArgumentException
+ * @throws ReflectionException
+ */
 public function findByLanguageCode(string $languageCode): ?Language
 {
     $repoClass = $this->getEntityRepoClassInstance();
