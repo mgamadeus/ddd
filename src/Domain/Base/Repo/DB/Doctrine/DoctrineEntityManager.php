@@ -112,18 +112,26 @@ class DoctrineEntityManager extends EntityManager
             $type = $metadata->getTypeOfField($fieldName);
             // Handle Spatial Types
             if (isset(DatabaseColumn::SPATIAL_SQL_TYPES[$type])) {
-                $set[] = 'ST_GeomFromText(?)';
-                if ($value) {
+                if ($value !== null) {
+                    $set[] = 'ST_GeomFromText(?)';
                     $value = (string)$value;
-                    $types[] = 'string';
+                } else {
+                    // Bind NULL directly — wrapping NULL in ST_GeomFromText is unnecessary
+                    // and previously caused $types/$values misalignment for subsequent columns.
+                    $set[] = '?';
                 }
+                $types[] = 'string';
             }
             elseif($type == 'vector'){
-                $set[] = 'VEC_FromText(?)';
-                if ($value) {
+                if ($value !== null) {
+                    $set[] = 'VEC_FromText(?)';
                     $value = json_encode($value, JSON_THROW_ON_ERROR);
-                    $types[] = 'string';
+                } else {
+                    // Bind NULL directly — wrapping NULL in VEC_FromText is unnecessary
+                    // and previously caused $types/$values misalignment for subsequent columns.
+                    $set[] = '?';
                 }
+                $types[] = 'string';
             }
             else {
                 $set[] = '?';
