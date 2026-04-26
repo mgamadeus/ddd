@@ -110,6 +110,7 @@ class DoctrineEntityManager extends EntityManager
             $databaseColumnAttributeInstance = $reflectionProperty->getAttributeInstance(DatabaseColumn::class);
 
             $type = $metadata->getTypeOfField($fieldName);
+            $skipValueBinding = false;
             // Handle Spatial Types
             if (isset(DatabaseColumn::SPATIAL_SQL_TYPES[$type])) {
                 if ($value !== null) {
@@ -126,19 +127,36 @@ class DoctrineEntityManager extends EntityManager
                 if ($value !== null) {
                     $set[] = 'VEC_FromText(?)';
                     $value = json_encode($value, JSON_THROW_ON_ERROR);
+                    $types[] = 'string';
                 } else {
-                    // Bind NULL directly — wrapping NULL in VEC_FromText is unnecessary
-                    // and previously caused $types/$values misalignment for subsequent columns.
-                    $set[] = '?';
+                    // VECTOR columns are generated NOT NULL with a zero-vector DB DEFAULT.
+                    // Reuse the same SQL expression here so the bound row matches the column
+                    // DEFAULT byte-for-byte and no multi-KB JSON string is materialized in PHP.
+                    // Dimension comes from the ORM column's `length` argument (DatabaseModel
+                    // generator), already available on the cached field mapping.
+                    $fieldMapping = $metadata->fieldMappings[$fieldName] ?? null;
+                    $dim = (int)($fieldMapping['length'] ?? 0);
+                    if ($dim > 0) {
+                        $set[] = (string)DatabaseColumn::createMariaDbNullVectorDefault($dim);
+                        // SQL expression has no `?` — skip $values/$types push so placeholders
+                        // stay aligned with bound parameters for subsequent columns.
+                        $skipValueBinding = true;
+                    } else {
+                        // Unknown dimension — fall back to NULL bind (DB will reject if column
+                        // is NOT NULL, but at least we don't silently misalign placeholders).
+                        $set[] = '?';
+                        $types[] = 'string';
+                    }
                 }
-                $types[] = 'string';
             }
             else {
                 $set[] = '?';
                 $types[] = $type;
             }
             $columns[] = $column;
-            $values[] = $value;
+            if (!$skipValueBinding) {
+                $values[] = $value;
+            }
 
 
             // Check if in column JSON contents should be merged with JSON_MERGE_PATCH

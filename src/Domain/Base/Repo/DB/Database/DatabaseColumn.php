@@ -433,17 +433,21 @@ class DatabaseColumn extends ValueObject
         return $databaseColum;
     }
 
-    protected static function createMariaDbNullVectorDefault(int $dimensions): DatabaseSqlExpression
+    /**
+     * Returns a SQL expression that yields a zero-vector of the given dimension.
+     * Used both as the column DEFAULT in the schema and for null-bind substitution
+     * during upsert (see DoctrineEntityManager::upsert vector branch). The
+     * CONCAT/REPEAT pattern keeps the work on MariaDB and avoids materializing a
+     * multi-KB JSON string in PHP.
+     */
+    public static function createMariaDbNullVectorDefault(int $dimensions): DatabaseSqlExpression
     {
         if ($dimensions <= 0) {
             throw new InternalErrorException('VECTOR dimensions must be a positive integer');
         }
 
-        // Build JSON array without allocating a huge PHP array.
-        // Example: [0,0,0]
-        $json = '[' . ($dimensions === 1 ? '0' : (rtrim(str_repeat('0,', $dimensions), ','))) . ']';
-
-        // MariaDB expects the JSON array as a string argument.
+        // For dim=1, REPEAT('0,', 0) yields '' and CONCAT('[','','0]') = '[0]', so the
+        // single expression is correct for all dimensions ≥ 1. No PHP-side string built.
         return new DatabaseSqlExpression("(VEC_FromText(CONCAT('[', REPEAT('0,', $dimensions-1), '0]')))");
     }
 

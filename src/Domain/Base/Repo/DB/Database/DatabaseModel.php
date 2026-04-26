@@ -748,7 +748,14 @@ class DatabaseModel extends ValueObject
             if ($column->hasAutoIncrement) {
                 $modelClassContent .= "\t#[ORM\GeneratedValue]\n";
             }
-            $modelClassContent .= "\t#[ORM\Column(type: '{$column->getDoctrineColumnAttributeType()}')]\n";
+            // For VECTOR columns we propagate the dimension via Doctrine's `length` argument so that
+            // both VectorType::getSQLDeclaration and DoctrineEntityManager::upsert can read it from
+            // ClassMetadata::$fieldMappings without reflection lookups at runtime.
+            $columnAttributeArgs = ["type: '{$column->getDoctrineColumnAttributeType()}'"];
+            if ($column->sqlType === DatabaseColumn::SQL_TYPE_VECTOR && ($column->vectorDimensions ?? 0) > 0) {
+                $columnAttributeArgs[] = 'length: ' . $column->vectorDimensions;
+            }
+            $modelClassContent .= "\t#[ORM\Column(" . implode(', ', $columnAttributeArgs) . ")]\n";
             // avoid Type mixed cannot be marked as nullable since mixed already includes null
             try {
                 $isNullable = $column->allowsNull && $column->getDoctrinePhpType() != 'mixed';
