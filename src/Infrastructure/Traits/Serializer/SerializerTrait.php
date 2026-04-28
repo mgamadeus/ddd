@@ -49,6 +49,23 @@ trait SerializerTrait
      */
     protected $propertiesToHide = [];
 
+    /**
+     * @var array<string, string>|null Instance-level TOON column specification.
+     * Applied by convertArrayOfObjectsToToon() when this object's elements are emitted in TOON
+     * format (activated either via #[SerializeInToonFormat] on the property or downstream
+     * mechanisms). Format: <columnAlias> => <dotPathIntoFlattenedItem>. Null means "fall back
+     * to the static class-level spec, or to the union-of-all-keys default".
+     */
+    protected ?array $toonColumnsSpec = null;
+
+    /**
+     * @var array<string, bool> Instance-level TOON activation list.
+     * Property names listed here are emitted as TOON when their value is an array of objects,
+     * even if the property has no #[SerializeInToonFormat] attribute. Mirror of
+     * $propertiesToHide on the activation axis.
+     */
+    protected array $propertiesToSerializeAsToon = [];
+
     public static function addStaticPropertiesToHide(bool $forCurrentClass = true, string ...$properties): void
     {
         $className = $forCurrentClass ? static::class : self::class;
@@ -132,6 +149,329 @@ trait SerializerTrait
                 unset($this->propertiesToHide[$property]);
             }
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // TOON serialization configuration
+    //
+    // TOON (Token-Oriented Object Notation, https://github.com/toon-format/toon) emits an
+    // array of objects as a tabular block: a single header row enumerates column names, then
+    // one short row per item. This is dramatically more compact than repeating the JSON keys
+    // on every element — useful for high-cardinality property arrays such as GPS track
+    // locations, time-series samples, or any uniform record set.
+    //
+    // Two orthogonal axes of configuration:
+    //
+    //   1. ACTIVATION  — "should this property's array be emitted as TOON instead of regular
+    //                    JSON-array-of-objects?". Activation can be per-property:
+    //                      a) declarative via #[SerializeInToonFormat] attribute on the property
+    //                      b) imperative class-wide via setStaticPropertiesToSerializeAsToon()
+    //                      c) imperative per-instance via addPropertiesToSerializeAsToon()
+    //                    All three sources are OR-combined inside toObject(). The emitted
+    //                    output property name is the original property name plus the suffix
+    //                    SerializeInToonFormat::TOON_PROPERTY_POSTFIX (i.e. "InToonFormat") so
+    //                    consumers can distinguish TOON output from regular JSON.
+    //
+    //   2. COLUMN SPEC — "which inner-object fields appear as columns, in what order, under
+    //                    what names?". Two sources, the instance-level wins over class-level:
+    //                      a) class-wide via setStaticToonColumnsSpec()
+    //                      b) per-instance via setToonColumnsSpec()
+    //                    Without an explicit spec, the default behavior is "union of all
+    //                    flattened property paths across all rows, in first-seen order".
+    //
+    // Activation and column spec are independent. You may activate without specifying columns
+    // (default columns), or specify columns without activating (no effect — columns spec is
+    // only consulted when emission is activated).
+    //
+    // The spec stored internally is the canonical <columnAlias> => <dotPathIntoFlattenedItem>
+    // map. Per-row lookup uses the dot-path key produced by flattenToonColumns() — so
+    // 'geoPoint.lat' resolves the nested lat field of a serialized GeoPoint inside the item.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Configure the TOON column spec for THIS instance only. Restricts which inner-object
+     * properties appear as columns when this object's elements are serialized to TOON, sets
+     * their column order, and optionally renames them.
+     *
+     * Applies only when TOON emission is also activated for the relevant property — see the
+     * activation methods (addPropertiesToSerializeAsToon /
+     * setStaticPropertiesToSerializeAsToon / #[SerializeInToonFormat]).
+     *
+     * Two accepted input formats, distinguished by key type:
+     *
+     *   List form (numeric keys) — the path string is used as both the column name AND the
+     *   lookup key:
+     *       $obj->setToonColumnsSpec(['geoPoint.lat', 'geoPoint.lng', 'dateTime']);
+     *       // emits columns: geoPoint.lat,geoPoint.lng,dateTime
+     *
+     *   Map form (string keys) — keys are the emitted column names (aliases), values are
+     *   dot-paths into the flattened item:
+     *       $obj->setToonColumnsSpec([
+     *           'lat' => 'geoPoint.lat',
+     *           'lng' => 'geoPoint.lng',
+     *           't'   => 'dateTime',
+     *       ]);
+     *       // emits columns: lat,lng,t
+     *
+     * Renames are useful when serializing many rows and the per-character cost matters
+     * (e.g. 1000 GPS points × saving 8 chars per column header per row = significant payload
+     * reduction).
+     *
+     * Side effect: clears the toObject cache so a subsequent serialization with the new spec
+     * does not return a stale cached result.
+     *
+     * @param array<int|string, string> $columns either a list of paths or a map alias => path
+     * @return void
+     */
+    public function setToonColumnsSpec(array $columns): void
+    {
+        $this->toonColumnsSpec = self::normalizeToonColumnsSpec($columns);
+        SerializerRegistry::$toOjectCache = [];
+    }
+
+    /**
+     * Remove this instance's TOON column spec. After this call, getToonColumnsSpec() falls
+     * back to the static class-level spec (if any), or returns null (column-union default).
+     *
+     * Side effect: clears the toObject cache to avoid stale cached results.
+     *
+     * @return void
+     */
+    public function clearToonColumnsSpec(): void
+    {
+        $this->toonColumnsSpec = null;
+        SerializerRegistry::$toOjectCache = [];
+    }
+
+    /**
+     * Configure the TOON column spec class-wide. Every instance of the class (and any
+     * subclass that does not override the spec on its own class entry) uses the configured
+     * column layout for TOON emission, for the lifetime of the request.
+     *
+     * Use this when the same compact representation should be used everywhere — e.g.
+     * TrackLocations always emits its elements with a known short-key column set, regardless
+     * of which controller called it.
+     *
+     * Per-instance setToonColumnsSpec() overrides the static spec for that instance.
+     *
+     * Format options for $columns are identical to setToonColumnsSpec() — list form (paths
+     * doubled as column names) or map form (alias => path).
+     *
+     * @param bool                       $forCurrentClass true → register under static::class
+     *                                                    (the concrete class invoking this);
+     *                                                    false → register under self::class
+     *                                                    (the class that physically declares
+     *                                                    this method, useful when a base
+     *                                                    class wants to set a default spec
+     *                                                    that subclasses inherit)
+     * @param array<int|string, string>  $columns         the column spec to register
+     * @return void
+     */
+    public static function setStaticToonColumnsSpec(bool $forCurrentClass = true, array $columns = []): void
+    {
+        $className = $forCurrentClass ? static::class : self::class;
+        StaticRegistry::$toonColumnsSpecByClass[$className] = self::normalizeToonColumnsSpec($columns);
+    }
+
+    /**
+     * Remove the class-wide TOON column spec. Instances of this class fall back to the
+     * column-union default unless they have an instance-level spec set via
+     * setToonColumnsSpec().
+     *
+     * @param bool $forCurrentClass true → static::class, false → self::class. Same semantics
+     *                              as setStaticToonColumnsSpec().
+     * @return void
+     */
+    public static function clearStaticToonColumnsSpec(bool $forCurrentClass = true): void
+    {
+        $className = $forCurrentClass ? static::class : self::class;
+        if (isset(StaticRegistry::$toonColumnsSpecByClass[$className])) {
+            unset(StaticRegistry::$toonColumnsSpecByClass[$className]);
+        }
+    }
+
+    /**
+     * Resolve the active TOON column spec for the current object. Resolution order:
+     *
+     *   1. Instance-level $toonColumnsSpec (set via setToonColumnsSpec())
+     *   2. Static class-level under static::class (set via setStaticToonColumnsSpec(true))
+     *   3. Static class-level under self::class  (set via setStaticToonColumnsSpec(false))
+     *   4. null (column-union default)
+     *
+     * Called by convertArrayOfObjectsToToon() during serialization; consumers normally don't
+     * need to invoke this directly. Useful for diagnostic / debug output and for tests.
+     *
+     * @return array<string, string>|null canonical map <columnAlias> => <dotPath>, or null
+     */
+    public function getToonColumnsSpec(): ?array
+    {
+        if ($this->toonColumnsSpec !== null) {
+            return $this->toonColumnsSpec;
+        }
+        if (isset(StaticRegistry::$toonColumnsSpecByClass[static::class])) {
+            return StaticRegistry::$toonColumnsSpecByClass[static::class];
+        }
+        if (isset(StaticRegistry::$toonColumnsSpecByClass[self::class])) {
+            return StaticRegistry::$toonColumnsSpecByClass[self::class];
+        }
+        return null;
+    }
+
+    /**
+     * Normalize a user-supplied column spec into the canonical <alias> => <path> map form.
+     * List entries (numeric keys) are converted to map entries by reusing the path as both
+     * alias and lookup key. Map entries (string keys) are kept as-is.
+     *
+     * @internal Used by setToonColumnsSpec() and setStaticToonColumnsSpec().
+     * @param array<int|string, string> $columns
+     * @return array<string, string>
+     */
+    protected static function normalizeToonColumnsSpec(array $columns): array
+    {
+        $normalized = [];
+        foreach ($columns as $key => $value) {
+            if (is_int($key)) {
+                $normalized[$value] = $value;
+            } else {
+                $normalized[$key] = $value;
+            }
+        }
+        return $normalized;
+    }
+
+    // ─── TOON activation (axis 1: which property arrays should be emitted as TOON) ──────────
+
+    /**
+     * Activate TOON serialization for one or more properties on THIS instance only. Property
+     * arrays listed here are emitted as a TOON tabular block by toObject(), even when no
+     * #[SerializeInToonFormat] attribute is declared on the property.
+     *
+     * The emitted JSON property name is the original property name plus the suffix
+     * SerializeInToonFormat::TOON_PROPERTY_POSTFIX (i.e. "elements" → "elementsInToonFormat"),
+     * matching the suffixing rule applied by the attribute-driven path. Consumers parsing the
+     * response can detect TOON-encoded payloads by the suffix.
+     *
+     * Use this when the activation is request-specific — for example, a GET endpoint accepts
+     * a query flag like `?trackLocationsAsToon=1` and the controller wants to enable TOON
+     * only for that response without side-effects on other callers.
+     *
+     * Combine with setToonColumnsSpec() to additionally control which columns are emitted.
+     *
+     * Side effect: clears the toObject cache so a subsequent serialization picks up the new
+     * activation state.
+     *
+     * @param string ...$properties one or more public property names of this object
+     * @return void
+     */
+    public function addPropertiesToSerializeAsToon(string ...$properties): void
+    {
+        foreach ($properties as $property) {
+            $this->propertiesToSerializeAsToon[$property] = true;
+        }
+        SerializerRegistry::$toOjectCache = [];
+    }
+
+    /**
+     * Deactivate TOON serialization for the listed properties on THIS instance. Properties
+     * not currently activated are silently ignored. Class-wide activation registered via
+     * setStaticPropertiesToSerializeAsToon() is unaffected by this call.
+     *
+     * Side effect: clears the toObject cache.
+     *
+     * @param string ...$properties
+     * @return void
+     */
+    public function removePropertiesToSerializeAsToon(string ...$properties): void
+    {
+        foreach ($properties as $property) {
+            if (isset($this->propertiesToSerializeAsToon[$property])) {
+                unset($this->propertiesToSerializeAsToon[$property]);
+            }
+        }
+        SerializerRegistry::$toOjectCache = [];
+    }
+
+    /**
+     * Activate TOON serialization for one or more properties class-wide. Every instance of
+     * the class will emit those property arrays as TOON for the lifetime of the request,
+     * without needing #[SerializeInToonFormat] on the property.
+     *
+     * Typical use: a domain class such as TrackLocations always serializes its elements as
+     * TOON for size reasons. Register once at bootstrap (or alongside setStaticToonColumnsSpec
+     * in a class-level static-init block) and the behavior is consistent across all callers.
+     *
+     * @param bool   $forCurrentClass true → register under static::class (the concrete class
+     *                                invoking this); false → register under self::class
+     *                                (useful when a base class wants to activate a property
+     *                                on all subclasses by default)
+     * @param string ...$properties   property names to mark as TOON-emitted
+     * @return void
+     */
+    public static function addStaticPropertiesToSerializeAsToon(
+        bool $forCurrentClass = true,
+        string ...$properties
+    ): void {
+        $className = $forCurrentClass ? static::class : self::class;
+        foreach ($properties as $property) {
+            if (!isset(StaticRegistry::$propertiesToSerializeAsToonOnSerialization[$className])) {
+                StaticRegistry::$propertiesToSerializeAsToonOnSerialization[$className] = [];
+            }
+            StaticRegistry::$propertiesToSerializeAsToonOnSerialization[$className][$property] = true;
+        }
+    }
+
+    /**
+     * Remove a class-wide TOON activation. Properties not currently registered are silently
+     * ignored. Per-instance activations registered via addPropertiesToSerializeAsToon() are
+     * unaffected. The #[SerializeInToonFormat] attribute on the property (if any) is also
+     * unaffected — the attribute is declarative on the class definition itself and cannot be
+     * removed at runtime.
+     *
+     * @param bool   $forCurrentClass true → static::class, false → self::class
+     * @param string ...$properties
+     * @return void
+     */
+    public static function removeStaticPropertiesToSerializeAsToon(
+        bool $forCurrentClass = true,
+        string ...$properties
+    ): void {
+        $className = $forCurrentClass ? static::class : self::class;
+        foreach ($properties as $property) {
+            if (isset(StaticRegistry::$propertiesToSerializeAsToonOnSerialization[$className][$property])) {
+                unset(StaticRegistry::$propertiesToSerializeAsToonOnSerialization[$className][$property]);
+            }
+        }
+    }
+
+    /**
+     * Check whether TOON serialization is activated for the given property on the current
+     * object via the imperative registries (instance-level or static class-level). Does NOT
+     * consider the #[SerializeInToonFormat] attribute — that is checked separately by
+     * toObject() via reflection.
+     *
+     * Resolution order:
+     *   1. Instance-level $propertiesToSerializeAsToon
+     *   2. Static class-level under static::class
+     *   3. Static class-level under self::class
+     *
+     * Called by toObject() to OR-combine with the attribute check; consumers normally don't
+     * need to invoke this directly. Useful for diagnostic / debug output and tests.
+     *
+     * @param string $propertyName
+     * @return bool
+     */
+    public function isPropertySerializedAsToon(string $propertyName): bool
+    {
+        if (isset($this->propertiesToSerializeAsToon[$propertyName])) {
+            return true;
+        }
+        if (isset(StaticRegistry::$propertiesToSerializeAsToonOnSerialization[static::class][$propertyName])) {
+            return true;
+        }
+        if (isset(StaticRegistry::$propertiesToSerializeAsToonOnSerialization[self::class][$propertyName])) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -289,7 +629,10 @@ trait SerializerTrait
                 if (
                     is_array($propertyValue)
                     && is_array($serializedValue)
-                    && $property->hasAttribute(SerializeInToonFormat::class, ReflectionAttribute::IS_INSTANCEOF)
+                    && (
+                        $property->hasAttribute(SerializeInToonFormat::class, ReflectionAttribute::IS_INSTANCEOF)
+                        || $this->isPropertySerializedAsToon($propertyName)
+                    )
                 ) {
                     $serializedValue = $this->convertArrayOfObjectsToToon($serializedValue);
                     $visiblePropertyName = SerializeInToonFormat::getToonPropertyName($propertyName);
@@ -484,40 +827,55 @@ trait SerializerTrait
 
     /**
      * Convert an array of (already serialized) objects to a compact TOON-like tabular representation.
-     * Missing properties are filled with null; columns are the union of all (flattened) property paths.
+     *
+     * Column selection:
+     *  - If a column spec is configured for this class/instance via setToonColumnsSpec()/
+     *    setStaticToonColumnsSpec(), only those columns are emitted, in the configured order,
+     *    using the alias as column name and the path as lookup into each flattened row.
+     *  - Otherwise: columns are the union of all (flattened) property paths across all rows
+     *    (the default), and the path serves as both column name and lookup.
+     *
+     * Missing values are emitted as null in either case.
      *
      * @param array<int|string, mixed> $arrayOfObjects
      */
     private function convertArrayOfObjectsToToon(array $arrayOfObjects): string
     {
         $rows = [];
-        $columns = [];
-        $columnsSeen = [];
-
         foreach ($arrayOfObjects as $item) {
-            $row = $this->flattenToonColumns($item);
-            $rows[] = $row;
+            $rows[] = $this->flattenToonColumns($item);
+        }
 
-            foreach ($row as $columnName => $_) {
-                if (!isset($columnsSeen[$columnName])) {
-                    $columnsSeen[$columnName] = true;
-                    $columns[] = $columnName;
+        $columnsSpec = $this->getToonColumnsSpec();
+        if ($columnsSpec !== null) {
+            // Explicit spec: columns and order come from the alias map; lookups go via the
+            // mapped dot-path into each flattened row.
+            $aliasToPath = $columnsSpec;
+        } else {
+            // Default: union of all flattened keys, in first-seen order. Path == alias.
+            $aliasToPath = [];
+            foreach ($rows as $row) {
+                foreach ($row as $columnName => $_) {
+                    if (!isset($aliasToPath[$columnName])) {
+                        $aliasToPath[$columnName] = $columnName;
+                    }
                 }
             }
         }
 
+        $aliases = array_keys($aliasToPath);
+
         $header = '[' . count($arrayOfObjects) . ']';
-        if (!empty($columns)) {
-            $header .= '(' . implode(',', $columns) . ')';
+        if (!empty($aliases)) {
+            $header .= '(' . implode(',', $aliases) . ')';
         }
         $header .= ':';
 
         $lines = [$header];
-
         foreach ($rows as $row) {
             $values = [];
-            foreach ($columns as $columnName) {
-                $values[] = $this->toonEncodeValue($row[$columnName] ?? null);
+            foreach ($aliasToPath as $alias => $path) {
+                $values[] = $this->toonEncodeValue($row[$path] ?? null);
             }
             $lines[] = implode(',', $values);
         }

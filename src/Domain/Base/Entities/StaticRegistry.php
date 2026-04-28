@@ -64,6 +64,23 @@ class StaticRegistry
     public static array $propertiesToHideOnSerialization = [];
 
     /**
+     * @var array<string, array<string, string>> <className> => <columnAlias> => <dotPath>
+     * Per-class column specification used by SerializerTrait when emitting an array of objects
+     * in TOON format. Restricts which properties of the inner objects appear as TOON columns,
+     * defines column order, and optionally renames them. When unset for a class, TOON falls
+     * back to the union-of-all-keys default.
+     */
+    public static array $toonColumnsSpecByClass = [];
+
+    /**
+     * @var array<string, array<string, bool>> <className> => <propertyName> => true
+     * Properties stored here are serialized as TOON without needing a #[SerializeInToonFormat]
+     * attribute on the property. Mirror of $propertiesToHideOnSerialization, but the opposite
+     * effect: it activates TOON formatting class-wide instead of hiding.
+     */
+    public static array $propertiesToSerializeAsToonOnSerialization = [];
+
+    /**
      * @var array <className> => array of properties, properties that have Translatable attribute
      */
     public static $translatableProperties = [];
