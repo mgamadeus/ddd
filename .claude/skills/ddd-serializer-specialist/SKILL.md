@@ -1,15 +1,34 @@
 ---
 name: ddd-serializer-specialist
-description: Work with the SerializerTrait in the mgamadeus/ddd framework — toObject, toJSON, setPropertiesFromObject, property hiding, aliases, persistence exclusion, and TOON (Token-Oriented Object Notation) compact array serialization. Use when configuring entity serialization, hiding sensitive fields, renaming output properties, or emitting compact tabular formats for high-cardinality arrays.
+description: Work with the SerializerTrait in the mgamadeus/ddd framework — toObject, toJSON, setPropertiesFromObject, property hiding, aliases, persistence exclusion, and TOON (Token-Oriented Object Notation) compact array serialization. EVERY DDD object uses this serializer (Entity, EntitySet, ValueObject, ObjectSet, RequestDto, ResponseDto, AppMessage all extend DefaultObject which uses SerializerTrait), so this skill applies to ALL serialization across the entire framework — API output, DB persistence, request hydration, message payloads. Use when configuring entity serialization, hiding sensitive fields, renaming output properties, or emitting compact tabular formats for high-cardinality arrays.
 metadata:
   author: mgamadeus
-  version: "1.0.0"
+  version: "1.1.0"
   framework: mgamadeus/ddd
 ---
 
 # DDD Serializer Specialist
 
 The serialization layer that powers entity-to-array, entity-to-JSON, and array/object-to-entity conversion across the framework.
+
+## Universal Scope -- Every DDD Object Uses This Serializer
+
+`SerializerTrait` is mixed into `DefaultObject`, the abstract base for every domain object in the framework. **All of these inherit it transparently:**
+
+```
+DefaultObject (uses SerializerTrait)
+  ├─ Entity                  → all your domain entities
+  ├─ ValueObject             → MoneyAmount, GeoPoint, PostalAddress, etc.
+  │   ├─ ObjectSet           → all collections
+  │   │   └─ EntitySet       → typed entity collections
+  │   └─ AppMessage          → Symfony Messenger payloads
+  ├─ RequestDto              → HTTP request bodies
+  └─ RestResponseDto / *ResponseDto → HTTP response payloads
+```
+
+There is **no opt-in**. Whenever the framework reads or writes any of these types -- API responses, DB persistence, lazy-load cache, Argus payloads, Messenger transport, request hydration -- it goes through `toObject()` / `setPropertiesFromObject()`.
+
+That means every serialization decision in this skill (hide rules, attributes, TOON, aliases) applies uniformly across all four layers: presentation, domain, persistence, and integration.
 
 ## When to Use
 
