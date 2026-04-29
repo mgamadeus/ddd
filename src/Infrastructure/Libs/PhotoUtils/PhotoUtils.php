@@ -212,8 +212,11 @@ class PhotoUtils
 
             return $finalImageContent;
         } catch (ImagickException $e) {
-            // Handle the exception, e.g., log the error or return null
-            return $imageBlob;
+            error_log(sprintf(
+                'PhotoUtils::adjustImageToRequirements failed to decode image blob (size=%d): %s',
+                strlen($imageBlob),
+                $e->getMessage()
+            ));
             return null;
         }
     }
