@@ -48,7 +48,7 @@ class JWTPayload
     {
         if ($validityInSeconds) {
             $date = new DateTime();
-            $date->modify("+{$validityInSeconds} seconds");
+            $date->modify("+$validityInSeconds seconds");
             $expirationDate = $date;
         } else {
             $expirationDate = self::getPeriodEndTimestamp(new DateTime());

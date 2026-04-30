@@ -53,9 +53,9 @@ class CronExecutionsService extends EntitiesService
         $dbCronExecutions = new DBCronExecutions();
         $queryBuilder = $dbCronExecutions::createQueryBuilder();
         $alias = $dbCronExecutions::getBaseModelAlias();
-        $queryBuilder->where("{$alias}.cronId = :cronId");
+        $queryBuilder->where("$alias.cronId = :cronId");
         $queryBuilder->setParameter('cronId', $cron->id);
-        $queryBuilder->orderBy("{$alias}.executionStartedAt", 'DESC');
+        $queryBuilder->orderBy("$alias.executionStartedAt", 'DESC');
         $queryBuilder->setMaxResults(1);
         $lastExecutions = $dbCronExecutions->find($queryBuilder);
         return $lastExecutions->first();

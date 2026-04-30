@@ -83,9 +83,9 @@ class ClassMetadata extends \Doctrine\ORM\Mapping\ClassMetadata
 
         $this->columnNames[$mapping['fieldName']] = $mapping['columnName'];
 
+        /** @noinspection PhpStatementHasEmptyBodyInspection -- intentional: discriminator columns may duplicate field column names */
         if (isset($this->fieldNames[$mapping['columnName']]) || ($this->discriminatorColumn && $this->discriminatorColumn['name'] === $mapping['columnName'])) {
             // Intentionally not throwing MappingException::duplicateColumnName() here.
-            // Discriminator columns may legitimately duplicate field column names.
         }
 
         $this->fieldNames[$mapping['columnName']] = $mapping['fieldName'];

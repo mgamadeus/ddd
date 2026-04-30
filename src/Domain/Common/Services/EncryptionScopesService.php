@@ -138,7 +138,7 @@ class EncryptionScopesService extends EntitiesService
         $queryBuilder = $dbEncryptionScopePassword::createQueryBuilder();
         $alias = $dbEncryptionScopePassword::getBaseModelAlias();
         $queryBuilder
-            ->andWhere("{$alias}.encryptionScopeId = :encryptionScopeId and {$alias}.passwordHash = :passwordHash ")
+            ->andWhere("$alias.encryptionScopeId = :encryptionScopeId and $alias.passwordHash = :passwordHash ")
             ->setParameter('encryptionScopeId', $encryptionScope->id)
             ->setParameter('passwordHash', $passwordHash);
         $encryptionScopePassword = $dbEncryptionScopePassword->find($queryBuilder);

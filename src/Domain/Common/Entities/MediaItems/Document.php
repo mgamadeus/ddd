@@ -31,7 +31,7 @@ abstract class Document extends GenericMediaItem
         // avoid reserved Windows names
         $upper = strtoupper($name);
         if (preg_match('/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/', $upper)) {
-            $name = "_{$name}";
+            $name = "_$name";
         }
         return $name;
     }

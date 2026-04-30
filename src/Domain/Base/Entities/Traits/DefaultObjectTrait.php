@@ -37,7 +37,7 @@ trait DefaultObjectTrait
             return false;
         }
         $class = is_object($objectInstanceOrClassName) ? $objectInstanceOrClassName::class : $objectInstanceOrClassName;
-        if (defined("{$class}::IS_ENTITY")) {
+        if (defined("$class::IS_ENTITY")) {
             return $class::IS_ENTITY;
         }
         return false;
@@ -55,7 +55,7 @@ trait DefaultObjectTrait
             return false;
         }
         $class = is_object($objectInstanceOrClassName) ? $objectInstanceOrClassName::class : $objectInstanceOrClassName;
-        if (defined("{$class}::IS_VALUE_OBJECT") && !defined("{$class}::IS_ENTITY")) {
+        if (defined("$class::IS_VALUE_OBJECT") && !defined("$class::IS_ENTITY")) {
             return $class::IS_VALUE_OBJECT;
         }
         return false;

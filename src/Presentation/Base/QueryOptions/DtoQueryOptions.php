@@ -25,7 +25,7 @@ class DtoQueryOptions extends ValueObject
     {
         if (!class_exists($baseEntity)) {
             throw new InternalErrorException(
-                "Defined Entity class {$baseEntity} to extract QueryOptions from does not exist."
+                "Defined Entity class $baseEntity to extract QueryOptions from does not exist."
             );
         }
         $this->baseEntity = $baseEntity;

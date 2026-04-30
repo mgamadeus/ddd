@@ -319,8 +319,8 @@ class DoctrineQueryBuilder extends QueryBuilder
             $selectPart = (string)$selectMatches['select'];
             if (preg_match_all('/(?P<expression>[^,]+?)\s+AS\s+(?P<alias>sclr_\d+)/i', $selectPart, $scalarMatches, PREG_SET_ORDER)) {
                 foreach ($scalarMatches as $scalarMatch) {
-                    $alias = (string)$scalarMatch['alias'];
-                    $expression = trim((string)$scalarMatch['expression']);
+                    $alias = $scalarMatch['alias'];
+                    $expression = trim($scalarMatch['expression']);
                     $scalarAliasToExpression[$alias] = $expression;
                 }
             }
@@ -374,14 +374,14 @@ class DoctrineQueryBuilder extends QueryBuilder
 
         if (isset($matches[0][1])) {
             // Adjust the position to be after the entire matched string
-            $position = $matches[0][1] + strlen($matches[0][0]);
+            $position = (int)$matches[0][1] + strlen($matches[0][0]);
         } else {
             // If the pattern is not found, set to the end of the string
             $position = strlen($mainQuerySQL);
         }
 
         // Inject the subquery with an inner join after FROM <MainTable> <alias> statement
-        $joinClause = " INNER JOIN ($subquerySQL) AS subquery ON {$mainEntityAlias}.id = subquery.id ";
+        $joinClause = " INNER JOIN ($subquerySQL) AS subquery ON $mainEntityAlias.id = subquery.id ";
         $combinedSQL = substr_replace($mainQuerySQL, $joinClause, $position, 0);
 
         // Rebuild ordered parameters by scanning the final SQL for :paramN placeholders.

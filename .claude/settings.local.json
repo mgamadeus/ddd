@@ -2,7 +2,19 @@
   "permissions": {
     "allow": [
       "Bash(find:*)",
-      "Bash(grep -l \"Translatable\\\\|TranslatableTrait\" \"/Users/marius/Development/Own Packages/Composer/DDD/Core/src/Domain/Common/Entities\"/*/*.php)"
+      "Bash(grep -l \"Translatable\\\\|TranslatableTrait\" \"/Users/marius/Development/Own Packages/Composer/DDD/Core/src/Domain/Common/Entities\"/*/*.php)",
+      "Bash(mkdir -p \"/Users/marius/Development/Own Packages/Composer/DDD/Modules/Geo/.claude/skills/geo-module-specialist\")",
+      "Read(//Users/marius/Development/Own Packages/Composer/DDD/Modules/Geo/**)",
+      "Bash(mkdir -p \"/Users/marius/Development/Own Packages/Composer/DDD/Modules/Argus/.claude/skills/argus-module-specialist\")",
+      "Read(//Users/marius/Development/Own Packages/Composer/DDD/Modules/Argus/**)",
+      "Bash(mkdir -p \"/Users/marius/Development/Own Packages/Composer/DDD/Modules/Political/.claude/skills/political-module-specialist\")",
+      "Read(//Users/marius/Development/Own Packages/Composer/DDD/Modules/Political/**)",
+      "Bash(mkdir -p \"/Users/marius/Development/Own Packages/Composer/DDD/Modules/AI/.claude/skills/ai-module-specialist\")",
+      "Read(//Users/marius/Development/Own Packages/Composer/DDD/Modules/AI/**)",
+      "Bash(mkdir -p \"/Users/marius/Development/Own Packages/Composer/DDD/Modules/Translations/.claude/skills/translations-module-specialist\")",
+      "Read(//Users/marius/Development/Own Packages/Composer/DDD/Modules/Translations/**)",
+      "Bash(cp \"/Users/marius/Development/Radbonus/rb-backend/vendor/mgamadeus/ddd/.claude/skills/ddd-endpoint-specialist/SKILL.md\" \"/Users/marius/Development/Own Packages/Composer/DDD/Core/.claude/skills/ddd-endpoint-specialist/SKILL.md\")",
+      "Bash(cp \"/Users/marius/Development/Radbonus/rb-backend/vendor/mgamadeus/ddd/.claude/skills/ddd-service-specialist/SKILL.md\" \"/Users/marius/Development/Own Packages/Composer/DDD/Core/.claude/skills/ddd-service-specialist/SKILL.md\")"
     ]
   }
 }

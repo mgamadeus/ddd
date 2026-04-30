@@ -134,7 +134,7 @@ class DoctrineEntityRegistry
         $registryIndex = $repoClass . '_' . ($idOrQuery instanceof DoctrineQueryBuilder ? $idOrQuery->getQueryHash(
             ) : $idOrQuery);
         /** @var DefaultObject $return */
-        $return = isset(self::$entityRegistry[$registryIndex]) ? self::$entityRegistry[$registryIndex] : false;
+        $return = self::$entityRegistry[$registryIndex] ?? false;
         if ($return){
             // by cloning we want to avoid issues when reference is returned and the reference is manipulated somewhere else
             return $return;
@@ -158,7 +158,7 @@ class DoctrineEntityRegistry
                     }
                     if (!$entityOrEntitySetClass) {
                         throw new InternalErrorException(
-                            "Repo Class {$repoClass} has no valid BASE_ENTITY_CLASS or BASE_ENTITY_SET_CLASS defined"
+                            "Repo Class $repoClass has no valid BASE_ENTITY_CLASS or BASE_ENTITY_SET_CLASS defined"
                         );
                     }
                     /** @var DefaultObject $entityInstance */

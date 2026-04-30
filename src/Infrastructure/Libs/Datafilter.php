@@ -696,7 +696,7 @@ class Datafilter
             ' ',
             $data
         );
-        $data = preg_replace('#[\r\n\t]#s', ' ', $data);
+        $data = preg_replace('#[\r\n\t]#', ' ', $data);
         $data = preg_replace('/\s+/', ' ', $data);
         /*
             $from = array("#'#", '#"#');
@@ -817,7 +817,7 @@ class Datafilter
             ' ',
             $data
         );
-        $data = preg_replace('#[\r\n\t]#s', '', $data);
+        $data = preg_replace('#[\r\n\t]#', '', $data);
         $from = [
             "#'#",
             '#"#'
@@ -859,7 +859,7 @@ class Datafilter
             '”'
         ], '"', $string);
         $string = preg_replace('/[^@0-9' . $spaceDelimiter . '\-_\p{L}\'"’]/iu', '', $string);
-        $string = preg_replace('/[-]{2,}/', '-', $string);
+        $string = preg_replace('/-{2,}/', '-', $string);
         //$string = preg_replace('#^-(.*)-$#', '\\1', $string);
         return $string;
     }
@@ -1871,9 +1871,9 @@ class Datafilter
         $string = str_replace(' ', $spaceDelimiter, $string);
 
         $string = preg_replace('/[^a-zA-Z0-9\-_\p{L}]/', '', $string);
-        $string = preg_replace('/[-]{2,}/', '-', $string);
-        $string = preg_replace('/[-]{1,}$/', '', $string);
-        $string = preg_replace('/^[-]{1,}/', '', $string);
+        $string = preg_replace('/-{2,}/', '-', $string);
+        $string = preg_replace('/-+$/', '', $string);
+        $string = preg_replace('/^-+/', '', $string);
         //$string = preg_replace('#^-(.*)-$#', '\\1', $string);
         return $string;
     }
@@ -2668,11 +2668,11 @@ class Datafilter
     public static function removeConsecutivePunctuations(string $text, bool $remove_only_same_occurrence = true): string
     {
         // detects sequences as: ! ! ! (<punctuation <space>) and normalize.
-        $text = preg_replace('#([^\s\t\p{L}\p{N}])[\s\t]+(?![\p{L}\p{N}])#usi', '$1', $text);
+        $text = preg_replace('#([^\s\t\p{L}\p{N}])[\s\t]+(?![\p{L}\p{N}])#ui', '$1', $text);
         if ($remove_only_same_occurrence) {
-            return preg_replace('#([^\/\p{L}\p{N}])\1{1,}#usi', '$1', $text);
+            return preg_replace('#([^\/\p{L}\p{N}])\1+#ui', '$1', $text);
         }
-        return preg_replace('#([^\/\s\p{L}\p{N}]){1,}#usi', '$1', $text);
+        return preg_replace('#([^\/\s\p{L}\p{N}])+#ui', '$1', $text);
     }
 
     /**
@@ -2683,7 +2683,7 @@ class Datafilter
      */
     public static function textContainsUrl(string $text): bool
     {
-        if (preg_match('/([0-9a-zA-Z])\w+[.][a-zA-Z]{1,}/', $text)) {
+        if (preg_match('/([0-9a-zA-Z])\w+[.][a-zA-Z]+/', $text)) {
             return true;
         }
         return false;
@@ -2868,7 +2868,7 @@ class Datafilter
      */
     public static function isLatitude(float|string $value): bool
     {
-        if (preg_match('/^[-]?(([0-8]?[0-9])\.(\d+))|(90(\.0+)?)$/', $value)) {
+        if (preg_match('/^-?(([0-8]?[0-9])\.(\d+))|(90(\.0+)?)$/', $value)) {
             return true;
         }
 
@@ -2883,7 +2883,7 @@ class Datafilter
      */
     public static function isLongitude(float|string $value): bool
     {
-        if (preg_match('/^[-]?((((1[0-7][0-9])|([0-9]?[0-9]))\.(\d+))|180(\.0+)?)$/', $value)) {
+        if (preg_match('/^-?((((1[0-7][0-9])|([0-9]?[0-9]))\.(\d+))|180(\.0+)?)$/', $value)) {
             return true;
         }
 

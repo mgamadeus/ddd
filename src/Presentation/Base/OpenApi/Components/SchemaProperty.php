@@ -239,7 +239,7 @@ class SchemaProperty
                     foreach ($choiceAttribute->choices as $choice) {
                         $choicesAssoc[$choice] = true;
                         $constantDescription = $constantDescriptions[$choice] ?? '';
-                        $choicesDescripton .= "-   `{$choice}`" . ($constantDescription ? ': ' . $constantDescription : '') . "\n";
+                        $choicesDescripton .= "-   `$choice`" . ($constantDescription ? ': ' . $constantDescription : '') . "\n";
                     }
                     if ($choicesDescripton) {
                         $this->description .= "  \n Allowed Values:  \n" . $choicesDescripton;

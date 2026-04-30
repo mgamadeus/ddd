@@ -787,7 +787,7 @@ class DoctrineQuery extends Query
     /**
      * Set the lock mode for this Query.
      *
-     * @see \Doctrine\DBAL\LockMode
+     * @see LockMode
      *
      * @param int $lockMode
      * @psalm-param LockMode::* $lockMode

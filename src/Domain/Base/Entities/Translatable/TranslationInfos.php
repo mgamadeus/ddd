@@ -171,13 +171,13 @@ class TranslationInfos extends ValueObject
         if ($languageCode !== null) {
             $languageCode = strtolower($languageCode);
             if (!preg_match('/^[a-z]{2}$/', $languageCode)) {
-                throw new BadRequestException("Invalid language code '{$languageCode}': must be a 2-letter ISO 639-1 code");
+                throw new BadRequestException("Invalid language code '$languageCode': must be a 2-letter ISO 639-1 code");
             }
         }
         if ($countryCode !== null) {
             $countryCode = strtolower($countryCode);
             if (!preg_match('/^[a-z]{2}$/', $countryCode)) {
-                throw new BadRequestException("Invalid country code '{$countryCode}': must be a 2-letter ISO 3166-1 alpha-2 code");
+                throw new BadRequestException("Invalid country code '$countryCode': must be a 2-letter ISO 3166-1 alpha-2 code");
             }
         }
         $key = Translatable::getTranslationIndexForLanguageCodeCountryCodeAndWritingStyle(

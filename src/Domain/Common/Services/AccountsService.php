@@ -80,7 +80,7 @@ class AccountsService extends EntitiesService
         $repoClassInstance = self::getEntityClassInstance()::getRepoClassInstance();
         $queryBuilder = $repoClassInstance::createQueryBuilder();
         $alias = $repoClassInstance::getBaseModelAlias();
-        $queryBuilder->where("{$alias}.email = :email")->setParameter('email', $email);
+        $queryBuilder->where("$alias.email = :email")->setParameter('email', $email);
         $account = $repoClassInstance->find($queryBuilder);
         if ($this->throwErrors && !$account) {
             throw new NotFoundException('Account not found or current Auth Account is not authorized to access it');

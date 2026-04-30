@@ -98,7 +98,7 @@ class VirtualEntityRegistry
         }
         $cacheIndex = $initiatingEntity->uniqueKey() . '_' . $repoClass . '_' . $lazyloadMethod;
 
-        $return = isset(self::$entityRegistry[$cacheIndex]) ? self::$entityRegistry[$cacheIndex] : false;
+        $return = self::$entityRegistry[$cacheIndex] ?? false;
         if ($return) {
             return $return;
         }

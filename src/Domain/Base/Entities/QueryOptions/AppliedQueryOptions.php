@@ -128,7 +128,7 @@ class AppliedQueryOptions extends ValueObject
         if ($filtersDefinitions) {
             $this->filters?->setFiltersDefinitionsForAllFilterOptions($filtersDefinitions);
             if ($this->filters && $validateAgainstDefinitions) {
-                $expandOptions = isset($this->expand) ? $this->expand : null;
+                $expandOptions = $this->expand ?? null;
                 $this->filters->validateAgainstDefinitions($filtersDefinitions, $expandOptions);
             }
         }
@@ -160,7 +160,7 @@ class AppliedQueryOptions extends ValueObject
     {
         $this->orderBy = $orderBy;
         if ($this->orderBy && $validateAgainstDefinitions) {
-            $expandOptions = isset($this->expand) ? $this->expand : null;
+            $expandOptions = $this->expand ?? null;
             $this->orderBy->validateAgainstDefinitions($this->getOrderByDefinitions(), $expandOptions);
             // Set filters definitions for OrderBy options based on filters.
             if ($this->getFiltersDefinitions()) {

@@ -190,7 +190,7 @@ class AppMessage extends ValueObject implements SerializerInterface
 
         $useTempFileOption = $useTempFolderForTransport ? '--useTempFile' : '';
         $consolePath = DDDService::instance()->getConsoleDir();
-        $command = "php {$this->dispatchedFromWorkspaceDir}{$consolePath} app:process-cli-message {$useTempFileOption} {$encodedMessage} --no-debug";
+        $command = "php {$this->dispatchedFromWorkspaceDir}$consolePath app:process-cli-message $useTempFileOption $encodedMessage --no-debug";
         //echo $command;
         //die();
         shell_exec($command);

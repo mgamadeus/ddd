@@ -40,7 +40,7 @@ class ExcelResponseDto extends FileResponseDto
         $excelResponseDto = new ExcelResponseDto(
             $excelDocument->mediaItemContent->getBody(),
             headers: [
-                'Content-Disposition' => 'attachment; filename="' . (isset($excelDocument->title) ? $excelDocument->title : 'excel') . '.xlsx"',
+                'Content-Disposition' => 'attachment; filename="' . ($excelDocument->title ?? 'excel') . '.xlsx"',
                 'Content-Length' => strlen($excelDocument->mediaItemContent->getBody())
             ]
         );

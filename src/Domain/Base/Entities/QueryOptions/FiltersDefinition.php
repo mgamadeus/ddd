@@ -72,7 +72,7 @@ class FiltersDefinition extends ValueObject
         }
         $reflectionClass = ReflectionClass::instance($referenceClass);
         if (!$reflectionClass->hasTrait(QueryOptionsTrait::class)) {
-            throw new MethodNotAllowedException("Cannot use class {$referenceClass} as reference class of FiltersOptions as it has no QueryOptions trait.");
+            throw new MethodNotAllowedException("Cannot use class $referenceClass as reference class of FiltersOptions as it has no QueryOptions trait.");
         }
         /** @var DefaultObject $referenceClass */
         $repoClass = $referenceClass::getRepoClass(LazyLoadRepo::DB);

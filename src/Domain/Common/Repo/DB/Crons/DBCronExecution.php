@@ -39,7 +39,7 @@ class DBCronExecution extends DBEntity
         /* if no Auth Account is present we add an impossible condition in order to avoid loading any Cron Execution */
         $authAccount = AuthService::instance()->getAccount();
         if (!$authAccount) {
-            $queryBuilder->andWhere("{$cronExecutionAlias}.id is null");
+            $queryBuilder->andWhere("$cronExecutionAlias.id is null");
             return true;
         }
 

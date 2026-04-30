@@ -26,11 +26,10 @@ class Arr
                 $hasStrKeys = is_string($k);
             }
             if ($hasIntKeys && $hasStrKeys) {
-                $e = new Exception(
-                    'Current level has both integer and string keys, thus it is impossible to keep array or convert to object'
+                throw new Exception(
+                    'Current level has both integer and string keys, thus it is impossible to keep array or convert to object: '
+                    . json_encode(['level' => $array], JSON_PARTIAL_OUTPUT_ON_ERROR)
                 );
-                $e->vars = ['level' => $array];
-                throw $e;
             }
             if ($hasStrKeys) {
                 $resultObj->{$k} = is_array($v) ? self::toObject($v) : $v;

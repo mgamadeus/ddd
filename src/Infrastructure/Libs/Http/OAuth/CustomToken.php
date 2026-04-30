@@ -117,8 +117,8 @@ class CustomToken extends RawToken
         }
 
         $this->accessToken = $data['access_token'];
-        $this->refreshToken = isset($data['refresh_token']) ? $data['refresh_token'] : null;
-        $this->expiresAt = isset($data['expires_at']) ? $data['expires_at'] : null;
+        $this->refreshToken = $data['refresh_token'] ?? null;
+        $this->expiresAt = $data['expires_at'] ?? null;
 
         return $this;
     }

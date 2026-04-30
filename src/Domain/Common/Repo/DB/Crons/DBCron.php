@@ -39,7 +39,7 @@ class DBCron extends DBEntity
         /* if no Auth Account is present we add an impossible condition in order to avoid loading any Cron */
         $authAccount = AuthService::instance()->getAccount();
         if (!$authAccount) {
-            $queryBuilder->andWhere("{$cronAlias}.id is null");
+            $queryBuilder->andWhere("$cronAlias.id is null");
             return true;
         }
 
@@ -64,13 +64,13 @@ class DBCron extends DBEntity
         /* if no Auth Account is present we add an impossible condition in order to avoid updating/deleting any Cron */
         $authAccount = AuthService::instance()->getAccount();
         if (!$authAccount) {
-            $queryBuilder->andWhere("{$cronAlias}.id is null");
+            $queryBuilder->andWhere("$cronAlias.id is null");
             return true;
         }
 
         /* if the Auth Account is not an admin we add an impossible condition in order to avoid updating or deleting any Cron */
         if (!$authAccount->roles->isAdmin()) {
-            $queryBuilder->andWhere("{$cronAlias}.id is null");
+            $queryBuilder->andWhere("$cronAlias.id is null");
             return true;
         }
 

@@ -43,12 +43,13 @@ class ProcessCLIMessage extends Command
 
         $handlerClass = $message::$messageHandler;
         if (!is_a($handlerClass, AppMessageHandler::class, true)) {
-            $output->writeln("<error>Invalid handler class: {$handlerClass}.</error>");
+            $output->writeln("<error>Invalid handler class: $handlerClass.</error>");
             return Command::FAILURE;
         }
 
+        /** @var callable $handler */
         $handler = new $handlerClass();
-        $handler->__invoke($message);
+        $handler($message);
 
         return Command::SUCCESS;
     }

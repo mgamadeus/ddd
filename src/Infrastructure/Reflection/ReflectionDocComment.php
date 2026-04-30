@@ -480,7 +480,7 @@ class ReflectionDocComment
     public function getThrowDeclarations(): ?array
     {
         $doccomment = $this->resolveInheritDoc($this->docComment);
-        $pattern = '/\@throws\s+(?P<ThrowDeclarations>[0-9a-zA-Z_\{\}\\\\\[\]]+)/m';
+        $pattern = '/\@throws\s+(?P<ThrowDeclarations>[0-9a-zA-Z_\{\}\\\\\[\]]+)/';
         preg_match_all($pattern, $doccomment, $matches);
         if (isset($matches['ThrowDeclarations']) && isset($matches['ThrowDeclarations'][0])) {
             return $matches['ThrowDeclarations'];

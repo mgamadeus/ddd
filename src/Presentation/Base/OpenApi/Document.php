@@ -79,7 +79,7 @@ class Document
     protected ?int $maxRecursiveSchemaDepth = null;
 
     /** @var bool Defines if Schemas references are included in documentation of referenced with external url */
-    protected bool $useExternalSchemaReferencves = false;
+    protected bool $useExternalSchemaReferences = false;
 
     /**
      * @var string|null The external schema Reference URL, if $useExternalSchemaReferencves is true,

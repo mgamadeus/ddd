@@ -212,7 +212,7 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
             $queryBuilder->from($baseOrmModel, $baseOrmModelAlias);
         }
 
-        $queryBuilder->select("COUNT({$baseOrmModelAlias}.id)");
+        $queryBuilder->select("COUNT($baseOrmModelAlias.id)");
 
         // Apply read rights restrictions
         $baseRepoClass::applyReadRightsQuery($queryBuilder);
@@ -481,7 +481,7 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
                         $queryBuilder->leftJoin(
                             $baseRepoEntityOrEntitySetClassName::getBaseModelAlias() . '.' . $propertyReferencingJoinTable,
                             $loadThroughBaseModelAlias
-                        )->andWhere("{$loadThroughBaseModelAlias}.$foreignKey = :foreign_key_id")->setParameter(
+                        )->andWhere("$loadThroughBaseModelAlias.$foreignKey = :foreign_key_id")->setParameter(
                             'foreign_key_id',
                             $initiatingEntity->id
                         );
@@ -503,7 +503,7 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
                 ) {
                     $foreignKey = $property->getName() . 'Id';
                     $baseModelAlias = $baseRepoEntityOrEntitySetClassName::getBaseModelAlias();
-                    $queryBuilder->andWhere("{$baseModelAlias}.$foreignKey = :foreign_key_id")->setParameter(
+                    $queryBuilder->andWhere("$baseModelAlias.$foreignKey = :foreign_key_id")->setParameter(
                         'foreign_key_id',
                         $initiatingEntity->id
                     );

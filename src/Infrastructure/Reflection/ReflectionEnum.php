@@ -55,6 +55,7 @@ class ReflectionEnum extends \ReflectionEnum
         if (isset(self::$enumOptionsCache[$enumClassName])) {
             return self::$enumOptionsCache[$enumClassName];
         }
+        /** @var class-string<\UnitEnum> $enumClassName */
         $cases = $enumClassName::cases();
         $options = [];
 
