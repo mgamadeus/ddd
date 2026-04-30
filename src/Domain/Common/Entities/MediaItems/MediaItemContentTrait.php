@@ -9,6 +9,7 @@ use DDD\Infrastructure\Traits\Serializer\Attributes\DontPersistProperty;
 use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
 use Imagick;
 use ImagickException;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 /**
  * @method MediaItem getParent()
@@ -44,10 +45,24 @@ trait MediaItemContentTrait
     public ?string $externalId;
 
     /**
-     * @return bool|string|null Returns image blog based from base64 encoded content
+     * Returns the raw binary image blob.
+     *
+     * Two ingestion paths exist for MediaItemContent and both must work transparently for downstream
+     * code (thumbnailing, hashing, embeddings, format detection):
+     *   - Classical JSON path: $base64EncodedContent is set (via DTO hydration), $body is not.
+     *   - Multipart/upload path: $body is set directly from the uploaded bytes (via loadFromUploadedFile),
+     *     $base64EncodedContent is left unset and only generated lazily on serialization.
+     *
+     * This method is the single read-side accessor that hides which path was used. Prefers $body when present
+     * (avoids the base64 decode round-trip on the upload path) and falls back to decoding $base64EncodedContent
+     * for the classical path. Existing callers that only ever set base64 see no behavior change.
      */
     public function getImageBlob(): bool|string|null
     {
+        if (isset($this->body) && $this->body !== '') {
+            return $this->body;
+        }
+
         if (!isset($this->base64EncodedContent)) {
             return null;
         }
@@ -84,9 +99,7 @@ trait MediaItemContentTrait
             throw new NotFoundException('Invalid image format');
         }
 
-        [$this->width, $this->height] = PhotoUtils::getImageWidthAndHeightFromString(
-            base64_decode($this->base64EncodedContent)
-        );
+        [$this->width, $this->height] = PhotoUtils::getImageWidthAndHeightFromString($decodedImage);
         $this->fileSize = mb_strlen($decodedImage, '8bit');
         $this->fileFormat = $imageInfo['mime'];
     }
@@ -127,6 +140,55 @@ trait MediaItemContentTrait
         }
         $this->base64EncodedContent = base64_encode($this->body);
         return $this->base64EncodedContent;
+    }
+
+    /**
+     * Loads MediaItemContent from a Symfony UploadedFile (multipart/form-data ingestion path).
+     *
+     * This is the binary counterpart to the classical JSON+base64 ingestion that happens implicitly
+     * via DTO hydration of $base64EncodedContent. It exists so endpoints can accept native HTTP file
+     * uploads (e.g. images attached to a chat message) without forcing the client to base64-encode
+     * payloads — saving 33% of bandwidth, peak PHP heap, and a class of silent base64-corruption bugs.
+     *
+     * Behavior:
+     *   - Reads the file's bytes directly into $body (no base64 round-trip).
+     *   - Validates decodability up front via Imagick — throws NotFoundException on bad/corrupt files,
+     *     so the caller can fail the single attachment without taking down the surrounding request.
+     *   - Populates width/height/fileFormat/fileSize via populateMediaItemContentInfoFromImagick().
+     *   - Leaves $base64EncodedContent unset; getBase64EncodedContent() will lazily produce it on demand
+     *     (e.g. when the entity is serialized into a response), keeping memory pressure low until then.
+     *
+     * Use loadFromUploadedFile() for HTTP multipart uploads. Use loadFromSource() for path/URL-based
+     * loading (server-side fetch). Use the existing $base64EncodedContent setter for JSON ingestion.
+     *
+     * @throws NotFoundException When the file cannot be read or decoded.
+     * @throws ImagickException
+     */
+    public function loadFromUploadedFile(UploadedFile $file): void
+    {
+        $path = $file->getPathname();
+        if (!is_readable($path)) {
+            throw new NotFoundException("Uploaded file not readable: $path");
+        }
+
+        $content = @file_get_contents($path);
+        if ($content === false || $content === '') {
+            throw new NotFoundException("Uploaded file is empty or unreadable: $path");
+        }
+
+        $imagick = new Imagick();
+        try {
+            $imagick->readImageBlob($content);
+        } catch (ImagickException $e) {
+            throw new NotFoundException('Unable to process uploaded image: ' . $e->getMessage());
+        }
+
+        $this->body = $content;
+        $this->name = $file->getClientOriginalName();
+        $this->populateMediaItemContentInfoFromImagick($imagick);
+
+        $imagick->clear();
+        $imagick->destroy();
     }
 
     /**
