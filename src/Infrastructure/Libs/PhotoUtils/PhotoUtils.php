@@ -211,12 +211,8 @@ class PhotoUtils
             $imagick->destroy();
 
             return $finalImageContent;
-        } catch (ImagickException $e) {
-            error_log(sprintf(
-                'PhotoUtils::adjustImageToRequirements failed to decode image blob (size=%d): %s',
-                strlen($imageBlob),
-                $e->getMessage()
-            ));
+        } catch (ImagickException) {
+            // Decoder failure on bad/corrupt image — caller treats null as "skip this thumbnail".
             return null;
         }
     }

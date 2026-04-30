@@ -177,11 +177,7 @@ trait MediaItemContentTrait
         }
 
         $imagick = new Imagick();
-        try {
-            $imagick->readImageBlob($content);
-        } catch (ImagickException $e) {
-            throw new NotFoundException('Unable to process uploaded image: ' . $e->getMessage());
-        }
+        $imagick->readImageBlob($content);
 
         $this->body = $content;
         $this->name = $file->getClientOriginalName();
