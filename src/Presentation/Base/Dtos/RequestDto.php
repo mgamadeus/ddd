@@ -116,7 +116,28 @@ class RequestDto
             }
             if ($oaParameter->in == Parameter::FILES && $request->files->count()) {
                 $propertyIsPresentInRequest = true;
-                $callObject->$propertyName = $request->files->all();
+                // Assign Parameter::FILES directly on $this and bypass setPropertiesFromObject entirely.
+                //
+                // Rationale: $request->files->all() returns already-instantiated UploadedFile objects, often
+                // nested by form field name (e.g. ['attachmentFiles' => [UploadedFile, UploadedFile, ...]]).
+                // The generic serializer's array-handling path assumes every object-typed array entry is a
+                // plain data hash to be hydrated via `new $type()` followed by setPropertiesFromObject() —
+                // which fails for UploadedFile because its constructor requires arguments
+                // ("Too few arguments to function UploadedFile::__construct()"). Routing FILES through the
+                // serializer is also pointless: the values are already strongly-typed objects, there is
+                // nothing to hydrate.
+                //
+                // We also flatten the structure into a single list. Symfony's $request->files->all() can
+                // return either a flat list or a nested array depending on field naming
+                // (e.g. `attachmentFiles[]` vs separate `file1`, `file2` fields). Callers expect a flat
+                // UploadedFile[] regardless of how the client structured the multipart parts.
+                $flattened = [];
+                array_walk_recursive($request->files->all(), function ($v) use (&$flattened) {
+                    if ($v instanceof \Symfony\Component\HttpFoundation\File\UploadedFile) {
+                        $flattened[] = $v;
+                    }
+                });
+                $this->$propertyName = $flattened;
             }
             if (!$propertyIsPresentInRequest && $oaParameter->isRequired()) {
                 throw new BadRequestException('Property "' . $propertyName . '" is missing in ' . static::class);
