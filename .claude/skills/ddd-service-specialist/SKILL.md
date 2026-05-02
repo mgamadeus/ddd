@@ -86,6 +86,19 @@ ${entityName}sService = AppService::instance()->getService({EntityName}sService:
 
 Service variables must be named after their class: `EntityModelGeneratorService` -> `$entityModelGeneratorService`.
 
+### Calling `find()` -- caller-side vs in-service
+
+Distinct paths depending on where the lookup happens:
+
+| Where | What to call | Returns |
+|---|---|---|
+| Caller (controller, handler, other service, CLI) loading a known id | `{EntityName}::getService()->find($id)` | single entity, with rights restrictions, registry cache |
+| Caller loading a known id via the entity-set | `{EntityName}s::getService()->find($id)` | single entity (set service forwards) |
+| Inside this service, custom single-entity query | `{EntityName}::getRepoClassInstance()->find($queryBuilder)` | single entity, raw |
+| Inside this service, custom set/scalar query | `{EntityName}s::getRepoClassInstance()->find($queryBuilder)` | entity set or scalar |
+
+**`getRepoClassInstance()` is for service-internal custom QueryBuilder queries only**, never as a substitute for `getService()->find($id)` from outside. Going through the service applies `applyReadRightsQuery`, entity registry caching, lazy-loading defaults and other invariants -- skipping the service silently bypasses them.
+
 ---
 
 ## DDD Architecture Conventions

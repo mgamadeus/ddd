@@ -142,6 +142,46 @@ print(d['version'])
 Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>" && git push && git tag "v$NEW_VERSION" && git push origin "v$NEW_VERSION" && echo "Released v$NEW_VERSION"
 ```
 
+## Updating Consuming Apps After a Release
+
+After tagging and pushing a new version, the consuming apps need a `composer update` to pick it up.
+
+**ALWAYS pass `--ignore-platform-reqs` (the all-encompassing form, not `--ignore-platform-req=ext-*`).**
+
+```bash
+cd /path/to/consuming-app && composer update mgamadeus/ddd-... --ignore-platform-reqs
+```
+
+### Why this matters — production vs. dev PHP version
+
+The local dev machine may run a newer PHP than the production/deployment server. Without `--ignore-platform-reqs`, composer resolves dependencies that match the *local* `php` version and writes them into `composer.lock`. When the lock file is deployed to a server with an older PHP, `vendor/composer/platform_check.php` fatals at request time:
+
+> Fatal error: Composer detected issues in your platform: Your Composer dependencies require a PHP version ">=8.4.0". You are running 8.3.4.
+
+The fix is to ignore *all* platform constraints during local resolution — including `php` itself, not just extensions. A partial form like `--ignore-platform-req=ext-imagick --ignore-platform-req=ext-redis` does NOT cover the PHP version and is a footgun.
+
+### Correct vs. incorrect
+
+| Command | Effect |
+|---------|--------|
+| `composer update X --ignore-platform-reqs` | ✅ Ignores PHP version + all extensions. Safe across dev/prod PHP mismatches. |
+| `composer update X --ignore-platform-req=php` | ✅ Ignores just PHP version (use if you want extensions enforced). |
+| `composer update X --ignore-platform-req=ext-imagick --ignore-platform-req=ext-amqp` | ❌ Ignores extensions but NOT PHP — locks to local PHP, breaks prod. |
+| `composer update X` (no flag) | ❌ Same problem if local PHP > prod PHP. |
+
+If you already ran the wrong form and `composer.lock` is poisoned, simply re-run with `--ignore-platform-reqs` to regenerate the lock against the loosened constraints.
+
+### Verify the new version landed
+
+```bash
+composer show mgamadeus/ddd-... | grep '^versions'
+```
+
+If the version did not advance, the most common causes are:
+1. A transitive dependency constraint blocks the new version — diagnose with `composer prohibits mgamadeus/ddd-... <new-version>`.
+2. Stale Packagist cache — clear with `composer clear-cache` and retry.
+3. The tag was pushed but Packagist hasn't picked it up yet (usually <1 min).
+
 ## Multi-Module Release
 
 When releasing multiple DDD modules, process in dependency order:
@@ -167,3 +207,4 @@ See the `ddd-module-orchestrator` skill for the complete module ecosystem, depen
 - Always include `Co-Authored-By` in commits
 - Default to PATCH bump unless told otherwise
 - **Never** use `--force` on tags or pushes unless explicitly asked
+- **ALWAYS** use `--ignore-platform-reqs` (full form) when running `composer update` in consuming apps — `--ignore-platform-req=ext-*` is NOT enough and will lock the project to the local PHP version, breaking deployment to servers with older PHP

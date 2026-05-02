@@ -74,6 +74,28 @@ public ?\DateTime $createdAt = null;  // WRONG -- native PHP DateTime
 - Implement `uniqueKey()` in every entity
 - `EntitiesBaseService` does **NOT** exist -- always use `EntitiesService`
 
+### Loading Entities by ID -- ALWAYS via the Service
+
+Caller code (controllers, message handlers, other services, CLI commands) that needs to load a single entity by id MUST go through the entity service:
+
+```php
+// CORRECT -- single entity, by id, from anywhere outside the owning service
+$pushNotification = PushNotification::getService()->find($pushNotificationId);
+$account = Accounts::getService()->find($accountId);
+```
+
+- Use the **entity** class (singular: `PushNotification`) for `find($id)` returning one entity.
+- Use the **entity-set** class (plural: `Accounts`) when you intend `find($queryBuilder)` returning a set, **or** when the framework registers the lookup helper on the set class -- both forms are valid `getService()->find($id)` callsites in this codebase.
+- Going through `getService()` applies rights restrictions (`applyReadRightsQuery`), entity registry caching, and any service-level invariants.
+
+```php
+// WRONG -- bypasses the service layer's rights / lazy-load / cache wiring
+$pushNotification = PushNotifications::getRepoClassInstance()->find($id); // also: this is the EntitySet repo, whose find() expects a QueryBuilder
+$account = Accounts::getRepoClassInstance()->find($id);
+```
+
+Direct repo access (`getEntityRepoClassInstance()` / `getEntitySetRepoClassInstance()`) belongs **inside service methods** running custom QueryBuilder queries -- see the ddd-service-specialist skill for that pattern. Caller code never needs it.
+
 ## Step 0: Load Domain Context
 
 Before creating any entity:
