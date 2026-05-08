@@ -152,6 +152,18 @@ class DoctrineParser extends Parser
     protected $nestingLevel = 0;
 
     /**
+     * Tracks how deep the parser currently is inside a JoinAssociationDeclaration's
+     * WITH-condition. The collection-side ORDER BY items emitted by the SQL walker for
+     * a one-to-many association become invalid when injected into the join condition's
+     * scalar subquery context, so OrderByClause carries a flag that suppresses them
+     * exactly when this counter is non-zero. Mirrors doctrine/orm 2.20.11 fix for
+     * GHSA-/issue around ordered to-many joins inside WITH clauses.
+     *
+     * @var int
+     */
+    private $withJoinConditionNestingLevel = 0;
+
+    /**
      * Any additional custom tree walkers that modify the AST.
      *
      * @psalm-var list<class-string<TreeWalker>>
@@ -1436,7 +1448,7 @@ class DoctrineParser extends Parser
             $orderByItems[] = $this->OrderByItem();
         }
 
-        return new AST\OrderByClause($orderByItems);
+        return new AST\OrderByClause($orderByItems, $this->withJoinConditionNestingLevel === 0);
     }
 
     /**
@@ -1742,7 +1754,13 @@ class DoctrineParser extends Parser
         if ($adhocConditions) {
             $this->match(TokenType::T_WITH);
 
-            $join->conditionalExpression = $this->ConditionalExpression();
+            try {
+                $this->withJoinConditionNestingLevel++;
+
+                $join->conditionalExpression = $this->ConditionalExpression();
+            } finally {
+                $this->withJoinConditionNestingLevel--;
+            }
         }
 
         return $join;
