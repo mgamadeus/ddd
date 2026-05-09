@@ -83,10 +83,27 @@ trait QueryOptionsTrait
     }
 
     /**
-     * Expands current instance by options set in QueryOptions expand definitions
+     * Expands current instance by options set in QueryOptions expand definitions.
+     *
+     * Default semantics is "fill in the gaps": properties that are already loaded
+     * (via eager fetch in DBEntitySet::find -> applyExpandOptionsToDoctrineQueryBuilder
+     * or via a previous lazy-load) are left untouched. Recursion descends into them
+     * to resolve any not-yet-loaded sub-properties — including non-DB lazy types
+     * like CLASS_METHOD or VIRTUAL (e.g. SupportMessageAttachment.authJWTPayload),
+     * which can't be served by the eager DB fetch and must be filled in per element.
+     *
+     * @param bool $reloadAlreadyLoadedSetsOnScopedExpand Opt-in legacy behavior:
+     *   when true and an already-loaded ObjectSet's expand option carries scope
+     *   (filters/orderBy/top/skip), the cached set is unset and a fresh lazy-load
+     *   is triggered with the expand-scoped QueryOptions. Useful when a previous
+     *   lazy-load with different scope populated the property and the caller now
+     *   wants the expand's scope applied. Default false — preserves eager-fetch
+     *   work and is the right choice when the caller eager-fetched via the
+     *   service-level find delegation. The flag propagates to recursive expand()
+     *   calls so the choice is consistent across the entity tree.
      * @return void
      */
-    public function expand()
+    public function expand(bool $reloadAlreadyLoadedSetsOnScopedExpand = false)
     {
         $propertiesToLazyLoad = static::getPropertiesToLazyLoad();
         $reflectionClass = ReflectionClass::instance(static::class);
@@ -122,7 +139,7 @@ trait QueryOptionsTrait
                         if (method_exists($element::class, 'getDefaultQueryOptions')) {
                             /** @var QueryOptionsTrait $element */
                             $element->setQueryOptions($this->queryOptions);
-                            $element->expand();
+                            $element->expand($reloadAlreadyLoadedSetsOnScopedExpand);
                         }
                     }
                 }
@@ -175,17 +192,28 @@ trait QueryOptionsTrait
                     }
                 }
 
-                // if the property has been already loaeded, we check if the expand option would influente the items,
-                // e.g. if filters, orderBy or top and skip is set in the expand option, it is highly probable that the resulting object(set) is not the same
-                // examples of this happening wihtout intention is, expand on Account with filter on subscriptions, and lazyloading ->settings before (which results in laoding subscriptions)
-                // in this case the filter for the subscriptions expand is not applied anymore, this has to be avoided
-                if ($propertyAlreadyLoaded && $this->$propertyName instanceof ObjectSet && (($expandOption?->filters ?? null) || ($expandOption?->orderByOptions ?? null) || ($expandOption?->top ?? null) || ($expandOption?->skip ?? null))) {
+                // Opt-in legacy reload: if the property has been already loaded, we check if the
+                // expand option would influence the items — e.g. filters/orderBy/top/skip on the
+                // expand could imply a different result set than what's currently cached. Example
+                // of unintended drift: expand on Account with filter on subscriptions, and a
+                // previous lazyload of ->settings already populated subscriptions; without the
+                // reload the new filter would be silently ignored.
+                //
+                // This branch is now opt-in via $reloadAlreadyLoadedSetsOnScopedExpand. Default
+                // behavior is fill-in-the-gaps: keep the already-loaded set and only descend
+                // recursively to resolve sub-properties that aren't loaded yet (typical case
+                // when the parent was eager-fetched via the Set-Find delegation in
+                // EntitiesService::find — a re-fetch here would discard that work).
+                if ($reloadAlreadyLoadedSetsOnScopedExpand
+                    && $propertyAlreadyLoaded
+                    && $this->$propertyName instanceof ObjectSet
+                    && (($expandOption?->filters ?? null) || ($expandOption?->orderByOptions ?? null) || ($expandOption?->top ?? null) || ($expandOption?->skip ?? null))) {
                     unset($this->$propertyName);
                     $loadedProperty = $this->$propertyName;
                 }
                 if ($loadedProperty && isset($expandOption->expandOptions) && $targetPropertyHasQueryOptions) {
                     /** @var QueryOptionsTrait $loadedProperty */
-                    $loadedProperty->expand();
+                    $loadedProperty->expand($reloadAlreadyLoadedSetsOnScopedExpand);
                 }
             }
         }
