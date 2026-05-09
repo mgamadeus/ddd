@@ -303,7 +303,15 @@ class ExpandOptions extends ObjectSet
             $targetPropertyRepoClass = $expandOption->getTargetPropertyRepoClass();
             if ($targetPropertyRepoClass && method_exists($targetPropertyRepoClass, 'applyReadRightsQuery')) {
                 /** @var DBEntity $baseRepoClass */
-                $rightsQueryBuilder = $targetPropertyRepoClass::createQueryBuilder();
+                // Build the rights QueryBuilder *with* SELECT/FROM so that the documented
+                // leftJoin-pattern in applyReadRightsQuery() can resolve its root alias
+                // (Doctrine's leftJoin → findRootAlias → getRootAlias() throws "No alias
+                // was set before invoking getRootAlias()" on an empty QueryBuilder).
+                // applyConditionsFromReadRightsQueryBuilder() only harvests WHERE and JOIN
+                // parts keyed by the temp base alias and rewrites the alias to the target
+                // expand join alias on the main query — the FROM/SELECT we add here are
+                // local to the temp QB and never bleed into the main query.
+                $rightsQueryBuilder = $targetPropertyRepoClass::createQueryBuilder(true);
                 $null = null;
                 $readRightsFiltersApplied = $targetPropertyRepoClass::applyReadRightsQuery($rightsQueryBuilder);
                 $targetPropertyModelAlias = $targetPropertyRepoClass::getBaseModelAlias();
@@ -347,8 +355,18 @@ class ExpandOptions extends ObjectSet
                 $mainQueryBuilder,
                 $rightsQueryBuilder->getParameters()
             );
-            // apply the modified WHERE to the main query builder
-            $mainQueryBuilder->andWhere($whereString);
+            // Apply the modified WHERE to the main query, but null-safe wrt the expand
+            // join: if the optional LEFT JOIN to $targetJoinAlias produced no row
+            // (e.g. SupportMessage.sentFromSupportEmailAddress is NULL on app-channel
+            // messages), the rights condition references all-NULL aliases and would
+            // otherwise filter out the parent row. Wrapping with "$targetJoinAlias.id
+            // IS NULL OR (<rights>)" preserves the parent row when the expand is
+            // simply absent, while still enforcing rights when the expand is present.
+            // For non-nullable expands the IS-NULL branch is never true, so behavior
+            // is unchanged. DQL doesn't allow nested JOINs inside a WITH-clause, so
+            // pushing rights into the expand's ON-clause isn't an option here; this
+            // is the closest correct semantics achievable in a single flat query.
+            $mainQueryBuilder->andWhere(sprintf('(%s.id IS NULL OR (%s))', $targetJoinAlias, $whereString));
         }
 
         // 2) LEFT JOINs
