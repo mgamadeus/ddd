@@ -25,10 +25,10 @@ class DBCronExecutionModel extends DoctrineModel
 	public ?int $cronId;
 
 	#[ORM\Column(type: 'datetime')]
-	public ?\DateTime $executionStartedAt;
+	public ?DateTime $executionStartedAt;
 
 	#[ORM\Column(type: 'datetime')]
-	public ?\DateTime $executionEndedAt;
+	public ?DateTime $executionEndedAt;
 
 	#[ORM\Column(type: 'string')]
 	public ?string $state;
@@ -45,10 +45,10 @@ class DBCronExecutionModel extends DoctrineModel
 	public int $id;
 
 	#[ORM\Column(type: 'datetime')]
-	public ?\DateTime $created;
+	public ?DateTime $created;
 
 	#[ORM\Column(type: 'datetime')]
-	public ?\DateTime $updated;
+	public ?DateTime $updated;
 
 	#[ORM\ManyToOne(targetEntity: DBCronModel::class)]
 	#[ORM\JoinColumn(name: 'cronId', referencedColumnName: 'id')]

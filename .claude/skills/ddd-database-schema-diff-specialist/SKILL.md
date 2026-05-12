@@ -1,0 +1,500 @@
+---
+name: ddd-database-schema-diff-specialist
+description: Understand and operate the DDD live-vs-target database schema diff system, and stand up an admin interface for it in a consuming application. Use when computing diffs between entity-derived schema and the live database, applying drift fixes, debugging false positives, or wiring the diff endpoints + admin screen into a new project.
+metadata:
+  author: mgamadeus
+  version: "1.0.0"
+---
+
+# DDD Database Schema Diff Specialist
+
+The diff system reads what your `DDD\` entities say the database *should* look like, introspects what it *actually* looks like via `INFORMATION_SCHEMA`, returns a structured diff, and lets you apply per-table or in bulk through admin endpoints. Replaces the legacy "emit a multi-statement SQL blob and let the operator paste it into a client" workflow.
+
+## When to Use
+
+- Implementing or extending the admin Schema Diff screen in a consuming app.
+- Debugging false-positive MODIFY diffs (most common: MariaDB `"NULL"` defaults, generation-expression formatting, virtual-column sqlType).
+- Adding new aspects to the diff (currently: columns, virtual columns, indexes, FKs, triggers, collation).
+- Operating VECTOR column dimensionality changes (require DROP + ADD + zero-fill backfill).
+- Migrating Translatable columns from `LONGTEXT` to `JSON` or similar in-place type changes.
+
+## Where the Code Lives (DDD Core)
+
+All diff machinery is in `mgamadeus/ddd`. Consuming apps build only thin endpoint + DTO wrappers.
+
+### Value objects — `src/Domain/Base/Repo/DB/Database/Canonical/`
+
+Both sides of the diff (live introspection and target generator) converge on these typed snapshots. The typed constructors catch field-drift bugs at parse time.
+
+| File | Purpose |
+|---|---|
+| `DBCanonicalColumn.php` | One column (real OR virtual — `isGenerated` discriminates). |
+| `DBCanonicalIndex.php` | One index. Matched by `(indexType, indexColumns)` — name irrelevant. |
+| `DBCanonicalForeignKey.php` | One FK. Matched by `(internalIdColumn, foreignTable, foreignIdColumn)`. |
+| `DBCanonicalTrigger.php` | One trigger. Carries `actionStatement` (live) + `rawSql` (target). |
+| `DBCanonicalTable.php` | Aggregate of columns / virtualColumns / indexes / foreignKeys / triggers + collation. |
+
+### Diff value objects — `src/Domain/Base/Repo/DB/Database/Diff/`
+
+| File | Purpose |
+|---|---|
+| `DBColumnDiff(s).php` | Column ADD/DROP/MODIFY. Has `requiresFullReset` + `resetSql` for VECTOR dimensionality changes. |
+| `DBVirtualColumnDiff(s).php` | Virtual column ADD/DROP/MODIFY (MODIFY is always DROP+ADD — MySQL forbids ALTER on generation expressions). |
+| `DBIndexDiff(s).php` | Index ADD/DROP. No MODIFY: matched by definition, any difference *is* the key. |
+| `DBForeignKeyDiff(s).php` | FK ADD/DROP/MODIFY (MODIFY = DROP+ADD). |
+| `DBTriggerDiff(s).php` | Trigger ADD/DROP/MODIFY (MODIFY = DROP+CREATE). |
+| `DBTableDiff(s).php` | Per-table aggregate. Carries `changeType`, `severity`, child diff sets, phase-ordered `sqlStatements`. |
+
+### Services — `src/Domain/Common/Services/`
+
+| File | Purpose |
+|---|---|
+| `DatabaseSchemaIntrospectionService.php` | The only thing that talks to `INFORMATION_SCHEMA`. Per-request cache. Returns `?DBCanonicalTable`. |
+| `DatabaseSchemaDiffService.php` | Orchestrator. `computeDiffs()`, `applyDiff()`, `applyDiffs()`. ~1000 LOC including the phase-ordered SQL assembler. |
+
+### Critical: hide rich DDD types from the wire
+
+`target*` fields on the diff VOs (e.g. `DBColumnDiff::$targetColumn`) carry rich DDD types (`DatabaseColumn`, `DatabaseIndex`, …) used internally for SQL rendering. They must be excluded from BOTH the JSON output AND the OpenAPI schema:
+
+```php
+#[HideProperty]   // serializer trait — strips from JSON
+#[Ignore]         // OpenAPI autodocumenter — stops type-graph walking
+public ?DatabaseColumn $targetColumn = null;
+```
+
+Both attributes are required. `#[HideProperty]` alone leaves the type in the schema; `#[Ignore]` alone leaves it in JSON. The autodocumenter cannot serialise these types' attribute graphs (dynamic `#[Choice(callback:)]`, lazy-load directives, encryption scopes) and will return HTTP 500 on `/api/admin/documentation/openApi` if exposed.
+
+## How Compute Works
+
+`DatabaseSchemaDiffService::computeDiffs(?array $entityClasses = null): DBTableDiffs`
+
+1. Build target: `EntityModelGeneratorService::getDatabaseModels($entityClasses)`. That generator already filters out framework-side entities whose short class name is reused by an app-side descendant (via `filterOutOverriddenEntities()` walking parents and stopping at `#[SubclassIndicator]`). Without this, both classes would emit a `DatabaseModel` with the same `sqlTableName` and the diff would double up.
+2. Get live tables. Skip ignored ones (`DB_DIFF_IGNORED_TABLES` env, default `['doctrine_migration_versions', 'messenger_messages']`).
+3. For each target `DatabaseModel`:
+   - Skip STI subclasses (`$databaseModel->parentEntityCLassWithNamespace !== null`) — their tables are owned by the STI parent.
+   - Introspect the live table.
+   - Absent → `CREATE_TABLE` diff with `sql = $databaseModel->getSql()`, pre-split into `sqlStatements`.
+   - Present → compute per-aspect diffs, assemble phase-ordered statements, classify severity.
+4. Live tables not in target and not ignored → `DROP_TABLE` diff (always `DESTRUCTIVE`).
+5. Filter out `NO_CHANGE` rows before returning.
+
+## Phase-Ordered SQL Assembly
+
+The big risk in naive ordering: `DROP COLUMN` fails if an index still references it; `ADD FK` fails before the referenced column exists. The assembler emits in 13 phases:
+
+| Phase | Operation |
+|---|---|
+| **0** | DROP triggers (drop-half of MODIFY too) — first so DDL isn't perturbed by BEFORE triggers on columns about to drop. |
+| 1 | DROP foreign keys |
+| 2 | DROP indexes |
+| 3 | DROP virtual columns |
+| 4 | DROP real columns (+ drop-half of VECTOR-reset MODIFY) |
+| 5 | Collation change |
+| 6 | MODIFY real columns (in-place; excludes vector-reset) |
+| 7 | ADD real columns (+ add-half of VECTOR-reset MODIFY) |
+| 8 | ADD virtual columns |
+| 9 | ADD indexes |
+| 10 | ADD foreign keys |
+| **11** | Data backfill (VECTOR zero-fill UPDATEs) — runs without triggers, after columns are in final shape. |
+| **12** | CREATE triggers — last so trigger bodies reference final-shape columns AND backfill UPDATEs don't fire them. |
+
+`DBTableDiff::sqlStatements` is the phase-ordered execution list. The per-aspect `sql` field on child diffs is **for frontend display only** — it's the conceptual operation (e.g. drop+add concatenated for a MODIFY), not the order of execution.
+
+### SQL splitter
+
+`splitMultiStatementSql($sql): string[]` strips banner comments (`#`-prefixed), splits on `;`, trims, filters empties. Required because Doctrine DBAL's `executeStatement()` goes through prepare+execute and MySQL forbids multi-statement prepared queries — sending a multi-statement string crashes. `executeTableDiff` re-runs every entry through the splitter as belt-and-braces.
+
+## Critical Normalisations (False-Positive Avoidance)
+
+These live in `DatabaseSchemaIntrospectionService`. Without them you get hundreds of false positives. Each one is justified by a real production signal — add new ones iteratively as cases surface.
+
+### A. `BOOLEAN` ↔ `TINYINT(1)`
+MySQL stores BOOLEAN as TINYINT(1) under the hood. `DATA_TYPE` returns `tinyint`. Detect `DATA_TYPE === 'TINYINT' && length === 1` and rewrite `sqlType` to `BOOLEAN`.
+
+### B. MariaDB `"NULL"` string default (biggest false-positive source)
+MariaDB returns the **literal string `"NULL"`** in `COLUMN_DEFAULT` for `DEFAULT NULL` columns. MySQL 8+ returns actual PHP `null`. DDD writes `DEFAULT NULL` for every nullable column. Without normalising, every nullable column on MariaDB looks like a MODIFY forever:
+
+```php
+if ($defaultValue !== null) {
+    $defaultValue = (string)$defaultValue;
+    if (strtoupper($defaultValue) === 'NULL') {
+        $defaultValue = null;
+    }
+}
+```
+
+### C. Integer display width is irrelevant
+MySQL stores `INT(11)`, but the width is a display hint with no semantic meaning. Only keep `length` for `VARCHAR`/`CHAR` (and `vectorDimensions` for `VECTOR`). Everything else → `length = null` regardless of `CHARACTER_MAXIMUM_LENGTH`.
+
+### D. Generation expression canonicalisation
+MySQL stores `(IFNULL(tableNumber, 0))` as `` ifnull(`tableNumber`,0) `` post-parse. DDD writes the original source. Both go through `normaliseGenerationExpression`: lowercase, strip backticks, strip outer parens (only when they wrap the whole expression), collapse whitespace, remove spaces around `(`, `)`, `,`. Extend iteratively as edge cases surface (`JSON_UNQUOTE`, multi-arg functions, etc.).
+
+### E. Expression defaults (`CURRENT_TIMESTAMP`, `UUID()`, …)
+When `EXTRA` contains `DEFAULT_GENERATED` and `isGenerated` is false, the default is an SQL expression, not a literal. DDD cannot express these on the target side. Naive comparison would always emit a MODIFY that strips the default in production. Fix: set `defaultIsExpression = true` on the canonical column, then in `compareCanonicalColumns()` skip the `defaultValue` check when the live side has it. **Live wins.**
+
+### F. Trigger body normalisation
+Live side gives `action_statement` (body only); target side gives the full `CREATE TRIGGER` statement from a `.sql` file. Both normalised via `normaliseTriggerBody`: lowercase, strip backticks, collapse whitespace, strip outer `BEGIN…END`, trim trailing semicolons.
+
+### G. Virtual column `sqlType` comparison disabled
+The DDD-emitted virtual column references the underlying column's `getSqlType()` which adds a length suffix (`VARCHAR(255)`); introspection produces bare `VARCHAR` + `length` separately. String comparison would always mismatch. The substantive change is captured by `generationExpression` + `isStored` — those alone drive the virtual-column MODIFY signal.
+
+## VECTOR Column Reset Semantics
+
+MariaDB cannot ALTER a VECTOR column's dimensionality in place — storage is dimension-tagged binary. When a diff detects `sqlType` or `vectorDimensions` change on a VECTOR column:
+
+1. `DBColumnDiff::$requiresFullReset = true`.
+2. `resetSql = "UPDATE \`t\` SET \`c\` = VEC_FromText('[0,0,…,0]')"` with N target dimensions.
+3. Phase assembler routes through Phase 4 (DROP) → Phase 7 (ADD) → Phase 11 (zero-fill backfill).
+4. Severity always `DESTRUCTIVE` (data replaced).
+
+Also applied to **fresh ADD** of VECTOR columns so search code never encounters NULL embeddings on existing rows.
+
+**Limitation:** NOT NULL VECTOR ADDs on populated tables aren't fully handled — the ADD COLUMN fails before zero-fill can run. Typical DDD vector columns are nullable; if you need NOT NULL the path would be ADD-nullable → backfill → MODIFY to enforce NOT NULL (currently not implemented).
+
+## Severity Classification
+
+`classifySeverity(DBTableDiff): string`:
+
+| Severity | Trigger |
+|---|---|
+| `ADDITIVE` | All children are ADDs; no destructive flags. |
+| `DESTRUCTIVE` | Any of: DROP column/index/FK/trigger/virtual-column/table, NOT NULL added to previously nullable column, VARCHAR shrunk, sqlType change, VECTOR reset. |
+| `MIXED` | Has both. |
+
+`columnModifyIsDestructive()` is the single source of truth for column-level destructive checks.
+
+## Apply Path
+
+```php
+DatabaseSchemaDiffService::applyDiff(DBTableDiff $diff, bool $disableForeignKeyChecks = true): DBTableDiffs
+DatabaseSchemaDiffService::applyDiffs(DBTableDiffs $diffs, bool $disableForeignKeyChecks = true): DBTableDiffs
+```
+
+Both return a **freshly recomputed** `DBTableDiffs` after applying so the frontend can replace its state with the response without a follow-up GET.
+
+Inside `executeTableDiff`:
+- Wraps with `SET FOREIGN_KEY_CHECKS=0/1` when `$disableForeignKeyChecks`.
+- Re-splits every statement through `splitMultiStatementSql` defensively.
+- Each statement goes through `executeStatement` independently. DDL is implicit-commit on MySQL — failure mid-list leaves a mixed state. Re-introspection on return surfaces what's still pending.
+
+## DBTableDiff Wire Shape
+
+| Field | Type | Purpose |
+|---|---|---|
+| `sqlTableName` | `string` | Table name (also `uniqueKey()`). |
+| `entityClassWithNamespace` | `?ClassWithNamespace` | Source entity. `null` for DROP_TABLE. |
+| `changeType` | `string` const | `CREATE_TABLE` / `DROP_TABLE` / `ALTER_TABLE` / `NO_CHANGE`. |
+| `severity` | `string` const | `ADDITIVE` / `DESTRUCTIVE` / `MIXED`. |
+| `columnDiffs` | `DBColumnDiffs` | |
+| `virtualColumnDiffs` | `DBVirtualColumnDiffs` | |
+| `indexDiffs` | `DBIndexDiffs` | |
+| `foreignKeyDiffs` | `DBForeignKeyDiffs` | |
+| `triggerDiffs` | `DBTriggerDiffs` | |
+| `collationChange` | `?array{from,to}` | Table-level collation delta. |
+| `sql` | `string` | Concat of `sqlStatements` joined by `;\n` — for frontend display only. |
+| `sqlStatements` | `string[]` | Phase-ordered list of individually-executable statements. |
+
+`DBColumnDiff` carries `columnName`, `changeKind` (`ADD`/`DROP`/`MODIFY`), `targetColumn` (hidden), `currentDefinition` (`?DBCanonicalColumn`), `changedAttributes` (`string[]` for MODIFY), `requiresFullReset`, `resetSql`, `sql`. Same structural pattern for the other per-aspect diff types.
+
+---
+
+## Building the Admin Interface in a Consuming App
+
+This is the boilerplate that ships in every project's `App\` namespace. Same code regardless of project — only namespaces change.
+
+### Step 0. Pre-flight
+
+- Confirm the framework version contains `src/Domain/Base/Repo/DB/Database/Diff/DBTableDiff.php`. Available from `mgamadeus/ddd` v2.10.37+. If not present, escalate — the feature doesn't exist in your framework version.
+- Confirm the project follows the `App\Presentation\Api\Admin\…` controller convention and uses the DDD endpoint specialist's `RequestDto` / `RestResponseDto` pattern.
+
+### Step 1. Backend — controller
+
+Create or extend `App\Presentation\Api\Admin\Common\Controller\DatabaseModelsController` with three methods. Class-level attributes stay as in any other admin controller: `#[Route('/common/databaseModels')]`, `#[Tag(group: 'Common', name: 'Database Models ', …)]`, `#[LogRequest(…)]`, behind `ROLE_ADMIN`.
+
+```php
+#[Get('/diff')]
+#[Summary('DatabaseModels Diff')]
+public function diff(
+    DBTableDiffsGetRequestDto $requestDto,
+    DatabaseSchemaDiffService $databaseSchemaDiffService
+): DBTableDiffsGetResponseDto {
+    $responseDto = new DBTableDiffsGetResponseDto();
+    $responseDto->diffs = $databaseSchemaDiffService->computeDiffs();
+    return $responseDto;
+}
+
+#[Post('/applyDiffs')]
+#[Summary('DatabaseModels Apply All Diffs')]
+public function applyDiffs(
+    ApplyDiffsRequestDto $requestDto,
+    DatabaseSchemaDiffService $databaseSchemaDiffService
+): DBTableDiffsGetResponseDto {
+    $diffs = $databaseSchemaDiffService->computeDiffs();
+    if ($requestDto->sqlTableNames !== null) {
+        $filtered = new DBTableDiffs();
+        foreach ($requestDto->sqlTableNames as $tableName) {
+            $diff = $diffs->getDiffByTableName($tableName);
+            if ($diff !== null) {
+                $filtered->add($diff);
+            }
+        }
+        $diffs = $filtered;
+    }
+    $refreshed = $databaseSchemaDiffService->applyDiffs($diffs, $requestDto->disableForeignKeyChecks);
+    $responseDto = new DBTableDiffsGetResponseDto();
+    $responseDto->diffs = $refreshed;
+    return $responseDto;
+}
+
+#[Post('/applyDiff')]
+#[Summary('DatabaseModels Apply Single Diff')]
+public function applyDiff(
+    ApplyDiffRequestDto $requestDto,
+    DatabaseSchemaDiffService $databaseSchemaDiffService
+): DBTableDiffsGetResponseDto {
+    $diffs = $databaseSchemaDiffService->computeDiffs();
+    $diff = $diffs->getDiffByTableName($requestDto->sqlTableName);
+    if ($diff === null || $diff->changeType === DBTableDiff::CHANGE_TYPE_NO_CHANGE) {
+        throw new NotFoundException("No pending diff for table `$requestDto->sqlTableName`");
+    }
+    $refreshed = $databaseSchemaDiffService->applyDiff($diff, $requestDto->disableForeignKeyChecks);
+    $responseDto = new DBTableDiffsGetResponseDto();
+    $responseDto->diffs = $refreshed;
+    return $responseDto;
+}
+```
+
+### Step 2. Backend — four DTOs
+
+In `App\Presentation\Api\Admin\Common\Dtos\DatabaseModels\`:
+
+| File | Body |
+|---|---|
+| `DBTableDiffsGetRequestDto.php` | Empty `RequestDto`. No query params. |
+| `DBTableDiffsGetResponseDto.php` | Extends `RestResponseDto`. `public DBTableDiffs $diffs;` with `#[Parameter(in: Parameter::RESPONSE, required: true)]`. |
+| `ApplyDiffsRequestDto.php` | `public ?array $sqlTableNames = null;` + `public bool $disableForeignKeyChecks = true;` — both `#[Parameter(in: Parameter::BODY, required: false)]`. |
+| `ApplyDiffRequestDto.php` | `public string $sqlTableName;` (required) + `public bool $disableForeignKeyChecks = true;`. |
+
+### Step 3. Backend — wiring
+
+- **Routes** — auto-discovered from `#[Route]`/`#[Get]`/`#[Post]`. No `routes.yaml` edits.
+- **DI** — `DatabaseSchemaDiffService` and `DatabaseSchemaIntrospectionService` are auto-discovered by the existing `services.yaml` glob covering `DDD\Domain\Common\Services\` mapped to `vendor/mgamadeus/ddd/src/Domain/Common/Services/*`.
+- **Auth** — admin routes are already behind `ROLE_ADMIN` via the existing AuthGuard.
+
+### Step 4. Backend — `php -l` every new file. **Block** if any fail.
+
+### Step 5. Backend — verify OpenAPI reachable
+
+```bash
+curl -sf "https://<env>/api/admin/documentation/openApi" \
+  | jq '.paths | keys[] | select(test("databaseModels/(diff|applyDiff)"))'
+```
+
+Expect three lines: `/api/admin/common/databaseModels/{diff,applyDiff,applyDiffs}`. If HTTP 500: the autodocumenter is choking, typically because a rich DDD-type field is missing `#[Ignore]`. Cross-check `targetColumn` / `targetIndex` / `targetForeignKey` / `targetTrigger` / `targetVirtualColumn` fields on the diff VOs in the framework. **Block** until reachable.
+
+### Step 6. Frontend — SDK regen
+
+**Never write frontend code against this feature without first regenerating the SDK.** Specific reasons:
+- Response DTO carries deeply nested generics (`DBTableDiffs → DBTableDiff[] → 5 child diff sets → canonical VOs`). Hand-typing is error-prone and rots fast.
+- The mutation body key is the long fully-qualified DTO name (e.g. `appPresentationApiAdminCommonDtosDatabaseModelsApplyDiffRequestDto`). Not guessable.
+- RTK Query tag wiring depends on generated `*Enhanced.ts` — missing the regen means apply mutations don't refresh the list.
+
+Project-specific regen command — typically:
+
+```bash
+cd apps/web && echo "" | npm run gen:SDK
+```
+
+Verify hooks appeared:
+
+```bash
+grep -nE "useGetApiAdminCommonDatabaseModelsDiff|usePostApiAdminCommonDatabaseModelsApplyDiff" \
+  apps/web/src/api/adminApi.ts
+```
+
+Should show three hook exports. **Block** if missing.
+
+### Step 7. Frontend — sidebar wiring
+
+Add a maintenance sidebar entry next to "Database Tables" / "Config Imports":
+
+```tsx
+import { GitCompareArrows } from 'lucide-react';
+
+{ key: 'schema-diff', label: t('Schema Diff'), icon: GitCompareArrows,
+  href: '/admin/maintenance/schema-diff' }
+```
+
+### Step 8. Frontend — page route
+
+```tsx
+// apps/web/src/app/admin/maintenance/schema-diff/page.tsx
+import { Suspense } from 'react';
+import SchemaDiffScreen from '@/modules/admin/components/maintenance/schema-diff-screen/SchemaDiffScreen';
+
+const SchemaDiffPage = () => (
+  <Suspense>
+    <SchemaDiffScreen />
+  </Suspense>
+);
+export default SchemaDiffPage;
+```
+
+### Step 9. Frontend — screen module
+
+Two components in `apps/web/src/modules/admin/components/maintenance/schema-diff-screen/`:
+
+- **`SchemaDiffScreen.tsx`** — header, counts (total / additive / mixed / destructive), diff list, "Apply All" button. Skeleton during initial load; "Schema matches" empty state when zero diffs; error card on fetch failure.
+- **`DiffRow.tsx`** — one card per `DBTableDiff`. Shows table name, entity class, change-type badge, severity badge, summary (`+2 ±1 -3 columns · -1 index · …`). Expandable to show full SQL in a `<pre>` block. Per-row Apply button.
+
+Generated hooks:
+
+```tsx
+import {
+  useGetApiAdminCommonDatabaseModelsDiffQuery,
+  usePostApiAdminCommonDatabaseModelsApplyDiffMutation,
+  usePostApiAdminCommonDatabaseModelsApplyDiffsMutation,
+} from '@api/adminApi';
+import type { DbTableDiff } from '@/models/DDD/Domain/Base/Repo/DB/Database/Diff/DbTableDiff';
+```
+
+Apply call (note the long body key from RTK Query codegen):
+
+```tsx
+await applyDiff({
+  appPresentationApiAdminCommonDtosDatabaseModelsApplyDiffRequestDto: {
+    sqlTableName: tableName,
+    disableForeignKeyChecks: true,
+  },
+}).unwrap();
+```
+
+### Step 10. Frontend — severity-aware confirm dialogs
+
+```tsx
+if (diff.severity !== 'ADDITIVE') {
+  const confirmed = await openConfirm({
+    title: t('Apply destructive change to %table%?', { replacements: { table: diff.sqlTableName } }),
+    description: t('This change drops or rewrites data and cannot be automatically rolled back.'),
+    confirmLabel: t('Apply'),
+    cancelLabel: t('Cancel'),
+  });
+  if (!confirmed) return;
+}
+```
+
+For Apply All: confirm always, with the count of destructive/mixed diffs as a warning.
+
+### Step 11. Frontend — cache invalidation is automatic
+
+The controller class-level `#[Tag(group: 'Common', name: 'Database Models ', …)]` becomes tag `DatabaseModels` in the generated `*ApiTags.ts`. Both apply mutations invalidate the diff query automatically. **No manual `refetch()` needed.**
+
+---
+
+## Verification Workflow
+
+Once shipped, walk through this against a real environment.
+
+### Backend reachability
+
+```bash
+TOKEN=$(curl -sS -X POST "https://<env>/api/admin/common/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PWD\"}" \
+  | jq -r '.accessToken')
+
+curl -sS "https://<env>/api/admin/common/databaseModels/diff?debug=true" \
+  -H "Authorization: Bearer $TOKEN" \
+  -o /tmp/diff.json -w "HTTP %{http_code} | %{size_download}b | %{content_type}\n"
+# Expected: HTTP 200 | <bytes> | application/json
+```
+
+### Sanity counts on the diff output
+
+```bash
+jq '.diffs.elements | length' /tmp/diff.json
+jq '.diffs.elements | group_by(.changeType) | map({type: .[0].changeType, n: length})' /tmp/diff.json
+jq '.diffs.elements | group_by(.severity) | map({sev: .[0].severity, n: length})' /tmp/diff.json
+
+# Attribute breakdown of MODIFY column diffs — for false-positive hunting
+jq '[.diffs.elements[].columnDiffs.elements[]
+       | select(.changeKind == "MODIFY") | .changedAttributes]
+     | flatten | group_by(.) | map({attr: .[0], count: length}) | sort_by(-.count)' /tmp/diff.json
+```
+
+**Triage cheatsheet:**
+
+| Symptom | Likely missing normalisation |
+|---|---|
+| `defaultValue` top attribute by wide margin on MariaDB | §B — `"NULL"` string normalisation |
+| `sqlType` MODIFY on every boolean column | §A — `BOOLEAN` ↔ `TINYINT(1)` |
+| `generationExpression` MODIFY on every virtual column | §D — generation expression canonicalisation, or §G if it's the underlying `sqlType` |
+| Every `CURRENT_TIMESTAMP`/`UUID()` column flagged MODIFY stripping the default | §E — expression defaults |
+| Every nullable trigger column flagged MODIFY | §F — trigger body normalisation |
+
+`targetColumn: null` on every column diff is **the desired state** — that's `#[Ignore]` working correctly.
+
+### Frontend round-trip
+
+1. Visit `/admin/maintenance/schema-diff`. List renders without console errors.
+2. Each card shows table name + change-type badge + severity badge + summary.
+3. Click expand — SQL preview appears in a `<pre>` block.
+4. Click Apply on an ADDITIVE diff — no confirm, mutation fires, list re-renders with the diff removed.
+5. Click Apply on a DESTRUCTIVE diff — confirm dialog appears.
+
+### Apply-path correctness
+
+```bash
+curl -sS -X POST "https://<env>/api/admin/common/databaseModels/applyDiff" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"sqlTableName": "SomeTable", "disableForeignKeyChecks": true}' | jq '.diffs.elements | length'
+# That table should no longer appear in the diff after applying.
+```
+
+---
+
+## Known Limitations
+
+- **No atomic rollback.** MySQL DDL is implicit-commit; partial-apply failures leave a mixed state. Mitigation: re-introspection on every apply response surfaces what's still pending.
+- **No concurrent-apply guard.** Two admins applying at the same time can race. Rare in practice; defensible to add a re-introspection check inside `applyDiff` per statement.
+- **NOT NULL VECTOR ADD on populated table** isn't fully handled — ADD COLUMN fails before backfill can run. Workaround would be ADD-nullable → backfill → MODIFY NOT NULL (currently not implemented).
+- **VECTOR index option changes** (`distanceMetric`, `maxNeighbors`) aren't currently diffed. Match key is `(indexType, columns)` — two VECTOR indexes on the same columns with different metrics look identical.
+- **`CURRENT_TIMESTAMP` defaults aren't expressible on the target side.** Live wins by design (`defaultIsExpression` short-circuits the compare). Removing such a default requires a manual `ALTER`.
+- **Performance.** ~5N `INFORMATION_SCHEMA` queries for N tables. Acceptable for admin endpoints; batchable down to ~5 queries total if it ever matters.
+
+## Adding a New Diff Aspect
+
+Generic recipe — used historically when adding triggers, virtual columns, and the canonical types themselves.
+
+1. **Define the canonical VO** in `src/Domain/Base/Repo/DB/Database/Canonical/DBCanonical{X}.php`. Pure data + typed constructor + a match-key method if matching isn't by name.
+2. **Define the diff VO + collection** in `src/Domain/Base/Repo/DB/Database/Diff/DB{X}Diff(s).php` extending `ValueObject` / `ObjectSet`. Don't forget `#[HideProperty]` + `#[Ignore]` on rich-DDD-type `target*` fields.
+3. **Build live side** in `DatabaseSchemaIntrospectionService`: a `fetch{X}s()` returning canonical VOs from `INFORMATION_SCHEMA`. Add to `introspectTable()`.
+4. **Build target side**: the relevant DDD type (`DatabaseColumn`, `DatabaseIndex`, …) should already expose what you need, or extend it. The target generator runs in `EntityModelGeneratorService::getDatabaseModels()`.
+5. **Add comparator** in `DatabaseSchemaDiffService`: `compare{X}s(target, live): DB{X}Diffs`. Match by your VO's match key. Loop both sides; emit ADD / DROP / MODIFY.
+6. **Wire into `computeDiffs`**: pull the comparator, attach to `DBTableDiff::${x}Diffs`. Adjust `severity` classifier if your aspect can be destructive.
+7. **Add a phase** to the assembler if it has DDL ordering constraints (most do — e.g. triggers must drop before columns, create after).
+8. **Add normalisations iteratively.** Run on a real DB, observe the false-positive attribute breakdown (see §Verification), add a rule, re-run.
+9. **Add to wire output** by ensuring the collection is a public property on `DBTableDiff` and the OpenAPI schema doesn't choke (run §Step 5 verification).
+
+Caveat: any new rich-DDD-type field needs both `#[HideProperty]` AND `#[Ignore]` or the autodocumenter returns HTTP 500.
+
+## Troubleshooting
+
+| Symptom | Diagnosis |
+|---|---|
+| `/api/admin/documentation/openApi` returns HTTP 500 after adding diff endpoints | Missing `#[Ignore]` on a rich-DDD-type field. Grep for `target*` properties in the Diff VOs — every one must have BOTH `#[HideProperty]` and `#[Ignore]`. |
+| Diff shows hundreds of `defaultValue` MODIFYs on nullable columns | MariaDB `"NULL"` normalisation missing (§B). Framework bug — escalate. |
+| Diff shows every table as ALTER on a fresh DB | Either generation-expression normalisation (§D) or trigger normalisation (§F) is missing/regressed. |
+| Generated frontend hook missing after SDK regen | The OpenAPI endpoint didn't list the route. Re-run §Step 5; ensure backend deployed. |
+| `Only variables can be passed by reference` runtime error in `applyDiffs` | Somewhere a `$set->add(new X(...))` slipped in. `ObjectSet::add()` takes `&...$elements`; assign to a variable first. |
+| `applyDiff` succeeds but the table still appears in the next diff | Re-introspection cache hit. `DatabaseSchemaIntrospectionService::invalidateCache()` is called inside `applyDiff` — confirm you're on a framework version where this is wired. |
+| Multi-statement SQL crash from `executeStatement()` | A statement made it past `splitMultiStatementSql`. Check for embedded `;` inside string literals (rare but possible in trigger bodies). |
+
+## Conventions
+
+- **Diff is computed on every request.** No persistence; no migration files. Source of truth is the entity classes, snapshot is the live DB.
+- **`computeDiffs($entityClasses)` accepts a filter** — pass an array of FQCNs to compute only specific tables. Default null = all entities.
+- **`disableForeignKeyChecks = true` is the safe default** for apply. Re-enable only if you have a specific reason and accept the apply-order brittleness.
+- **The legacy `generateDatabaseTables` text-dump endpoint** stays in place. Schema Diff is the supported path; the dump is a fallback utility.
+- **Hooks belong in frontend code, not backend.** Don't add `beforeApply` / `afterApply` hooks to the diff service — apply ordering is dictated by the phase assembler, not by per-app logic.

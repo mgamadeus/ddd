@@ -37,10 +37,10 @@ class DBCronModel extends DoctrineModel
 	public ?bool $isActive = true;
 
 	#[ORM\Column(type: 'datetime')]
-	public ?\DateTime $lastExecutionStartedAt;
+	public ?DateTime $lastExecutionStartedAt;
 
 	#[ORM\Column(type: 'datetime')]
-	public ?\DateTime $nextExecutionScheduledAt;
+	public ?DateTime $nextExecutionScheduledAt;
 
 	#[ORM\Id]
 	#[ORM\GeneratedValue]
@@ -48,10 +48,10 @@ class DBCronModel extends DoctrineModel
 	public int $id;
 
 	#[ORM\Column(type: 'datetime')]
-	public ?\DateTime $created;
+	public ?DateTime $created;
 
 	#[ORM\Column(type: 'datetime')]
-	public ?\DateTime $updated;
+	public ?DateTime $updated;
 
 	#[ORM\OneToMany(targetEntity: DBCronExecutionModel::class, mappedBy: 'cron')]
 	public PersistentCollection $executions;

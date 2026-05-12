@@ -8,6 +8,7 @@ use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModels;
+use DDD\Domain\Base\Repo\DB\Database\SubclassIndicator;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Libs\ClassFinder;
 use DDD\Infrastructure\Modules\DDDModule;
@@ -119,8 +120,74 @@ class EntityModelGeneratorService
                 }
             }
         }
+        $entityClasses = self::filterOutOverriddenEntities($entityClasses);
         DDDService::instance()->restoreCachesSnapshot();
         return $entityClasses;
+    }
+
+    /**
+     * Removes entity classes that are overridden by descendant entities present in the same set.
+     *
+     * An override is detected when a descendant entity extends an ancestor entity with the same
+     * short class name (e.g. App\...\Account extends DDD\...\Account). Both classes resolve to the
+     * same SQL table name (table name is derived from the EntitySet's short name, which stays
+     * identical across overrides), so generating SQL/Doctrine models for the ancestor produces
+     * duplicate definitions for a table the descendant already owns.
+     *
+     * Single Table Inheritance hierarchies are preserved: an ancestor carrying #[SubclassIndicator]
+     * is never marked as overridden, and the walk stops there so STI siblings above it are kept too.
+     *
+     * @param ClassWithNamespace[] $entityClasses
+     * @return ClassWithNamespace[]
+     * @throws ReflectionException
+     */
+    protected static function filterOutOverriddenEntities(array $entityClasses): array
+    {
+        /** @var array<string, ClassWithNamespace> $byClassName */
+        $byClassName = [];
+        foreach ($entityClasses as $classWithNamespace) {
+            $byClassName[$classWithNamespace->getNameWithNamespace()] = $classWithNamespace;
+        }
+
+        $overriddenClassNames = [];
+        foreach ($entityClasses as $classWithNamespace) {
+            $reflectionClass = ReflectionClass::instance($classWithNamespace->getNameWithNamespace());
+            $shortName = $classWithNamespace->name;
+            $parentClass = $reflectionClass->getParentClass();
+            while ($parentClass) {
+                if ($parentClass->isAbstract()) {
+                    break;
+                }
+                $parentClassName = $parentClass->getName();
+                if (!DefaultObject::isEntity($parentClassName)) {
+                    break;
+                }
+                // STI base classes (carrying #[SubclassIndicator]) are legitimate co-existing tables -- never exclude.
+                if ($parentClass->getAttributes(SubclassIndicator::class, ReflectionAttribute::IS_INSTANCEOF)) {
+                    break;
+                }
+                // Only treat as an override when the short class name matches (App\Foo extends DDD\Foo convention).
+                // A different short name indicates a specialization (e.g. AdminUser extends User), not an override.
+                if ($parentClass->getShortName() !== $shortName) {
+                    break;
+                }
+                if (isset($byClassName[$parentClassName])) {
+                    $overriddenClassNames[$parentClassName] = true;
+                }
+                $parentClass = $parentClass->getParentClass() ?: null;
+            }
+        }
+
+        if (!$overriddenClassNames) {
+            return $entityClasses;
+        }
+
+        return array_values(
+            array_filter(
+                $entityClasses,
+                static fn(ClassWithNamespace $cwn) => !isset($overriddenClassNames[$cwn->getNameWithNamespace()])
+            )
+        );
     }
 
     public static function getDatabaseModels(?array $entityClasses = null): DatabaseModels

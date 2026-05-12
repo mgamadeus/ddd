@@ -36,10 +36,10 @@ class DBEncryptionScopePasswordModel extends DoctrineModel
 	public int $id;
 
 	#[ORM\Column(type: 'datetime')]
-	public ?\DateTime $created;
+	public ?DateTime $created;
 
 	#[ORM\Column(type: 'datetime')]
-	public ?\DateTime $updated;
+	public ?DateTime $updated;
 
 	#[ORM\ManyToOne(targetEntity: DBEncryptionScopeModel::class)]
 	#[ORM\JoinColumn(name: 'encryptionScopeId', referencedColumnName: 'id')]

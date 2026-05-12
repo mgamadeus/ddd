@@ -32,7 +32,7 @@ class DBCacheScopeInvalidationModel extends DoctrineModel
 	public ?int $numberOfTimesToInvalidateCache;
 
 	#[ORM\Column(type: 'datetime')]
-	public ?\DateTime $invalidateUntil;
+	public ?DateTime $invalidateUntil;
 
 	#[ORM\Id]
 	#[ORM\GeneratedValue]
@@ -40,10 +40,10 @@ class DBCacheScopeInvalidationModel extends DoctrineModel
 	public int $id;
 
 	#[ORM\Column(type: 'datetime')]
-	public ?\DateTime $created;
+	public ?DateTime $created;
 
 	#[ORM\Column(type: 'datetime')]
-	public ?\DateTime $updated;
+	public ?DateTime $updated;
 
 	#[ORM\ManyToOne(targetEntity: DBAccountModel::class)]
 	#[ORM\JoinColumn(name: 'accountId', referencedColumnName: 'id')]

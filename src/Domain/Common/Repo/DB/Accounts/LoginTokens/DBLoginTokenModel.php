@@ -32,7 +32,7 @@ class DBLoginTokenModel extends DoctrineModel
 	public ?int $usageLimit;
 
 	#[ORM\Column(type: 'datetime')]
-	public ?\DateTime $validUntil;
+	public ?DateTime $validUntil;
 
 	#[ORM\Id]
 	#[ORM\GeneratedValue]
@@ -40,10 +40,10 @@ class DBLoginTokenModel extends DoctrineModel
 	public int $id;
 
 	#[ORM\Column(type: 'datetime')]
-	public ?\DateTime $created;
+	public ?DateTime $created;
 
 	#[ORM\Column(type: 'datetime')]
-	public ?\DateTime $updated;
+	public ?DateTime $updated;
 
 	#[ORM\ManyToOne(targetEntity: DBAccountModel::class)]
 	#[ORM\JoinColumn(name: 'accountId', referencedColumnName: 'id')]
