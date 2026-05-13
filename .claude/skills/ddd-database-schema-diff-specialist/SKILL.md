@@ -163,6 +163,76 @@ Also applied to **fresh ADD** of VECTOR columns so search code never encounters 
 
 `columnModifyIsDestructive()` is the single source of truth for column-level destructive checks.
 
+## Reason Before You Apply — Which Side Is Wrong?
+
+A diff is **drift**, not a verdict. The tool tells you "entity-derived schema and live schema disagree." It does **not** tell you which side represents the truth. Before clicking Apply, ask:
+
+> Is the DB the right shape, or is the entity?
+
+Three possible resolutions for any diff row:
+
+| Resolution | When | Action |
+|---|---|---|
+| **Apply DB change** | Entity is correct; DB drifted away from intent. | Click Apply — the SQL conforms the DB to the entity. |
+| **Fix the entity** | DB is correct; entity declaration is wrong / missing an attribute. | Edit the PHP entity (add `#[NotNull]`, `#[DatabaseIndex(TYPE_NONE)]`, default value, etc.), regenerate the Doctrine model, refresh the diff. The diff disappears without any DB DDL. |
+| **Fix both** | Neither side matches the workflow's truth. | Edit entity to the desired shape, then apply the resulting (now smaller) diff. |
+
+### The asymmetry you must respect
+
+- **Relaxing** (drop NOT NULL, drop index, widen VARCHAR) is one-way safe — old rows still fit, new rows have more freedom.
+- **Tightening** (add NOT NULL on a previously nullable column, add UNIQUE on a column with duplicates, narrow VARCHAR below max length, add a FK constraint on data that violates it) **can fail at apply-time or break the application at runtime** even when the DDL succeeds.
+
+A tightening diff that compiles cleanly through the Production Guard is *not* a green light. The guard checks blast-radius of the operation; it cannot check whether the application semantically depends on the looser shape.
+
+### Pre-Apply Checklist (Triple-Reasoning for Tightening Diffs)
+
+For every diff row that adds NOT NULL, adds a UNIQUE index, narrows a column, or installs a CHECK / FK constraint:
+
+1. **Grep the column at runtime.** `grep -rn '\$entity->propertyName\|->propertyName =' src/` — does anywhere set it to `null`, leave it uninitialised, or rely on a deferred fill (AI job, async backfill, lazy-load)?
+2. **Audit the write paths.** Every controller, service method, and message handler that creates rows for this table. Does each one provide a value?
+3. **Sanity-check the data.** `SELECT COUNT(*) FROM table WHERE col IS NULL` — if existing rows already violate the proposed constraint, the apply will fail OR (worse) succeed with truncation/coercion. Same for UNIQUE: `SELECT col, COUNT(*) FROM table GROUP BY col HAVING COUNT(*) > 1`.
+
+If any of (1), (2), or (3) surfaces evidence that the looser shape is required, **do not apply** — fix the entity instead.
+
+### Real Examples From the Radbonus Audit (2026-05-13)
+
+**Roles.description — fix the entity, not the DB.**
+- Diff: live DB has no index on `description`; entity-derived schema expected a default B-Tree index.
+- Reality: `description` is freetext, never queried by equality. The DB shape (no index) is correct. The entity drifted because the framework auto-generates an index for every column unless told otherwise.
+- Fix: add `#[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]` on the entity property. Diff vanishes without touching the DB.
+
+**AccountRoles.accountId, AccountRoles.roleId — apply DB change.**
+- Diff: live DB has `NOT NULL` on both; entity declared them as `?int` without `#[NotNull]`.
+- Reality: a junction row with no `accountId` or no `roleId` is meaningless — every legitimate write path sets both. DB is correct; entity drifted because the developer typed them as nullable out of PHP habit.
+- Fix: add `#[NotNull]` on both properties (entity) and apply the DB diff (which is empty after the entity fix on this side — the diff was DB-already-correct, entity-permissive). Result: entity + DB now both express the actual invariant.
+
+**Roles.isAdminRole — fix the entity (TYPE_NONE + NotNull together).**
+- Diff: live DB had no index and was `NOT NULL`; entity wanted an index and allowed null.
+- Reality: it's a boolean flag, never queried, always set by `setName()`. The DB shape is right on both axes.
+- Fix: `#[NotNull]` + `#[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]` on the entity. Both diffs disappear.
+
+**SupportTicket.title — counter-example: tightening looked right, broke prod.**
+- Diff: live DB had `NOT NULL`; entity allowed null. "Obvious" fix was to tighten the entity to match.
+- Reality: the entity was correct. App-channel ticket creation (`ClientSupportController::createTicket`) sends no title — the AI pipeline populates `generatedTitle`, never `title`. `title` is only set from Gmail subjects (`SupportTicketsService:780`). The DB had drifted into being stricter than the workflow allows, and the entity was rightly permissive.
+- The mistake: tightened the entity without grepping `->title =` and reading the controller. Symfony NotNull validation then rejected every app-channel POST with "This value should not be null."
+- Fix: revert entity to `?string`, relax DB column back to `NULL`. **Both** sides needed to match the looser shape that the workflow actually produces.
+
+### Heuristics
+
+- **Defaults change the answer.** A column with a sensible default (`= self::STATUS_ACTIVE`, `= 4`, `= false`) is almost always safely NotNull — the application can't produce null. A column populated *later* (by AI, by a scheduled job, by a follow-up message) cannot be NotNull at insert time.
+- **Junction tables almost always want NotNull on both FKs.** A row with one side missing is meaningless and should never have been written.
+- **Freetext columns rarely want indexes.** Use `#[DatabaseIndex(TYPE_NONE)]` to silence the auto-index. A multi-column composite or a fulltext index is usually a better choice than a default B-Tree on a long varchar.
+- **`generatedX` / `localizedX` / `processedX` flags** are populated by async pipelines. If `xProcessed` defaults to `false` and an async job sets it, it can be NotNull. If `generatedTitle` is filled by an LLM after row creation, it cannot.
+
+### Workflow
+
+1. Open the diff in the admin UI.
+2. For every tightening row: run the Triple-Reasoning checklist above.
+3. Decide per row: Apply | Fix Entity | Fix Both.
+4. If "Fix Entity", edit the PHP, run `bin/console app:generate-doctrine-models-for-entities`, refresh the diff page — the row should disappear.
+5. Apply the remaining rows that survived reasoning.
+6. After apply, smoke-test the write paths that touch the changed columns (especially the public/client API). A clean Apply is not a successful change — runtime validation might still reject inputs that were previously accepted.
+
 ## Apply Path
 
 ```php
