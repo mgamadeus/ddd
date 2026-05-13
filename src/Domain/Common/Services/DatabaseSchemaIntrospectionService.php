@@ -82,8 +82,14 @@ class DatabaseSchemaIntrospectionService
         $table->tableName = $tableName;
         $table->collation = (string)$tableRow['TABLE_COLLATION'];
 
+        // MariaDB stores JSON columns as LONGTEXT plus a CHECK (json_valid(col)) constraint
+        // (JSON is an alias for LONGTEXT, not a distinct storage engine). To collapse this to
+        // the same canonical sqlType the target side emits ('JSON'), fetch the json_valid
+        // check-clauses up front and pass the column-name set into the column builder.
+        $jsonValidColumns = $this->fetchJsonValidColumnNames($tableName);
+
         foreach ($this->fetchColumnRows($tableName) as $row) {
-            $column = $this->buildCanonicalColumn($row);
+            $column = $this->buildCanonicalColumn($row, $jsonValidColumns);
             if ($column->isGenerated) {
                 $table->virtualColumns[$column->name] = $column;
             } else {
@@ -183,14 +189,55 @@ class DatabaseSchemaIntrospectionService
     }
 
     /**
+     * Returns the set of columns on a table that carry a `json_valid(`col`)` CHECK constraint.
+     * MariaDB writes one such constraint per `JSON`-declared column (since `JSON` is an alias for
+     * `LONGTEXT` plus a check), so this set is what tells us a LONGTEXT-typed column is
+     * semantically a JSON column. MySQL 5.7+ has a native JSON type and does not emit json_valid
+     * checks; on MySQL this returns an empty set and the LONGTEXT/JSON normalisation no-ops.
+     *
+     * INFORMATION_SCHEMA.CHECK_CONSTRAINTS is portable across MySQL 8.0.16+ and MariaDB 10.2+;
+     * any error (older versions, restricted privileges) is caught and the result degrades to an
+     * empty set rather than crashing the diff.
+     *
+     * @return array<string,true> Map of columnName => true.
+     */
+    protected function fetchJsonValidColumnNames(string $tableName): array
+    {
+        $connection = EntityManagerFactory::getInstance()->getConnection();
+        try {
+            $rows = $connection->fetchAllAssociative(
+                'SELECT CHECK_CLAUSE FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS
+                 WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = :table',
+                ['table' => $tableName]
+            );
+        } catch (Exception) {
+            return [];
+        }
+        $columns = [];
+        foreach ($rows as $row) {
+            // Examples:
+            //   MariaDB: `json_valid(`name`)`
+            //   MySQL:   `json_valid(`name`)` (when present at all)
+            // Match the column name out of `json_valid(\`col\`)`. The check is case-insensitive
+            // because MariaDB lower-cases function names in stored CHECK_CLAUSE.
+            if (preg_match('/\bjson_valid\(\s*`?([^`)\s]+)`?\s*\)/i', (string)$row['CHECK_CLAUSE'], $matches)) {
+                $columns[$matches[1]] = true;
+            }
+        }
+        return $columns;
+    }
+
+    /**
      * Builds a canonical column VO (regular OR virtual — virtual is distinguished by
      * isGenerated=true). The result is type-equivalent to the target-side build in
      * {@see DatabaseSchemaDiffService::canonicaliseTargetColumn} — adding a field on either side
      * without updating the other now fails at parse time.
      *
      * @param array<string,mixed> $row Raw INFORMATION_SCHEMA.COLUMNS row.
+     * @param array<string,true> $jsonValidColumns Set of column names with a json_valid() check.
+     *        Used to normalise MariaDB's LONGTEXT-backed JSON columns to canonical sqlType 'JSON'.
      */
-    protected function buildCanonicalColumn(array $row): DBCanonicalColumn
+    protected function buildCanonicalColumn(array $row, array $jsonValidColumns = []): DBCanonicalColumn
     {
         $dataType = strtoupper((string)$row['DATA_TYPE']);
         $columnType = (string)$row['COLUMN_TYPE'];
@@ -225,6 +272,13 @@ class DatabaseSchemaIntrospectionService
         } elseif ($dataType === 'TINYINT' && preg_match('/\((\d+)\)/', $columnType, $matches) && (int)$matches[1] === 1) {
             // MySQL stores BOOLEAN as TINYINT(1). DDD writes BOOLEAN.
             $sqlType = DatabaseColumn::SQL_TYPE_BOOL;
+        } elseif ($dataType === 'LONGTEXT' && isset($jsonValidColumns[(string)$row['COLUMN_NAME']])) {
+            // MariaDB implements `JSON` as `LONGTEXT` with a CHECK (json_valid(col)) constraint —
+            // `JSON` is just an alias. INFORMATION_SCHEMA returns data_type='longtext' for these
+            // columns. DDD's target generator emits 'JSON' for ValueObject-shaped properties, so
+            // without normalisation every JSON column on MariaDB falsely reports a sqlType MODIFY
+            // forever. Collapse to canonical 'JSON' here.
+            $sqlType = DatabaseColumn::SQL_TYPE_JSON;
         }
 
         // Default value normalisation:

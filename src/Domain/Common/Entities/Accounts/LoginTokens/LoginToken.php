@@ -9,10 +9,12 @@ use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistoryTrait;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseForeignKey;
 use DDD\Domain\Common\Entities\Accounts\Account;
 use DDD\Domain\Common\Repo\DB\Accounts\LoginTokens\DBLoginToken;
 use DDD\Domain\Common\Services\LoginTokensService;
 use DDD\Infrastructure\Base\DateTime\DateTime;
+use Symfony\Component\Validator\Constraints\NotNull;
 
 /**
  * A LoginToken can be used for one or multiple Logins and can be configured to be time or usage limited or both
@@ -27,9 +29,11 @@ class LoginToken extends Entity
 
     /** @var Account The Account which to login */
     #[LazyLoad]
+    #[DatabaseForeignKey(onDeleteAction: DatabaseForeignKey::ACTION_CASCADE)]
     public Account $account;
 
     /** @var int The Account's id which to login */
+    #[NotNull]
     public ?int $accountId;
 
     /** @var string The login token string */

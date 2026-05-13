@@ -23,7 +23,7 @@ class DBLoginTokenModel extends DoctrineModel
 	public const string ENTITY_CLASS = 'DDD\Domain\Common\Entities\Accounts\LoginTokens\LoginToken';
 
 	#[ORM\Column(type: 'integer')]
-	public ?int $accountId;
+	public int $accountId;
 
 	#[ORM\Column(type: 'string')]
 	public ?string $token;
@@ -47,6 +47,6 @@ class DBLoginTokenModel extends DoctrineModel
 
 	#[ORM\ManyToOne(targetEntity: DBAccountModel::class)]
 	#[ORM\JoinColumn(name: 'accountId', referencedColumnName: 'id')]
-	public ?DBAccountModel $account;
+	public DBAccountModel $account;
 
 }

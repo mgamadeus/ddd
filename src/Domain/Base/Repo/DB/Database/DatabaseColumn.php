@@ -264,20 +264,28 @@ class DatabaseColumn extends ValueObject
         if (isset(self::PROPERTIES_TO_SKIP[$propertyName])) {
             return null;
         }
+        // Column nullability is driven EXCLUSIVELY by the #[NotNull] attribute (see further down
+        // in this method), NOT by the PHP `?Type` declaration. This is intentional:
+        //   • Doctrine instantiates entities via Doctrine\Instantiator without invoking the
+        //     constructor. Non-nullable scalars (`int $x` without default) throw "must not be
+        //     accessed before initialization" if any code reads the property before hydration
+        //     writes it. The codebase therefore uses `?Type` widely for hydration robustness —
+        //     but `?Type` is about runtime ergonomics, NOT about DB schema intent.
+        //   • The Symfony `#[NotNull]` attribute drives BOTH the application-layer validator
+        //     (rejects null on `$entity->update()`) AND the DB column constraint, so the two
+        //     stay in lockstep without drift.
+        // Canonical pattern: `#[NotNull] public ?Type $name;` — see ddd-entity-specialist skill.
+        //
+        // The block below ONLY exists to pick one named type out of a multi-type union
+        // (e.g. `int|string $x`), so the downstream sqlType allocation has a single
+        // ReflectionNamedType to work with. It is NOT a nullability check, and it does not fire
+        // for `?Type` declarations — PHP reports `?int` as ReflectionNamedType, not UnionType.
         if ($type instanceof ReflectionUnionType) {
-            $types = $type->getTypes();//[0];
-            $allowsNull = false;
-            foreach ($types as $unionType) {
-                if ($unionType->getName() != 'null') {
+            foreach ($type->getTypes() as $unionType) {
+                if ($unionType->getName() !== 'null') {
                     $type = $unionType;
-                } else {
-                    $allowsNull = true;
                 }
             }
-            if (!$allowsNull && $type->allowsNull()) {
-                $allowsNull = true;
-            }
-            $databaseColum->allowsNull = $allowsNull;
         }
         if (!$type instanceof ReflectionNamedType) {
             throw new InternalErrorException(

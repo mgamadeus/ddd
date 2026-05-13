@@ -4,9 +4,11 @@ namespace DDD\Domain\Common\Entities\Roles;
 
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseIndex;
 use DDD\Domain\Common\Repo\DB\Roles\DBRole;
 use DDD\Domain\Common\Repo\DB\Roles\DBRoleModel;
 use DDD\Domain\Common\Services\RolesService;
+use Symfony\Component\Validator\Constraints\NotNull;
 
 /**
  * @method Roles getParent()
@@ -29,12 +31,16 @@ class Role extends Entity
     public const array ADMIN_ROLES = [self::ADMIN => true, self::SUPERADMIN => true];
 
     /** @var string|null The name of the role */
+    #[NotNull]
     public ?string $name;
 
-    /** @var string|null The description of the role */
+    /** @var string|null The description of the role — optional, never queried by equality. */
+    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
     public ?string $description;
 
     /** @var bool Whether the role is an admin role or not */
+    #[NotNull]
+    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
     public bool $isAdminRole = false;
 
     public function uniqueKey(): string

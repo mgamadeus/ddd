@@ -67,6 +67,34 @@ public ?DateTime $createdAt = null;   // CORRECT
 public ?\DateTime $createdAt = null;  // WRONG -- native PHP DateTime
 ```
 
+### NOT NULL Columns -- Require `#[NotNull]`, Not the PHP Type
+
+Column nullability is driven **exclusively** by the `Symfony\Component\Validator\Constraints\NotNull` attribute. The PHP `?Type` declaration is, by design, ignored by the schema generator (`DatabaseColumn::createFromReflectionProperty`).
+
+```php
+use Symfony\Component\Validator\Constraints\NotNull;
+
+// CORRECT — column emitted as NOT NULL
+#[NotNull]
+public ?int $accountId;
+
+// WRONG — column emitted as DEFAULT NULL, even though PHP says non-nullable
+public int $accountId;
+
+// ALSO WRONG — without #[NotNull] the column is DEFAULT NULL
+public ?int $accountId;
+```
+
+**Why this design:**
+1. **Hydration safety.** Doctrine instantiates entities via `Doctrine\Instantiator` without invoking the constructor. Non-nullable scalars (`public int $x;` with no default) throw `"must not be accessed before initialization"` if any code reads them before hydration writes them. The codebase convention is therefore `?Type` everywhere — but that's about runtime ergonomics, not DB schema intent.
+2. **Single source of truth.** `#[NotNull]` drives BOTH the application-layer validator (rejects null on `$entity->update()`) AND the DB column constraint, so the two stay in lockstep without drift.
+
+**Canonical pattern:** `#[NotNull] public ?Type $name;` — nullable PHP type for hydration, attribute for DB constraint.
+
+Reference uses in the codebase: `Track::$accountId`, `Track::$startsAt`, `Track::$endsAt`, `Account::$worldId`, `Campaign::$worldId/$startDate/$endDate`.
+
+If you forget `#[NotNull]` on a property that should be NOT NULL, the schema-diff endpoint will surface it as a `MODIFY [allowsNull]` against the live database after the next regeneration.
+
 ### Other Critical Rules
 
 - Multiple traits MUST be comma-separated on a single line: `use TraitA, TraitB;`
@@ -134,7 +162,7 @@ use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Validation\Constraints\Choice;
-use DDD\Infrastructure\Validation\Constraints\Length;
+use Symfony\Component\Validator\Constraints\Length;
 use DDD\Domain\{DomainName}\Repo\DB\{Group}\DB{EntityName};
 
 /**
@@ -749,9 +777,10 @@ try {
 | Constraint | Purpose | Example |
 |-----------|---------|---------|
 | `#[Choice(choices: [...])]` | Enum-like values (supports callable for dynamic choices) | `#[Choice(choices: [self::STATUS_ACTIVE, self::STATUS_INACTIVE])]` |
-| `#[Length(max: 255)]` | String length limits | `#[Length(min: 3, max: 100)]` |
 | `#[NoValidation]` | Skip validation for this property | On computed/internal properties |
 | `#[UniqueProperty]` | Database uniqueness check | Email, username fields |
+
+> `#[Length]`, `#[NotNull]`, `#[NotBlank]`, `#[Email]`, `#[Positive]`, `#[Regex]` etc. come from `Symfony\Component\Validator\Constraints\`. They are recognised by the schema generator (Length drives `varCharLength`, NotNull drives `allowsNull`) and apply at validation time. See "Symfony constraints" section below.
 
 **DDD Common validators** (from `DDD\Domain\Common\Validators\`):
 

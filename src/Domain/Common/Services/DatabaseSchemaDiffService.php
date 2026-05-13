@@ -28,6 +28,7 @@ use DDD\Domain\Base\Repo\DB\Database\Diff\DBTriggerDiffs;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBVirtualColumnDiff;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBVirtualColumnDiffs;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
+use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Libs\Config;
 use Doctrine\DBAL\Exception;
 use ReflectionException;
@@ -115,7 +116,79 @@ class DatabaseSchemaDiffService
             $diffs->add($dropDiff);
         }
 
+        // Decorate each diff with the Production-Guard signal: live table stats + whether direct
+        // apply through the admin UI is blocked. The frontend uses these fields to render a
+        // warning banner and disable the Apply button — see DBTableDiff::$directApplyBlocked.
+        foreach ($diffs->getElements() as $diff) {
+            $this->populateProductionGuardSignal($diff);
+        }
+
         return $diffs;
+    }
+
+    /**
+     * Computes and writes the Production-Guard signal onto a single {@see DBTableDiff}:
+     *   • tableSizeMb + tableRowCount: live stats (null for CREATE_TABLE)
+     *   • directApplyBlocked: true when the table is large AND the diff contains COPY-forcing ops
+     *   • directApplyBlockReason: pre-formatted human-readable explanation
+     *   • copyForcingOperations: structured list of risky operations
+     *
+     * Pure decorator — never throws. The same logic short-circuits {@see self::assertSafeForDirectApply()}
+     * at apply time; this method is the read-side counterpart that lets the UI surface the block
+     * before the user even attempts to apply.
+     */
+    protected function populateProductionGuardSignal(DBTableDiff $diff): void
+    {
+        if ($diff->changeType === DBTableDiff::CHANGE_TYPE_CREATE_TABLE) {
+            return; // No live table yet → no size/rows, no guard applies.
+        }
+        $stats = $this->getTableSizeStats($diff->sqlTableName);
+        $diff->tableSizeMb = $stats['size_mb'] ?? null;
+        $diff->tableRowCount = $stats['row_count'] ?? null;
+
+        $isLarge = ($diff->tableSizeMb !== null && $diff->tableSizeMb > self::LARGE_TABLE_SIZE_THRESHOLD_MB)
+            || ($diff->tableRowCount !== null && $diff->tableRowCount > self::LARGE_TABLE_ROW_THRESHOLD);
+        if (!$isLarge) {
+            return;
+        }
+        $risky = $this->detectCopyForcingOperations($diff);
+        if (empty($risky)) {
+            return;
+        }
+        $diff->directApplyBlocked = true;
+        $diff->copyForcingOperations = $risky;
+        $diff->directApplyBlockReason = $this->buildProductionGuardMessage(
+            $diff->sqlTableName,
+            $diff->tableSizeMb,
+            $diff->tableRowCount,
+            $risky
+        );
+    }
+
+    /**
+     * Builds the human-readable refusal message for the Production-Guard. Shared between the
+     * compute-time decorator ({@see self::populateProductionGuardSignal()}) and the apply-time
+     * thrower ({@see self::assertSafeForDirectApply()}) so both paths surface the same text.
+     *
+     * @param string[] $riskyOperations
+     */
+    protected function buildProductionGuardMessage(
+        string $tableName,
+        ?int $sizeMb,
+        ?int $rowCount,
+        array $riskyOperations
+    ): string {
+        $sizeThreshold = self::LARGE_TABLE_SIZE_THRESHOLD_MB;
+        $rowThreshold = self::LARGE_TABLE_ROW_THRESHOLD;
+        $sizeShown = $sizeMb !== null ? "{$sizeMb} MB" : 'unknown MB';
+        $rowsShown = $rowCount !== null ? number_format($rowCount) . ' rows' : 'unknown rows';
+        $offending = "    • " . implode("\n    • ", $riskyOperations);
+        return "Direct apply on large table `$tableName` ($sizeShown, $rowsShown — exceeds thresholds {$sizeThreshold} MB / " . number_format($rowThreshold) . " rows) is BLOCKED.\n\n" .
+            "The diff contains operations that force ALGORITHM=COPY under Galera TOI, which would block the entire cluster for the duration of the table rewrite:\n" .
+            $offending . "\n\n" .
+            "Use pt-online-schema-change instead.\n\n" .
+            "Recommended: invoke the `rb-db-online-schema-update-specialist` skill via a Claude Code Agent. It bundles the pre-flight checks, triple-reasoning gate, dry-run, tmux run procedure and post-verification specific to this cluster.\n\n" .
+            "Programmatic-only override: call `applyDiff(\$diff, …, bypassProductionGuard: true)` from a CLI command. The admin HTTP API does NOT expose this flag by design.";
     }
 
     /**
@@ -126,8 +199,16 @@ class DatabaseSchemaDiffService
      * @throws Exception
      * @throws ReflectionException
      */
-    public function applyDiffs(DBTableDiffs $diffs, bool $disableForeignKeyChecks = true): DBTableDiffs
-    {
+    public function applyDiffs(
+        DBTableDiffs $diffs,
+        bool $disableForeignKeyChecks = true,
+        bool $bypassProductionGuard = false
+    ): DBTableDiffs {
+        if (!$bypassProductionGuard) {
+            foreach ($diffs->getElements() as $diff) {
+                $this->assertSafeForDirectApply($diff);
+            }
+        }
         $connection = EntityManagerFactory::getInstance()->getConnection();
         if ($disableForeignKeyChecks) {
             $connection->executeStatement('SET FOREIGN_KEY_CHECKS=0;');
@@ -151,11 +232,177 @@ class DatabaseSchemaDiffService
      * @throws Exception
      * @throws ReflectionException
      */
-    public function applyDiff(DBTableDiff $diff, bool $disableForeignKeyChecks = true): DBTableDiffs
-    {
+    public function applyDiff(
+        DBTableDiff $diff,
+        bool $disableForeignKeyChecks = true,
+        bool $bypassProductionGuard = false
+    ): DBTableDiffs {
         $set = new DBTableDiffs();
         $set->add($diff);
-        return $this->applyDiffs($set, $disableForeignKeyChecks);
+        return $this->applyDiffs($set, $disableForeignKeyChecks, $bypassProductionGuard);
+    }
+
+    /**
+     * Hard thresholds above which direct ALTER on Galera-replicated tables risks cluster-wide
+     * stalls. A table is "large" if EITHER it exceeds {@see self::LARGE_TABLE_SIZE_THRESHOLD_MB} MB
+     * total size OR it exceeds {@see self::LARGE_TABLE_ROW_THRESHOLD} rows. Both axes matter:
+     *
+     *   • Size triggers TOI block duration (COPY rewrites every page).
+     *   • Row count triggers triggers triggers — even narrow rows slow pt-osc-style chunking and
+     *     amplify Galera flow-control pressure.
+     *
+     * Below these thresholds the table can absorb a brief TOI block from direct ALTER; above, the
+     * operation must run through pt-online-schema-change instead.
+     */
+    public const int LARGE_TABLE_SIZE_THRESHOLD_MB = 100;
+
+    public const int LARGE_TABLE_ROW_THRESHOLD = 100_000;
+
+    /**
+     * Guard against accidentally applying COPY-forcing or otherwise expensive schema changes on
+     * large production tables through the admin UI. The check is purely a refusal: it throws and
+     * does not silently downgrade behaviour. Operators who genuinely need to apply such a diff must
+     * either:
+     *
+     *   1. Use pt-online-schema-change via the `rb-db-online-schema-update-specialist` skill
+     *      (Claude Code Agent: invoke that skill and follow the triple-reasoning + tmux run).
+     *   2. Pass `$bypassProductionGuard = true` explicitly when calling the service from a CLI
+     *      command or other trusted programmatic path — never wired through the admin HTTP API.
+     *
+     * The check covers operations the skill's cheatsheet flags as COPY-forcing on big tables:
+     *   • Column MODIFY with sqlType / length / vectorDimensions change
+     *   • Column MODIFY with requiresFullReset (VECTOR re-dimensioning)
+     *   • Virtual column MODIFY (always DROP+ADD, MySQL forbids ALTER on generation expressions)
+     *   • Index ADD where type is FULLTEXT
+     *
+     * A table is considered "large" when its byte size OR its row count exceeds the configured
+     * thresholds — see {@see self::isLargeTable()}. Below both thresholds the guard skips entirely
+     * because direct ALTER on such tables is fast enough that the brief TOI block is invisible.
+     *
+     * @throws BadRequestException
+     */
+    public function assertSafeForDirectApply(DBTableDiff $diff): void
+    {
+        // If computeDiffs() already decorated the diff with the guard signal, reuse it. Otherwise
+        // compute on-the-fly — callers like CLI commands sometimes build diffs by hand and skip
+        // computeDiffs().
+        if ($diff->directApplyBlocked && $diff->directApplyBlockReason !== null) {
+            throw new BadRequestException($diff->directApplyBlockReason);
+        }
+        $sizeMb = null;
+        $rowCount = null;
+        if (!$this->isLargeTable($diff->sqlTableName, $sizeMb, $rowCount)) {
+            return;
+        }
+        $riskyOperations = $this->detectCopyForcingOperations($diff);
+        if (empty($riskyOperations)) {
+            return;
+        }
+        throw new BadRequestException(
+            $this->buildProductionGuardMessage($diff->sqlTableName, $sizeMb, $rowCount, $riskyOperations)
+        );
+    }
+
+    /**
+     * True when the table exceeds either the size or the row-count threshold. Both metrics are
+     * looked up from `INFORMATION_SCHEMA.TABLES` in a single query. Out-parameters surface the
+     * exact figures so the caller can include them in error messages.
+     *
+     * `table_rows` from INFORMATION_SCHEMA is an *estimate* on InnoDB (statistics-derived, not a
+     * COUNT(*)). For guardrail purposes the estimate is more than accurate enough — we're checking
+     * orders of magnitude, not exact thresholds.
+     */
+    public function isLargeTable(string $sqlTableName, ?int &$sizeMb = null, ?int &$rowCount = null): bool
+    {
+        $stats = $this->getTableSizeStats($sqlTableName);
+        $sizeMb = $stats['size_mb'] ?? null;
+        $rowCount = $stats['row_count'] ?? null;
+        if ($sizeMb === null && $rowCount === null) {
+            return false;
+        }
+        return ($sizeMb !== null && $sizeMb > self::LARGE_TABLE_SIZE_THRESHOLD_MB)
+            || ($rowCount !== null && $rowCount > self::LARGE_TABLE_ROW_THRESHOLD);
+    }
+
+    /**
+     * Returns the live table's size in MB and estimated row count, or null when the table is
+     * missing or the query fails.
+     *
+     * @return array{size_mb: ?int, row_count: ?int}|null
+     */
+    public function getTableSizeStats(string $sqlTableName): ?array
+    {
+        $connection = EntityManagerFactory::getInstance()->getConnection();
+        try {
+            $row = $connection->fetchAssociative(
+                'SELECT ROUND((data_length + index_length) / 1024 / 1024) AS size_mb,
+                        table_rows AS row_count
+                 FROM INFORMATION_SCHEMA.TABLES
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table',
+                ['table' => $sqlTableName]
+            );
+        } catch (\Throwable) {
+            return null;
+        }
+        if (!$row) {
+            return null;
+        }
+        return [
+            'size_mb' => $row['size_mb'] !== null ? (int)$row['size_mb'] : null,
+            'row_count' => $row['row_count'] !== null ? (int)$row['row_count'] : null,
+        ];
+    }
+
+    /**
+     * Enumerates which child diffs in a table-level diff are COPY-forcing under MariaDB/InnoDB.
+     * Used by {@see self::assertSafeForDirectApply()} to build the error message. Returns an empty
+     * array when the diff is online-safe (i.e. all operations are INSTANT- or INPLACE-eligible).
+     *
+     * @return string[] Human-readable descriptions of the risky operations.
+     */
+    protected function detectCopyForcingOperations(DBTableDiff $diff): array
+    {
+        $risky = [];
+        // Column attribute changes that force or risk ALGORITHM=COPY:
+        //   - sqlType: type change (INT→BIGINT, ENUM→VARCHAR, etc.) → always COPY
+        //   - length: VARCHAR shrink/grow → typically COPY
+        //   - vectorDimensions: VECTOR re-dim → DROP+ADD+backfill
+        //   - allowsNull: nullability change on a large table can force a full row-scan ALTER under
+        //     Galera TOI. Relax (NOT NULL→NULL) is usually INPLACE-fast, tighten (NULL→NOT NULL)
+        //     needs to validate every row and frequently falls back to COPY. Treat both as risky
+        //     on large tables — the operator should explicitly choose pt-osc with the right hints.
+        $copyForcingColumnAttributes = ['sqlType', 'length', 'vectorDimensions', 'allowsNull'];
+
+        foreach ($diff->columnDiffs->getElements() as $cd) {
+            if ($cd->changeKind !== DBColumnDiff::CHANGE_KIND_MODIFY) {
+                continue;
+            }
+            if ($cd->requiresFullReset) {
+                $risky[] = "MODIFY column `$cd->columnName` requires full reset (VECTOR re-dimensioning forces DROP+ADD+backfill)";
+                continue;
+            }
+            $copyForcingChanges = array_intersect($cd->changedAttributes, $copyForcingColumnAttributes);
+            if (!empty($copyForcingChanges)) {
+                $reason = in_array('allowsNull', $copyForcingChanges, true) && count($copyForcingChanges) === 1
+                    ? 'nullability change can force full row-scan ALTER on large tables (use pt-osc with INPLACE/LOCK hint)'
+                    : 'column-type or size change forces ALGORITHM=COPY';
+                $risky[] = "MODIFY column `$cd->columnName` — changes " . implode(', ', $copyForcingChanges) . " ($reason)";
+            }
+        }
+        foreach ($diff->virtualColumnDiffs->getElements() as $vcd) {
+            if ($vcd->changeKind === DBVirtualColumnDiff::CHANGE_KIND_MODIFY) {
+                $risky[] = "MODIFY virtual column `$vcd->columnName` (generation-expression change requires DROP+ADD — MySQL forbids in-place ALTER)";
+            }
+        }
+        foreach ($diff->indexDiffs->getElements() as $id) {
+            if ($id->changeKind === DBIndexDiff::CHANGE_KIND_ADD
+                && $id->targetIndex !== null
+                && $id->targetIndex->indexType === DatabaseIndex::TYPE_FULLTEXT) {
+                $indexName = $id->targetIndex->indexName ?? '(unnamed)';
+                $risky[] = "ADD FULLTEXT INDEX `$indexName` (FULLTEXT index creation forces ALGORITHM=COPY)";
+            }
+        }
+        return $risky;
     }
 
     /**
@@ -867,6 +1114,10 @@ class DatabaseSchemaDiffService
      * `"NULL"` collapse to "no default" — MariaDB returns the string `"NULL"` for `DEFAULT NULL`
      * columns where MySQL 8+ returns actual null. Numeric defaults are also compared loosely
      * (`'0'` == `0`) because COLUMN_DEFAULT comes back as a string but DDD may render an int.
+     *
+     * Function-call defaults (`VEC_FromText(...)`, `UUID()`, …) are normalised via
+     * {@see self::normaliseDefaultExpression()} so that case and whitespace formatting differences
+     * between target-side rendering and MariaDB's stored form do not produce phantom MODIFY diffs.
      */
     protected function defaultValuesEqual(?string $target, ?string $current): bool
     {
@@ -880,7 +1131,67 @@ class DatabaseSchemaDiffService
         // Trim surrounding single quotes if MySQL added them (it does not for our shape, but be defensive).
         $t = trim($target, "'");
         $c = trim($current, "'");
-        return $t === $c;
+        if ($t === $c) {
+            return true;
+        }
+        // Function-call expressions (heuristic: contain a parenthesis). MariaDB stores these with
+        // its own formatting — lowercased function names, no whitespace around commas, no outer
+        // parens — while DDD renders the original source-style. Normalise both to a canonical form
+        // before comparing. Plain literals don't contain parens so they're unaffected.
+        if (str_contains($t, '(') || str_contains($c, '(')) {
+            return $this->normaliseDefaultExpression($t) === $this->normaliseDefaultExpression($c);
+        }
+        return false;
+    }
+
+    /**
+     * Canonicalises a SQL expression default so target-side rendering and MariaDB's stored form
+     * compare equal. Same idea as {@see DatabaseSchemaIntrospectionService::normaliseGenerationExpression()}:
+     * lowercase, strip backticks, strip one outer pair of parens, collapse whitespace, remove
+     * whitespace adjacent to `(` / `)` / `,`. Iteratively extendable as new patterns surface.
+     *
+     * Example: `(VEC_FromText(CONCAT('[', REPEAT('0,', 1536-1), '0]')))`
+     *      and `VEC_FromText(concat('[',repeat('0,',1536 - 1),'0]'))`
+     * both fold to: `vec_fromtext(concat('[',repeat('0,',1536-1),'0]'))`.
+     */
+    protected function normaliseDefaultExpression(string $expression): string
+    {
+        $value = strtolower($expression);
+        $value = str_replace('`', '', $value);
+        $value = preg_replace('/\s+/', ' ', $value) ?? $value;
+        $value = trim($value);
+        // Strip exactly one outer paren pair if it wraps the entire expression.
+        if (strlen($value) >= 2 && $value[0] === '(' && $value[-1] === ')'
+            && $this->parensBalanceWithoutOuter($value)) {
+            $value = substr($value, 1, -1);
+            $value = trim($value);
+        }
+        // Strip whitespace around brackets, commas, and arithmetic/comparison operators so
+        // formatting choices like `1536 - 1` vs `1536-1` don't produce phantom diffs.
+        $value = preg_replace('/\s*([(),+\-*\/=<>!])\s*/', '$1', $value) ?? $value;
+        return $value;
+    }
+
+    /**
+     * Mirror of {@see DatabaseSchemaIntrospectionService::parensBalanceWithoutOuter()} — used to
+     * decide whether the outer parens wrap the entire expression and can be safely stripped.
+     */
+    protected function parensBalanceWithoutOuter(string $expr): bool
+    {
+        $depth = 0;
+        $len = strlen($expr);
+        for ($i = 0; $i < $len; $i++) {
+            $ch = $expr[$i];
+            if ($ch === '(') {
+                $depth++;
+            } elseif ($ch === ')') {
+                $depth--;
+                if ($depth === 0 && $i < $len - 1) {
+                    return false;
+                }
+            }
+        }
+        return $depth === 0;
     }
 
     // ----- virtual columns ----------------------------------------------------------------------
@@ -1148,13 +1459,37 @@ class DatabaseSchemaDiffService
         DBCanonicalForeignKey $current
     ): array {
         $changed = [];
-        if ($target->onUpdateAction !== $current->onUpdateAction) {
+        if ($this->normaliseReferentialAction($target->onUpdateAction)
+            !== $this->normaliseReferentialAction($current->onUpdateAction)) {
             $changed[] = 'onUpdateAction';
         }
-        if ($target->onDeleteAction !== $current->onDeleteAction) {
+        if ($this->normaliseReferentialAction($target->onDeleteAction)
+            !== $this->normaliseReferentialAction($current->onDeleteAction)) {
             $changed[] = 'onDeleteAction';
         }
         return $changed;
+    }
+
+    /**
+     * Normalises MySQL/MariaDB referential actions for equality comparison.
+     *
+     * `NO ACTION` and `RESTRICT` are functional synonyms in MySQL/MariaDB — Deferred constraints
+     * aren't supported, so `NO ACTION` acts as `RESTRICT` (checked at statement execution time).
+     * A column declared `ON UPDATE NO ACTION` and one declared `ON UPDATE RESTRICT` behave
+     * identically; treating them as different strings creates phantom MODIFY diffs whenever an
+     * entity declares one and the DB stores the other (typical drift after pt-online-schema-change,
+     * which preserves the DB's chosen variant verbatim regardless of entity intent).
+     *
+     * @see https://dev.mysql.com/doc/refman/8.0/en/create-table-foreign-keys.html
+     *      "For MySQL, NO ACTION is equivalent to RESTRICT … the statement is rejected."
+     */
+    protected function normaliseReferentialAction(string $action): string
+    {
+        $upper = strtoupper(trim($action));
+        return match ($upper) {
+            'NO ACTION' => 'RESTRICT',
+            default     => $upper,
+        };
     }
 
     // ----- triggers -----------------------------------------------------------------------------

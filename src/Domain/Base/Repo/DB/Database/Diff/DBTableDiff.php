@@ -81,6 +81,40 @@ class DBTableDiff extends ValueObject
     public string $sql = '';
 
     /**
+     * @var int|null Live table size in MB (data + index). Populated by the diff service from
+     * INFORMATION_SCHEMA.TABLES. Null for CREATE_TABLE (table doesn't exist yet).
+     */
+    public ?int $tableSizeMb = null;
+
+    /**
+     * @var int|null Estimated live row count. From INFORMATION_SCHEMA.TABLES — an InnoDB estimate,
+     * not COUNT(*). Null for CREATE_TABLE.
+     */
+    public ?int $tableRowCount = null;
+
+    /**
+     * @var bool When true, the diff must NOT be applied directly through the admin UI. The diff
+     * contains COPY-forcing operations on a table large enough to risk Galera-cluster TOI stalls.
+     * Frontends should disable the Apply button and surface {@see self::$directApplyBlockReason}.
+     * Programmatic callers can still bypass by passing `bypassProductionGuard: true` to
+     * {@see \DDD\Domain\Common\Services\DatabaseSchemaDiffService::applyDiff()}.
+     */
+    public bool $directApplyBlocked = false;
+
+    /**
+     * @var string|null Human-readable explanation of why direct apply is blocked, including the
+     * specific risky operations, the table size/row stats, and the recommended path (pt-osc via
+     * rb-db-online-schema-update-specialist skill). Null when not blocked.
+     */
+    public ?string $directApplyBlockReason = null;
+
+    /**
+     * @var string[] Per-operation descriptions of why direct apply is blocked. Useful for
+     * structured rendering (one bullet per risk). Empty when not blocked.
+     */
+    public array $copyForcingOperations = [];
+
+    /**
      * Initialises the five child diff sets so consumers can always append without a null check
      * (e.g. `$tableDiff->columnDiffs->add(...)` directly after `new DBTableDiff()`).
      */

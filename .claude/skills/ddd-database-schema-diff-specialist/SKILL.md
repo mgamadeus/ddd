@@ -166,8 +166,8 @@ Also applied to **fresh ADD** of VECTOR columns so search code never encounters 
 ## Apply Path
 
 ```php
-DatabaseSchemaDiffService::applyDiff(DBTableDiff $diff, bool $disableForeignKeyChecks = true): DBTableDiffs
-DatabaseSchemaDiffService::applyDiffs(DBTableDiffs $diffs, bool $disableForeignKeyChecks = true): DBTableDiffs
+DatabaseSchemaDiffService::applyDiff(DBTableDiff $diff, bool $disableForeignKeyChecks = true, bool $bypassProductionGuard = false): DBTableDiffs
+DatabaseSchemaDiffService::applyDiffs(DBTableDiffs $diffs, bool $disableForeignKeyChecks = true, bool $bypassProductionGuard = false): DBTableDiffs
 ```
 
 Both return a **freshly recomputed** `DBTableDiffs` after applying so the frontend can replace its state with the response without a follow-up GET.
@@ -176,6 +176,106 @@ Inside `executeTableDiff`:
 - Wraps with `SET FOREIGN_KEY_CHECKS=0/1` when `$disableForeignKeyChecks`.
 - Re-splits every statement through `splitMultiStatementSql` defensively.
 - Each statement goes through `executeStatement` independently. DDL is implicit-commit on MySQL — failure mid-list leaves a mixed state. Re-introspection on return surfaces what's still pending.
+
+### Production Guard (large-table refusal)
+
+`applyDiffs()` calls `assertSafeForDirectApply()` for every diff before executing. The guard throws `BadRequestException` when:
+
+1. The live table exceeds **either** `LARGE_TABLE_SIZE_THRESHOLD_MB` (default 100 MB, data + index from `INFORMATION_SCHEMA.TABLES`) **or** `LARGE_TABLE_ROW_THRESHOLD` (default 100,000 rows, InnoDB estimate from `INFORMATION_SCHEMA.TABLES.TABLE_ROWS`), **AND**
+2. The diff contains at least one COPY-forcing operation, detected by `detectCopyForcingOperations(DBTableDiff): string[]`:
+   - Column MODIFY with `sqlType` / `length` / `vectorDimensions` in `changedAttributes`
+   - Column MODIFY with `requiresFullReset = true` (VECTOR re-dimensioning)
+   - Virtual column MODIFY (always DROP+ADD — MySQL forbids in-place ALTER on generation expressions)
+   - Index ADD with `indexType === DatabaseIndex::TYPE_FULLTEXT`
+
+Bypass is **only** via the `$bypassProductionGuard = true` parameter on `applyDiff()`/`applyDiffs()`. By design the parameter is **not** exposed through any HTTP DTO — the admin UI cannot bypass. CLI commands and Symfony Messenger handlers (e.g. an Agent running pt-osc orchestration) can pass `true`.
+
+### Production-Guard Signal on `DBTableDiff`
+
+`computeDiffs()` decorates every `DBTableDiff` with five additional fields so the frontend can render the block proactively (disabled Apply button + warning banner) rather than only learning about it on click:
+
+| Field | Type | Purpose |
+|---|---|---|
+| `tableSizeMb` | `?int` | Live table size MB (data + index). `null` for `CREATE_TABLE`. |
+| `tableRowCount` | `?int` | InnoDB-estimated row count. `null` for `CREATE_TABLE`. |
+| `directApplyBlocked` | `bool` | When `true`, the UI must disable Apply and surface the reason. |
+| `directApplyBlockReason` | `?string` | Pre-formatted message (multi-paragraph) with stats, risky operations, and the pt-osc redirect. |
+| `copyForcingOperations` | `string[]` | Structured list of risky operations (one item per blocking operation), suitable for bullet-list rendering. |
+
+The decorator and the throw share the same `buildProductionGuardMessage()` helper — both paths surface identical wording.
+
+Threshold rationale: matches the `rb-db-online-schema-update-specialist` skill's decision tree. Tables below both thresholds absorb a brief TOI block from direct ALTER; above either threshold, COPY-forcing operations must go through pt-online-schema-change.
+
+### UX requirements for blocked diffs
+
+The block must be **proactively visible** before the operator clicks anything — not surfaced only as an error on submit. Three principles:
+
+**1. Never render a disabled-looking Apply button as the "blocked" affordance.** A grey or yellow "Blocked" button that still looks like a button is the worst-of-both-worlds UX: it screams "click me" while doing nothing. Either:
+
+- **Remove** the Apply button entirely when blocked (preferred). A subsequent badge + warning banner do the explaining.
+- **Hide** it via `{!blocked && <button …>Apply</button>}`. CSS-disabled buttons are not enough — the cognitive cost of "why is this orange-and-disabled" is higher than the cost of one missing button.
+
+```tsx
+// GOOD — button is absent when blocked, banner explains
+{!blocked && (
+  <button onClick={handleApply} disabled={isApplying} className={button.button.primary}>
+    {isApplying ? "Applying…" : "Apply"}
+  </button>
+)}
+
+// BAD — button still rendered but disabled, looks broken
+<button
+  disabled={blocked}
+  className={button.button.primary}
+>
+  {blocked ? "Blocked" : "Apply"}
+</button>
+```
+
+**2. Scan-block the card at three levels of detail** so the operator notices the block from any zoom level:
+
+- **Card border** — recolour to subtle red (`border-red-300`) when `directApplyBlocked === true`. Visible while skimming the list.
+- **Header badge** — add an `"Apply blocked"` chip next to the existing changeType / severity / size chips. Inline with where the operator already looks for status.
+- **Inline banner** — full multi-line warning below the card header, in red-tinted card style: bold heading, prose explanation of why, bullet-list of `copyForcingOperations`, and a single line on how to proceed (`rb-db-online-schema-update-specialist` skill).
+
+**3. Always render the size/rows stats** regardless of block status — both as a compact badge in the header row (`"374 MB · 290,067 rows"`). The operator should be able to look at any diff card and instantly know whether they're dealing with a small table or a giant one.
+
+```tsx
+{(tableSizeMb != null || tableRowCount != null) && (
+  <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700">
+    {tableSizeMb != null && `${tableSizeMb} MB`}
+    {tableSizeMb != null && tableRowCount != null && " · "}
+    {tableRowCount != null && `${formatNumber(tableRowCount)} rows`}
+  </span>
+)}
+```
+
+**4. The block-reason banner must state THIS TABLE's specific stats vs the thresholds.** Vague "table is too large" is not enough — the operator needs to see the actual numbers to internalise why this specific table was blocked and why a similar diff on another table is fine. Format:
+
+> This table is too large for direct ALTER under Galera TOI: **374 MB / 290,067 rows** (thresholds: **100 MB / 100,000 rows**). The diff contains operations that force `ALGORITHM=COPY`…
+
+The thresholds are project-wide constants (`LARGE_TABLE_SIZE_THRESHOLD_MB`, `LARGE_TABLE_ROW_THRESHOLD`); mirror them on the frontend as plain constants so the displayed thresholds stay in sync. If the framework ever changes them, both sides update at once.
+
+```tsx
+// Mirrors DatabaseSchemaDiffService constants. Used to show thresholds in the banner.
+const LARGE_TABLE_SIZE_THRESHOLD_MB = 100
+const LARGE_TABLE_ROW_THRESHOLD = 100_000
+
+// In the banner:
+<p>
+  This table is too large for direct ALTER:
+  <strong>{tableSizeMb} MB / {formatNumber(tableRowCount)} rows</strong>
+  (thresholds: <strong>{LARGE_TABLE_SIZE_THRESHOLD_MB} MB / {formatNumber(LARGE_TABLE_ROW_THRESHOLD)} rows</strong>).
+</p>
+```
+
+**Anti-patterns to avoid:**
+
+- ❌ "Apply" button that opens a modal explaining it's blocked. The operator has already clicked; the click should never have been offered.
+- ❌ Tooltip-only explanations (`title="…"`). Tooltips are invisible on touch devices and to keyboard users.
+- ❌ Generic "Cannot apply" toast on submit. Vague, requires the operator to retry to see it, and doesn't tell them what to do instead.
+- ❌ Showing the `directApplyBlockReason` raw in a `<pre>`. The string is formatted as plain prose for log/error output; in the UI, parse out the bullet list (`copyForcingOperations`) and render structurally.
+- ❌ Mentioning `bypassProductionGuard` in the UI text. That parameter is deliberately not exposed via HTTP — telling the user about it just invites them to ask for the override.
 
 ## DBTableDiff Wire Shape
 
