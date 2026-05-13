@@ -55,9 +55,19 @@ class DatabaseForeignKey extends ValueObject
     /** @var bool If false, foreign key is not used */
     public bool $applyForeignKeyConstraint = true;
 
-    public function getSql(string $tableName): string
+    /**
+     * @param string $tableName Owning table name (used to synthesize the default constraint name).
+     * @param string|null $constraintNameOverride When provided, used verbatim as the constraint
+     *     name instead of the default `fk_{table}_{column}` pattern. Used by the schema-diff
+     *     service on MODIFY to preserve the live constraint name (including pt-osc's cosmetic
+     *     `_` prefix), avoiding a rename ping-pong every diff cycle.
+     */
+    public function getSql(string $tableName, ?string $constraintNameOverride = null): string
     {
-        return "ADD CONSTRAINT `fk_{$tableName}_$this->internalIdColumn` FOREIGN KEY IF NOT EXISTS (`$this->internalIdColumn`) REFERENCES `$this->foreignTable` (`$this->foreignIdColumn`) ON UPDATE $this->onUpdateAction ON DELETE $this->onDeleteAction";
+        $constraintName = $constraintNameOverride !== null && $constraintNameOverride !== ''
+            ? $constraintNameOverride
+            : "fk_{$tableName}_{$this->internalIdColumn}";
+        return "ADD CONSTRAINT `{$constraintName}` FOREIGN KEY IF NOT EXISTS (`$this->internalIdColumn`) REFERENCES `$this->foreignTable` (`$this->foreignIdColumn`) ON UPDATE $this->onUpdateAction ON DELETE $this->onDeleteAction";
     }
 
     public function uniqueKey(): string

@@ -648,11 +648,18 @@ class DatabaseSchemaDiffService
         }
 
         // Phase 10: ADD FKs (ADD + add-half of MODIFY).
+        // On MODIFY, reuse the live constraint name (captured as currentConstraintName) so the
+        // re-created FK keeps the same identifier as the dropped one — pt-osc's cosmetic `_`
+        // prefix is preserved, breaking the rename ping-pong that would otherwise re-introduce
+        // the diff on every cycle. Pure ADD has no current, so the default synthesised name applies.
         foreach ($diff->foreignKeyDiffs->getElements() as $fkDiff) {
             $needsAdd = $fkDiff->changeKind === DBForeignKeyDiff::CHANGE_KIND_ADD
                 || $fkDiff->changeKind === DBForeignKeyDiff::CHANGE_KIND_MODIFY;
             if ($needsAdd && $fkDiff->targetForeignKey !== null) {
-                $statements[] = $this->renderForeignKeyAddSql($tableName, $fkDiff->targetForeignKey);
+                $nameOverride = $fkDiff->changeKind === DBForeignKeyDiff::CHANGE_KIND_MODIFY
+                    ? (string)($fkDiff->currentConstraintName ?? '')
+                    : null;
+                $statements[] = $this->renderForeignKeyAddSql($tableName, $fkDiff->targetForeignKey, $nameOverride !== '' ? $nameOverride : null);
             }
         }
 
@@ -731,9 +738,16 @@ class DatabaseSchemaDiffService
         return sprintf('ALTER TABLE `%s` DROP INDEX `%s`', $tableName, $indexName);
     }
 
-    protected function renderForeignKeyAddSql(string $tableName, DatabaseForeignKey $fk): string
+    /**
+     * @param string $tableName
+     * @param DatabaseForeignKey $fk
+     * @param string|null $constraintNameOverride When set, used in place of the default
+     *     `fk_{table}_{column}` name. The diff service forwards the live constraint name on
+     *     MODIFY so pt-osc's cosmetic `_` prefix is preserved across diff cycles.
+     */
+    protected function renderForeignKeyAddSql(string $tableName, DatabaseForeignKey $fk, ?string $constraintNameOverride = null): string
     {
-        return sprintf('ALTER TABLE `%s` %s', $tableName, $fk->getSql($tableName));
+        return sprintf('ALTER TABLE `%s` %s', $tableName, $fk->getSql($tableName, $constraintNameOverride));
     }
 
     protected function renderForeignKeyDropSql(string $tableName, string $constraintName): string
@@ -1426,8 +1440,14 @@ class DatabaseSchemaDiffService
             $diff->changedAttributes = $changedAttributes;
             // MySQL needs drop + add for any FK action change. Halves are split into phases 1 + 10
             // by the executor; the field below is for frontend display only.
-            $drop = $this->renderForeignKeyDropSql($tableName, (string)$currentByMatchKey[$key]->constraintName);
-            $add = $fk !== null ? $this->renderForeignKeyAddSql($tableName, $fk) : '';
+            //
+            // Preserve the live constraint name across MODIFY. Without the override, the ADD half
+            // would synthesize the default `fk_{table}_{column}` name, which renames pt-osc-prefixed
+            // constraints (`_fk_*`) on every diff cycle — a cosmetic ping-pong that triggers a
+            // fresh COPY-forcing diff after every pt-osc run.
+            $currentName = (string)$currentByMatchKey[$key]->constraintName;
+            $drop = $this->renderForeignKeyDropSql($tableName, $currentName);
+            $add = $fk !== null ? $this->renderForeignKeyAddSql($tableName, $fk, $currentName) : '';
             $diff->sql = $add !== '' ? $drop . ";\n" . $add : $drop;
             $tmp = $diff;
             $diffs->add($tmp);

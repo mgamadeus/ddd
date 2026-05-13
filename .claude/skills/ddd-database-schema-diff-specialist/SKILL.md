@@ -633,6 +633,47 @@ curl -sS -X POST "https://<env>/api/admin/common/databaseModels/applyDiff" \
 - **`CURRENT_TIMESTAMP` defaults aren't expressible on the target side.** Live wins by design (`defaultIsExpression` short-circuits the compare). Removing such a default requires a manual `ALTER`.
 - **Performance.** ~5N `INFORMATION_SCHEMA` queries for N tables. Acceptable for admin endpoints; batchable down to ~5 queries total if it ever matters.
 
+## Coexistence With `pt-online-schema-change` FK Renaming
+
+`pt-online-schema-change` renames every outgoing FK constraint on a table when it builds the shadow, because constraint names must be globally unique within a schema and source + shadow can't share names. The exact transformation (perl source lines 11253-11259) is a **3-state rotation**, not a one-way prefix-add:
+
+```perl
+'CONSTRAINT `__' => 'CONSTRAINT `',     # __X → X    (strip both)
+'CONSTRAINT `_'  => 'CONSTRAINT `__',   # _X  → __X  (add one)
+'CONSTRAINT `'   => 'CONSTRAINT `_'     # X   → _X   (add one)
+```
+
+Visible per-FK trajectory across consecutive pt-osc runs on the same table:
+
+```
+fk_X  →  _fk_X  →  __fk_X  →  fk_X  →  _fk_X  →  __fk_X  →  …
+```
+
+**Maximum prefix length is two underscores** — pt-osc self-corrects every third run.
+
+### How the diff system tolerates it
+
+Two pieces work together:
+
+1. **`buildForeignKeyMatchKey`** keys FKs by `(internalIdColumn, foreignTable, foreignIdColumn)` — name-agnostic. A pt-osc-renamed `_fk_X` (live) and the entity-derived `fk_X` (target) produce the same matchKey, so they match as one FK. Only `compareCanonicalForeignKeys` (rules only) decides whether a MODIFY is emitted.
+2. **Patch 11 (name preservation on MODIFY).** When a real rule change *does* trigger a MODIFY, both the DROP half and the ADD half use the live constraint name (`currentConstraintName`), not the entity-derived default. So `_fk_Tracks_accountId` stays `_fk_Tracks_accountId` through a rule change — pt-osc rotates the prefix only during its own copy phase, never during a diff-driven MODIFY.
+
+Net effect: the rotation is **invisible to the diff system**. The diff is empty whenever rules match, regardless of how many underscores the live name carries. There's no ping-pong rename diff.
+
+### Operator guidance for consuming projects
+
+- **Do not fight the rotation.** No `RENAME CONSTRAINT` post-step, no fork of pt-osc. Cosmetic only, self-corrects within 3 cycles.
+- **Diffs you see in the UI may still emit a DROP+ADD pair** when the rule actually changes (e.g. `SET NULL → RESTRICT`). MySQL has no in-place "ALTER CONSTRAINT" for FKs; DROP+ADD is mandatory. Patch 11 ensures the name stays stable through that pair.
+- **Outgoing FKs you didn't touch in a pt-osc `--alter` will still rotate** because pt-osc renames them during the source→shadow copy whether or not you touch them. This is expected and harmless.
+
+### When to act
+
+Patch the rotation only if a tooling pipeline outside this framework depends on stable FK names (rare). Two viable workarounds documented in consuming-project skills:
+- **Option A:** patch `/usr/bin/pt-online-schema-change` to a 2-state toggle (`X ↔ _X`); pin with `apt-mark hold percona-toolkit`.
+- **Option B:** post-pt-osc `RENAME CONSTRAINT` normalization step in the runbook.
+
+Both add operational discipline for purely cosmetic gain; the recommendation for most projects is **do nothing**.
+
 ## Adding a New Diff Aspect
 
 Generic recipe — used historically when adding triggers, virtual columns, and the canonical types themselves.
