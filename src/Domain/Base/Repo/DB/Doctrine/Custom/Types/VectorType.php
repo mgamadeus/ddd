@@ -48,10 +48,16 @@ class VectorType extends Type
         return [self::NAME];
     }
 
-    public function convertToPHPValue(mixed $binaryValue, AbstractPlatform $platform): array
+    public function convertToPHPValue(mixed $binaryValue, AbstractPlatform $platform): ?array
     {
         // Reading VECTOR columns is typically not needed for KNN queries.
         // If MariaDB returns a textual representation like "[1,2,3]" this will parse it.
+        if ($binaryValue === null) {
+            return null;
+        }
+        if (!is_string($binaryValue)) {
+            return [];
+        }
         $value = unpack('g*', $binaryValue);
         if (is_string($value)) {
             $trimmed = trim($value);
