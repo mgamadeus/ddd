@@ -13,7 +13,7 @@ use DDD\Domain\Base\Entities\ValueObject;
  * edge. Callers may either omit the duplicate closing vertex or include it; both are accepted.
  * Inner rings model holes punched out of the outer ring.
  *
- * DB-mapped via {@see \DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\CartesianPolygonType} to the
+ * DB-mapped via {@see \DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\PolygonType} to the
  * native `POLYGON` column type (SRID 0). Supports `SPATIAL` indexing — `ST_Contains` /
  * `ST_Intersects` / `ST_Within` all work against the column directly.
  *
@@ -88,5 +88,42 @@ class Polygon extends ValueObject
     public function isEmpty(): bool
     {
         return $this->outerRing === [];
+    }
+
+    /**
+     * Returns the polygon as WKT `POLYGON((outerRing), (innerRing1), ...)`. Each ring is
+     * explicitly closed — if the caller omitted the duplicate closing vertex, this method
+     * appends it. Returns an empty string when the outer ring has fewer than three vertices
+     * (MySQL rejects degenerate polygons).
+     */
+    public function __toString(): string
+    {
+        if (count($this->outerRing) < 3) {
+            return '';
+        }
+        $rings = [self::ringToWkt($this->outerRing)];
+        foreach ($this->innerRings as $ring) {
+            if (count($ring) >= 3) {
+                $rings[] = self::ringToWkt($ring);
+            }
+        }
+        return 'POLYGON(' . implode(', ', $rings) . ')';
+    }
+
+    /**
+     * @param Point2D[] $ring
+     */
+    protected static function ringToWkt(array $ring): string
+    {
+        $vertices = [];
+        foreach ($ring as $point) {
+            $vertices[] = sprintf('%F %F', $point->x, $point->y);
+        }
+        $first = $ring[0];
+        $last = $ring[count($ring) - 1];
+        if ($first->x !== $last->x || $first->y !== $last->y) {
+            $vertices[] = sprintf('%F %F', $first->x, $first->y);
+        }
+        return '(' . implode(', ', $vertices) . ')';
     }
 }

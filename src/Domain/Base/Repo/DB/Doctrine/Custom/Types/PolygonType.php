@@ -22,7 +22,7 @@ use Doctrine\DBAL\Types\Type;
  * A polygon with fewer than three distinct outer-ring vertices serialises to `null` — MySQL
  * rejects degenerate polygons.
  */
-class CartesianPolygonType extends Type
+class PolygonType extends Type
 {
     public const string NAME = 'cartesian_polygon';
 

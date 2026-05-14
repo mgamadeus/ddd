@@ -5,22 +5,22 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types;
 
 use Brick\Geo\IO\WKBReader;
-use Brick\Geo\LineString;
+use Brick\Geo\Point;
 use DDD\Domain\Common\Entities\Geometry\Cartesian\Point2D;
-use DDD\Domain\Common\Entities\Geometry\Cartesian\Polyline;
 use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\DBAL\Types\Type;
 
 /**
- * Doctrine type mapping {@see Polyline} ↔ MySQL/MariaDB `LINESTRING` column (SRID 0 cartesian).
+ * Doctrine type mapping {@see Point2D} ↔ MySQL/MariaDB `POINT` column (SRID 0 cartesian).
  *
- * Pattern mirrors {@see CartesianPointType}: WKT in, WKB out, brick/geo handles the binary read.
- * A {@see Polyline} with fewer than two vertices serialises to `null` — MySQL rejects LINESTRINGs
- * with fewer than two points.
+ * Parameter value path: serialise as `'POINT(x y)'` WKT, wrap with `ST_GeomFromText(?, 0)` so the
+ * database parses it into the native binary form. Read path: strip the 4-byte SRID prefix
+ * MySQL prepends to the internal binary format, then parse the WKB via brick/geo's reader and
+ * unwrap into a {@see Point2D} VO.
  */
-class CartesianLineStringType extends Type
+class PointType extends Type
 {
-    public const string NAME = 'cartesian_linestring';
+    public const string NAME = 'cartesian_point';
 
     public function getName(): string
     {
@@ -29,45 +29,41 @@ class CartesianLineStringType extends Type
 
     public function getMappedDatabaseTypes(AbstractPlatform $platform): array
     {
-        return ['linestring'];
+        return ['point'];
     }
 
     public function getSQLDeclaration(array $column, AbstractPlatform $platform): string
     {
-        return 'LINESTRING';
+        return 'POINT';
     }
 
-    public function convertToPHPValue(mixed $value, AbstractPlatform $platform): ?Polyline
+    public function convertToPHPValue(mixed $value, AbstractPlatform $platform): ?Point2D
     {
         if ($value === null || !is_string($value) || $value === '') {
             return null;
         }
+        // MySQL's internal spatial format prepends a 4-byte little-endian SRID before the WKB.
         $wkb = strlen($value) > 4 ? substr($value, 4) : $value;
         try {
             $geometry = (new WKBReader())->read($wkb);
         } catch (\Throwable) {
             return null;
         }
-        if (!$geometry instanceof LineString) {
+        if (!$geometry instanceof Point) {
             return null;
         }
-        $points = [];
-        foreach ($geometry->points() as $point) {
-            $points[] = new Point2D((float)$point->x(), (float)$point->y());
-        }
-        return new Polyline($points);
+        return new Point2D((float)$geometry->x(), (float)$geometry->y());
     }
 
     public function convertToDatabaseValue(mixed $value, AbstractPlatform $platform): ?string
     {
-        if ($value === null || !$value instanceof Polyline || count($value->points) < 2) {
+        if ($value === null) {
             return null;
         }
-        $vertices = [];
-        foreach ($value->points as $point) {
-            $vertices[] = sprintf('%F %F', $point->x, $point->y);
+        if (!$value instanceof Point2D) {
+            return null;
         }
-        return 'LINESTRING(' . implode(', ', $vertices) . ')';
+        return sprintf('POINT(%F %F)', $value->x, $value->y);
     }
 
     public function canRequireSQLConversion(): bool

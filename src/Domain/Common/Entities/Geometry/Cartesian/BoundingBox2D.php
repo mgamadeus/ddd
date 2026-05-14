@@ -12,7 +12,7 @@ use DDD\Domain\Base\Entities\ValueObject;
  * Conventionally `(x, y)` is the minimum corner and dimensions extend toward the positive axes,
  * but the API does not enforce a coordinate orientation — interpret consistently per project.
  *
- * DB-mapped via {@see \DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\CartesianBoundingBoxType}
+ * DB-mapped via {@see \DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\BoundingBoxType}
  * to the native `POLYGON` column type as a closed four-vertex rectangle. This trades ~30 bytes
  * vs four floats for a fully spatial-indexable column — `ST_Intersects(bb, otherShape)` works
  * directly against the column. Use four columns if you need raw float speed and never spatial-query.
@@ -56,6 +56,25 @@ class BoundingBox2D extends ValueObject
     public function isEmpty(): bool
     {
         return $this->width === 0.0 || $this->height === 0.0;
+    }
+
+    /**
+     * Returns the box as WKT `POLYGON((x y, mx y, mx my, x my, x y))` — closed clockwise
+     * rectangle. The Doctrine upsert path feeds this directly into `ST_GeomFromText(?)`.
+     * An empty box (zero width or height) returns an empty string — MySQL rejects degenerate
+     * polygons.
+     */
+    public function __toString(): string
+    {
+        if ($this->isEmpty()) {
+            return '';
+        }
+        $mx = $this->maxX();
+        $my = $this->maxY();
+        return sprintf(
+            'POLYGON((%F %F, %F %F, %F %F, %F %F, %F %F))',
+            $this->x, $this->y, $mx, $this->y, $mx, $my, $this->x, $my, $this->x, $this->y
+        );
     }
 
     /**

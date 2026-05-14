@@ -12,7 +12,7 @@ use DDD\Domain\Base\Entities\ValueObject;
  * Distinct from {@see \DDD\Domain\Common\Entities\GeoEntities\GeoPoint}, which carries lat/lng on
  * the WGS84 ellipsoid (SRID 4326). Cartesian uses SRID 0 — no Earth projection, no spheroid math.
  *
- * DB-mapped via {@see \DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\CartesianPointType} to the
+ * DB-mapped via {@see \DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\PointType} to the
  * native `POINT` column type (SRID 0). Supports `SPATIAL` indexing.
  */
 class Point2D extends ValueObject
@@ -33,17 +33,39 @@ class Point2D extends ValueObject
         return self::uniqueKeyStatic($this->x . ',' . $this->y);
     }
 
+    /**
+     * Returns the point as a WKT `POINT(x y)` string. The Doctrine upsert path relies on this
+     * representation to feed `ST_GeomFromText(?)` — same convention as brick/geo's `Point::__toString`.
+     * For CSV-style stringification use {@see self::toCsv()}.
+     */
     public function __toString(): string
+    {
+        return sprintf('POINT(%F %F)', $this->x, $this->y);
+    }
+
+    /**
+     * `"x,y"` CSV representation. Useful for URL params, debug output, dump logs.
+     */
+    public function toCsv(): string
     {
         return $this->x . ',' . $this->y;
     }
 
     /**
-     * Parses "x,y" string back into a Point2D. Returns null on malformed input.
+     * Parses either `"POINT(x y)"` WKT or `"x,y"` CSV. Returns null on malformed input.
      */
     public static function fromString(string $value): ?Point2D
     {
-        $parts = explode(',', $value);
+        $trimmed = trim($value);
+        if (stripos($trimmed, 'POINT(') === 0 && str_ends_with($trimmed, ')')) {
+            $inner = trim(substr($trimmed, 6, -1));
+            $parts = preg_split('/\s+/', $inner) ?: [];
+            if (count($parts) === 2 && is_numeric($parts[0]) && is_numeric($parts[1])) {
+                return new self((float)$parts[0], (float)$parts[1]);
+            }
+            return null;
+        }
+        $parts = explode(',', $trimmed);
         if (count($parts) !== 2 || !is_numeric($parts[0]) || !is_numeric($parts[1])) {
             return null;
         }

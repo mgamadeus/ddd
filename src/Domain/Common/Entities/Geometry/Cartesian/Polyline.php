@@ -10,7 +10,7 @@ use DDD\Domain\Base\Entities\ValueObject;
  * Open 2D cartesian polyline: an ordered list of {@see Point2D} vertices. First and last vertex
  * are NOT conceptually connected — for closed shapes use {@see Polygon}.
  *
- * DB-mapped via {@see \DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\CartesianLineStringType} to
+ * DB-mapped via {@see \DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\LineStringType} to
  * the native `LINESTRING` column type (SRID 0). Supports `SPATIAL` indexing.
  *
  * Typical uses: free-form drawing strokes, signature paths, route segments in pixel space, fences
@@ -52,5 +52,22 @@ class Polyline extends ValueObject
     public function isEmpty(): bool
     {
         return $this->points === [];
+    }
+
+    /**
+     * Returns the polyline as WKT `LINESTRING(x1 y1, x2 y2, ...)`. The Doctrine upsert path feeds
+     * this directly into `ST_GeomFromText(?)`. Empty polylines or polylines with fewer than two
+     * vertices return an empty string — MySQL rejects LINESTRINGs with < 2 points.
+     */
+    public function __toString(): string
+    {
+        if (count($this->points) < 2) {
+            return '';
+        }
+        $vertices = [];
+        foreach ($this->points as $point) {
+            $vertices[] = sprintf('%F %F', $point->x, $point->y);
+        }
+        return 'LINESTRING(' . implode(', ', $vertices) . ')';
     }
 }

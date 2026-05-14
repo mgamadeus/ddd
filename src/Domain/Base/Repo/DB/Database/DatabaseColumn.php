@@ -170,6 +170,10 @@ class DatabaseColumn extends ValueObject
         'point' => true,
         'linestring' => true,
         'polygon' => true,
+        'cartesian_point' => true,
+        'cartesian_linestring' => true,
+        'cartesian_polygon' => true,
+        'cartesian_bbox' => true,
     ];
 
     /** @var string|null Name of the database Column */
@@ -500,6 +504,12 @@ class DatabaseColumn extends ValueObject
     {
         if ($this->encrypted) {
             return self::DOCTRINE_SQL_TYPE_ALLOCATIONS[self::SQL_TYPE_TEXT];
+        }
+        // Class-keyed allocation takes precedence over sqlType allocation. Different VOs can share
+        // an SQL type but need distinct Doctrine types — e.g. GeoPoint and Point2D both sit on
+        // POINT, but route to `point` (brick/geo) and `cartesian_point` (ours) respectively.
+        if ($this->phpType && isset(self::DOCTRINE_COLUMN_TYPE_ALLOCATIONS[$this->phpType])) {
+            return self::DOCTRINE_COLUMN_TYPE_ALLOCATIONS[$this->phpType];
         }
         return self::DOCTRINE_SQL_TYPE_ALLOCATIONS[$this->sqlType] ?? self::DOCTRINE_SQL_TYPE_ALLOCATIONS[self::SQL_TYPE_VARCHAR];
     }

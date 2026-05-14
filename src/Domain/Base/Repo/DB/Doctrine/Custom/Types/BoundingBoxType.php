@@ -16,12 +16,12 @@ use Doctrine\DBAL\Types\Type;
  * Doctrine type mapping {@see BoundingBox2D} ↔ MySQL/MariaDB `POLYGON` column (SRID 0 cartesian).
  *
  * Internally serialises to the same four-vertex closed POLYGON shape as
- * {@see CartesianPolygonType}, so existing spatial operators (`ST_Intersects`, `ST_Within`, …)
+ * {@see PolygonType}, so existing spatial operators (`ST_Intersects`, `ST_Within`, …)
  * work against bounding-box columns identically. On read, parses the polygon and folds it back
  * into the `(x, y, width, height)` VO — returns `null` when the column doesn't hold an
  * axis-aligned rectangle.
  */
-class CartesianBoundingBoxType extends Type
+class BoundingBoxType extends Type
 {
     public const string NAME = 'cartesian_bbox';
 

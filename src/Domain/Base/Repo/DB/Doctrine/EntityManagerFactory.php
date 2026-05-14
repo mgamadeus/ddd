@@ -36,13 +36,14 @@ use Brick\Geo\Doctrine\Functions\TouchesFunction;
 use Brick\Geo\Doctrine\Functions\UnionFunction;
 use Brick\Geo\Doctrine\Functions\WithinFunction;
 
-// Brick\Geo Doctrine Type imports (vendor)
+// Brick\Geo Doctrine Type imports (vendor) — aliased so our identically-named DDD types
+// can keep their short class names below.
 use Brick\Geo\Doctrine\Types\GeometryType;
-use Brick\Geo\Doctrine\Types\LineStringType;
+use Brick\Geo\Doctrine\Types\LineStringType as BrickLineStringType;
 use Brick\Geo\Doctrine\Types\MultiLineStringType;
 use Brick\Geo\Doctrine\Types\MultiPointType;
 use Brick\Geo\Doctrine\Types\MultiPolygonType;
-use Brick\Geo\Doctrine\Types\PointType;
+use Brick\Geo\Doctrine\Types\PointType as BrickPointType;
 
 // Infrastructure / Framework imports
 use DDD\Infrastructure\Cache\Cache;
@@ -59,7 +60,7 @@ use DoctrineExtensions\Query\Mysql\IfNull;
 use DoctrineExtensions\Query\Mysql\MatchAgainst;
 use DoctrineExtensions\Query\Mysql\Rand;
 use DoctrineExtensions\Query\Mysql\StrToDate;
-use DoctrineExtensions\Types\PolygonType;
+use DoctrineExtensions\Types\PolygonType as BrickPolygonType;
 
 use RuntimeException;
 
@@ -70,10 +71,10 @@ use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Distance;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\EuclideanDistance;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\VecFromText;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\UnescapedJsonType;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\CartesianBoundingBoxType;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\CartesianLineStringType;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\CartesianPointType;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\CartesianPolygonType;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\BoundingBoxType;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\LineStringType;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\PointType;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\PolygonType;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\VectorType;
 
 // Custom Geo/Spatial Query functions
@@ -270,16 +271,16 @@ class EntityManagerFactory
         $config->setProxyNamespace(self::DEFAULT_NAMESPACE);
         $config->setAutoGenerateProxyClasses($configSettings['doctrineConfig']['proxyGenerationMode']);
         if (!Type::hasType('point')) {
-            Type::addType('point', PointType::class);
+            Type::addType('point', BrickPointType::class);
         }
         if (!Type::hasType('geometry')) {
             Type::addType('geometry', GeometryType::class);
         }
         if (!Type::hasType('linestring')) {
-            Type::addType('linestring', LineStringType::class);
+            Type::addType('linestring', BrickLineStringType::class);
         }
         if (!Type::hasType('polygon')) {
-            Type::addType('polygon', PolygonType::class);
+            Type::addType('polygon', BrickPolygonType::class);
         }
         if (!Type::hasType('multilinestring')) {
             Type::addType('multilinestring', MultiLineStringType::class);
@@ -295,17 +296,17 @@ class EntityManagerFactory
         // Distinct from the brick/geo types above (which carry SRID 4326 / Brick\Geo\* PHP types).
         // These map directly to the DDD\Domain\Common\Entities\Geometry\Cartesian\* VOs and live
         // alongside `point` / `linestring` / `polygon` as separate registered type names.
-        if (!Type::hasType(CartesianPointType::NAME)) {
-            Type::addType(CartesianPointType::NAME, CartesianPointType::class);
+        if (!Type::hasType(PointType::NAME)) {
+            Type::addType(PointType::NAME, PointType::class);
         }
-        if (!Type::hasType(CartesianLineStringType::NAME)) {
-            Type::addType(CartesianLineStringType::NAME, CartesianLineStringType::class);
+        if (!Type::hasType(LineStringType::NAME)) {
+            Type::addType(LineStringType::NAME, LineStringType::class);
         }
-        if (!Type::hasType(CartesianPolygonType::NAME)) {
-            Type::addType(CartesianPolygonType::NAME, CartesianPolygonType::class);
+        if (!Type::hasType(PolygonType::NAME)) {
+            Type::addType(PolygonType::NAME, PolygonType::class);
         }
-        if (!Type::hasType(CartesianBoundingBoxType::NAME)) {
-            Type::addType(CartesianBoundingBoxType::NAME, CartesianBoundingBoxType::class);
+        if (!Type::hasType(BoundingBoxType::NAME)) {
+            Type::addType(BoundingBoxType::NAME, BoundingBoxType::class);
         }
 
         self::$instances[$scope] = DoctrineEntityManager::create($configSettings['connectionParams'], $config);
