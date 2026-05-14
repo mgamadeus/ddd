@@ -8,7 +8,7 @@ use Symfony\Component\Cache\Adapter\ApcuAdapter;
 
 class Apc extends Cache
 {
-    private ApcuAdapter $adapter;
+    protected ApcuAdapter $adapter;
 
     public function getCacheAdapter(): ApcuAdapter
     {

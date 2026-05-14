@@ -6,7 +6,7 @@ namespace DDD\Infrastructure\Reflection;
 
 class ReflectionNamedType extends \ReflectionNamedType
 {
-    public function __construct(private string $_name, private bool $_isBuiltIn = false, private bool $_allowsNull = true) {}
+    public function __construct(protected string $_name, protected bool $_isBuiltIn = false, protected bool $_allowsNull = true) {}
 
     public function allowsNull(): bool
     {

@@ -16,7 +16,7 @@ use DDD\Domain\Base\Entities\ObjectSet;
 class DatabaseModels extends ObjectSet
 {
     /** @var DatabaseModel[] */
-    private array $modelsByEntityClass = [];
+    protected array $modelsByEntityClass = [];
 
     public function getSql(): string
     {

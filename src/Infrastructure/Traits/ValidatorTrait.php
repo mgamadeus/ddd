@@ -156,7 +156,7 @@ trait ValidatorTrait
         return $validationErrors ?? true;
     }
 
-    private function createValidatorForAnnotation(): ValidatorInterface
+    protected function createValidatorForAnnotation(): ValidatorInterface
     {
         return Validation::createValidatorBuilder()->enableAttributeMapping()->getValidator();
     }
@@ -164,7 +164,7 @@ trait ValidatorTrait
     /**
      * @return ConstraintViolationList
      */
-    private function getValidationViolations(): ConstraintViolationList
+    protected function getValidationViolations(): ConstraintViolationList
     {
         $validator = $this->createValidatorForAnnotation();
         try {
@@ -181,7 +181,7 @@ trait ValidatorTrait
     /**
      * @throws ReflectionException
      */
-    private function getCustomValidationInputsViolations(CustomValidationInputs $customValidationInputs
+    protected function getCustomValidationInputsViolations(CustomValidationInputs $customValidationInputs
     ): ConstraintViolationList {
         $constraintViolationList = new ConstraintViolationList();
         foreach ($this->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {

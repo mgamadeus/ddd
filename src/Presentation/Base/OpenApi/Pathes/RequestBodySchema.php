@@ -16,7 +16,7 @@ class RequestBodySchema
     use SerializerTrait;
 
     public array|Schema $schema = ['$ref' => ''];
-    private string $scope = Parameter::BODY;
+    protected string $scope = Parameter::BODY;
 
     public function __construct(
         ReflectionClass &$requestDtoReflectionClass,

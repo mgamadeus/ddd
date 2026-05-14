@@ -15,8 +15,8 @@ use Doctrine\ORM\Query\TokenType;
  */
 class CosineSimilarity extends FunctionNode
 {
-    private mixed $field;
-    private mixed $vector;
+    protected mixed $field;
+    protected mixed $vector;
 
     public function parse(Parser $parser): void
     {

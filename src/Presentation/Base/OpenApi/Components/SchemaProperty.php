@@ -63,9 +63,9 @@ class SchemaProperty
 
     public array|object|null $items = null;
 
-    private Schema $schema;
+    protected Schema $schema;
 
-    private array $typeNameAllocation = [
+    protected array $typeNameAllocation = [
         'int' => 'integer',
         'string' => 'string',
         'bool' => 'boolean',
@@ -74,7 +74,7 @@ class SchemaProperty
         'object' => 'object'
     ];
 
-    private string $scope = Parameter::BODY;
+    protected string $scope = Parameter::BODY;
 
     /**
      * Normalizes a list of doc-comment examples into OpenAPI-compatible `examples`.
@@ -95,7 +95,7 @@ class SchemaProperty
      * @param string[] $examples
      * @return array
      */
-    private function normalizeExamplesForOpenApi(array $examples): array
+    protected function normalizeExamplesForOpenApi(array $examples): array
     {
         if (!$examples) {
             return $examples;

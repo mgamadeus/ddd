@@ -32,7 +32,7 @@ class PathParameter
      * @param string[] $examples
      * @return array
      */
-    private function normalizeExamplesForOpenApi(array $examples): array
+    protected function normalizeExamplesForOpenApi(array $examples): array
     {
         if (!$examples) {
             return $examples;

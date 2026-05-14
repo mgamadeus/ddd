@@ -94,7 +94,7 @@ use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StY;
 class EntityManagerFactory
 {
     /** @var DoctrineEntityManager[] */
-    private static array $instances = [];
+    protected static array $instances = [];
 
     public const string SCOPE_DEFAULT = 'DEFAULT';
 

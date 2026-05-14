@@ -13,10 +13,10 @@ class Route extends \Symfony\Component\Routing\Annotation\Route
 {
     use SerializerTrait, BaseAttributeTrait;
 
-    private ?string $path = null;
-    private array $localizedPaths = [];
-    private array $methods;
-    private array $schemes;
+    protected ?string $path = null;
+    protected array $localizedPaths = [];
+    protected array $methods;
+    protected array $schemes;
 
     public function __construct(
         array|string|null $path = null,

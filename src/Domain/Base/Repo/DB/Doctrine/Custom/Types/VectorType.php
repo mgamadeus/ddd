@@ -22,9 +22,9 @@ class VectorType extends Type
 {
     public const string NAME = 'vector';
 
-    private static bool $enabled = false;
+    protected static bool $enabled = false;
 
-    private static ?string $enabledForServerVersion = null;
+    protected static ?string $enabledForServerVersion = null;
 
     public static function enable(?string $serverVersion = null): void
     {
@@ -129,7 +129,7 @@ class VectorType extends Type
     /**
      * @throws Exception
      */
-    private static function assertMariaVectorSupported(AbstractPlatform $platform): void
+    protected static function assertMariaVectorSupported(AbstractPlatform $platform): void
     {
         if (!$platform instanceof MariaDBPlatform) {
             throw new Exception('MariaVector: VECTOR type is only supported on MariaDBPlatform.');

@@ -9,7 +9,7 @@ class ReflectionProperty extends \ReflectionProperty
 {
     protected static $typeCache = [];
     protected static array $attributesCache = [];
-    private string $reflectionClassName;
+    protected string $reflectionClassName;
 
     public function __construct(object|string $class, string $property)
     {

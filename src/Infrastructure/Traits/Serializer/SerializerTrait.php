@@ -839,7 +839,7 @@ trait SerializerTrait
      *
      * @param array<int|string, mixed> $arrayOfObjects
      */
-    private function convertArrayOfObjectsToToon(array $arrayOfObjects): string
+    protected function convertArrayOfObjectsToToon(array $arrayOfObjects): string
     {
         $rows = [];
         foreach ($arrayOfObjects as $item) {
@@ -886,7 +886,7 @@ trait SerializerTrait
     /**
      * @return array<string, mixed> map of flattened column name => scalar (or json-stringified complex) value
      */
-    private function flattenToonColumns(mixed $value, string $prefix = ''): array
+    protected function flattenToonColumns(mixed $value, string $prefix = ''): array
     {
         if ($value instanceof stdClass) {
             $value = get_object_vars($value);

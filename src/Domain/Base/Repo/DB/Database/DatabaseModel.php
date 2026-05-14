@@ -255,9 +255,7 @@ class DatabaseModel extends ValueObject
                     $virtualSearchReferenceColumn->isMergableJSONColumn = false;
 
                     $virtualSearchColumn = new DatabaseVirtualColumn(
-                        as: $virtualSearchAs,
-                        stored: true,
-                        createIndex: false
+                        as: $virtualSearchAs, stored: true, createIndex: false
                     );
                     $virtualSearchColumn->referenceColumn = $virtualSearchReferenceColumn;
                     $virtualSearchColumn->virtualColumnNameOverride = $virtualSearchColumnName;
@@ -320,32 +318,32 @@ class DatabaseModel extends ValueObject
                 $index = new DatabaseIndex(indexColumns: [ChangeHistory::DEFAULT_MODIFIED_COLUMN_NAME]);
                 $databaseModel->indexes->add($index);
             }
-                if ($databaseColumn && !$databaseColumn->isPrimaryKey) {
-                    // handle indexes
-                    $indexAttributes = $reflectionProperty->getAttributes(DatabaseIndex::class, ReflectionAttribute::IS_INSTANCEOF);
-                    if (count($indexAttributes)) {
-                        foreach ($indexAttributes as $indexAttribute) {
-                            /** @var DatabaseIndex $indexAttributeInstance */
-                            $indexAttributeInstance = $indexAttribute->newInstance();
+            if ($databaseColumn && !$databaseColumn->isPrimaryKey) {
+                // handle indexes
+                $indexAttributes = $reflectionProperty->getAttributes(DatabaseIndex::class, ReflectionAttribute::IS_INSTANCEOF);
+                if (count($indexAttributes)) {
+                    foreach ($indexAttributes as $indexAttribute) {
+                        /** @var DatabaseIndex $indexAttributeInstance */
+                        $indexAttributeInstance = $indexAttribute->newInstance();
 
-                            // JSON-backed Translatable columns cannot have FULLTEXT index directly.
-                            // If Translatable(fullTextIndex: true) is enabled, the FULLTEXT index is created on the virtual search column instead.
-                            if ($translatableAttributeInstance?->fullTextIndex && $indexAttributeInstance->indexType === DatabaseIndex::TYPE_FULLTEXT) {
-                                continue;
-                            }
-                            if ($indexAttributeInstance->indexType != DatabaseIndex::TYPE_NONE) {
-                                $indexAttributeInstance->indexColumns = [$reflectionProperty->getName()];
-                                $databaseModel->indexes->add($indexAttributeInstance);
-                            }
+                        // JSON-backed Translatable columns cannot have FULLTEXT index directly.
+                        // If Translatable(fullTextIndex: true) is enabled, the FULLTEXT index is created on the virtual search column instead.
+                        if ($translatableAttributeInstance?->fullTextIndex && $indexAttributeInstance->indexType === DatabaseIndex::TYPE_FULLTEXT) {
+                            continue;
                         }
-                    } elseif (isset($databaseColumn->sqlType) && $databaseColumn->hasIndex && !$databaseColumn->ignoreProperty) {
-                        $indexType = DatabaseColumn::SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS[$databaseColumn->sqlType];
-                        if ($indexType != DatabaseIndex::TYPE_NONE) {
-                            $index = new DatabaseIndex(indexColumns: [$databaseColumn->name], indexType: $indexType);
-                            $databaseModel->indexes->add($index);
+                        if ($indexAttributeInstance->indexType != DatabaseIndex::TYPE_NONE) {
+                            $indexAttributeInstance->indexColumns = [$reflectionProperty->getName()];
+                            $databaseModel->indexes->add($indexAttributeInstance);
                         }
                     }
+                } elseif (isset($databaseColumn->sqlType) && $databaseColumn->hasIndex && !$databaseColumn->ignoreProperty) {
+                    $indexType = DatabaseColumn::SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS[$databaseColumn->sqlType];
+                    if ($indexType != DatabaseIndex::TYPE_NONE) {
+                        $index = new DatabaseIndex(indexColumns: [$databaseColumn->name], indexType: $indexType);
+                        $databaseModel->indexes->add($index);
+                    }
                 }
+            }
 
             // handle indexes added to potentialOneToManyPropertyNames and processed later
             // in order to avoid recursion, we need to process first all Classes and then go through them and
@@ -460,6 +458,9 @@ class DatabaseModel extends ValueObject
                     $foreignKey = $reflectionProperty->getAttributeInstance(
                         DatabaseForeignKey::class
                     ) ?? new DatabaseForeignKey(onDeleteAction: $defaultOnDeleteAction);
+                    if ($propertyRepresentsParentClass) {
+                        $foreignKey->representsParentRelation = true;
+                    }
 
                     if (
                         ($foreignKey->onUpdateAction == $foreignKey::ACTION_SET_NULL || $foreignKey->onDeleteAction == $foreignKey::ACTION_SET_NULL) && !$internalColumnProperty->getType(
@@ -707,7 +708,7 @@ class DatabaseModel extends ValueObject
                 $virtualColumns .= "'{$virtualColumn->getName()}' => $virtualColumnPropertiesString, ";
             }
 
-            $virtualColumns = rtrim($virtualColumns, ", ");
+            $virtualColumns = rtrim($virtualColumns, ', ');
 
             $modelClassContent .= "\t" . 'public static array $virtualColumns = [' . $virtualColumns . '];' . "\n\n";
         }

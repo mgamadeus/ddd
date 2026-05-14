@@ -44,6 +44,9 @@ class DatabaseForeignKey extends ValueObject
     /** @var string Column in foreign table to reference, e.g. id */
     public string $foreignIdColumn = 'id';
 
+    /** @var bool|null True if the property carrying this FK declares #[LazyLoad(addAsParent: true)] */
+    public ?bool $representsParentRelation = null;
+
     /** @var string Action on update of foreign row key column */
     #[Choice([self::ACTION_CASCADE, self::ACTION_NO_ACTION, self::ACTION_SET_DEFAULT, self::ACTION_SET_NULL, self::ACTION_RESTRICT])]
     public string $onUpdateAction = self::ACTION_CASCADE;

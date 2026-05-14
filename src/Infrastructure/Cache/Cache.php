@@ -15,7 +15,7 @@ use Symfony\Component\Cache\Marshaller\MarshallerInterface;
 
 abstract class Cache
 {
-    private const int DEEFAULT_TTL = 3600;
+    protected const int DEEFAULT_TTL = 3600;
 
     public const int CACHE_TTL_ONE_DAY = 86400;
 

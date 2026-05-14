@@ -11,7 +11,7 @@ use SplFileObject;
 class ClassFinder
 {
     public static bool $clearCache = false;
-    private static array $excludedFiles = ['Vendor'];
+    protected static array $excludedFiles = ['Vendor'];
 
     /**
      * scans a directory recursively and returns all PHP class names found
@@ -52,7 +52,7 @@ class ClassFinder
      * @param array $results
      * @return array|mixed
      */
-    private static function getPHPFilesInDirectory(string $dir, &$results = [], array $excludedFiles = [])
+    protected static function getPHPFilesInDirectory(string $dir, &$results = [], array $excludedFiles = [])
     {
         $files = scandir($dir);
 
@@ -73,7 +73,7 @@ class ClassFinder
         return $results;
     }
 
-    private static function getClassFromFile(string $fileName): ?ClassWithNamespace
+    protected static function getClassFromFile(string $fileName): ?ClassWithNamespace
     {
         $file = new SplFileObject($fileName);
         $maxLines = 200;
@@ -117,7 +117,7 @@ class ClassFinder
      * @param string $file
      * @return null|ClassWithNamespace
      */
-    private static function getClassFromFileasd(string $file): ?ClassWithNamespace
+    protected static function getClassFromFileasd(string $file): ?ClassWithNamespace
     {
         //echo $file . '<br />';
         $fp = fopen($file, 'r');

@@ -8,7 +8,7 @@ use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
 
 class PhpFiles extends Cache
 {
-    private PhpFilesAdapter $adapter;
+    protected PhpFilesAdapter $adapter;
 
     public function getCacheAdapter(): PhpFilesAdapter
     {

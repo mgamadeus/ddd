@@ -28,13 +28,13 @@ class CacheScopeInvalidationsService extends EntitiesService
     public const string DEFAULT_ENTITY_CLASS = CacheScopeInvalidation::class;
 
     /** @var CacheScopeInvalidations[] CacheScopeInvalidations by accountId */
-    private static array $cacheScopeInvalidationsForAccounts = [];
+    protected static array $cacheScopeInvalidationsForAccounts = [];
 
     /** @var CacheScopeInvalidations[] CacheScopeInvalidations by projectId */
-    private static array $cacheScopeInvalidationsForProjects = [];
+    protected static array $cacheScopeInvalidationsForProjects = [];
 
     /** @var CacheScopeInvalidations[] CacheScopeInvalidations by locationId */
-    private static array $cacheScopeInvalidationsForLocations = [];
+    protected static array $cacheScopeInvalidationsForLocations = [];
 
     /**
      * Determines if given Lazyload initiating Entity implements one of

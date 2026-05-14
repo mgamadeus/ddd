@@ -15,7 +15,7 @@ use Doctrine\ORM\Query\TokenType;
  */
 class VecFromText extends FunctionNode
 {
-    private mixed $value;
+    protected mixed $value;
 
     public function parse(Parser $parser): void
     {

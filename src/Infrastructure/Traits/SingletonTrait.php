@@ -12,7 +12,7 @@ trait SingletonTrait
      *
      * @var SingletonTrait[]
      */
-    private static array $instances = [];
+    protected static array $instances = [];
 
     /**
      * Returns an instance of the current Singleton subclass

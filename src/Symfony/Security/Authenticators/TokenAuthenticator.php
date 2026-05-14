@@ -27,7 +27,7 @@ class TokenAuthenticator extends AbstractAuthenticator
 
     protected Security $security;
 
-    private AccessMapInterface $accessMap;
+    protected AccessMapInterface $accessMap;
 
     public function __construct(Security $security, AccessMapInterface $accessMap)
     {

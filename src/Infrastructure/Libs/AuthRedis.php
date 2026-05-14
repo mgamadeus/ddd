@@ -11,20 +11,20 @@ use DDD\Infrastructure\Cache\Redis;
 class AuthRedis
 {
     /** @var array */
-    private static array $cacheConfig;
+    protected static array $cacheConfig;
 
     /** @var array */
-    private static array $sessionConfig;
+    protected static array $sessionConfig;
 
     /** @var Cache */
-    private static Cache $cacheInstance;
+    protected static Cache $cacheInstance;
 
-    private static string $marshallerClass = Marshaller::class;
+    protected static string $marshallerClass = Marshaller::class;
 
     /**
      * @return void
      */
-    private static function populateConfig(): void
+    protected static function populateConfig(): void
     {
         if (!isset(self::$cacheConfig)) {
             $redisCacheConfig = Cache::getCacheConfig(Cache::CACHE_GROUP_REDIS);
@@ -59,7 +59,7 @@ class AuthRedis
     /**
      * @return Cache
      */
-    private static function getCacheInstance(): Cache
+    protected static function getCacheInstance(): Cache
     {
         self::populateConfig();
         if (isset(self::$cacheInstance)) {

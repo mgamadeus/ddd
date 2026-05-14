@@ -47,7 +47,7 @@ class PathParameterSchema
     public ?array $enum = null;
 
     /** @var array|string[] */
-    private array $typeNameAllocation = [
+    protected array $typeNameAllocation = [
         'int' => 'integer',
         'string' => 'string',
         'bool' => 'boolean',

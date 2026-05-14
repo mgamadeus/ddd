@@ -79,7 +79,7 @@ class RequestCacheSubscriber implements EventSubscriberInterface
         $request->attributes->set('_request_cache_key', $key);
     }
 
-    private function makeCacheKey(Request $req, RequestCache $requestCacheAttributeInstance): string
+    protected function makeCacheKey(Request $req, RequestCache $requestCacheAttributeInstance): string
     {
         $method = $req->getMethod();
         $path = $req->getPathInfo();

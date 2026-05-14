@@ -47,7 +47,7 @@ class Document
 
     public const string MODELS_TAG_GROUP_NAME = 'Models';
 
-    private static Document $instance;
+    protected static Document $instance;
 
     public string $openapi = '3.0.0';
 

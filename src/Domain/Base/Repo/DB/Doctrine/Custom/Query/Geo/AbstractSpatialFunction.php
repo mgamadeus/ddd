@@ -19,7 +19,7 @@ use Doctrine\ORM\Query\TokenType;
 abstract class AbstractSpatialFunction extends FunctionNode
 {
     /** @var Node[] */
-    private array $args = [];
+    protected array $args = [];
 
     /**
      * Returns the SQL function name (e.g. 'ST_GeomFromText').

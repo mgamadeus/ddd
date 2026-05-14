@@ -9,7 +9,7 @@ use Symfony\Component\Cache\Adapter\RedisAdapter;
 
 class RedisSentinel extends Cache
 {
-    private RedisAdapter $adapter;
+    protected RedisAdapter $adapter;
 
     public function getCacheAdapter(): RedisAdapter
     {

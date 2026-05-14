@@ -12,7 +12,7 @@ namespace DDD\Domain\Base\Repo\DB\Database;
  */
 readonly class DatabaseSqlExpression
 {
-    public function __construct(private string $sql)
+    public function __construct(protected string $sql)
     {
     }
 

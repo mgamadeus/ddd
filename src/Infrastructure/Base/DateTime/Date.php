@@ -22,7 +22,7 @@ class Date extends DateTime
 
     public const string YEAR_MONTH_DATE = 'Ymd';
 
-    private $toStringCache = null;
+    protected $toStringCache = null;
 
     public function __construct(string $datetime = 'now', ?DateTimeZone $timezone = null)
     {

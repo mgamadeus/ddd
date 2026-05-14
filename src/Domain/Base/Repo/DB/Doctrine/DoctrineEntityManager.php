@@ -25,10 +25,10 @@ use ReflectionException;
 class DoctrineEntityManager extends EntityManager
 {
     // The interval in seconds to check if the connection is still pingable
-    private const int CONNECTION_CHECK_INTERVAL = 30;
+    protected const int CONNECTION_CHECK_INTERVAL = 30;
 
     // The last time the connection was checked
-    private int $lastConnectionCheckTime = 0;
+    protected int $lastConnectionCheckTime = 0;
 
     /**
      * Factory method to create EntityManager instances.

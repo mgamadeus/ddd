@@ -19,8 +19,8 @@ use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPasspor
 
 class LoginTokenAuthenticator extends AbstractAuthenticator
 {
-    private Security $security;
-    private LoginTokensService $loginTokenService;
+    protected Security $security;
+    protected LoginTokensService $loginTokenService;
 
     public function __construct(Security $security, LoginTokensService $loginTokenService)
     {

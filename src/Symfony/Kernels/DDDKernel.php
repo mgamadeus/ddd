@@ -81,7 +81,7 @@ class DDDKernel extends Kernel
      *         ->controller('AdminController::dashboard')
      *     ;
      */
-    private function configureRoutes(RoutingConfigurator $routes): void
+    protected function configureRoutes(RoutingConfigurator $routes): void
     {
         $configDir = $this->getConfigDir();
         $defaultConfigDir = $this->getDefaultonfigDir();
@@ -134,7 +134,7 @@ class DDDKernel extends Kernel
 
     // If you need to run some logic to decide which bundles to load,
     // you might prefer to use the registerBundles() method instead
-    private function getBundlesPath(): string
+    protected function getBundlesPath(): string
     {
         if (is_file($this->getConfigDir() . '/bundles.php')) {
             return $this->getConfigDir() . '/bundles.php';

@@ -18,13 +18,13 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
 class DatabaseForeignKeys extends ObjectSet
 {
     /** @var DatabaseForeignKey[][] */
-    private array $foreignKeysByForeignModelClassName = [];
+    protected array $foreignKeysByForeignModelClassName = [];
 
     public function add(?BaseObject &...$elements): void
     {
         foreach ($elements as $element) {
             /** @var DatabaseForeignKey $element */
-            if (!isset($this->foreignKeysByTargetEntity[$element->foreignModelClassName])) {
+            if (!isset($this->foreignKeysByForeignModelClassName[$element->foreignModelClassName])) {
                 $this->foreignKeysByForeignModelClassName[$element->foreignModelClassName] = [];
             }
             $this->foreignKeysByForeignModelClassName[$element->foreignModelClassName][] = $element;
@@ -32,20 +32,46 @@ class DatabaseForeignKeys extends ObjectSet
         parent::add(...$elements);
     }
 
-    public function getDatabaseForeignKeyByForeignModelName(string $foreiugnModelName): ?DatabaseForeignKey
+    public function getDatabaseForeignKeyByForeignModelName(string $foreignModelName): ?DatabaseForeignKey
     {
-        $foreignKeys = $this->foreignKeysByForeignModelClassName[$foreiugnModelName] ?? null;
+        $foreignKeys = $this->foreignKeysByForeignModelClassName[$foreignModelName] ?? null;
         if (!$foreignKeys) {
             return null;
         }
-        if ($foreignKeys && count($foreignKeys) > 1) {
-            $keys = [];
-            foreach ($foreignKeys as $foreignKey) {
-                $keys[] = $foreignKey->internalIdColumn;
-            }
-            throw new InternalErrorException('More than one foreign key referencing ' . $foreiugnModelName . ' (' . implode(',', $keys) . ')');
+        if (count($foreignKeys) === 1) {
+            return $foreignKeys[0];
         }
-        return $foreignKeys[0];
+        // If multiple FKs point to the same target model, prefer the one whose property
+        // declares #[LazyLoad(addAsParent: true)] — this is the parent-side relation that
+        // the inverse OneToMany on the parent should mapBy. Example: Ingredient.components
+        // (OneToMany) -> IngredientComponent has both parentIngredient (addAsParent: true)
+        // and componentIngredient (plain). We want components to mapBy parentIngredient so
+        // the JOIN uses parentIngredientId. Exactly one parent-relation FK per target is
+        // supported; zero or more than one throws.
+        $foreignKeysRepresentingParentRelation = [];
+        $internalIdColumns = [];
+        foreach ($foreignKeys as $foreignKey) {
+            if ($foreignKey->representsParentRelation ?? false) {
+                $foreignKeysRepresentingParentRelation[] = $foreignKey;
+            }
+            $internalIdColumns[] = $foreignKey->internalIdColumn;
+        }
+        if (count($foreignKeysRepresentingParentRelation) === 1) {
+            return $foreignKeysRepresentingParentRelation[0];
+        }
+        if (count($foreignKeysRepresentingParentRelation) > 1) {
+            throw new InternalErrorException(
+                'Multiple foreign keys referencing ' . $foreignModelName
+                . ' (' . implode(',', $internalIdColumns) . ') are marked #[LazyLoad(addAsParent: true)]. '
+                . 'Exactly one parent-relation per target type is supported per entity.'
+            );
+        }
+        throw new InternalErrorException(
+            'More than one foreign key referencing ' . $foreignModelName
+            . ' (' . implode(',', $internalIdColumns) . ') and none is marked '
+            . '#[LazyLoad(addAsParent: true)]. Mark exactly one of the matching properties '
+            . 'with addAsParent: true to identify the parent-side relation.'
+        );
     }
 
 }

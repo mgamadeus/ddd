@@ -50,7 +50,7 @@ class Path
     public ?array $tags = null;
 
     /** @var PathParameter[] */
-    private array $parametersByName = [];
+    protected array $parametersByName = [];
 
     /**
      * @param Route $route

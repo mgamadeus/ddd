@@ -533,7 +533,7 @@ class ReflectionClass extends \ReflectionClass
      *
      * @return string
      */
-    private function readFileSource()
+    protected function readFileSource()
     {
         $file = fopen($this->getFileName(), 'r');
         $line = 0;

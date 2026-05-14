@@ -408,7 +408,7 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
         return false;
     }
 
-    private function resetIteratorPosition()
+    protected function resetIteratorPosition()
     {
         if ($this->iteratorPosition > $this->elementCount - 1) {
             $this->iteratorPosition = 0;

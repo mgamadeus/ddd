@@ -7,7 +7,7 @@ namespace DDD\Infrastructure\Reflection;
 class ReflectionUnionType extends \ReflectionUnionType
 {
     /** @var ReflectionNamedType[]|null */
-    private ?array $reflectionNamedTypes = null;
+    protected ?array $reflectionNamedTypes = null;
 
     public function __construct(ReflectionNamedType &...$reflectionNamedTypes)
     {

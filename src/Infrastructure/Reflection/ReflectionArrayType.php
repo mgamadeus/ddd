@@ -9,8 +9,8 @@ class ReflectionArrayType extends \ReflectionNamedType
     public static $arrayTypeCache;
 
     public function __construct(
-        private ?ReflectionProperty &$reflectionProperty = null,
-        private ?\ReflectionNamedType $reflectionNamedType = null
+        protected ?ReflectionProperty &$reflectionProperty = null,
+        protected ?\ReflectionNamedType $reflectionNamedType = null
     ) {
     }
 
