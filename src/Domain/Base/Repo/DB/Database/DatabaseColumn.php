@@ -13,6 +13,10 @@ use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Entities\Translatable\Translatable;
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Domain\Common\Entities\Encryption\EncryptionScope;
+use DDD\Domain\Common\Entities\Geometry\Cartesian\BoundingBox2D;
+use DDD\Domain\Common\Entities\Geometry\Cartesian\Point2D;
+use DDD\Domain\Common\Entities\Geometry\Cartesian\Polygon;
+use DDD\Domain\Common\Entities\Geometry\Cartesian\Polyline;
 use DDD\Domain\Common\Entities\GeoEntities\GeoPoint;
 use DDD\Domain\Common\Entities\MathEntities\Vector;
 use DDD\Infrastructure\Base\DateTime\Date;
@@ -70,6 +74,10 @@ class DatabaseColumn extends ValueObject
 
     public const string SQL_TYPE_POINT = 'POINT';
 
+    public const string SQL_TYPE_LINESTRING = 'LINESTRING';
+
+    public const string SQL_TYPE_POLYGON = 'POLYGON';
+
     public const string SQL_TYPE_VECTOR = 'VECTOR';
 
     public const array SQL_TYPE_ALLOCATION = [
@@ -80,6 +88,10 @@ class DatabaseColumn extends ValueObject
         Date::class => self::SQL_TYPE_DATE,
         DateTime::class => self::SQL_TYPE_DATETIME,
         GeoPoint::class => self::SQL_TYPE_POINT,
+        Point2D::class => self::SQL_TYPE_POINT,
+        Polyline::class => self::SQL_TYPE_LINESTRING,
+        Polygon::class => self::SQL_TYPE_POLYGON,
+        BoundingBox2D::class => self::SQL_TYPE_POLYGON,
         Vector::class => self::SQL_TYPE_VECTOR,
         ValueObject::class => self::SQL_TYPE_JSON,
     ];
@@ -92,6 +104,10 @@ class DatabaseColumn extends ValueObject
         DateTime::class => 'datetime',
         Date::class => 'date',
         GeoPoint::class => 'point',
+        Point2D::class => 'cartesian_point',
+        Polyline::class => 'cartesian_linestring',
+        Polygon::class => 'cartesian_polygon',
+        BoundingBox2D::class => 'cartesian_bbox',
         Vector::class => 'vector',
         ValueObject::class => 'json',
     ];
@@ -106,6 +122,8 @@ class DatabaseColumn extends ValueObject
         self::SQL_TYPE_DATETIME => 'datetime',
         self::SQL_TYPE_DATE => 'date',
         self::SQL_TYPE_POINT => 'point',
+        self::SQL_TYPE_LINESTRING => 'linestring',
+        self::SQL_TYPE_POLYGON => 'polygon',
         self::SQL_TYPE_VECTOR => 'vector',
         self::SQL_TYPE_JSON => 'json',
     ];
@@ -118,6 +136,10 @@ class DatabaseColumn extends ValueObject
         DateTime::class => 'DateTime',
         Date::class => 'DateTime',
         GeoPoint::class => 'mixed',
+        Point2D::class => 'mixed',
+        Polyline::class => 'mixed',
+        Polygon::class => 'mixed',
+        BoundingBox2D::class => 'mixed',
         ValueObject::class => 'mixed',
         Vector::class => 'mixed',
     ];
@@ -139,11 +161,15 @@ class DatabaseColumn extends ValueObject
         self::SQL_TYPE_LONGBLOB => DatabaseIndex::TYPE_NONE,
         self::SQL_TYPE_JSON => DatabaseIndex::TYPE_NONE,
         self::SQL_TYPE_POINT => DatabaseIndex::TYPE_SPATIAL,
+        self::SQL_TYPE_LINESTRING => DatabaseIndex::TYPE_SPATIAL,
+        self::SQL_TYPE_POLYGON => DatabaseIndex::TYPE_SPATIAL,
         self::SQL_TYPE_VECTOR => DatabaseIndex::TYPE_VECTOR,
     ];
 
     public const array SPATIAL_SQL_TYPES = [
-        'point' => true
+        'point' => true,
+        'linestring' => true,
+        'polygon' => true,
     ];
 
     /** @var string|null Name of the database Column */
@@ -346,6 +372,14 @@ class DatabaseColumn extends ValueObject
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[Date::class];
         } elseif (is_a($type->getName(), GeoPoint::class, true)) {
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[GeoPoint::class];
+        } elseif (is_a($type->getName(), Point2D::class, true)) {
+            $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[Point2D::class];
+        } elseif (is_a($type->getName(), Polyline::class, true)) {
+            $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[Polyline::class];
+        } elseif (is_a($type->getName(), BoundingBox2D::class, true)) {
+            $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[BoundingBox2D::class];
+        } elseif (is_a($type->getName(), Polygon::class, true)) {
+            $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[Polygon::class];
         } elseif (is_a($type->getName(), Vector::class, true)) {
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[Vector::class];
         } elseif (DefaultObject::isValueObject($type->getName())) {

@@ -70,6 +70,10 @@ use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Distance;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\EuclideanDistance;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\VecFromText;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\UnescapedJsonType;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\CartesianBoundingBoxType;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\CartesianLineStringType;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\CartesianPointType;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\CartesianPolygonType;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\VectorType;
 
 // Custom Geo/Spatial Query functions
@@ -285,6 +289,23 @@ class EntityManagerFactory
         }
         if (!Type::hasType('multipolygon')) {
             Type::addType('multipolygon', MultiPolygonType::class);
+        }
+
+        // ─── Cartesian geometry types (SRID 0) — Point2D / Polyline / Polygon / BoundingBox2D ───
+        // Distinct from the brick/geo types above (which carry SRID 4326 / Brick\Geo\* PHP types).
+        // These map directly to the DDD\Domain\Common\Entities\Geometry\Cartesian\* VOs and live
+        // alongside `point` / `linestring` / `polygon` as separate registered type names.
+        if (!Type::hasType(CartesianPointType::NAME)) {
+            Type::addType(CartesianPointType::NAME, CartesianPointType::class);
+        }
+        if (!Type::hasType(CartesianLineStringType::NAME)) {
+            Type::addType(CartesianLineStringType::NAME, CartesianLineStringType::class);
+        }
+        if (!Type::hasType(CartesianPolygonType::NAME)) {
+            Type::addType(CartesianPolygonType::NAME, CartesianPolygonType::class);
+        }
+        if (!Type::hasType(CartesianBoundingBoxType::NAME)) {
+            Type::addType(CartesianBoundingBoxType::NAME, CartesianBoundingBoxType::class);
         }
 
         self::$instances[$scope] = DoctrineEntityManager::create($configSettings['connectionParams'], $config);

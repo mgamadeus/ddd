@@ -32,6 +32,8 @@ All code uses the `DDD\` root namespace (not `App\`). The autoload maps `DDD\` t
 | 3 | DB Repo (single) | `DB{EntityName}.php` | `src/Domain/{Domain}/Repo/DB/{Group}/` |
 | 4 | DB Repo (set) | `DB{EntityName}s.php` | `src/Domain/{Domain}/Repo/DB/{Group}/` |
 
+> `{Group}` resolves per the **Folder Layout** section below — first-class entities sit at the top level of `Entities/`, child / junction entities and value objects nest under their owning parent.
+
 Services are covered by the `ddd-service-specialist` skill.
 
 ### Domain Placement
@@ -40,6 +42,147 @@ Services are covered by the `ddd-service-specialist` skill.
 |--------|---------|----------|
 | `Base` | Abstract base classes, traits, core framework behavior | `src/Domain/Base/` |
 | `Common` | Shared concrete entities used across applications | `src/Domain/Common/` |
+
+## Folder Layout — First-class vs Child Entities
+
+Every entity is one of two kinds. The classification dictates where the files live on disk.
+
+**First-class entity:** has its own admin URL / CRUD UI, can be referenced from many places, and exists conceptually on its own. Gets its own top-level folder named after the EntitySet (plural): `Entities/{EntityNamePlural}/`.
+
+Examples in the catalog domain: `Ingredient`, `Product`, `Menu`, `Allergen`, `ProductCategory`.
+
+**Child entity:** exists only as part of a parent first-class entity. Includes:
+- Junction entities for M:N relations whose write surface is "edit the parent and its children together" (e.g. `IngredientAllergen` is edited inside the Ingredient form, not standalone).
+- 1:N children where the child has no standalone identity (e.g. `MenuSection` only exists inside a `Menu`).
+
+Child entities are nested under the owning parent's folder: `Entities/{OwnerPlural}/{ChildEntityPlural}/`.
+
+### Picking the owner for an M:N junction
+
+The owner is the side that **manages** the relation in the admin UI — the side whose form contains the picker for the other side. For `IngredientAllergen`, that's `Ingredient` (the ingredient form lets you pick allergens, not the reverse). For `MenuSectionProduct`, that's `MenuSection`.
+
+Tie-breakers when both sides could plausibly own the relation:
+
+1. The side that holds the LazyLoad EntitySet collection in the parent direction wins.
+2. The side whose deletion cascade-deletes the junction wins.
+3. The side first introduced to the domain wins (cohesion with existing code).
+
+### Value objects
+
+Value objects embedded on an entity live under a meaningful subfolder of the owning entity: `Entities/{OwnerPlural}/{ValueObjectGroup}/{ValueObject}.php`. The group name describes the conceptual cluster (e.g. `Nutrition/`, `Pricing/`, `Geometry/`), not the VO type. A single-VO group is still a group — it's there for future cohesion.
+
+**Multi-owner / cross-cutting VOs.** When a VO is used by multiple first-class entities in the same domain (e.g. `AvailabilityRule` consumed by `Menu`, `MenuSection`, `Product`, and `MenuLocationOverride`; `OpeningHours` consumed by `LocationOpeningHour` and potentially by `Business`, `Station` in future), place the VO group at the **domain top level** (e.g. `Catalog/Entities/Availability/`, `Locations/Entities/OpeningHours/`) rather than nesting under one consumer. The trigger is "more than one first-class entity owns this VO" — not "may be used elsewhere someday." Promote a VO from owner-nested to domain-top-level when the second consumer appears, not earlier.
+
+### Repository mirror
+
+The `Repo/DB/` tree mirrors `Entities/` 1:1 with the `DB` prefix on class names. No exceptions — the namespace symmetry simplifies generator output and code navigation.
+
+```
+Entities/Ingredients/IngredientComponents/IngredientComponent.php
+                          ↓ mirrored as ↓
+Repo/DB/Ingredients/IngredientComponents/DBIngredientComponent.php
+```
+
+### Reference: a complete catalog tree
+
+```
+Entities/
+├── Ingredients/                     ← first-class
+│   ├── Ingredient.php
+│   ├── Ingredients.php
+│   ├── IngredientAllergens/         ← child junction (owned by Ingredient)
+│   │   ├── IngredientAllergen.php
+│   │   └── IngredientAllergens.php
+│   ├── IngredientComponents/        ← child self-junction (Ingredient ↔ Ingredient)
+│   │   ├── IngredientComponent.php
+│   │   └── IngredientComponents.php
+│   └── Nutrition/                   ← value-object group
+│       └── NutritionFacts.php
+├── Allergens/                       ← first-class
+│   ├── Allergen.php
+│   └── Allergens.php
+├── ProductCategories/               ← first-class (name-prefixed, still standalone)
+│   ├── ProductCategory.php
+│   └── ProductCategories.php
+└── Products/
+    ├── Product.php                  ← first-class
+    ├── Products.php
+    ├── ProductAllergens/            ← child junction
+    │   ├── ProductAllergen.php
+    │   └── ProductAllergens.php
+    └── ProductIngredients/          ← child junction
+        ├── ProductIngredient.php
+        └── ProductIngredients.php
+```
+
+`ProductCategory` is name-prefixed but first-class — the prefix is naming convention, not parent ownership. It has its own admin section, is referenced by many products, exists independently. The standard handles this correctly: the prefix does not make it a child.
+
+## Property Naming Convention — Lazy-Loaded Entities, Sets, and Value Objects
+
+### The rule
+
+For lazy-loaded entity / entity set properties: **property name = `lowerCamel(typeName)`**. The property's name matches the lowercased version of the type name verbatim.
+
+```php
+public ?IngredientAllergens $ingredientAllergens = null;   // type-matched
+public ?IngredientComponents $ingredientComponents = null; // type-matched
+public ?MenuSections $menuSections = null;                 // type-matched
+public ?ProductCategory $productCategory = null;           // type-matched FK
+public ?Business $business = null;                         // type-matched FK
+```
+
+The rule is uniform: it does not matter whether the type's name "looks like" it contains the owner's name. A field of type `IngredientComponents` on an Ingredient is named `$ingredientComponents`, not `$components`.
+
+### Why type-matched, not stripped-prefix
+
+| Concern | Type-matched (`$ingredientComponents`) | Stripped (`$components`) |
+|---|---|---|
+| Cross-entity readability | Unambiguous at call sites | `Product.$allergens` vs `Ingredient.$allergens` look identical, types differ silently |
+| IDE navigation | Property name = type name → "Go to type" works directly | Mental translation needed every time |
+| SDK regen alignment | TypeScript model class name and the property reading it match letter-for-letter | Property diverges from type, costs constant cognitive overhead on FE |
+| Consistency over time | Universal rule, no exceptions to remember | Requires per-case judgement; drifts as the codebase grows |
+
+### Three carve-outs where role-naming is mandatory
+
+1. **Embedded value objects where the property describes a role, not a type identity.** When a VO carries a specific role on the entity (or where multiple roles of the same VO type need to coexist), name by role:
+
+    ```php
+    public ?MoneyAmount $basePrice = null;          // role: base price
+    public ?MoneyAmount $salePrice = null;          // role: sale price (same type, different role)
+    public ?NutritionFacts $nutritionPer100g = null;// role: nutrition per 100g
+    public ?AvailabilityRule $availability = null;  // role IS "availability"
+    ```
+
+    Rationale: VOs carry meaning beyond their type. A `MoneyAmount` could be base price, sale price, deposit, tip — the role disambiguates.
+
+2. **Multiple FKs to the same target type.** When an entity has two FKs to the same target, role-name both — the type-matched name would collide:
+
+    ```php
+    public ?Ingredient $parentIngredient = null;     // role: parent in composition
+    public ?Ingredient $componentIngredient = null;  // role: child in composition
+
+    public ?Product $sourceGlobalProduct = null;     // role: lineage anchor
+    ```
+
+    Mark the parent-side FK with `#[LazyLoad(addAsParent: true)]` so the OneToMany inverse-resolver picks the correct side (see Junction/Pivot Entities section).
+
+3. **Generic / polymorphic target types with multiple roles.** When the target type has a generic name (`Locale`, `Currency`, `MediaItem`, `PostalAddress`) and the entity holds more than one, role-name:
+
+    ```php
+    public ?PostalAddress $pickupAddress = null;
+    public ?PostalAddress $deliveryAddress = null;
+    public ?Locale $displayLocale = null;            // when multiple Locale fields exist on the entity
+    ```
+
+    When there's only one such field, type-matched is fine: `public ?Locale $locale = null;`.
+
+### Anti-patterns to reject in review
+
+- ❌ `public ?IngredientComponents $components` — stripping the owner-prefix even though no collision exists. Use `$ingredientComponents`.
+- ❌ `public ?ProductAllergens $allergens` on Product — same issue. Use `$productAllergens`.
+- ❌ `public ?AvailabilityRule $rule` — generic property name discards the role. The role *is* "availability" — use `$availability`.
+- ❌ Two `$address: ?PostalAddress` fields disambiguated by `$address1` / `$address2` — name by role: `$pickupAddress` / `$deliveryAddress`.
+- ❌ Mixing styles inside the same entity — pick a single rule and apply it across all properties.
 
 ## Critical Rules
 
