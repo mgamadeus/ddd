@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Common\Entities\Geometry\Cartesian;
 
 use DDD\Domain\Base\Entities\ValueObject;
+use Override;
 
 /**
  * Closed 2D cartesian polygon: an outer ring plus zero or more inner rings (holes).
@@ -89,6 +90,51 @@ class Polygon extends ValueObject
     public function isEmpty(): bool
     {
         return $this->outerRing === [];
+    }
+
+    /**
+     * Persistence bridge — see {@see Point2D::mapToRepository()}. Returns WKT, not the default
+     * `toObject()` array shape, so the upsert spatial branch can feed it into `ST_GeomFromText`.
+     */
+    #[Override]
+    public function mapToRepository(): mixed
+    {
+        return (string)$this;
+    }
+
+    /**
+     * Accepts: a {@see Polygon} instance (Doctrine-type output), a WKT string, or a legacy
+     * array shape (`['outerRing' => [...], 'innerRings' => [...]]` from pre-v2.14 JSON
+     * storage). Reuses the constructor's normalisation logic for the array case.
+     */
+    #[Override]
+    public function mapFromRepository(mixed $repoObject): void
+    {
+        if ($repoObject === null) {
+            return;
+        }
+        if ($repoObject instanceof self) {
+            $this->outerRing = $repoObject->outerRing;
+            $this->innerRings = $repoObject->innerRings;
+            return;
+        }
+        if (is_array($repoObject)) {
+            $outerRing = $repoObject['outerRing'] ?? $repoObject['points'] ?? $repoObject;
+            $innerRings = $repoObject['innerRings'] ?? [];
+            $rebuilt = new self(is_array($outerRing) ? $outerRing : [], is_array($innerRings) ? $innerRings : []);
+            $this->outerRing = $rebuilt->outerRing;
+            $this->innerRings = $rebuilt->innerRings;
+            return;
+        }
+        if (is_object($repoObject)) {
+            $outerRing = $repoObject->outerRing ?? $repoObject->points ?? [];
+            $innerRings = $repoObject->innerRings ?? [];
+            if (is_array($outerRing)) {
+                $rebuilt = new self($outerRing, is_array($innerRings) ? $innerRings : []);
+                $this->outerRing = $rebuilt->outerRing;
+                $this->innerRings = $rebuilt->innerRings;
+            }
+        }
     }
 
     /**

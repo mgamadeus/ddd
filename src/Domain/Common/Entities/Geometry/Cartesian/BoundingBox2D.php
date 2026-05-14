@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Common\Entities\Geometry\Cartesian;
 
 use DDD\Domain\Base\Entities\ValueObject;
+use Override;
 
 /**
  * Axis-aligned 2D bounding box defined by its top-left corner and dimensions.
@@ -57,6 +58,49 @@ class BoundingBox2D extends ValueObject
     public function isEmpty(): bool
     {
         return $this->width === 0.0 || $this->height === 0.0;
+    }
+
+    /**
+     * Persistence bridge — see {@see Point2D::mapToRepository()}. Returns WKT (closed-rectangle
+     * polygon), not the default `toObject()` array shape, so the upsert spatial branch can
+     * feed it into `ST_GeomFromText`.
+     */
+    #[Override]
+    public function mapToRepository(): mixed
+    {
+        return (string)$this;
+    }
+
+    /**
+     * Accepts: a {@see BoundingBox2D} instance (Doctrine-type output), a WKT polygon (folded
+     * back to bbox if axis-aligned), or a legacy array shape `(x, y, width, height)`.
+     */
+    #[Override]
+    public function mapFromRepository(mixed $repoObject): void
+    {
+        if ($repoObject === null) {
+            return;
+        }
+        if ($repoObject instanceof self) {
+            $this->x = $repoObject->x;
+            $this->y = $repoObject->y;
+            $this->width = $repoObject->width;
+            $this->height = $repoObject->height;
+            return;
+        }
+        if (is_array($repoObject)) {
+            $this->x = (float)($repoObject['x'] ?? 0);
+            $this->y = (float)($repoObject['y'] ?? 0);
+            $this->width = max(0.0, (float)($repoObject['width'] ?? 0));
+            $this->height = max(0.0, (float)($repoObject['height'] ?? 0));
+            return;
+        }
+        if (is_object($repoObject) && isset($repoObject->x, $repoObject->y, $repoObject->width, $repoObject->height)) {
+            $this->x = (float)$repoObject->x;
+            $this->y = (float)$repoObject->y;
+            $this->width = max(0.0, (float)$repoObject->width);
+            $this->height = max(0.0, (float)$repoObject->height);
+        }
     }
 
     /**

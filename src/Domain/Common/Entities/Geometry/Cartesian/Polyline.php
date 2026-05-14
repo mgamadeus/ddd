@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Common\Entities\Geometry\Cartesian;
 
 use DDD\Domain\Base\Entities\ValueObject;
+use Override;
 
 /**
  * Open 2D cartesian polyline: an ordered list of {@see Point2D} vertices. First and last vertex
@@ -53,6 +54,45 @@ class Polyline extends ValueObject
     public function isEmpty(): bool
     {
         return $this->points === [];
+    }
+
+    /**
+     * Persistence bridge — see {@see Point2D::mapToRepository()}. Returns WKT, not the default
+     * `toObject()` array shape, so the upsert spatial branch can feed it into `ST_GeomFromText`.
+     */
+    #[Override]
+    public function mapToRepository(): mixed
+    {
+        return (string)$this;
+    }
+
+    /**
+     * Accepts: a {@see Polyline} instance (Doctrine-type output), a WKT string, or a legacy
+     * array shape with a `points` key (the pre-v2.14 JSON storage). Reuses the constructor's
+     * normalisation logic for the array case.
+     */
+    #[Override]
+    public function mapFromRepository(mixed $repoObject): void
+    {
+        if ($repoObject === null) {
+            return;
+        }
+        if ($repoObject instanceof self) {
+            $this->points = $repoObject->points;
+            return;
+        }
+        if (is_array($repoObject)) {
+            $points = $repoObject['points'] ?? $repoObject;
+            if (is_array($points)) {
+                $rebuilt = new self($points);
+                $this->points = $rebuilt->points;
+            }
+            return;
+        }
+        if (is_object($repoObject) && isset($repoObject->points) && is_array($repoObject->points)) {
+            $rebuilt = new self($repoObject->points);
+            $this->points = $rebuilt->points;
+        }
     }
 
     /**

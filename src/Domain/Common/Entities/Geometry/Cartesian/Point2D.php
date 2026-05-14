@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Common\Entities\Geometry\Cartesian;
 
 use DDD\Domain\Base\Entities\ValueObject;
+use Override;
 
 /**
  * 2D cartesian point in arbitrary coordinate space (pixel, mm, normalised — caller decides).
@@ -49,6 +50,56 @@ class Point2D extends ValueObject
     public function toCsv(): string
     {
         return $this->x . ',' . $this->y;
+    }
+
+    /**
+     * Persistence bridge — returns the WKT form so the upsert path can feed it directly into
+     * `ST_GeomFromText(?)`. Overrides the default `ValueObjectTrait::mapToRepository()` which
+     * would otherwise produce the toObject() associative-array shape, breaking the spatial
+     * branch in DoctrineEntityManager::upsert().
+     */
+    #[Override]
+    public function mapToRepository(): mixed
+    {
+        return (string)$this;
+    }
+
+    /**
+     * Read-path inverse. Accepts: a {@see Point2D} instance (the Doctrine type's normal
+     * output — copy fields); a WKT or CSV string (legacy or hand-built); an associative
+     * array (legacy JSON storage shape, `['x' => …, 'y' => …]`).
+     */
+    #[Override]
+    public function mapFromRepository(mixed $repoObject): void
+    {
+        if ($repoObject === null) {
+            return;
+        }
+        if ($repoObject instanceof self) {
+            $this->x = $repoObject->x;
+            $this->y = $repoObject->y;
+            return;
+        }
+        if (is_string($repoObject)) {
+            $parsed = self::fromString($repoObject);
+            if ($parsed !== null) {
+                $this->x = $parsed->x;
+                $this->y = $parsed->y;
+            }
+            return;
+        }
+        if (is_array($repoObject)) {
+            $parsed = self::fromArray($repoObject);
+            if ($parsed !== null) {
+                $this->x = $parsed->x;
+                $this->y = $parsed->y;
+            }
+            return;
+        }
+        if (is_object($repoObject) && isset($repoObject->x, $repoObject->y) && is_numeric($repoObject->x) && is_numeric($repoObject->y)) {
+            $this->x = (float)$repoObject->x;
+            $this->y = (float)$repoObject->y;
+        }
     }
 
     /**
