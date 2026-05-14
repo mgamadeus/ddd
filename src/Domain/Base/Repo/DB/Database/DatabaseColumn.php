@@ -160,13 +160,16 @@ class DatabaseColumn extends ValueObject
         self::SQL_TYPE_MEDIUMBLOB => DatabaseIndex::TYPE_NONE,
         self::SQL_TYPE_LONGBLOB => DatabaseIndex::TYPE_NONE,
         self::SQL_TYPE_JSON => DatabaseIndex::TYPE_NONE,
-        // Spatial types are TYPE_NONE by default — most geometry columns are read-by-parent-FK
-        // and never queried with spatial predicates (ST_Contains / ST_Within / …), so an
-        // auto-emitted SPATIAL INDEX is pure insert/update overhead. Plus SPATIAL requires
-        // NOT NULL columns, which makes auto-emission fragile. Opt in explicitly via
-        // #[DatabaseIndex(indexType: DatabaseIndex::TYPE_SPATIAL)] on the entity property
-        // — same pattern as TYPE_FULLTEXT for text columns.
-        self::SQL_TYPE_POINT => DatabaseIndex::TYPE_NONE,
+        // POINT defaults to TYPE_SPATIAL because the canonical use case (GeoPoint proximity
+        // queries via ST_Distance_Sphere, ST_Within etc.) almost always wants the R-tree.
+        // LINESTRING and POLYGON default to TYPE_NONE because the canonical use case (zone
+        // outlines, drawing strokes) is read-by-parent-FK and rarely spatially queried —
+        // auto-emitting the index would just slow down inserts. Opt in for those via
+        // #[DatabaseIndex(indexType: DatabaseIndex::TYPE_SPATIAL)] (same pattern as
+        // TYPE_FULLTEXT for text columns). For any spatial type, the column MUST also be
+        // #[NotNull] — MySQL/MariaDB reject SPATIAL on nullable columns (error 1252).
+        // DatabaseModel suppresses SPATIAL on nullable columns defensively.
+        self::SQL_TYPE_POINT => DatabaseIndex::TYPE_SPATIAL,
         self::SQL_TYPE_LINESTRING => DatabaseIndex::TYPE_NONE,
         self::SQL_TYPE_POLYGON => DatabaseIndex::TYPE_NONE,
         self::SQL_TYPE_VECTOR => DatabaseIndex::TYPE_VECTOR,

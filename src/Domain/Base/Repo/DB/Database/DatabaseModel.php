@@ -346,6 +346,14 @@ class DatabaseModel extends ValueObject
                     }
                 } elseif (isset($databaseColumn->sqlType) && $databaseColumn->hasIndex && !$databaseColumn->ignoreProperty) {
                     $indexType = DatabaseColumn::SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS[$databaseColumn->sqlType];
+                    // MySQL/MariaDB reject SPATIAL indexes on nullable columns (error 1252).
+                    // Same guard as the explicit-#[DatabaseIndex] branch above — silently drop
+                    // the auto-allocated SPATIAL index when the column is nullable. Caller can
+                    // add #[NotNull] to opt back into the index, or accept that the column has
+                    // no index.
+                    if ($indexType === DatabaseIndex::TYPE_SPATIAL && $databaseColumn->allowsNull) {
+                        $indexType = DatabaseIndex::TYPE_NONE;
+                    }
                     if ($indexType != DatabaseIndex::TYPE_NONE) {
                         $index = new DatabaseIndex(indexColumns: [$databaseColumn->name], indexType: $indexType);
                         $databaseModel->indexes->add($index);
