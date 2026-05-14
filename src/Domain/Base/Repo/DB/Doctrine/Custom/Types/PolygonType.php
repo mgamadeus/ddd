@@ -26,6 +26,9 @@ class PolygonType extends Type
 {
     public const string NAME = 'cartesian_polygon';
 
+    /** Reader is stateless; cached so it isn't reallocated per column hydration. */
+    protected static ?WKBReader $wkbReader = null;
+
     public function getName(): string
     {
         return self::NAME;
@@ -48,7 +51,7 @@ class PolygonType extends Type
         }
         $wkb = strlen($value) > 4 ? substr($value, 4) : $value;
         try {
-            $geometry = (new WKBReader())->read($wkb);
+            $geometry = (self::$wkbReader ??= new WKBReader())->read($wkb);
         } catch (\Throwable) {
             return null;
         }
@@ -75,34 +78,16 @@ class PolygonType extends Type
 
     public function convertToDatabaseValue(mixed $value, AbstractPlatform $platform): ?string
     {
-        if ($value === null || !$value instanceof Polygon || count($value->outerRing) < 3) {
+        if ($value === null) {
             return null;
         }
-        $rings = [self::ringToWkt($value->outerRing)];
-        foreach ($value->innerRings as $ring) {
-            if (count($ring) >= 3) {
-                $rings[] = self::ringToWkt($ring);
-            }
+        if (!$value instanceof Polygon) {
+            return null;
         }
-        return 'POLYGON(' . implode(', ', $rings) . ')';
-    }
-
-    /**
-     * @param Point2D[] $ring
-     */
-    protected static function ringToWkt(array $ring): string
-    {
-        $vertices = [];
-        foreach ($ring as $point) {
-            $vertices[] = sprintf('%F %F', $point->x, $point->y);
-        }
-        // Close the ring if the caller omitted the duplicate trailing vertex.
-        $first = $ring[0];
-        $last = $ring[count($ring) - 1];
-        if ($first->x !== $last->x || $first->y !== $last->y) {
-            $vertices[] = sprintf('%F %F', $first->x, $first->y);
-        }
-        return '(' . implode(', ', $vertices) . ')';
+        // Delegate to the VO's __toString so the ORM persistence path produces byte-identical SQL
+        // to the upsert/(string)-cast path. Degenerate rings emit invalid WKT — MySQL's parser
+        // error is clearer than the cryptic "Invalid GIS data" of an empty input.
+        return (string)$value;
     }
 
     public function canRequireSQLConversion(): bool

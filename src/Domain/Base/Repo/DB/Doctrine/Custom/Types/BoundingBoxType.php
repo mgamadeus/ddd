@@ -25,6 +25,9 @@ class BoundingBoxType extends Type
 {
     public const string NAME = 'cartesian_bbox';
 
+    /** Reader is stateless; cached so it isn't reallocated per column hydration. */
+    protected static ?WKBReader $wkbReader = null;
+
     public function getName(): string
     {
         return self::NAME;
@@ -47,7 +50,7 @@ class BoundingBoxType extends Type
         }
         $wkb = strlen($value) > 4 ? substr($value, 4) : $value;
         try {
-            $geometry = (new WKBReader())->read($wkb);
+            $geometry = (self::$wkbReader ??= new WKBReader())->read($wkb);
         } catch (\Throwable) {
             return null;
         }
@@ -67,17 +70,15 @@ class BoundingBoxType extends Type
 
     public function convertToDatabaseValue(mixed $value, AbstractPlatform $platform): ?string
     {
-        if ($value === null || !$value instanceof BoundingBox2D || $value->isEmpty()) {
+        if ($value === null) {
             return null;
         }
-        $x = $value->x;
-        $y = $value->y;
-        $mx = $value->maxX();
-        $my = $value->maxY();
-        return sprintf(
-            'POLYGON((%F %F, %F %F, %F %F, %F %F, %F %F))',
-            $x, $y, $mx, $y, $mx, $my, $x, $my, $x, $y
-        );
+        if (!$value instanceof BoundingBox2D) {
+            return null;
+        }
+        // Delegate to the VO's __toString so the ORM persistence path produces byte-identical SQL
+        // to the upsert/(string)-cast path. Degenerate boxes still emit a valid (collapsed) polygon.
+        return (string)$value;
     }
 
     public function canRequireSQLConversion(): bool

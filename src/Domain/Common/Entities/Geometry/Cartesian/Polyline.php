@@ -23,6 +23,7 @@ class Polyline extends ValueObject
 
     public function __construct(array $points = [])
     {
+        parent::__construct();
         foreach ($points as $point) {
             if ($point instanceof Point2D) {
                 $this->points[] = $point;
@@ -56,17 +57,15 @@ class Polyline extends ValueObject
 
     /**
      * Returns the polyline as WKT `LINESTRING(x1 y1, x2 y2, ...)`. The Doctrine upsert path feeds
-     * this directly into `ST_GeomFromText(?)`. Empty polylines or polylines with fewer than two
-     * vertices return an empty string — MySQL rejects LINESTRINGs with < 2 points.
+     * this directly into `ST_GeomFromText(?)`. Polylines with fewer than two vertices emit
+     * `'LINESTRING()'` — invalid WKT that MySQL rejects with a clear parser error rather than
+     * the cryptic "Invalid GIS data" returned when an empty string is passed to `ST_GeomFromText`.
      */
     public function __toString(): string
     {
-        if (count($this->points) < 2) {
-            return '';
-        }
         $vertices = [];
         foreach ($this->points as $point) {
-            $vertices[] = sprintf('%F %F', $point->x, $point->y);
+            $vertices[] = sprintf('%.17g %.17g', $point->x, $point->y);
         }
         return 'LINESTRING(' . implode(', ', $vertices) . ')';
     }

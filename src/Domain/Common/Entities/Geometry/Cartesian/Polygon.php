@@ -34,6 +34,7 @@ class Polygon extends ValueObject
      */
     public function __construct(array $outerRing = [], array $innerRings = [])
     {
+        parent::__construct();
         $this->outerRing = $this->normaliseRing($outerRing);
         foreach ($innerRings as $ring) {
             $normalised = $this->normaliseRing($ring);
@@ -93,19 +94,15 @@ class Polygon extends ValueObject
     /**
      * Returns the polygon as WKT `POLYGON((outerRing), (innerRing1), ...)`. Each ring is
      * explicitly closed — if the caller omitted the duplicate closing vertex, this method
-     * appends it. Returns an empty string when the outer ring has fewer than three vertices
-     * (MySQL rejects degenerate polygons).
+     * appends it. Degenerate rings (< 3 vertices) emit `()` and degenerate polygons emit
+     * `POLYGON()` — both are invalid WKT and MySQL rejects with a clear parser error,
+     * preferable to the cryptic "Invalid GIS data" returned for empty input.
      */
     public function __toString(): string
     {
-        if (count($this->outerRing) < 3) {
-            return '';
-        }
         $rings = [self::ringToWkt($this->outerRing)];
         foreach ($this->innerRings as $ring) {
-            if (count($ring) >= 3) {
-                $rings[] = self::ringToWkt($ring);
-            }
+            $rings[] = self::ringToWkt($ring);
         }
         return 'POLYGON(' . implode(', ', $rings) . ')';
     }
@@ -115,14 +112,17 @@ class Polygon extends ValueObject
      */
     protected static function ringToWkt(array $ring): string
     {
+        if ($ring === []) {
+            return '()';
+        }
         $vertices = [];
         foreach ($ring as $point) {
-            $vertices[] = sprintf('%F %F', $point->x, $point->y);
+            $vertices[] = sprintf('%.17g %.17g', $point->x, $point->y);
         }
         $first = $ring[0];
         $last = $ring[count($ring) - 1];
         if ($first->x !== $last->x || $first->y !== $last->y) {
-            $vertices[] = sprintf('%F %F', $first->x, $first->y);
+            $vertices[] = sprintf('%.17g %.17g', $first->x, $first->y);
         }
         return '(' . implode(', ', $vertices) . ')';
     }

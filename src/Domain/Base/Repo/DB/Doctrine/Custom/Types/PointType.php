@@ -22,6 +22,9 @@ class PointType extends Type
 {
     public const string NAME = 'cartesian_point';
 
+    /** Reader is stateless; cached so it isn't reallocated per column hydration. */
+    protected static ?WKBReader $wkbReader = null;
+
     public function getName(): string
     {
         return self::NAME;
@@ -45,7 +48,7 @@ class PointType extends Type
         // MySQL's internal spatial format prepends a 4-byte little-endian SRID before the WKB.
         $wkb = strlen($value) > 4 ? substr($value, 4) : $value;
         try {
-            $geometry = (new WKBReader())->read($wkb);
+            $geometry = (self::$wkbReader ??= new WKBReader())->read($wkb);
         } catch (\Throwable) {
             return null;
         }
@@ -63,7 +66,9 @@ class PointType extends Type
         if (!$value instanceof Point2D) {
             return null;
         }
-        return sprintf('POINT(%F %F)', $value->x, $value->y);
+        // Delegate to the VO's __toString so the ORM persistence path produces byte-identical SQL
+        // to the upsert/(string)-cast path.
+        return (string)$value;
     }
 
     public function canRequireSQLConversion(): bool

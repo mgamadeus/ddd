@@ -22,6 +22,9 @@ class LineStringType extends Type
 {
     public const string NAME = 'cartesian_linestring';
 
+    /** Reader is stateless; cached so it isn't reallocated per column hydration. */
+    protected static ?WKBReader $wkbReader = null;
+
     public function getName(): string
     {
         return self::NAME;
@@ -44,7 +47,7 @@ class LineStringType extends Type
         }
         $wkb = strlen($value) > 4 ? substr($value, 4) : $value;
         try {
-            $geometry = (new WKBReader())->read($wkb);
+            $geometry = (self::$wkbReader ??= new WKBReader())->read($wkb);
         } catch (\Throwable) {
             return null;
         }
@@ -60,14 +63,16 @@ class LineStringType extends Type
 
     public function convertToDatabaseValue(mixed $value, AbstractPlatform $platform): ?string
     {
-        if ($value === null || !$value instanceof Polyline || count($value->points) < 2) {
+        if ($value === null) {
             return null;
         }
-        $vertices = [];
-        foreach ($value->points as $point) {
-            $vertices[] = sprintf('%F %F', $point->x, $point->y);
+        if (!$value instanceof Polyline) {
+            return null;
         }
-        return 'LINESTRING(' . implode(', ', $vertices) . ')';
+        // Delegate to the VO's __toString so the ORM persistence path produces byte-identical SQL
+        // to the upsert/(string)-cast path. The VO emits invalid WKT for < 2 vertices on purpose —
+        // MySQL's parser error is clearer than the cryptic "Invalid GIS data" of an empty input.
+        return (string)$value;
     }
 
     public function canRequireSQLConversion(): bool

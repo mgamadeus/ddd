@@ -23,9 +23,9 @@ class Point2D extends ValueObject
 
     public function __construct(float $x = 0.0, float $y = 0.0)
     {
+        parent::__construct();
         $this->x = $x;
         $this->y = $y;
-        // skip parent::__construct() — VO is hot-path on hydration, no validation needed
     }
 
     public function uniqueKey(): string
@@ -40,7 +40,7 @@ class Point2D extends ValueObject
      */
     public function __toString(): string
     {
-        return sprintf('POINT(%F %F)', $this->x, $this->y);
+        return sprintf('POINT(%.17g %.17g)', $this->x, $this->y);
     }
 
     /**

@@ -32,6 +32,7 @@ class BoundingBox2D extends ValueObject
 
     public function __construct(float $x = 0.0, float $y = 0.0, float $width = 0.0, float $height = 0.0)
     {
+        parent::__construct();
         $this->x = $x;
         $this->y = $y;
         $this->width = max(0.0, $width);
@@ -61,18 +62,17 @@ class BoundingBox2D extends ValueObject
     /**
      * Returns the box as WKT `POLYGON((x y, mx y, mx my, x my, x y))` — closed clockwise
      * rectangle. The Doctrine upsert path feeds this directly into `ST_GeomFromText(?)`.
-     * An empty box (zero width or height) returns an empty string — MySQL rejects degenerate
-     * polygons.
+     * Degenerate boxes (zero width or height) still emit a valid WKT polygon — the rectangle
+     * collapses to a line or a point, which MySQL accepts as a polygon (`ST_IsValid` will
+     * report false). This is preferable to emitting an empty string that yields a cryptic
+     * "Invalid GIS data" parser error.
      */
     public function __toString(): string
     {
-        if ($this->isEmpty()) {
-            return '';
-        }
         $mx = $this->maxX();
         $my = $this->maxY();
         return sprintf(
-            'POLYGON((%F %F, %F %F, %F %F, %F %F, %F %F))',
+            'POLYGON((%.17g %.17g, %.17g %.17g, %.17g %.17g, %.17g %.17g, %.17g %.17g))',
             $this->x, $this->y, $mx, $this->y, $mx, $my, $this->x, $my, $this->x, $this->y
         );
     }
