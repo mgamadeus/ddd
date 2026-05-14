@@ -160,9 +160,15 @@ class DatabaseColumn extends ValueObject
         self::SQL_TYPE_MEDIUMBLOB => DatabaseIndex::TYPE_NONE,
         self::SQL_TYPE_LONGBLOB => DatabaseIndex::TYPE_NONE,
         self::SQL_TYPE_JSON => DatabaseIndex::TYPE_NONE,
-        self::SQL_TYPE_POINT => DatabaseIndex::TYPE_SPATIAL,
-        self::SQL_TYPE_LINESTRING => DatabaseIndex::TYPE_SPATIAL,
-        self::SQL_TYPE_POLYGON => DatabaseIndex::TYPE_SPATIAL,
+        // Spatial types are TYPE_NONE by default — most geometry columns are read-by-parent-FK
+        // and never queried with spatial predicates (ST_Contains / ST_Within / …), so an
+        // auto-emitted SPATIAL INDEX is pure insert/update overhead. Plus SPATIAL requires
+        // NOT NULL columns, which makes auto-emission fragile. Opt in explicitly via
+        // #[DatabaseIndex(indexType: DatabaseIndex::TYPE_SPATIAL)] on the entity property
+        // — same pattern as TYPE_FULLTEXT for text columns.
+        self::SQL_TYPE_POINT => DatabaseIndex::TYPE_NONE,
+        self::SQL_TYPE_LINESTRING => DatabaseIndex::TYPE_NONE,
+        self::SQL_TYPE_POLYGON => DatabaseIndex::TYPE_NONE,
         self::SQL_TYPE_VECTOR => DatabaseIndex::TYPE_VECTOR,
     ];
 

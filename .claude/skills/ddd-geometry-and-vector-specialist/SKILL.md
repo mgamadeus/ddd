@@ -138,23 +138,44 @@ public ?Vector $embedding;
 
 The `length` (= dimension) is **required** — MariaDB needs `VECTOR(N)` with an explicit N. The generator emits `length: N` on `#[ORM\Column]`. Forgetting it makes `VectorType::getSQLDeclaration()` throw.
 
-### Suppressing the default index
+### Indexing — opt in for spatial, opt out for vector
 
 The default index allocation is:
 
-| SQL type | Default index |
-|---|---|
-| `POINT` / `LINESTRING` / `POLYGON` | `TYPE_SPATIAL` |
-| `VECTOR` | `TYPE_VECTOR` |
+| SQL type | Default index | Reason |
+|---|---|---|
+| `POINT` / `LINESTRING` / `POLYGON` | `TYPE_NONE` (opt-in) | Spatial indexes only accelerate `ST_Contains`/`ST_Within`/`ST_Intersects` queries. Most geometry columns are read-by-parent-FK and never spatially queried — auto-emitting the index would just slow down inserts. Plus SPATIAL requires `NOT NULL`, which makes auto-emission fragile. |
+| `VECTOR` | `TYPE_VECTOR` | ANN search is the only reason `VECTOR` columns exist; always indexed. |
 
-To opt out (e.g. a polygon you never spatially query, only round-trip):
+**To enable a SPATIAL index, opt in explicitly:**
 
 ```php
 use DDD\Domain\Base\Repo\DB\Database\DatabaseIndex;
+use Symfony\Component\Validator\Constraints\NotNull;
 
+#[NotNull]
+#[DatabaseIndex(indexType: DatabaseIndex::TYPE_SPATIAL)]
+public Polygon $zone;
+```
+
+### Hard MySQL constraint: SPATIAL requires NOT NULL
+
+MySQL/MariaDB reject `CREATE SPATIAL INDEX` on a column that allows `NULL` (error `1252: All parts of a SPATIAL index must be NOT NULL`).
+
+The framework handles this defensively: if you declare `#[DatabaseIndex(TYPE_SPATIAL)]` on a column that's still nullable (no `#[NotNull]`), the index is **silently dropped** at schema-generation time. The column itself works fine — you just don't get the index. Same pattern as `TYPE_FULLTEXT` on JSON columns.
+
+**To get the index, the property MUST also be `#[NotNull]`** — see the example above.
+
+### Suppressing an explicit index
+
+If you previously declared an explicit `#[DatabaseIndex(TYPE_SPATIAL)]` and want to drop it:
+
+```php
 #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
 public ?Polygon $shape;
 ```
+
+For columns without any `#[DatabaseIndex]` attribute, the default is already `TYPE_NONE` for spatial types — no action needed.
 
 ## Function Catalog
 
