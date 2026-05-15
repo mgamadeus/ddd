@@ -8,6 +8,7 @@ use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadTrait;
 use DDD\Domain\Base\Entities\ObjectSet;
 use DDD\Domain\Base\Repo\DB\DBEntity;
+use DDD\Domain\Base\Repo\DB\DBEntitySet;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Infrastructure\Exceptions\BadRequestException;
@@ -301,6 +302,16 @@ class ExpandOptions extends ObjectSet
             }
             /** @var DBEntity $targetPropertyRepoClass */
             $targetPropertyRepoClass = $expandOption->getTargetPropertyRepoClass();
+            // When the expand targets a collection property (e.g. `?Messages $messages`),
+            // ExpandDefinition::getTargetPropertyRepoClass() resolves to the DBEntitySet
+            // class — but applyReadRightsQuery() / createQueryBuilder() / getBaseModelAlias()
+            // are defined per-entity, not per-set. DBEntitySet inherits a no-op
+            // applyReadRightsQuery() default from DatabaseRepoEntity, so without this
+            // deref any user-defined rights logic on the DBEntity is silently bypassed.
+            // The set's BASE_REPO_CLASS points at the corresponding DBEntity.
+            if ($targetPropertyRepoClass && is_subclass_of($targetPropertyRepoClass, DBEntitySet::class)) {
+                $targetPropertyRepoClass = $targetPropertyRepoClass::BASE_REPO_CLASS;
+            }
             if ($targetPropertyRepoClass && method_exists($targetPropertyRepoClass, 'applyReadRightsQuery')) {
                 /** @var DBEntity $baseRepoClass */
                 // Build the rights QueryBuilder *with* SELECT/FROM so that the documented
