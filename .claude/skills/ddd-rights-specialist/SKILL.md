@@ -483,6 +483,20 @@ If your `applyReadRightsQuery` adds WHEREs but returns `false` (e.g. via `return
 
 Rights live on the single-entity repo (`DBChatMessage`), not on the set repo (`DBChatMessages`). When you expand a set-typed property, the framework must call `applyReadRightsQuery` on the **base entity repo**, not on the set. If you see rights silently bypassed on a set expand, suspect the resolution chain in `ExpandDefinition::getTargetPropertyRepoClass()` (it must yield the base repo, not the set repo).
 
+### To-one vs To-many cardinality matters
+
+For **to-one** expand targets (single-entity reference like `account`, `chatChannel`), rights merge into the main query's **WHERE** with a NULL-safety wrap. A parent with an unreadable to-one is treated as invalid and excluded — `find($id)` returns 404. That's the right semantic: a row pointing at an unreadable required child is orphan-like data and shouldn't surface.
+
+For **to-many** expand targets (`EntitySet`-typed reference like `chatMessages`, `chatMessageAttachments`), the same WHERE-wrap would **collapse the parent row** if every joined child fails rights — Doctrine's DISTINCT-on-parent.id subquery returns nothing → `find($id)` 404 even though the caller-intent is "filter the collection, keep the parent". The framework therefore merges to-many rights into the **LEFT JOIN's ON-clause** (as an `IN (SELECT id …)` subquery), so children that fail rights are simply not joined — the parent stays visible with a (possibly empty) filtered collection. This matches the lazy-load semantic of `$parent->collection` exactly.
+
+You don't have to do anything special in your `applyReadRightsQuery` for either case — the framework decides where to merge based on the target property's reflection type. Just ensure your method returns `true` when it adds conditions.
+
+| Expand source | to-one Expand-Target | to-many Expand-Target |
+|---|---|---|
+| Implicit rights (`applyReadRightsQuery`) | **WHERE with NULL-safety wrap** — `($alias.id IS NULL OR (<rights>))` | **ON-clause via `IN (subquery)`** — children that fail rights are not joined; parent stays visible |
+| Top-level `filter=x.y eq Z` (dot-path) | WHERE — caller filters parent | WHERE with DISTINCT (EXISTS-semantic) |
+| Expand-scoped `expand=x(filters=…)` | ON-clause via `applyFiltersToJoin` | ON-clause via `applyFiltersToJoin` |
+
 ---
 
 ## Checklist (New Rights Implementation)

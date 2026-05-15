@@ -328,7 +328,33 @@ class ExpandOptions extends ObjectSet
                 $targetPropertyModelAlias = $targetPropertyRepoClass::getBaseModelAlias();
 
                 if ($readRightsFiltersApplied) {
-                    $this->applyConditionsFromReadRightsQueryBuilder($queryBuilder, $rightsQueryBuilder, $targetPropertyModelAlias, $expandOption->joinAlias);
+                    // Branch on the expand's target cardinality. For to-one targets the
+                    // WHERE-with-NULL-safety wrap is semantically correct (a parent with an
+                    // unreadable to-one is invalid → should not appear). For to-many targets
+                    // the WHERE-wrap collapses the parent when every joined child fails
+                    // rights — Doctrine's DISTINCT-on-parent.id subquery returns no parent
+                    // → 404 even though the parent should be visible with a (possibly empty)
+                    // filtered child collection. The to-many path pushes rights into the
+                    // LEFT JOIN's ON-clause via an IN-subquery instead, so children that
+                    // fail rights are simply not joined.
+                    $targetPropertyClass = $expandOption->expandDefinition?->getTargetPropertyClass();
+                    $isToManyExpand = $targetPropertyClass
+                        && is_a($targetPropertyClass, ObjectSet::class, true);
+                    if ($isToManyExpand) {
+                        $this->applyToManyConditionsFromReadRightsQueryBuilder(
+                            $queryBuilder,
+                            $rightsQueryBuilder,
+                            $targetPropertyModelAlias,
+                            $expandOption->joinAlias
+                        );
+                    } else {
+                        $this->applyConditionsFromReadRightsQueryBuilder(
+                            $queryBuilder,
+                            $rightsQueryBuilder,
+                            $targetPropertyModelAlias,
+                            $expandOption->joinAlias
+                        );
+                    }
                     // extract all relevant where, join etc clauses from the $tempQueryBuilder and apply them to the main query builder
                 }
             }
@@ -374,9 +400,13 @@ class ExpandOptions extends ObjectSet
             // IS NULL OR (<rights>)" preserves the parent row when the expand is
             // simply absent, while still enforcing rights when the expand is present.
             // For non-nullable expands the IS-NULL branch is never true, so behavior
-            // is unchanged. DQL doesn't allow nested JOINs inside a WITH-clause, so
-            // pushing rights into the expand's ON-clause isn't an option here; this
-            // is the closest correct semantics achievable in a single flat query.
+            // is unchanged.
+            //
+            // This method handles to-one expand targets only. For to-many targets the
+            // WHERE-wrap is incorrect (it can collapse the parent when all joined
+            // children fail rights); the to-many path is in
+            // applyToManyConditionsFromReadRightsQueryBuilder() which pushes rights
+            // into the LEFT JOIN's ON-clause as an IN-subquery instead.
             $mainQueryBuilder->andWhere(sprintf('(%s.id IS NULL OR (%s))', $targetJoinAlias, $whereString));
         }
 
@@ -394,6 +424,145 @@ class ExpandOptions extends ObjectSet
 
             $mainQueryBuilder->leftJoin($joinExpression, $joinObject->getAlias(), $joinObject->getConditionType(), $joinCondition ?: null);
         }
+    }
+
+    /**
+     * Variant of {@see self::applyConditionsFromReadRightsQueryBuilder()} for to-many expand
+     * targets (collection-typed properties like `?Messages $messages`).
+     *
+     * The classic WHERE-with-NULL-safety wrap collapses for to-many: a parent with N joined
+     * children where every child fails rights would lose every combined row to the WHERE
+     * filter, and the standard DISTINCT-on-parent.id subquery Doctrine builds for eager-find
+     * would return no parent — even though the caller-intent is "filter the collection, keep
+     * the parent" (matching the lazy-load semantic of `$parent->collection`).
+     *
+     * To preserve the parent we push rights into the LEFT JOIN's ON-clause as an IN-subquery:
+     * children that fail rights are not joined at all. DQL allows IN-subqueries (with their
+     * own FROM + JOINs + WHERE) inside WITH-clauses, so the rights query — including any
+     * internal leftJoins it created — is embedded self-contained in the subquery body.
+     *
+     * @param DoctrineQueryBuilder $mainQueryBuilder
+     * @param DoctrineQueryBuilder $rightsQueryBuilder
+     * @param string $tempBaseAlias the rights QB's table alias (from getBaseModelAlias)
+     * @param string $targetJoinAlias the expand's LEFT JOIN alias on the main query
+     */
+    public function applyToManyConditionsFromReadRightsQueryBuilder(
+        DoctrineQueryBuilder $mainQueryBuilder,
+        DoctrineQueryBuilder $rightsQueryBuilder,
+        string $tempBaseAlias,
+        string $targetJoinAlias
+    ): void {
+        $wherePart = $rightsQueryBuilder->getDQLPart('where');
+        if (!$wherePart) {
+            // No WHERE on the rights QB means no filter to push — rights-internal
+            // leftJoins alone don't restrict anything visible to the caller.
+            return;
+        }
+
+        $fromParts = $rightsQueryBuilder->getDQLPart('from');
+        if (empty($fromParts)) {
+            return;
+        }
+        /** @var \Doctrine\ORM\Query\Expr\From $from */
+        $from = $fromParts[0];
+
+        // Reindex named parameters from the rights QB onto the main QB as positional
+        // placeholders. The subquery references the same placeholders in its own scope —
+        // Doctrine compiles DQL placeholders into the outer SQL parameter list either way,
+        // so binding to $mainQueryBuilder is correct.
+        $whereString = (string)$wherePart;
+        $whereString = $this->reindexPlaceholdersAndApplyParameters(
+            $whereString,
+            $mainQueryBuilder,
+            $rightsQueryBuilder->getParameters()
+        );
+
+        // Carry over the rights' internal LEFT JOINs into the subquery body verbatim.
+        // No alias swapping needed — the subquery scope is independent from the main
+        // query, and Doctrine resolves DQL aliases per (sub)select.
+        $joinClauses = [];
+        $allJoins = $rightsQueryBuilder->getDQLPart('join')[$tempBaseAlias] ?? [];
+        foreach ($allJoins as $join) {
+            /** @var Join $join */
+            $clause = sprintf('LEFT JOIN %s %s', $join->getJoin(), $join->getAlias());
+            $joinCondition = $join->getCondition();
+            if ($joinCondition) {
+                $joinCondition = $this->reindexPlaceholdersAndApplyParameters(
+                    (string)$joinCondition,
+                    $mainQueryBuilder,
+                    $rightsQueryBuilder->getParameters()
+                );
+                $clause .= ' ' . ($join->getConditionType() ?: Join::WITH) . ' ' . $joinCondition;
+            }
+            $joinClauses[] = $clause;
+        }
+
+        $subqueryDQL = sprintf(
+            'SELECT %s.id FROM %s %s%s WHERE %s',
+            $tempBaseAlias,
+            $from->getFrom(),
+            $tempBaseAlias,
+            $joinClauses ? ' ' . implode(' ', $joinClauses) : '',
+            $whereString
+        );
+
+        $this->appendToLeftJoinOnCondition(
+            $mainQueryBuilder,
+            $targetJoinAlias,
+            sprintf('%s.id IN (%s)', $targetJoinAlias, $subqueryDQL)
+        );
+    }
+
+    /**
+     * Appends a condition (AND-combined) to the ON/WITH-clause of an existing LEFT JOIN
+     * identified by its alias. Doctrine Join objects are immutable on the condition field,
+     * so the join is reconstructed via reset+re-add — same pattern
+     * FiltersOptions::applyFiltersToJoin uses.
+     */
+    protected function appendToLeftJoinOnCondition(
+        DoctrineQueryBuilder $queryBuilder,
+        string $joinAlias,
+        string $additionalCondition
+    ): bool {
+        $allJoins = $queryBuilder->getDQLPart('join');
+        $modified = false;
+        foreach ($allJoins as $rootAlias => $joins) {
+            foreach ($joins as $index => $join) {
+                if (!($join instanceof Join) || $join->getAlias() !== $joinAlias) {
+                    continue;
+                }
+                $existingCondition = $join->getCondition();
+                if ($existingCondition === null
+                    || (is_string($existingCondition) && trim($existingCondition) === '')) {
+                    $combinedCondition = $additionalCondition;
+                } else {
+                    $combinedCondition = sprintf(
+                        '(%s) AND (%s)',
+                        (string)$existingCondition,
+                        $additionalCondition
+                    );
+                }
+                $allJoins[$rootAlias][$index] = new Join(
+                    $join->getJoinType(),
+                    $join->getJoin(),
+                    $join->getAlias(),
+                    $join->getConditionType() ?: Join::WITH,
+                    $combinedCondition,
+                    $join->getIndexBy()
+                );
+                $modified = true;
+            }
+        }
+        if (!$modified) {
+            return false;
+        }
+        $queryBuilder->resetDQLPart('join');
+        foreach ($allJoins as $rootAlias => $joins) {
+            foreach ($joins as $join) {
+                $queryBuilder->add('join', [$rootAlias => $join], true);
+            }
+        }
+        return true;
     }
 
     protected function reindexPlaceholdersAndApplyParameters(
