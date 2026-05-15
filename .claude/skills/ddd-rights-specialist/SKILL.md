@@ -67,7 +67,70 @@ Override these in `DB{EntityName}` repository classes (not on the EntitySet repo
 
 **Return values:** `true` = restrictions applied (query modified), `false` = no restrictions.
 
+> ⚠️ **CRITICAL — the return value is load-bearing for expand.**
+>
+> `DBEntity::find()` / `DBEntitySet::find()` apply rights via **side effect on the QueryBuilder** and ignore the return value. So a wrong return value won't break direct finds — the bug stays hidden.
+>
+> `ExpandOptions::applyConditionsFromReadRightsQueryBuilder()` is different: it calls your rights method on a **fresh temp QueryBuilder**, then merges WHERE/JOIN clauses into the main query **only if your method returned `true`**.
+>
+> **Rule:** if you added conditions to the QueryBuilder, you MUST `return true`. If you fall through to `return parent::applyReadRightsQuery($queryBuilder)` (the framework default returns `false`), the expand merger discards your conditions and the entity becomes invisibly readable on any nested `?$expand=...` join. This was the cause of a real silent rights bypass — see *Anti-Pattern* below.
+
 **All gated by** `$applyRightsRestrictions` (static bool, default `true`). When `false`, all rights checks are bypassed.
+
+---
+
+## Anti-Pattern: `return parent::applyReadRightsQuery(...)` after adding conditions
+
+❌ **Wrong** — silent rights bypass on expand:
+
+```php
+public static function applyReadRightsQuery(DoctrineQueryBuilder &$queryBuilder): bool
+{
+    if (!self::$applyRightsRestrictions) return false;
+    $authAccount = AuthService::instance()->getAccount();
+    $alias = static::getBaseModelAlias();
+
+    $queryBuilder->andWhere("{$alias}.accountId = :authAccountId")
+        ->setParameter('authAccountId', $authAccount->id);
+
+    return parent::applyReadRightsQuery($queryBuilder);  // ← returns false!
+}
+```
+
+The conditions are added to the QB, but the function reports "no restrictions applied" to `ExpandOptions`. Direct `find()` still works (side effect). Any `?$expand=thisEntity` from another entity reads it unrestricted.
+
+✅ **Right** — return `true` exactly where conditions were added:
+
+```php
+public static function applyReadRightsQuery(DoctrineQueryBuilder &$queryBuilder): bool
+{
+    if (!self::$applyRightsRestrictions) return false;
+    $authAccount = AuthService::instance()->getAccount();
+    $alias = static::getBaseModelAlias();
+
+    $queryBuilder->andWhere("{$alias}.accountId = :authAccountId")
+        ->setParameter('authAccountId', $authAccount->id);
+
+    return true;
+}
+```
+
+For partial branches (e.g. partner-admin adds, global-admin doesn't), put `return true;` **inside the branch** right after the `andWhere`, and keep `return false;` (or `parent::applyReadRightsQuery`) for the no-conditions terminal:
+
+```php
+if ($authAccount?->roles?->isAdmin()) {
+    if ($authAccount->type == Account::TYPE_PARTNER) {
+        try {
+            $queryBuilder->andWhere("{$alias}.worldId IN (:worldIds)")
+                ->setParameter('worldIds', $worldIds);
+            return true;  // ← conditions added, signal merge
+        } catch (Throwable $t) {
+        }
+    }
+    // global admin: no conditions, falls through
+}
+return false;  // or `parent::applyReadRightsQuery(...)` — both return false, both correct here
+```
 
 ---
 
@@ -110,7 +173,10 @@ public static function applyReadRightsQuery(DoctrineQueryBuilder &$queryBuilder)
     $queryBuilder->andWhere("{$alias}.accountId = :authAccountId")
         ->setParameter('authAccountId', $authAccount->id);
 
-    return parent::applyReadRightsQuery($queryBuilder);
+    // Restrictions applied — MUST return true so ExpandOptions merges the
+    // conditions into the main query. `parent::applyReadRightsQuery` returns
+    // `false` (no restrictions) and would silently drop them on expand joins.
+    return true;
 }
 ```
 
@@ -268,7 +334,11 @@ public static function applyUpdateRightsQuery(DoctrineQueryBuilder &$queryBuilde
     if (!self::$applyRightsRestrictions) {
         return false;
     }
-    parent::applyReadRightsQuery($queryBuilder);  // Apply read restrictions first
+
+    // Optional: apply read restrictions first if write should be a strict subset
+    // of read. Call static::applyReadRightsQuery (NOT parent::) so the actual
+    // entity's read rules apply, not the empty default.
+    static::applyReadRightsQuery($queryBuilder);
 
     $authAccount = AuthService::instance()->getAccount();
     $alias = static::getBaseModelAlias();
@@ -280,9 +350,18 @@ public static function applyUpdateRightsQuery(DoctrineQueryBuilder &$queryBuilde
         $queryBuilder->andWhere("{$alias}.id = :rightsAccountId")
             ->setParameter('rightsAccountId', $authAccount->id);
     }
-    return parent::applyUpdateRightsQuery($queryBuilder);
+    return true;
 }
 ```
+
+> ⚠️ **Don't `return parent::applyUpdateRightsQuery($queryBuilder)` at the end.**
+>
+> The default `DatabaseRepoEntity::applyUpdateRightsQuery` delegates to
+> `static::applyReadRightsQuery($queryBuilder)` — i.e. it re-runs your own read
+> rights on the same QueryBuilder. That **doubles every condition you already
+> have** (duplicate WHERE clauses; with leftJoin-based rights it throws on
+> duplicate aliases). If you want read rights applied, do it explicitly **once**
+> at the top of the method, then `return true;`.
 
 **Use for:** Entities where read access is broader than write access (accounts, shared resources).
 
@@ -290,12 +369,14 @@ public static function applyUpdateRightsQuery(DoctrineQueryBuilder &$queryBuilde
 
 ## Pattern 5: Delete Delegation
 
-Almost always delegates to update rights:
+Almost always delegates to update rights — use `static::` so a subclass's
+`applyUpdateRightsQuery` override is honored. `parent::applyUpdateRightsQuery`
+on `DatabaseRepoEntity` skips your own override and only re-applies read rights.
 
 ```php
 public static function applyDeleteRightsQuery(DoctrineQueryBuilder &$queryBuilder): bool
 {
-    return parent::applyUpdateRightsQuery($queryBuilder);
+    return static::applyUpdateRightsQuery($queryBuilder);
 }
 ```
 
@@ -388,18 +469,32 @@ DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
 - If Account has read rights, expanding `$expand=account` on a Track will apply Account's rights to the join
 - The `_rights` alias convention prevents collision between expand aliases and rights aliases
 
+### How the merge actually works (and why the return value matters)
+
+For each expanded property the framework:
+
+1. creates a **fresh temp `DoctrineQueryBuilder`** via `$targetRepo::createQueryBuilder(true)`,
+2. calls `$targetRepo::applyReadRightsQuery($tempQb)` and captures the bool return,
+3. **only if `true`**, copies the temp QB's WHERE / JOINs onto the main query (rewriting the temp base alias to the expand's join alias, with the LEFT-JOIN-safe wrapping `($joinAlias.id IS NULL OR (<rights>))`).
+
+If your `applyReadRightsQuery` adds WHEREs but returns `false` (e.g. via `return parent::applyReadRightsQuery(...)`), the merge step is skipped. Direct finds still apply the conditions (side effect on the QB passed by reference) — so the bug is invisible until someone uses `?$expand=yourEntity` from elsewhere. **This was a real, widespread silent rights bypass.** See Anti-Pattern above.
+
+### EntitySet properties (e.g. `chatMessages : ChatMessages`)
+
+Rights live on the single-entity repo (`DBChatMessage`), not on the set repo (`DBChatMessages`). When you expand a set-typed property, the framework must call `applyReadRightsQuery` on the **base entity repo**, not on the set. If you see rights silently bypassed on a set expand, suspect the resolution chain in `ExpandDefinition::getTargetPropertyRepoClass()` (it must yield the base repo, not the set repo).
+
 ---
 
 ## Checklist (New Rights Implementation)
 
 - [ ] Override `applyReadRightsQuery()` in `DB{Entity}` (not DBEntitySet)
 - [ ] First line: `if (!self::$applyRightsRestrictions) return false;`
-- [ ] No auth account: add impossible condition (`id is null` or `id = 0`)
-- [ ] Admin check: return `true` for global admins, add world filter for partner admins
+- [ ] No auth account: add impossible condition (`id is null` or `id = 0`), then `return true`
+- [ ] Admin check: return `true` for global admins, add world filter for partner admins (then `return true` inside the branch)
 - [ ] Non-admin: restrict to own data
 - [ ] LeftJoin aliases use `{ModelAlias}_{property}_rights` convention
 - [ ] Subquery model names from `Entity::getRepoClassInstance()::BASE_ORM_MODEL`
-- [ ] Call `parent::applyReadRightsQuery($queryBuilder)` at the end
-- [ ] If update stricter than read: override `applyUpdateRightsQuery()`, call parent read first
+- [ ] **Return `true` exactly where conditions were added; return `false` only on paths where no conditions were added.** Never `return parent::applyReadRightsQuery(...)` after adding conditions — the parent returns `false` and the expand merger drops them. See *Anti-Pattern* section.
+- [ ] If update stricter than read: override `applyUpdateRightsQuery()`. Apply read rights once via `static::applyReadRightsQuery($queryBuilder)` (NOT `parent::`), then `return true` — never `return parent::applyUpdateRightsQuery(...)`, that double-applies read rights.
 - [ ] If property hiding needed: override `mapToEntity()`, check `$applyRightsRestrictions` + auth
 - [ ] Never use `private` -- always `protected`
