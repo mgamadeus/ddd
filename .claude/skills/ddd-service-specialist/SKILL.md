@@ -99,6 +99,17 @@ Distinct paths depending on where the lookup happens:
 
 **`getRepoClassInstance()` is for service-internal custom QueryBuilder queries only**, never as a substitute for `getService()->find($id)` from outside. Going through the service applies `applyReadRightsQuery`, entity registry caching, lazy-loading defaults and other invariants -- skipping the service silently bypasses them.
 
+### `getService()` returning null — cross-namespace subclasses
+
+If `{Entity}::getService()` returns `null` for an entity that clearly has a Service in the framework, the cause is almost always a missing App-side EntitySet: an App subclass extends a Framework entity from a different root namespace, and `EntityTrait::getEntitySetClass()` cannot resolve a same-namespace plural. The diagnosis is two checks:
+
+1. The entity class lives in `App\…` and its parent lives in `DDD\…` (or another root namespace).
+2. There is no `App\…\{Entity}s` class declared alongside it.
+
+If the subclass adds **only** constants/type-aliases (no new persistent properties, no App service methods), tag it with `#[ReuseParentEntitySet]` from `DDD\Domain\Base\Entities\Attributes` — `getService()` will then resolve to the parent class's Service across the namespace boundary. See the **"Constants-Only Subclasses Across Root Namespaces"** section in `ddd-entity-specialist`.
+
+If the subclass actually adds behavior, declare the parallel `App\…\{Entity}s` (EntitySet) and `App\…\{Entity}sService` explicitly — the attribute is not the right tool there.
+
 ---
 
 ## DDD Architecture Conventions

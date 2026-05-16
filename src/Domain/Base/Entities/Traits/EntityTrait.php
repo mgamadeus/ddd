@@ -65,6 +65,25 @@ trait EntityTrait
             StaticRegistry::$entitySetClasses[$currentClassName] = $classWithNamespacePlural->getNameWithNamespace();
             return StaticRegistry::$entitySetClasses[$currentClassName];
         }
+        // Last-resort fallback for cross-namespace inheritance: when an entity is
+        // explicitly marked with #[ReuseParentEntitySet] and we've reached this point
+        // without finding a same-namespace plural, fall through to the parent class's
+        // EntitySet across the namespace boundary (e.g. App\Foo -> DDD\Foos). The
+        // default guard in getParentEntityClassName() is intentional — most App
+        // subclasses need their own App EntitySet — but constants-only subclasses are
+        // a common-enough exception to warrant an explicit opt-in attribute.
+        $reflectionClass = $currentClassName::getReflectionClass();
+        if ($reflectionClass->hasAttribute(\DDD\Domain\Base\Entities\Attributes\ReuseParentEntitySet::class)) {
+            $crossNamespaceParent = static::getParentEntityClassName(considerOnlyClassesFromSameRootNamespace: false);
+            if ($crossNamespaceParent) {
+                /** @var EntityTrait $crossNamespaceParent */
+                $entitySetClass = $crossNamespaceParent::getEntitySetClass();
+                if ($entitySetClass) {
+                    StaticRegistry::$entitySetClasses[$currentClassName] = $entitySetClass;
+                    return $entitySetClass;
+                }
+            }
+        }
         return null;
     }
 

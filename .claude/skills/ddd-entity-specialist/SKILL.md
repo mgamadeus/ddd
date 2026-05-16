@@ -454,6 +454,7 @@ class DB{EntityName}s extends DBEntitySet
 | `#[ChangeHistory]` | Customize column names (rare -- trait alone suffices) |
 | `#[NoRecursiveUpdate]` | Prevent recursive updates from parent |
 | `#[RolesRequiredForUpdate(Role::SUPERADMIN)]` | Restrict updates to specific roles |
+| `#[ReuseParentEntitySet]` | Opt-in: reuse the parent's EntitySet across root namespaces (see "Constants-Only Subclasses" below) |
 
 ### Property-Level
 
@@ -604,6 +605,62 @@ class Track extends Entity {
     public ?string $externalId = null;
 }
 ```
+
+---
+
+## Constants-Only Subclasses Across Root Namespaces (`#[ReuseParentEntitySet]`)
+
+### The problem
+
+When an App entity extends a Framework entity from a different root namespace (App vs DDD), `Entity::getService()` silently returns `null` unless the App also declares a parallel App-side EntitySet:
+
+```php
+// Framework:
+namespace DDD\Domain\AI\Entities\Prompts;
+class AIPrompt extends Entity { ... }
+class AIPrompts extends EntitySet {
+    public const SERVICE_NAME = AIPromptsService::class;
+}
+
+// App:
+namespace App\Domain\AI\Entities\Prompts;
+class AIPrompt extends \DDD\Domain\AI\Entities\Prompts\AIPrompt {
+    public const string SOME_APP_CONST = 'X';
+}
+
+// At runtime — RETURNS NULL:
+App\AIPrompt::getService();
+```
+
+Cause: `EntityTrait::getEntitySetClass()` first tries `getParentEntityClassName(considerOnlyClassesFromSameRootNamespace: true)`. The guard is deliberate — it prevents an App entity from accidentally inheriting a Framework EntitySet that's missing App-specific service behavior. The fallback path then pluralizes in the current namespace (`App\AIPrompts`) and finds nothing. Result: `null` → callers downstream NPE on `->throwErrors = true` or similar.
+
+### The opt-in fix
+
+Tag the subclass with `#[ReuseParentEntitySet]`:
+
+```php
+use DDD\Domain\Base\Entities\Attributes\ReuseParentEntitySet;
+
+#[ReuseParentEntitySet]
+class AIPrompt extends \DDD\Domain\AI\Entities\Prompts\AIPrompt {
+    public const string SOME_APP_CONST = 'X';
+}
+```
+
+Now `getEntitySetClass()` falls through to the parent class's EntitySet across namespaces as a **last resort**, after all other resolution paths have failed. `App\AIPrompt::getService()` resolves to the framework's `AIPromptsService`.
+
+### When to use it
+
+- **Yes:** The subclass adds **only** constants, type aliases, or other non-persistent declarations.
+- **Yes:** The subclass introduces no new database columns and needs no App-specific service methods.
+
+### When NOT to use it
+
+- **No:** The subclass adds new persistent properties (DatabaseColumn fields, translatable strings, FK columns, etc.). Declare a parallel App EntitySet + Service that knows about those columns.
+- **No:** The subclass needs App-specific service methods (custom queries, scope-aware finders, business-rule helpers). Declare the App Service explicitly.
+- **No:** The subclass alters the DB schema in any way. The framework's EntitySet/Service won't expose the App schema.
+
+The attribute is a deliberate escape hatch for the "constants-only" case — using it on a behavior-adding subclass silently routes calls through the wrong service.
 
 ---
 
