@@ -318,44 +318,32 @@ class ExpandOptions extends ObjectSet
                 // leftJoin-pattern in applyReadRightsQuery() can resolve its root alias
                 // (Doctrine's leftJoin → findRootAlias → getRootAlias() throws "No alias
                 // was set before invoking getRootAlias()" on an empty QueryBuilder).
-                // applyConditionsFromReadRightsQueryBuilder() only harvests WHERE and JOIN
-                // parts keyed by the temp base alias and rewrites the alias to the target
-                // expand join alias on the main query — the FROM/SELECT we add here are
-                // local to the temp QB and never bleed into the main query.
+                // The temp QB's FROM + internal LEFT JOINs + WHERE are reassembled into
+                // an IN-subquery and attached to the expand's LEFT JOIN ON-clause —
+                // see applyConditionsFromReadRightsQueryBuilder().
                 $rightsQueryBuilder = $targetPropertyRepoClass::createQueryBuilder(true);
                 $null = null;
                 $readRightsFiltersApplied = $targetPropertyRepoClass::applyReadRightsQuery($rightsQueryBuilder);
                 $targetPropertyModelAlias = $targetPropertyRepoClass::getBaseModelAlias();
 
                 if ($readRightsFiltersApplied) {
-                    // Branch on the expand's target cardinality. For to-one targets the
-                    // WHERE-with-NULL-safety wrap is semantically correct (a parent with an
-                    // unreadable to-one is invalid → should not appear). For to-many targets
-                    // the WHERE-wrap collapses the parent when every joined child fails
-                    // rights — Doctrine's DISTINCT-on-parent.id subquery returns no parent
-                    // → 404 even though the parent should be visible with a (possibly empty)
-                    // filtered child collection. The to-many path pushes rights into the
-                    // LEFT JOIN's ON-clause via an IN-subquery instead, so children that
-                    // fail rights are simply not joined.
-                    $targetPropertyClass = $expandOption->expandDefinition?->getTargetPropertyClass();
-                    $isToManyExpand = $targetPropertyClass
-                        && is_a($targetPropertyClass, ObjectSet::class, true);
-                    if ($isToManyExpand) {
-                        $this->applyToManyConditionsFromReadRightsQueryBuilder(
-                            $queryBuilder,
-                            $rightsQueryBuilder,
-                            $targetPropertyModelAlias,
-                            $expandOption->joinAlias
-                        );
-                    } else {
-                        $this->applyConditionsFromReadRightsQueryBuilder(
-                            $queryBuilder,
-                            $rightsQueryBuilder,
-                            $targetPropertyModelAlias,
-                            $expandOption->joinAlias
-                        );
-                    }
-                    // extract all relevant where, join etc clauses from the $tempQueryBuilder and apply them to the main query builder
+                    // Both to-one and to-many expand targets push the joined entity's
+                    // rights into the LEFT JOIN's ON-clause as an IN-subquery. Children
+                    // that fail rights are simply not joined; the parent row always
+                    // survives. This matches LazyLoad semantics ($parent->relation is
+                    // null when the related entity fails rights — the parent stays)
+                    // and avoids the asymmetric parent-collapse the original to-one
+                    // WHERE-wrap caused. If a parent's visibility legitimately depends
+                    // on a child's rights, the parent's own applyReadRightsQuery must
+                    // model that dependency explicitly (e.g. via a leftJoin filter on
+                    // the child's columns) — implicit child→parent cascade is wrong
+                    // because it conflates "I can't read X" with "X doesn't exist".
+                    $this->applyConditionsFromReadRightsQueryBuilder(
+                        $queryBuilder,
+                        $rightsQueryBuilder,
+                        $targetPropertyModelAlias,
+                        $expandOption->joinAlias
+                    );
                 }
             }
         }
@@ -363,9 +351,23 @@ class ExpandOptions extends ObjectSet
     }
 
     /**
-     * Copies all WHERE, JOIN, and parameter constraints from $rightsQueryBuilder to $mainQueryBuilder,
-     * adjusting the table alias from $tempBaseAlias to $targetJoinAlias
-     * and reindexing named/numeric parameters to avoid collisions.
+     * Pushes the joined entity's rights into the expand's LEFT JOIN ON-clause as an
+     * `IN`-subquery. If the joined row fails rights, it is simply not joined — the
+     * alias is NULL for that parent and the parent row survives. Matches LazyLoad
+     * semantics ($parent->relation returns null when the related entity fails rights,
+     * the parent is not affected) and the to-many expand path.
+     *
+     * Historical note (2026-05): this method previously emitted a WHERE-wrap of the
+     * form "(targetJoinAlias.id IS NULL OR (<rights>))", which collapsed the parent
+     * row whenever a FK-set to-one target failed rights. That was asymmetric vs both
+     * LazyLoad and to-many expand. The new behaviour is unified with
+     * {@see self::applyToManyConditionsFromReadRightsQueryBuilder()} — both delegate
+     * to the same ON-clause IN-subquery construction so to-one and to-many failures
+     * have identical "null the child, keep the parent" semantics. Callers that
+     * legitimately want the old "drop parent if child unreadable" behaviour must
+     * encode that dependency explicitly in the parent's own applyReadRightsQuery
+     * (e.g. via a leftJoin + WHERE on the child's columns); implicit cascade in the
+     * other direction is not supported by design.
      *
      * @param DoctrineQueryBuilder $mainQueryBuilder
      * @param DoctrineQueryBuilder $rightsQueryBuilder
@@ -378,68 +380,27 @@ class ExpandOptions extends ObjectSet
         string $tempBaseAlias,
         string $targetJoinAlias
     ): void {
-        // Extract WHERE part from the rights query builder
-        $wherePart = $rightsQueryBuilder->getDQLPart('where');
-        $whereString = null;
-        if ($wherePart) {
-            // cast WHERE expression to string and swap table alias
-            $whereString = (string)$wherePart;
-            $whereString = str_replace($tempBaseAlias . '.', $targetJoinAlias . '.', $whereString);
-
-            // reindex and apply parameters, get back the adjusted SQL
-            $whereString = $this->reindexPlaceholdersAndApplyParameters(
-                $whereString,
-                $mainQueryBuilder,
-                $rightsQueryBuilder->getParameters()
-            );
-            // Apply the modified WHERE to the main query, but null-safe wrt the expand
-            // join: if the optional LEFT JOIN to $targetJoinAlias produced no row
-            // (e.g. SupportMessage.sentFromSupportEmailAddress is NULL on app-channel
-            // messages), the rights condition references all-NULL aliases and would
-            // otherwise filter out the parent row. Wrapping with "$targetJoinAlias.id
-            // IS NULL OR (<rights>)" preserves the parent row when the expand is
-            // simply absent, while still enforcing rights when the expand is present.
-            // For non-nullable expands the IS-NULL branch is never true, so behavior
-            // is unchanged.
-            //
-            // This method handles to-one expand targets only. For to-many targets the
-            // WHERE-wrap is incorrect (it can collapse the parent when all joined
-            // children fail rights); the to-many path is in
-            // applyToManyConditionsFromReadRightsQueryBuilder() which pushes rights
-            // into the LEFT JOIN's ON-clause as an IN-subquery instead.
-            $mainQueryBuilder->andWhere(sprintf('(%s.id IS NULL OR (%s))', $targetJoinAlias, $whereString));
-        }
-
-        // 2) LEFT JOINs
-        $allJoins = $rightsQueryBuilder->getDQLPart('join')[$tempBaseAlias] ?? [];
-        foreach ($allJoins as $joinObject) {
-            /** @var Join $joinObject */
-            $joinExpression = str_replace($tempBaseAlias . '.', $targetJoinAlias . '.', $joinObject->getJoin());
-
-            $joinCondition = $joinObject->getCondition();
-            if ($joinCondition) {
-                $joinCondition = str_replace($tempBaseAlias . '.', $targetJoinAlias . '.', $joinCondition);
-                $joinCondition = $this->reindexPlaceholdersAndApplyParameters($joinCondition, $mainQueryBuilder, $rightsQueryBuilder->getParameters());
-            }
-
-            $mainQueryBuilder->leftJoin($joinExpression, $joinObject->getAlias(), $joinObject->getConditionType(), $joinCondition ?: null);
-        }
+        $this->applyToManyConditionsFromReadRightsQueryBuilder(
+            $mainQueryBuilder,
+            $rightsQueryBuilder,
+            $tempBaseAlias,
+            $targetJoinAlias
+        );
     }
 
     /**
-     * Variant of {@see self::applyConditionsFromReadRightsQueryBuilder()} for to-many expand
-     * targets (collection-typed properties like `?Messages $messages`).
+     * Shared rights-projection used by both to-one and to-many expand targets.
+     * {@see self::applyConditionsFromReadRightsQueryBuilder()} delegates here.
      *
-     * The classic WHERE-with-NULL-safety wrap collapses for to-many: a parent with N joined
-     * children where every child fails rights would lose every combined row to the WHERE
-     * filter, and the standard DISTINCT-on-parent.id subquery Doctrine builds for eager-find
-     * would return no parent — even though the caller-intent is "filter the collection, keep
-     * the parent" (matching the lazy-load semantic of `$parent->collection`).
+     * Pushes the joined entity's rights into the expand's LEFT JOIN ON-clause as
+     * an `IN`-subquery: children that fail rights are simply not joined. The parent
+     * row is preserved with a NULL'd join alias — matching the lazy-load contract
+     * (`$parent->relation` returns null on rights failure; the parent is untouched).
      *
-     * To preserve the parent we push rights into the LEFT JOIN's ON-clause as an IN-subquery:
-     * children that fail rights are not joined at all. DQL allows IN-subqueries (with their
-     * own FROM + JOINs + WHERE) inside WITH-clauses, so the rights query — including any
-     * internal leftJoins it created — is embedded self-contained in the subquery body.
+     * DQL allows IN-subqueries with their own FROM + LEFT JOINs + WHERE inside
+     * WITH-clauses, so the rights query (including any internal leftJoins it
+     * created) is embedded self-contained in the subquery body — no alias
+     * rewriting on the main query.
      *
      * @param DoctrineQueryBuilder $mainQueryBuilder
      * @param DoctrineQueryBuilder $rightsQueryBuilder

@@ -475,7 +475,7 @@ For each expanded property the framework:
 
 1. creates a **fresh temp `DoctrineQueryBuilder`** via `$targetRepo::createQueryBuilder(true)`,
 2. calls `$targetRepo::applyReadRightsQuery($tempQb)` and captures the bool return,
-3. **only if `true`**, copies the temp QB's WHERE / JOINs onto the main query (rewriting the temp base alias to the expand's join alias, with the LEFT-JOIN-safe wrapping `($joinAlias.id IS NULL OR (<rights>))`).
+3. **only if `true`**, builds an `IN`-subquery from the temp QB's FROM + internal LEFT JOINs + WHERE and appends `targetAlias.id IN (<subquery>)` to the expand's LEFT JOIN ON-clause. Children failing rights are nulled; the parent always survives. Same for to-one and to-many.
 
 If your `applyReadRightsQuery` adds WHEREs but returns `false` (e.g. via `return parent::applyReadRightsQuery(...)`), the merge step is skipped. Direct finds still apply the conditions (side effect on the QB passed by reference) — so the bug is invisible until someone uses `?$expand=yourEntity` from elsewhere. **This was a real, widespread silent rights bypass.** See Anti-Pattern above.
 
@@ -483,19 +483,23 @@ If your `applyReadRightsQuery` adds WHEREs but returns `false` (e.g. via `return
 
 Rights live on the single-entity repo (`DBChatMessage`), not on the set repo (`DBChatMessages`). When you expand a set-typed property, the framework must call `applyReadRightsQuery` on the **base entity repo**, not on the set. If you see rights silently bypassed on a set expand, suspect the resolution chain in `ExpandDefinition::getTargetPropertyRepoClass()` (it must yield the base repo, not the set repo).
 
-### To-one vs To-many cardinality matters
+### Cardinality no longer matters — unified semantic
 
-For **to-one** expand targets (single-entity reference like `account`, `chatChannel`), rights merge into the main query's **WHERE** with a NULL-safety wrap. A parent with an unreadable to-one is treated as invalid and excluded — `find($id)` returns 404. That's the right semantic: a row pointing at an unreadable required child is orphan-like data and shouldn't surface.
+**Rights propagate parent → child only.** A child that fails rights is nulled in the join; the parent always survives. Same rule for to-one and to-many, matching the lazy-load contract (`$parent->relation` returns `null` on rights failure, parent untouched).
 
-For **to-many** expand targets (`EntitySet`-typed reference like `chatMessages`, `chatMessageAttachments`), the same WHERE-wrap would **collapse the parent row** if every joined child fails rights — Doctrine's DISTINCT-on-parent.id subquery returns nothing → `find($id)` 404 even though the caller-intent is "filter the collection, keep the parent". The framework therefore merges to-many rights into the **LEFT JOIN's ON-clause** (as an `IN (SELECT id …)` subquery), so children that fail rights are simply not joined — the parent stays visible with a (possibly empty) filtered collection. This matches the lazy-load semantic of `$parent->collection` exactly.
+Mechanism (both cardinalities): rights are pushed into the expand's **LEFT JOIN ON-clause** as `targetAlias.id IN (SELECT t.id FROM TargetModel t [LEFT JOIN …] WHERE <rights>)`. Children that fail rights are simply not joined.
 
-You don't have to do anything special in your `applyReadRightsQuery` for either case — the framework decides where to merge based on the target property's reflection type. Just ensure your method returns `true` when it adds conditions.
+If a parent's visibility legitimately depends on a child's rights, encode that **explicitly** in the parent's own `applyReadRightsQuery` (leftJoin + WHERE on the child's columns — Pattern 2 above). Implicit child→parent cascade is *not* supported by design — it conflates "I can't read X" with "X doesn't exist" and was the cause of silent parent-collapse bugs.
 
-| Expand source | to-one Expand-Target | to-many Expand-Target |
-|---|---|---|
-| Implicit rights (`applyReadRightsQuery`) | **WHERE with NULL-safety wrap** — `($alias.id IS NULL OR (<rights>))` | **ON-clause via `IN (subquery)`** — children that fail rights are not joined; parent stays visible |
-| Top-level `filter=x.y eq Z` (dot-path) | WHERE — caller filters parent | WHERE with DISTINCT (EXISTS-semantic) |
-| Expand-scoped `expand=x(filters=…)` | ON-clause via `applyFiltersToJoin` | ON-clause via `applyFiltersToJoin` |
+You don't have to do anything special in your `applyReadRightsQuery` — just ensure it returns `true` when it adds conditions. The framework picks the merge mechanism.
+
+**Historical note (2026-05):** to-one used to merge rights into the main `WHERE` with `($alias.id IS NULL OR (<rights>))`, which dropped the parent when a FK-set to-one failed rights. This was asymmetric with to-many and with LazyLoad and is gone. Any older skill/code comment that says "parent with an unreadable to-one is excluded" is outdated.
+
+| Expand source | Both to-one and to-many |
+|---|---|
+| Implicit rights (`applyReadRightsQuery`) | **ON-clause via `IN (subquery)`** — child nulled on failure, parent always visible |
+| Top-level `filter=x.y eq Z` (dot-path) | WHERE — caller-intent is "filter the parent by child"; parent drops |
+| Expand-scoped `expand=x(filters=…)` | ON-clause via `applyFiltersToJoin` — only child filtered |
 
 ---
 
