@@ -859,6 +859,10 @@ class DatabaseSchemaDiffService
         $column->isGenerated = false;
         $column->generationExpression = null;
         $column->isStored = null;
+        // Carry the per-column collation override declared on the DatabaseColumn attribute,
+        // if any. Silent (null) entities leave the comparator to skip collation comparison so
+        // we don't churn diffs against the live table's default collation.
+        $column->collation = isset($col->collation) ? $col->collation : null;
         return $column;
     }
 
@@ -1110,6 +1114,17 @@ class DatabaseSchemaDiffService
         if (!$current->defaultIsExpression
             && !$this->defaultValuesEqual($target->defaultValue, $current->defaultValue)) {
             $changed[] = 'defaultValue';
+        }
+        // Collation drift detection. Only fires when the entity explicitly declared an override
+        // via #[DatabaseColumn(collation: '...')]. If the target side is null (entity is silent)
+        // we don't compare — otherwise every character column on every entity would churn diffs
+        // against whichever utf8mb4_* collation the live table happens to use as default. With an
+        // explicit override, mismatch → MODIFY emitted, and the column SQL re-emits with the
+        // requested CHARACTER SET / COLLATE clause.
+        if ($target->collation !== null
+            && $current->collation !== null
+            && strcasecmp($target->collation, $current->collation) !== 0) {
+            $changed[] = 'collation';
         }
         return $changed;
     }

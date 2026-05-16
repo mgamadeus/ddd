@@ -80,6 +80,47 @@ class DatabaseColumn extends ValueObject
 
     public const string SQL_TYPE_VECTOR = 'VECTOR';
 
+    // ─── Collations ──────────────────────────────────────────────────────────────
+    // Common per-column collation overrides for character types. Pass via
+    // #[DatabaseColumn(collation: DatabaseColumn::COLLATION_UTF8MB4_BIN)].
+    // See $collation docblock for guidance on when an override is needed.
+
+    /**
+     * Byte-exact comparison and indexing (no case folding, no Unicode equivalence,
+     * no emoji folding). Use when a UNIQUE index must distinguish byte-distinct
+     * values that the default Unicode collation would treat as equal — emoji
+     * reactions are the canonical case (utf8mb4_unicode_ci folds all SMP-block
+     * emojis together, breaking per-(user,emoji) uniqueness).
+     */
+    public const string COLLATION_UTF8MB4_BIN = 'utf8mb4_bin';
+
+    /**
+     * Default Unicode collation in MariaDB / older MySQL — case-insensitive,
+     * accent-insensitive, BUT folds the entire Supplementary Multilingual Plane
+     * to a single weight. Do NOT use for indexed emoji or for any column where
+     * SMP-distinct values must be unique.
+     */
+    public const string COLLATION_UTF8MB4_UNICODE_CI = 'utf8mb4_unicode_ci';
+
+    /**
+     * MySQL 8.0 default — Unicode 9.0 weights, case-insensitive, accent-insensitive,
+     * with proper per-codepoint emoji distinction. Preferred over `utf8mb4_unicode_ci`
+     * on MySQL 8+; not available on MariaDB.
+     */
+    public const string COLLATION_UTF8MB4_0900_AI_CI = 'utf8mb4_0900_ai_ci';
+
+    /**
+     * MySQL 8.0 binary variant — byte-exact and Unicode-9.0-aware. Equivalent
+     * effect to `utf8mb4_bin` for byte-exact uniqueness; not available on MariaDB.
+     */
+    public const string COLLATION_UTF8MB4_0900_BIN = 'utf8mb4_0900_bin';
+
+    /**
+     * Legacy "general" Unicode collation — fast but Unicode-2.x weights. Avoid
+     * for new columns; listed for completeness when matching legacy schemas.
+     */
+    public const string COLLATION_UTF8MB4_GENERAL_CI = 'utf8mb4_general_ci';
+
     public const array SQL_TYPE_ALLOCATION = [
         ReflectionClass::INTEGER => self::SQL_TYPE_INT,
         ReflectionClass::FLOAT => self::SQL_TYPE_DOUBLE,
@@ -243,6 +284,18 @@ class DatabaseColumn extends ValueObject
     /** @var bool Wheather the column is primary key or not */
     public bool $isPrimaryKey = false;
 
+    /**
+     * @var string|null Per-column collation override. When set, the column SQL emits
+     * `CHARACTER SET <charset> COLLATE <collation>` and the schema diff compares
+     * against `INFORMATION_SCHEMA.COLUMNS.COLLATION_NAME` for drift detection.
+     * Null = inherit table-level collation. Use for VARCHAR / CHAR / TEXT columns
+     * where the default collation is semantically wrong — most commonly when a
+     * UNIQUE index over the column needs byte-exact uniqueness (e.g. emoji
+     * reactions, where `utf8mb4_unicode_ci` folds different SMP-block emojis
+     * together and causes the index to treat them as duplicates).
+     */
+    public ?string $collation;
+
     /** @var DatabaseVirtualColumns Database VirtualColumns based on current column */
     public DatabaseVirtualColumns $virtualColumnsBasedOnCurrentColumn;
 
@@ -258,6 +311,7 @@ class DatabaseColumn extends ValueObject
         ?string $onUpdateAction = null,
         bool $ignoreProperty = false,
         bool $isMergableJSONColumn = false,
+        ?string $collation = null,
     ) {
         $this->sqlType = $sqlType;
         $this->allowsNull = $allowsNull;
@@ -270,6 +324,7 @@ class DatabaseColumn extends ValueObject
         $this->enryptionScope = $encryptionScope;
         $this->ignoreProperty = $ignoreProperty;
         $this->isMergableJSONColumn = $isMergableJSONColumn;
+        $this->collation = $collation;
         parent::__construct();
     }
 
@@ -468,6 +523,9 @@ class DatabaseColumn extends ValueObject
             if ($columnAttributeInstance->onUpdateAction !== null) {
                 $databaseColum->onUpdateAction = $columnAttributeInstance->onUpdateAction;
             }
+            if (isset($columnAttributeInstance->collation) && $columnAttributeInstance->collation !== null) {
+                $databaseColum->collation = $columnAttributeInstance->collation;
+            }
         }
         if ($reflectionProperty->hasAttribute(NotNull::class)) {
             $databaseColum->allowsNull = false;
@@ -569,8 +627,24 @@ class DatabaseColumn extends ValueObject
             $defaultValueSet = true;
         }
 
+        // Per-column collation override (see $collation docblock). Emit
+        // `CHARACTER SET <charset> COLLATE <collation>` directly after the type.
+        // Charset is derived from the collation name's leading segment
+        // (utf8mb4_bin → utf8mb4, latin1_swedish_ci → latin1, …) so callers
+        // configure only the collation. MariaDB rejects COLLATE without a
+        // matching CHARACTER SET in column definitions.
+        $collationClause = '';
+        if (isset($this->collation) && $this->collation !== null && $this->collation !== '') {
+            $charset = explode('_', $this->collation)[0] ?? null;
+            if ($charset !== null && $charset !== '') {
+                $collationClause = " CHARACTER SET $charset COLLATE $this->collation";
+            } else {
+                $collationClause = " COLLATE $this->collation";
+            }
+        }
+
         $sql .= '`' . $this->name . '` ' . $this->getSqlType(
-            ) . (!$this->allowsNull ? ' NOT NULL' : '') . ($this->hasAutoIncrement ? ' AUTO_INCREMENT' : '') . ($defaultValueSet ? ' DEFAULT ' . $defaultValue : '');
+            ) . $collationClause . (!$this->allowsNull ? ' NOT NULL' : '') . ($this->hasAutoIncrement ? ' AUTO_INCREMENT' : '') . ($defaultValueSet ? ' DEFAULT ' . $defaultValue : '');
         return $sql;
     }
 

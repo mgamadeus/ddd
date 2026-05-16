@@ -69,6 +69,17 @@ class DBCanonicalColumn extends ValueObject
     /** @var bool|null True = STORED, false = VIRTUAL. Null when {@see $isGenerated} is false. */
     public ?bool $isStored = null;
 
+    /**
+     * @var string|null Per-column collation. Only carried for character types (VARCHAR/CHAR/
+     * TEXT-family) — null on numeric, BLOB, JSON, spatial, vector columns. On the live side,
+     * populated from `INFORMATION_SCHEMA.COLUMNS.COLLATION_NAME`. On the target side, populated
+     * from {@see \DDD\Domain\Base\Repo\DB\Database\DatabaseColumn::$collation} when the entity
+     * declares an explicit override; null when the entity is silent (column inherits table
+     * collation). The diff comparator skips collation comparison when the target side is null
+     * so silent entities don't churn diffs against whichever DB-default collation is in place.
+     */
+    public ?string $collation = null;
+
     public function uniqueKey(): string
     {
         return self::uniqueKeyStatic($this->name);

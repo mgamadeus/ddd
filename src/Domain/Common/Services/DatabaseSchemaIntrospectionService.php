@@ -180,7 +180,7 @@ class DatabaseSchemaIntrospectionService
         $connection = EntityManagerFactory::getInstance()->getConnection();
         return $connection->fetchAllAssociative(
             'SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT,
-                    CHARACTER_MAXIMUM_LENGTH, EXTRA, GENERATION_EXPRESSION
+                    CHARACTER_MAXIMUM_LENGTH, EXTRA, GENERATION_EXPRESSION, COLLATION_NAME
              FROM INFORMATION_SCHEMA.COLUMNS
              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table
              ORDER BY ORDINAL_POSITION',
@@ -296,6 +296,12 @@ class DatabaseSchemaIntrospectionService
             }
         }
 
+        // COLLATION_NAME is populated for character types (CHAR/VARCHAR/TEXT-family) and null
+        // for non-textual columns. Keep null when MySQL/MariaDB reports null so the comparator
+        // can treat numeric/binary/JSON columns as "no collation to compare".
+        $collation = $row['COLLATION_NAME'] ?? null;
+        $collation = $collation !== null && $collation !== '' ? (string)$collation : null;
+
         $column = new DBCanonicalColumn();
         $column->name = (string)$row['COLUMN_NAME'];
         $column->sqlType = $sqlType;
@@ -309,6 +315,7 @@ class DatabaseSchemaIntrospectionService
         $column->isGenerated = $isGenerated;
         $column->generationExpression = $generationExpression;
         $column->isStored = $isStored;
+        $column->collation = $collation;
         return $column;
     }
 
