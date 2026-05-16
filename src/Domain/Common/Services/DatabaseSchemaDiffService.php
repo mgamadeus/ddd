@@ -116,14 +116,104 @@ class DatabaseSchemaDiffService
             $diffs->add($dropDiff);
         }
 
-        // Decorate each diff with the Production-Guard signal: live table stats + whether direct
-        // apply through the admin UI is blocked. The frontend uses these fields to render a
-        // warning banner and disable the Apply button — see DBTableDiff::$directApplyBlocked.
-        foreach ($diffs->getElements() as $diff) {
-            $this->populateProductionGuardSignal($diff);
-        }
+        $this->decorateDiffsWithSignals($diffs);
 
         return $diffs;
+    }
+
+    /**
+     * Scoped variant of {@see self::computeDiffs()} keyed by physical SQL table names. Used by
+     * the apply path's post-execute refresh — we want to recompute diffs ONLY for the tables we
+     * just touched, never to scan unrelated live tables (the previous attempt at this scoped by
+     * entity classes, which broke DROP_TABLE diffs entirely AND caused phantom DROPs for every
+     * unscoped live table — both reported in the round-2 audit).
+     *
+     * Scoping rules:
+     *  - Target side: only DatabaseModels whose sqlTableName is in `$sqlTableNames` are considered.
+     *  - Live side: only `$sqlTableNames` are introspected; unscoped live tables are invisible to
+     *    this method, so no phantom DROPs.
+     *  - A table that exists in `$sqlTableNames` but is in NEITHER target nor live is silently
+     *    omitted from the result (it was successfully dropped, nothing left to diff).
+     *
+     * Caller passes the sqlTableNames of every diff in the just-applied batch — works uniformly
+     * for ALTER/CREATE/DROP because the table name is the stable identity, even for diffs whose
+     * `entityClassWithNamespace` is null (DROP_TABLE).
+     *
+     * @param string[] $sqlTableNames
+     * @throws Exception
+     * @throws ReflectionException
+     */
+    public function computeDiffsForTables(array $sqlTableNames): DBTableDiffs
+    {
+        $diffs = new DBTableDiffs();
+        if ($sqlTableNames === []) {
+            return $diffs;
+        }
+        $scopeSet = array_fill_keys($sqlTableNames, true);
+
+        $databaseModels = EntityModelGeneratorService::getDatabaseModels();
+        $liveTableNames = $this->introspectionService->getLiveTableNames();
+        $ignoredLiveTables = $this->getIgnoredLiveTables();
+
+        $targetByTableName = [];
+        foreach ($databaseModels->getElements() as $databaseModel) {
+            if ($databaseModel->parentEntityCLassWithNamespace !== null) {
+                continue;
+            }
+            if (!isset($scopeSet[$databaseModel->sqlTableName])) {
+                continue;
+            }
+            $targetByTableName[$databaseModel->sqlTableName] = $databaseModel;
+        }
+
+        foreach ($sqlTableNames as $tableName) {
+            $databaseModel = $targetByTableName[$tableName] ?? null;
+            $isLive = in_array($tableName, $liveTableNames, true);
+
+            if ($databaseModel === null && !$isLive) {
+                // Table is gone (just dropped, no entity declares it). Nothing to diff — the
+                // caller's apply succeeded and there's no pending state for this name.
+                continue;
+            }
+            if ($databaseModel === null) {
+                // Live-only AND in scope → DROP_TABLE candidate. Honour the ignored list so the
+                // refresh doesn't accidentally produce a DROP for an explicitly-ignored table the
+                // operator passed in.
+                if (in_array($tableName, $ignoredLiveTables, true)) {
+                    continue;
+                }
+                $dropDiff = $this->buildDropTableDiff($tableName);
+                $diffs->add($dropDiff);
+                continue;
+            }
+            $current = $isLive
+                ? $this->introspectionService->introspectTable($tableName)
+                : null;
+            $tableDiff = $this->computeTableDiff($databaseModel, $current);
+            if ($tableDiff->changeType === DBTableDiff::CHANGE_TYPE_NO_CHANGE) {
+                continue;
+            }
+            $diffs->add($tableDiff);
+        }
+
+        $this->decorateDiffsWithSignals($diffs);
+
+        return $diffs;
+    }
+
+    /**
+     * Runs the production-guard decorator + signature computation on every diff in the set. Shared
+     * between {@see self::computeDiffs()} and {@see self::computeDiffsForTables()} so both paths
+     * produce identically-shaped diffs (signature covers all operator-visible fields). Signature
+     * MUST be computed AFTER decoration so it hashes the populated tableSizeMb / directApplyBlocked
+     * fields — see {@see self::computeDiffSignature()}.
+     */
+    protected function decorateDiffsWithSignals(DBTableDiffs $diffs): void
+    {
+        foreach ($diffs->getElements() as $diff) {
+            $this->populateProductionGuardSignal($diff);
+            $diff->diffSignature = $this->computeDiffSignature($diff);
+        }
     }
 
     /**
@@ -151,6 +241,27 @@ class DatabaseSchemaDiffService
         if (!$isLarge) {
             return;
         }
+
+        // DROP TABLE on a large Galera-replicated table is also COPY-forcing in effect — the metadata
+        // lock + binlog write blocks the whole cluster for the duration of the file unlink. The
+        // detectCopyForcingOperations() inspector only covers ALTER paths (column MODIFY, virtual
+        // column MODIFY, FULLTEXT ADD); without this branch, a 5 GB DROP TABLE would be one operator
+        // click away with only the destructive-severity confirm in between. Treat it as its own
+        // copy-forcing op so the same block path applies.
+        if ($diff->changeType === DBTableDiff::CHANGE_TYPE_DROP_TABLE) {
+            $diff->directApplyBlocked = true;
+            $diff->copyForcingOperations = [
+                "DROP TABLE on large table (size $diff->tableSizeMb MB / $diff->tableRowCount rows) — Galera TOI block during file unlink + binlog write",
+            ];
+            $diff->directApplyBlockReason = $this->buildProductionGuardMessage(
+                $diff->sqlTableName,
+                $diff->tableSizeMb,
+                $diff->tableRowCount,
+                $diff->copyForcingOperations
+            );
+            return;
+        }
+
         $risky = $this->detectCopyForcingOperations($diff);
         if (empty($risky)) {
             return;
@@ -199,47 +310,223 @@ class DatabaseSchemaDiffService
      * @throws Exception
      * @throws ReflectionException
      */
+    /** @noinspection PhpInconsistentReturnPointsInspection — every reachable path in the outer try
+     *  either returns ($this->computeDiffsForTables) or throws (BadRequestException / Doctrine
+     *  Exception). The static analyzer doesn't model try/finally control flow precisely enough. */
     public function applyDiffs(
         DBTableDiffs $diffs,
         bool $disableForeignKeyChecks = true,
-        bool $bypassProductionGuard = false
+        bool $bypassProductionGuard = false,
+        ?array $expectedDiffSignaturesBySqlTableName = null
     ): DBTableDiffs {
-        if (!$bypassProductionGuard) {
-            foreach ($diffs->getElements() as $diff) {
-                $this->assertSafeForDirectApply($diff);
-            }
-        }
         $connection = EntityManagerFactory::getInstance()->getConnection();
-        if ($disableForeignKeyChecks) {
-            $connection->executeStatement('SET FOREIGN_KEY_CHECKS=0;');
+
+        // Cross-request mutex: only one apply may run at a time. Closes the concurrent-apply race
+        // where two admins (or admin + CLI) both pass the signature gate against the same pre-
+        // apply live state and then race to execute. GET_LOCK is a MySQL/MariaDB session-bound
+        // advisory lock — held until RELEASE_LOCK or session end, NOT scoped to a transaction.
+        // 30-second timeout is enough for any normal apply; if it expires the operator gets a
+        // clean 503-shaped error and can retry. Lock name is global to the package so a single
+        // misbehaving caller can't break the gate by holding a per-table lock.
+        $lockTimeoutSeconds = 30;
+        $lockAcquired = (int)$connection->fetchOne(
+            'SELECT GET_LOCK(?, ?)',
+            [self::APPLY_LOCK_NAME, $lockTimeoutSeconds]
+        );
+        if ($lockAcquired !== 1) {
+            throw new BadRequestException(
+                self::ERROR_CODE_APPLY_LOCK_BUSY
+                . ' Another schema-diff apply is currently in progress. Wait a few seconds and retry.'
+            );
         }
+
+        // Affected table names (used by the targeted refresh below). Keyed by sqlTableName —
+        // works uniformly for ALTER/CREATE/DROP because the table name is the stable identity
+        // (DROP_TABLE diffs have entityClassWithNamespace === null, so an entity-class-scoped
+        // refresh would silently lose them — see round-2 audit).
+        $affectedTableNames = [];
+        foreach ($diffs->getElements() as $diff) {
+            $affectedTableNames[] = $diff->sqlTableName;
+        }
+
         try {
-            foreach ($diffs->getElements() as $diff) {
-                $this->executeTableDiff($diff);
+            // CONCURRENCY GATE (round-3 audit fix):
+            // When the caller provided expected signatures (HTTP path), the caller's $diffs are
+            // a SNAPSHOT computed before this method was even entered — potentially before any
+            // other admin's concurrent apply landed and was released. Trusting that snapshot to
+            // drive execution would let a second caller re-run already-applied SQL the moment the
+            // first releases the lock (their stale $diff->diffSignature == their stale
+            // $expected[T], so assertDiffSignaturesMatch on the snapshot itself is tautological).
+            //
+            // Fix: inside the lock, recompute fresh against the live DB. The caller's $diffs is
+            // treated only as "scope by table name" — the actual signature check and execution
+            // both use the fresh set. If anything moved (concurrent apply, entity edit, drift),
+            // the fresh signature won't match the expected one and we short-circuit cleanly.
+            //
+            // CLI/messenger callers pass $expected = null and keep the trust-the-caller path
+            // unchanged — they're authoritative and the snapshot they hold IS the intent.
+            //
+            // The introspection cache must be invalidated FIRST: the caller's earlier
+            // computeDiffs() in the same HTTP request already populated it with the pre-lock
+            // live state. Without invalidation, the fresh recompute would re-use the cached
+            // canonical tables — the very state we're trying to verify against — and the gate
+            // would be tautological (same cached snapshot on both sides).
+            if ($expectedDiffSignaturesBySqlTableName !== null) {
+                $this->introspectionService->invalidateCache();
+                $diffs = $this->computeDiffsForTables($affectedTableNames);
             }
-        } finally {
+            $this->assertDiffSignaturesMatch($diffs, $expectedDiffSignaturesBySqlTableName);
+            if (!$bypassProductionGuard) {
+                foreach ($diffs->getElements() as $diff) {
+                    $this->assertSafeForDirectApply($diff);
+                }
+            }
             if ($disableForeignKeyChecks) {
-                $connection->executeStatement('SET FOREIGN_KEY_CHECKS=1;');
+                $connection->executeStatement('SET FOREIGN_KEY_CHECKS=0;');
             }
+            try {
+                foreach ($diffs->getElements() as $diff) {
+                    $this->executeTableDiff($diff);
+                }
+            } finally {
+                if ($disableForeignKeyChecks) {
+                    $connection->executeStatement('SET FOREIGN_KEY_CHECKS=1;');
+                }
+            }
+            $this->introspectionService->invalidateCache();
+            // Targeted refresh: recompute only the tables we just touched (by name, never by
+            // entity class — see comment above for why). Does NOT scan the rest of the live
+            // schema, so unrelated tables can't accidentally show up as phantom DROP_TABLE
+            // diffs (the regression the round-2 audit caught in the entity-class-scoped path).
+            return $this->computeDiffsForTables($affectedTableNames);
+        } finally {
+            $connection->executeStatement('SELECT RELEASE_LOCK(?)', [self::APPLY_LOCK_NAME]);
         }
-        $this->introspectionService->invalidateCache();
-        return $this->computeDiffs();
     }
+
+    /**
+     * Connection-bound advisory lock name. Global because we want one apply at a time *across*
+     * tables — partial overlap between two diff-sets would otherwise risk inconsistent
+     * intermediate state.
+     */
+    public const string APPLY_LOCK_NAME = 'ddd_schema_diff_apply';
+
+    /**
+     * Returned as the error-code prefix when the apply lock can't be acquired within the
+     * timeout. Frontends should match on this prefix (substring) to render a "try again"
+     * affordance distinct from the signature-mismatch one.
+     */
+    public const string ERROR_CODE_APPLY_LOCK_BUSY = '[DIFF_APPLY_LOCK_BUSY]';
 
     /**
      * Applies a single table's diff. Same FK-check handling as applyDiffs.
      *
      * @throws Exception
      * @throws ReflectionException
+     * @throws BadRequestException When `$expectedDiffSignature` is set and the freshly-computed
+     *         diff's signature differs from it (drift between view and apply).
      */
     public function applyDiff(
         DBTableDiff $diff,
         bool $disableForeignKeyChecks = true,
-        bool $bypassProductionGuard = false
+        bool $bypassProductionGuard = false,
+        ?string $expectedDiffSignature = null
     ): DBTableDiffs {
         $set = new DBTableDiffs();
         $set->add($diff);
-        return $this->applyDiffs($set, $disableForeignKeyChecks, $bypassProductionGuard);
+        $expectedMap = $expectedDiffSignature !== null
+            ? [$diff->sqlTableName => $expectedDiffSignature]
+            : null;
+        return $this->applyDiffs($set, $disableForeignKeyChecks, $bypassProductionGuard, $expectedMap);
+    }
+
+    /**
+     * Stable error-code prefix on every signature-gate failure. Frontends should match on this
+     * prefix (substring `self::ERROR_CODE_DIFF_SIGNATURE_MISMATCH`) instead of parsing the prose
+     * tail of the message — the human text is allowed to change/translate, the prefix is contract.
+     */
+    public const string ERROR_CODE_DIFF_SIGNATURE_MISMATCH = '[DIFF_SIGNATURE_MISMATCH]';
+
+    /**
+     * Verifies the freshly-computed diff list matches what the caller intended to apply.
+     *
+     * The HTTP apply flow always recomputes the diff fresh in the controller — there's no way to
+     * trust a `DBTableDiff` passed in by HTTP (it could be tampered with, and a stale frontend
+     * may hold an old shape). The check is "the freshly-computed signature must equal the one
+     * the operator captured when they viewed the diff." Any mismatch — entity edit, live drift,
+     * concurrent apply — short-circuits the run with an actionable error.
+     *
+     * Bypass: callers that pass `$expected = null` (CLI commands, messenger handlers, anyone who
+     * wants the old fire-and-forget behaviour) skip this check entirely. HTTP DTOs should always
+     * pass a signature. The pattern intentionally mirrors `$bypassProductionGuard`: opt-out is
+     * explicit and audit-friendly.
+     *
+     * Strict cover: when `$expected !== null` it MUST cover the set of diffs being applied —
+     * extra-in-diffs or missing-in-expected both throw. This closes a footgun where a partial
+     * map silently lets the un-covered diffs apply ungated (the exact "view ≠ execute" gap the
+     * signature gate exists to close).
+     *
+     * @param array<string,string>|null $expected Keyed by sqlTableName.
+     * @throws BadRequestException
+     */
+    protected function assertDiffSignaturesMatch(
+        DBTableDiffs $diffs,
+        ?array $expected
+    ): void {
+        if ($expected === null) {
+            return;
+        }
+
+        $diffTableNames = [];
+        foreach ($diffs->getElements() as $diff) {
+            $diffTableNames[$diff->sqlTableName] = true;
+        }
+
+        // Strict-cover: every expected key must correspond to a diff in the set, and every diff
+        // must have an expected signature. Partial maps would reintroduce the very gap this gate
+        // exists to close.
+        $missingFromExpected = array_diff(array_keys($diffTableNames), array_keys($expected));
+        $extraInExpected = array_diff(array_keys($expected), array_keys($diffTableNames));
+        if ($missingFromExpected !== [] || $extraInExpected !== []) {
+            $parts = [];
+            if ($missingFromExpected !== []) {
+                $parts[] = 'missing signatures for: ' . implode(', ', $missingFromExpected);
+            }
+            if ($extraInExpected !== []) {
+                $parts[] = 'unknown tables in signature map: ' . implode(', ', $extraInExpected);
+            }
+            throw new BadRequestException(
+                self::ERROR_CODE_DIFF_SIGNATURE_MISMATCH
+                . ' Signature map does not cover the diff set ('
+                . implode('; ', $parts)
+                . '). Refresh the diff page and re-submit so every diff in the batch carries a signature.'
+            );
+        }
+
+        foreach ($diffs->getElements() as $diff) {
+            $tableName = $diff->sqlTableName;
+            $actual = $diff->diffSignature;
+            if ($actual === null) {
+                // The diff was hand-built (e.g. CLI tooling) and never went through computeDiffs(),
+                // so it has no signature to compare. Reject explicitly rather than silently passing
+                // because the caller did opt in by sending an expectedDiffSignature — telling them
+                // "current: ``" is confusing. Document the intent clearly.
+                throw new BadRequestException(
+                    self::ERROR_CODE_DIFF_SIGNATURE_MISMATCH
+                    . " Diff for table `$tableName` was not produced by computeDiffs() and carries "
+                    . 'no signature. The signature gate is only applicable to diffs computed by the '
+                    . 'framework — pass null/omit expectedDiffSignature for hand-built diffs.'
+                );
+            }
+            if ($actual !== $expected[$tableName]) {
+                throw new BadRequestException(
+                    self::ERROR_CODE_DIFF_SIGNATURE_MISMATCH
+                    . " Diff for table `$tableName` changed since it was last viewed. "
+                    . 'Refresh the diff page, review the new SQL, and apply again. '
+                    . "Expected signature: `{$expected[$tableName]}`, current: `$actual`."
+                );
+            }
+        }
     }
 
     /**
@@ -477,6 +764,8 @@ class DatabaseSchemaDiffService
             // Pre-split so executeStatement receives single statements (see splitMultiStatementSql).
             $diff->sqlStatements = $this->splitMultiStatementSql($createTableSql);
             $diff->severity = DBTableDiff::SEVERITY_ADDITIVE;
+            // Signature is set by computeDiffs() after the production-guard decorator runs so the
+            // hash covers severity/blocked/size fields too. See self::computeDiffSignature().
             return $diff;
         }
 
@@ -515,8 +804,149 @@ class DatabaseSchemaDiffService
         $diff->sqlStatements = $this->assemblePhaseOrderedStatements($databaseModel, $diff);
         $diff->sql = $diff->sqlStatements ? implode(";\n", $diff->sqlStatements) . ';' : '';
         $diff->severity = $this->classifySeverity($diff);
+        // Signature is set by computeDiffs() after the production-guard decorator runs so the
+        // hash covers severity/blocked/size fields too. See self::computeDiffSignature().
 
         return $diff;
+    }
+
+    /**
+     * Stable digest of everything an operator commits to when they click Apply. Two compute runs
+     * that produce identical operator-visible diffs (same SQL, same decoration the UI rendered)
+     * yield the same signature; any change to either side flips it and the apply gate refuses.
+     *
+     * Hash inputs are intentionally broader than just the SQL list:
+     *
+     *  • `sqlStatements`         — what would actually run. Sorted within each phase via the
+     *    canonical sort below to make the hash insensitive to entity-property reorderings or
+     *    INFORMATION_SCHEMA column-order differences that don't change the semantic diff.
+     *  • `sqlTableName`          — anchors the hash to the table so an empty/trivial statement
+     *    set can't collide across tables (or across compute runs against different tables).
+     *  • `changeType`, `severity` — the operator's risk assessment lives here. A diff that flips
+     *    ADDITIVE → DESTRUCTIVE without changing SQL (e.g. a severity-rule code change) MUST
+     *    re-prompt for review.
+     *  • `directApplyBlocked`    — the production-guard decision the operator saw. A diff that
+     *    flips from blocked → unblocked between view and apply (table grew/shrunk past the
+     *    threshold) MUST re-prompt.
+     *  • `tableSizeMb` — bucketed by order of magnitude. Computed from `data_length+index_length`
+     *    in `INFORMATION_SCHEMA.TABLES`, which is stable between ANALYZE runs (unlike
+     *    `table_rows`, which is an InnoDB estimate that fluctuates ±20–40% — including it would
+     *    churn the signature for tables sitting near a bucket boundary). Size buckets give
+     *    DROP_TABLE diffs a real time-anchor without false-positive jitter.
+     *
+     * Deliberately NOT in the payload:
+     *  • `tableRowCount` — too jittery, see above.
+     *  • `collationChange` — covered transitively via `sqlStatements` (collation diff emits an
+     *    ALTER TABLE COLLATE statement).
+     *  • `directApplyBlockReason` / `copyForcingOperations` — derived from `directApplyBlocked`
+     *    + table stats, which are already in the payload.
+     *
+     * @see self::canonicalSortedSqlStatements()
+     */
+    protected function computeDiffSignature(DBTableDiff $diff): string
+    {
+        $payload = [
+            'sqlTableName' => $diff->sqlTableName,
+            'changeType' => $diff->changeType,
+            'severity' => $diff->severity,
+            'directApplyBlocked' => $diff->directApplyBlocked,
+            'sizeBucket' => $this->bucketTableMagnitude($diff->tableSizeMb),
+            'statements' => $this->canonicalSortedSqlStatements($diff->sqlStatements),
+        ];
+        $encoded = json_encode(
+            $payload,
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR
+        );
+        return hash('sha256', $encoded);
+    }
+
+    /**
+     * Buckets a magnitude (MB or rows) into order-of-magnitude tiers so the signature isn't
+     * churned by minor day-to-day drift, but does flip when the table moves a tier. Null in →
+     * null out (preserves the distinction "missing stat" from "0").
+     */
+    protected function bucketTableMagnitude(?int $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        if ($value <= 0) return '0';
+        if ($value < 100) return '<100';
+        if ($value < 1_000) return '<1k';
+        if ($value < 10_000) return '<10k';
+        if ($value < 100_000) return '<100k';
+        if ($value < 1_000_000) return '<1M';
+        if ($value < 10_000_000) return '<10M';
+        return '>=10M';
+    }
+
+    /**
+     * Returns statements grouped by phase prefix and sorted within each group. The phase prefix
+     * comes from the SQL verb pattern (DROP TRIGGER < DROP FK < DROP INDEX < DROP COLUMN <
+     * ALTER COLLATE < MODIFY COLUMN < ADD COLUMN < ADD INDEX < ADD FK < UPDATE < CREATE TRIGGER)
+     * which is the same order the assembler already emits — we re-sort within each phase only,
+     * never across phases, because DDL ordering is meaningful between phases. Within a phase,
+     * order is irrelevant for correctness, so a canonical lexicographic sort makes the signature
+     * stable across reflection/INFORMATION_SCHEMA insertion-order variations.
+     *
+     * @param string[] $statements
+     * @return string[]
+     */
+    protected function canonicalSortedSqlStatements(array $statements): array
+    {
+        if (empty($statements)) {
+            return [];
+        }
+        $phased = [];
+        foreach ($statements as $stmt) {
+            // Whitespace normalisation: collapse runs of whitespace to a single space and trim.
+            // Signature compares snapshot-vs-fresh statements that travel through different render
+            // helpers, so any future formatting tweak (re-indented column lists, extra newlines
+            // between IF NOT EXISTS clauses, etc.) would otherwise invalidate every in-flight
+            // signature even though the SQL is semantically identical. The phase prefix and the
+            // sort key both operate on the normalised form so within-phase ordering also stays
+            // stable across renderer changes.
+            $normalised = trim((string)preg_replace('/\s+/', ' ', $stmt));
+            $phase = $this->statementPhasePrefix($normalised);
+            $phased[$phase][] = $normalised;
+        }
+        $sorted = [];
+        foreach ($phased as $group) {
+            sort($group);
+            foreach ($group as $stmt) {
+                $sorted[] = $stmt;
+            }
+        }
+        return $sorted;
+    }
+
+    /**
+     * Cheap heuristic — group statements by their first verbs so canonicalSortedSqlStatements()
+     * can sort within each phase without resorting across. Granularity matches the assembler's
+     * phase order; unknown statement shapes fall into a "z_other" bucket sorted last.
+     */
+    protected function statementPhasePrefix(string $statement): string
+    {
+        $upper = strtoupper(ltrim($statement));
+        return match (true) {
+            str_starts_with($upper, 'DROP TRIGGER')                                        => '00_drop_trigger',
+            str_contains($upper, 'DROP FOREIGN KEY')                                       => '01_drop_fk',
+            str_contains($upper, 'DROP INDEX')                                             => '02_drop_index',
+            str_contains($upper, 'DROP COLUMN')                                            => '04_drop_column',
+            str_contains($upper, 'COLLATE')                                                => '05_collate',
+            str_contains($upper, 'MODIFY COLUMN')                                          => '06_modify_column',
+            str_contains($upper, 'ADD COLUMN')                                             => '07_add_column',
+            str_starts_with($upper, 'CREATE INDEX') || str_starts_with($upper, 'CREATE UNIQUE INDEX')
+                || str_starts_with($upper, 'CREATE FULLTEXT INDEX') || str_starts_with($upper, 'CREATE SPATIAL INDEX')
+                || str_starts_with($upper, 'CREATE VECTOR INDEX')                          => '09_add_index',
+            str_contains($upper, 'ADD CONSTRAINT')                                         => '10_add_fk',
+            str_starts_with($upper, 'UPDATE ')                                             => '11_data_backfill',
+            str_starts_with($upper, 'CREATE TRIGGER') || str_starts_with($upper, 'CREATE OR REPLACE TRIGGER')
+                || (str_contains($upper, 'CREATE') && str_contains($upper, 'TRIGGER'))     => '12_create_trigger',
+            str_starts_with($upper, 'CREATE TABLE')                                        => '03_create_table',
+            str_starts_with($upper, 'DROP TABLE')                                          => '04_drop_table',
+            default                                                                        => 'z_other',
+        };
     }
 
     /**
@@ -701,6 +1131,10 @@ class DatabaseSchemaDiffService
         $statement = "DROP TABLE `$tableName`";
         $diff->sql = $statement . ';';
         $diff->sqlStatements = [$statement];
+        // Signature is set by computeDiffs() after the production-guard decorator runs so live
+        // tableSizeMb / tableRowCount get mixed in — without that, every DROP_TABLE for the same
+        // table name produces the same signature forever (the SQL is `DROP TABLE \`x\``, period),
+        // letting an operator apply a week-old DROP against a table that grew 50M rows since.
         return $diff;
     }
 

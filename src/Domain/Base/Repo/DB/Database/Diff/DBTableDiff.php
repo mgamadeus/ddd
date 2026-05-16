@@ -81,6 +81,19 @@ class DBTableDiff extends ValueObject
     public string $sql = '';
 
     /**
+     * @var string|null Stable digest of `sqlStatements` (sha256 of "\n"-joined statements). The
+     * frontend captures this on the diff that was rendered to the operator; the apply path
+     * recomputes the diff fresh and refuses execution when its newly-computed signature differs
+     * from the one the operator saw. Closes the "what you saw is not what got executed" gap that
+     * results from the schema drifting between GET /diff and POST /applyDiff.
+     *
+     * Null only on hand-built diffs that bypassed `computeTableDiff()` (rare — CLI tooling).
+     * Programmatic callers that don't pass an expected signature on apply explicitly opt out of
+     * the safety check.
+     */
+    public ?string $diffSignature = null;
+
+    /**
      * @var int|null Live table size in MB (data + index). Populated by the diff service from
      * INFORMATION_SCHEMA.TABLES. Null for CREATE_TABLE (table doesn't exist yet).
      */
