@@ -293,6 +293,31 @@ class ExpandOptions extends ObjectSet
                     joinAlias: $expandOption->joinAlias,
                 );
             }
+            // Expand-scoped orderBy: translate `expand=x(orderBy=col DIR)` into an
+            // ORDER BY on the outer SELECT using the expand's join alias. Without
+            // this, expand-scoped orderBy was set on the option object but never
+            // reached the SQL — MariaDB returned InnoDB primary-key order. Properties
+            // are validated against the joined model so callers can't sort by
+            // non-existent columns. Nested-path orderBy ("expand.subprop") goes
+            // through OrderByOptions::applyOrderByToDoctrineQueryBuilder's existing
+            // joinAlias path on the top-level QB, so we skip those here.
+            if (isset($expandOption->orderByOptions)) {
+                /** @var DoctrineModel $targetPropertyModelClass */
+                foreach ($expandOption->orderByOptions->getElements() as $orderByOption) {
+                    $propertyName = $orderByOption->propertyName;
+                    if (str_contains($propertyName, '.')) {
+                        continue;
+                    }
+                    $candidate = $targetPropertyModelClass::MODEL_ALIAS . '.' . $propertyName;
+                    if (!$targetPropertyModelClass::isValidDatabaseExpression($candidate, $targetPropertyModelClass)) {
+                        continue;
+                    }
+                    $queryBuilder->addOrderBy(
+                        $expandOption->joinAlias . '.' . $propertyName,
+                        $orderByOption->direction
+                    );
+                }
+            }
             if (isset($expandOption->expandOptions)) {
                 // when property is a Collection, we need its Model class
                 //$targetModel = $baseModelClass::getTargetModelClassForProperty($expandReflectionProperty);
