@@ -263,40 +263,57 @@ public function setName(string $name): static  // Fluent
 public function delete(): void             // Void
 ```
 
-### Public Surface Must Be Typed (No Array Shapes on VO / Entity / Service)
+### Arrays Are Not a Substitute for ValueObjects / ObjectSets
 
-> **Public and protected properties of any `ValueObject`, `Entity`, or `ObjectSet` subclass -- and the parameters / returns of any public service method -- MUST be typed scalars, enums, typed VOs, or `ObjectSet` subclasses.** Array-shaped public surface is **forbidden**, even when documented with a PHPDoc shape. Out-parameters (`&$foo`) are forbidden in the same breath -- a typed return VO replaces them.
+> **An array is forbidden on public/protected surface whenever it is being used as a stand-in for a `ValueObject` (struct-shaped array) or an `ObjectSet` (keyed map of objects / collection of objects).** A flat array of simple types (`string[]`, `int[]`) is allowed -- the rule targets *structural* misuse, not array syntax. Out-parameters (`&$foo`) are forbidden in the same breath: a typed return VO replaces them.
+
+The test for whether an `array` field / parameter / return is OK:
+
+| Shape | Verdict |
+|-------|---------|
+| `string[]`, `int[]`, `float[]`, `bool[]` (flat list of simple types) | OK |
+| `array{ foo: string, bar: int }` (struct-shaped array → use a `ValueObject`) | VIOLATION |
+| `array<string, SomeObject>` (keyed map of objects → use an `ObjectSet` with `getByUniqueKey`) | VIOLATION |
+| `SomeObject[]` (list of objects → use an `ObjectSet`) | VIOLATION |
+| `?array $foo = null` with PHPDoc shape (still a struct) | VIOLATION |
+| Out-parameter `&$foo` (regardless of type) | VIOLATION |
 
 ```php
-// WRONG -- array-shaped public surface
-public ?array $collationChange = null;                                  // { from, to }
-public array $sqlStatements = [];                                        // string[]
-public ?array $copyForcingOperations = null;                             // string[]
+// VIOLATION -- struct-shaped arrays masquerading as VOs
+public ?array $collationChange = null;                                  // array{ from, to }
 public function getStats(string $name): ?array;                          // array{ size_mb, row_count }
 public function isLarge(string $name, ?int &$size, ?int &$rows): bool;   // out-params
-public function applyDiffs(?array $expectedSignatures = null): mixed;    // map<string,string>
-public function detectRisks(): array;                                    // string[]
+
+// VIOLATION -- keyed map of objects / list of objects (ObjectSet territory)
+public array $columns = [];                                              // array<string, DBCanonicalColumn>
+public array $copyForcingOperations = [];                                // DBCopyForcingOperation[]
+public function applyDiffs(?array $expected = null): mixed;              // map<string, DBExpectedDiffSignature>
 
 // CORRECT -- typed VOs and ObjectSets
 public ?DBCollationChange $collationChange = null;
-public DBSqlStatements $sqlStatements;
-public ?DBCopyForcingOperations $copyForcingOperations = null;
 public function getStats(string $name): ?DBTableSizeStats;
 public function isLarge(string $name): bool;
+public DBCanonicalColumns $columns;
+public ?DBCopyForcingOperations $copyForcingOperations = null;
 public function applyDiffs(?DBExpectedDiffSignatures $expected = null): DBTableDiffs;
-public function detectRisks(): DBCopyForcingOperations;
+
+// ALSO CORRECT -- flat arrays of simple types stay arrays
+public array $changedAttributes = [];                                    // string[]
+public array $indexColumns = [];                                         // string[] of column names
+public function getCoveredTableNames(): array;                           // string[]
 ```
 
-**Why:** The framework's public surface is read by downstream code generators -- TypeScript DTO emitters, OpenAPI schema generators, the admin UI's form scaffolders, the Autodocumenter. Array-shaped fields collapse to `any` in TypeScript and `additionalProperties: true` in OpenAPI, defeating the typed-end-to-end contract the framework exists to enforce. Documentation tooling fails the same way. The cost of being lazy at the PHP layer is paid everywhere downstream.
+**Why:** The framework's public surface is read by downstream code generators -- TypeScript DTO emitters, OpenAPI schema generators, the admin UI's form scaffolders, the Autodocumenter. A `ValueObject` becomes a named interface in TypeScript and a `$ref` in OpenAPI; a struct-shaped array becomes `any` and `additionalProperties: true`. Same wire-bytes, vastly different downstream typing. `string[]` is exempt because it ALREADY round-trips cleanly through every generator -- the violation is reaching for `array` when the right answer is a class.
 
-**Allowlist (when arrays ARE acceptable):**
-- Method-local hash-map lookups inside a method body (`array<string, DBCanonicalColumn> $byName = []; …`).
-- Internal helper parameters whose value is immediately wrapped into a typed Set (`DBSqlStatements::fromStringList(array $strings)`).
+**Allowlist (genuine array use, not VO/Set substitution):**
+- Method-local hash-map lookups inside a method body (`array<string, X> $byName = []; …`).
+- Internal helper parameters whose value is immediately wrapped into a typed Set or VO (`DBSqlStatements::fromStringList(array $strings)`).
+- Flat `string[]` / `int[]` PHPDoc-typed lists on properties, parameters, and returns -- these are simple values, not VOs in disguise.
 - Implementation-detail caches that are never serialised or returned across a public boundary.
 
-This rule governs the **public/protected wire surface** of VOs / Entities / public service methods, not local computation.
+**When a flat string list IS wrapped anyway** (the existing `DBSqlStatement` / `DBSqlStatements` pair is an example): the trigger is *behaviour the array can't give you*, not "wrap everything". DBSqlStatement exists because (a) identical SQL statements may legitimately repeat and content-keyed dedup would corrupt insertion order, requiring `spl_object_id` keying that only an object can carry; (b) future per-statement metadata (phase index, intent) would otherwise be additive-breaking. If neither applies, `string[]` is the simpler correct answer.
 
-**When a VO wraps a list:** create both the VO (`DBSqlStatement`) and the ObjectSet (`DBSqlStatements`). Decide `uniqueKey()` semantics deliberately:
+**When you DO create a VO+Set pair, decide `uniqueKey()` semantics deliberately:**
 - **Content-keyed** (`self::uniqueKeyStatic($this->name)`): when value identity is the dedup intent -- e.g. unique table names, unique constraint names.
 - **`spl_object_id`-keyed** (`self::uniqueKeyStatic((string)spl_object_id($this))`): when duplicates are legitimate and insertion order matters -- e.g. SQL statements, risk descriptions. Two identical operations on different rows must both survive `ObjectSet::add()`.
 
@@ -600,7 +617,7 @@ Entities `Cron` and `CronExecution` in `Domain/Common/Entities/Crons/` provide s
 
 When a patch arrives from a consuming application (Tavlo, Radbonus, ...) tagged for ingest into Core -- handoff docs such as `bitte ingesten`, `DDD-CORE-TRANSFER-*.md`, `DDD_SCHEMA_DIFF_*.md`, `*_REFACTOR.md` etc. -- the following rules apply.
 
-1. **Handoff docs are proposals, not authoritative spec.** The first pass over any incoming patch is a **convention scan**, not a copy. Scan for the violations listed in [Public Surface Must Be Typed](#public-surface-must-be-typed-no-array-shapes-on-vo--entity--service) before reading the rest of the patch.
+1. **Handoff docs are proposals, not authoritative spec.** The first pass over any incoming patch is a **convention scan**, not a copy. Scan for the violations listed in [Arrays Are Not a Substitute for ValueObjects / ObjectSets](#arrays-are-not-a-substitute-for-valueobjects--objectsets) before reading the rest of the patch.
 2. **Refuse non-conforming patches before merging.** If the patch contains array-shaped public surface, out-parameters, or other convention violations, report them up-front with the proposed reshape and ask the user before applying. Faithful reproduction of bad work is bad work in the framework.
 3. **"Tavlo / Radbonus already did it this way" is not a defense.** Consumer apps are downstream of framework standards, not above them. A consumer's vendor copy can be edited locally before the framework ingests it, but the framework only accepts conforming shapes.
 4. **PHP lint and Qodana catch syntactic errors, not convention violations.** Manual scan is mandatory until a PHPStan rule lives in the repo to automate it.
@@ -613,7 +630,7 @@ When a patch arrives from a consuming application (Tavlo, Radbonus, ...) tagged 
 ## Best Practices
 
 1. **Always strict types** -- `declare(strict_types=1)` in every file, no exceptions
-2. **Type everything, including the public surface of VOs** -- no array-shaped public properties, no out-parameters; see [Public Surface Must Be Typed](#public-surface-must-be-typed-no-array-shapes-on-vo--entity--service)
+2. **Type everything, including the public surface of VOs** -- no array-shaped public properties, no out-parameters; see [Arrays Are Not a Substitute for ValueObjects / ObjectSets](#arrays-are-not-a-substitute-for-valueobjects--objectsets)
 3. **Never `private`** -- always `protected`; this is a framework, everything gets extended
 4. **Constants over magic values** -- `self::STATUS_ACTIVE` not `'ACTIVE'`
 5. **Lazy load expensive relations** -- `#[LazyLoad]` eliminates manual finder methods
