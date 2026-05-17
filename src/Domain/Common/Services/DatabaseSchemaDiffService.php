@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace DDD\Domain\Common\Services;
 
 use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalColumn;
+use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalColumns;
 use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalForeignKey;
+use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalForeignKeys;
 use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalIndex;
+use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalIndexes;
 use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalTable;
 use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalTrigger;
+use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalTriggers;
+use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalVirtualColumns;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseForeignKey;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseIndex;
@@ -1269,16 +1274,18 @@ class DatabaseSchemaDiffService
     // ----- canonical target shapes --------------------------------------------------------------
 
     /**
-     * @return array<string, DBCanonicalColumn> Keyed by column name.
+     * Builds the target side's regular columns as a typed set, keyed by column name (via
+     * {@see DBCanonicalColumn::uniqueKey()}).
      */
-    protected function canonicaliseTargetColumns(DatabaseModel $databaseModel): array
+    protected function canonicaliseTargetColumns(DatabaseModel $databaseModel): DBCanonicalColumns
     {
-        $columns = [];
+        $columns = new DBCanonicalColumns();
         foreach ($databaseModel->columns->getElements() as $col) {
             if ($col->ignoreProperty) {
                 continue;
             }
-            $columns[$col->name] = $this->canonicaliseTargetColumn($col);
+            $canonical = $this->canonicaliseTargetColumn($col);
+            $columns->add($canonical);
         }
         return $columns;
     }
@@ -1346,13 +1353,15 @@ class DatabaseSchemaDiffService
     }
 
     /**
-     * @return array<string, DBCanonicalColumn> Keyed by virtual column name.
+     * Builds the target side's generated columns as a typed set, keyed by column name (via
+     * {@see DBCanonicalColumn::uniqueKey()}).
      */
-    protected function canonicaliseTargetVirtualColumns(DatabaseModel $databaseModel): array
+    protected function canonicaliseTargetVirtualColumns(DatabaseModel $databaseModel): DBCanonicalVirtualColumns
     {
-        $virtualColumns = [];
+        $virtualColumns = new DBCanonicalVirtualColumns();
         foreach ($databaseModel->virtualColumns->getElements() as $vc) {
-            $virtualColumns[$vc->getName()] = $this->canonicaliseTargetVirtualColumn($vc);
+            $canonical = $this->canonicaliseTargetVirtualColumn($vc);
+            $virtualColumns->add($canonical);
         }
         return $virtualColumns;
     }
@@ -1380,47 +1389,49 @@ class DatabaseSchemaDiffService
     }
 
     /**
-     * @return array<string, DBCanonicalIndex> Keyed by match key (indexType + columns).
+     * Builds the target side's indexes as a typed set, keyed by `matchKey`
+     * (`indexType|indexColumns`) — shared with the live side so both can be paired via
+     * {@see DBCanonicalIndexes::getByMatchKey()}.
      */
-    protected function canonicaliseTargetIndexes(DatabaseModel $databaseModel): array
+    protected function canonicaliseTargetIndexes(DatabaseModel $databaseModel): DBCanonicalIndexes
     {
-        $indexes = [];
+        $indexes = new DBCanonicalIndexes();
         foreach ($databaseModel->indexes->getElements() as $idx) {
-            $key = $this->buildIndexMatchKey($idx->indexType, $idx->indexColumns);
             $canonical = new DBCanonicalIndex();
-            $canonical->matchKey = $key;
+            $canonical->matchKey = $this->buildIndexMatchKey($idx->indexType, $idx->indexColumns);
             $canonical->indexType = $idx->indexType;
             $canonical->indexColumns = $idx->indexColumns;
             $canonical->indexName = null; // target side: name is derived at SQL-render time, not tracked here.
-            $indexes[$key] = $canonical;
+            $indexes->add($canonical);
         }
         return $indexes;
     }
 
     /**
-     * @return array<string, DBCanonicalForeignKey> Keyed by match key (FK semantic identity).
+     * Builds the target side's foreign keys as a typed set, keyed by `matchKey`
+     * (`internalIdColumn->foreignTable.foreignIdColumn`) — shared with the live side so both
+     * can be paired via {@see DBCanonicalForeignKeys::getByMatchKey()}.
      */
-    protected function canonicaliseTargetForeignKeys(DatabaseModel $databaseModel): array
+    protected function canonicaliseTargetForeignKeys(DatabaseModel $databaseModel): DBCanonicalForeignKeys
     {
-        $foreignKeys = [];
+        $foreignKeys = new DBCanonicalForeignKeys();
         foreach ($databaseModel->foreignKeys->getElements() as $fk) {
             if (!$fk->applyForeignKeyConstraint) {
                 continue;
             }
-            $key = $this->buildForeignKeyMatchKey(
+            $canonical = new DBCanonicalForeignKey();
+            $canonical->matchKey = $this->buildForeignKeyMatchKey(
                 $fk->internalIdColumn,
                 $fk->foreignTable,
                 $fk->foreignIdColumn
             );
-            $canonical = new DBCanonicalForeignKey();
-            $canonical->matchKey = $key;
             $canonical->internalIdColumn = $fk->internalIdColumn;
             $canonical->foreignTable = $fk->foreignTable;
             $canonical->foreignIdColumn = $fk->foreignIdColumn;
             $canonical->onUpdateAction = $fk->onUpdateAction;
             $canonical->onDeleteAction = $fk->onDeleteAction;
             $canonical->constraintName = null; // target side: not yet named.
-            $foreignKeys[$key] = $canonical;
+            $foreignKeys->add($canonical);
         }
         return $foreignKeys;
     }
@@ -1452,15 +1463,25 @@ class DatabaseSchemaDiffService
     // ----- columns ------------------------------------------------------------------------------
 
     /**
-     * @param array<string, DBCanonicalColumn> $target
-     * @param array<string, DBCanonicalColumn> $current
+     * Three-loop set-diff between target and current column sets. Lookups use
+     * {@see DBCanonicalColumns::getByColumnName()} (O(1) via the inherited unique-key index) so
+     * the inner is-it-in-the-other-side check is constant-time regardless of table width.
+     *
+     * NOTE: both sets accept `DBCanonicalColumns` (the virtual-column diff helper takes
+     * `DBCanonicalVirtualColumns`). The element type is the same `DBCanonicalColumn` VO; the
+     * two Set classes exist to mirror the framework's `DatabaseColumns` / `DatabaseVirtualColumns`
+     * pairing on `DatabaseModel`.
      */
-    protected function diffColumns(DatabaseModel $databaseModel, array $target, array $current): DBColumnDiffs
-    {
+    protected function diffColumns(
+        DatabaseModel $databaseModel,
+        DBCanonicalColumns $target,
+        DBCanonicalColumns $current
+    ): DBColumnDiffs {
         $tableName = $databaseModel->sqlTableName;
         $diffs = new DBColumnDiffs();
-        foreach ($target as $name => $t) {
-            if (isset($current[$name])) {
+        foreach ($target->getElements() as $t) {
+            $name = $t->name;
+            if ($current->getByColumnName($name) !== null) {
                 continue;
             }
             $diff = new DBColumnDiff();
@@ -1483,8 +1504,9 @@ class DatabaseSchemaDiffService
             $tmp = $diff;
             $diffs->add($tmp);
         }
-        foreach ($current as $name => $c) {
-            if (isset($target[$name])) {
+        foreach ($current->getElements() as $c) {
+            $name = $c->name;
+            if ($target->getByColumnName($name) !== null) {
                 continue;
             }
             $diff = new DBColumnDiff();
@@ -1495,11 +1517,13 @@ class DatabaseSchemaDiffService
             $tmp = $diff;
             $diffs->add($tmp);
         }
-        foreach ($target as $name => $t) {
-            if (!isset($current[$name])) {
+        foreach ($target->getElements() as $t) {
+            $name = $t->name;
+            $currentColumn = $current->getByColumnName($name);
+            if ($currentColumn === null) {
                 continue;
             }
-            $changedAttributes = $this->compareCanonicalColumns($t, $current[$name]);
+            $changedAttributes = $this->compareCanonicalColumns($t, $currentColumn);
             if (!$changedAttributes) {
                 continue;
             }
@@ -1507,7 +1531,7 @@ class DatabaseSchemaDiffService
             $diff->columnName = $name;
             $diff->changeKind = DBColumnDiff::CHANGE_KIND_MODIFY;
             $diff->targetColumn = $databaseModel->columns->getColumnByName($name);
-            $diff->currentDefinition = $current[$name];
+            $diff->currentDefinition = $currentColumn;
             $diff->changedAttributes = $changedAttributes;
 
             // VECTOR columns cannot be ALTERed in place when the dimensionality or sqlType
@@ -1688,19 +1712,20 @@ class DatabaseSchemaDiffService
     // ----- virtual columns ----------------------------------------------------------------------
 
     /**
-     * @param array<string, DBCanonicalColumn> $target
-     * @param array<string, DBCanonicalColumn> $current
+     * Three-loop set-diff for generated columns. Same shape as {@see self::diffColumns()};
+     * lookups via {@see DBCanonicalVirtualColumns::getByColumnName()}.
      */
     protected function diffVirtualColumns(
         DatabaseModel $databaseModel,
-        array $target,
-        array $current
+        DBCanonicalVirtualColumns $target,
+        DBCanonicalVirtualColumns $current
     ): DBVirtualColumnDiffs {
         $tableName = $databaseModel->sqlTableName;
         $diffs = new DBVirtualColumnDiffs();
 
-        foreach ($target as $name => $t) {
-            if (isset($current[$name])) {
+        foreach ($target->getElements() as $t) {
+            $name = $t->name;
+            if ($current->getByColumnName($name) !== null) {
                 continue;
             }
             $vc = $this->findTargetVirtualColumnByName($databaseModel, $name);
@@ -1712,8 +1737,9 @@ class DatabaseSchemaDiffService
             $tmp = $diff;
             $diffs->add($tmp);
         }
-        foreach ($current as $name => $c) {
-            if (isset($target[$name])) {
+        foreach ($current->getElements() as $c) {
+            $name = $c->name;
+            if ($target->getByColumnName($name) !== null) {
                 continue;
             }
             $diff = new DBVirtualColumnDiff();
@@ -1724,11 +1750,13 @@ class DatabaseSchemaDiffService
             $tmp = $diff;
             $diffs->add($tmp);
         }
-        foreach ($target as $name => $t) {
-            if (!isset($current[$name])) {
+        foreach ($target->getElements() as $t) {
+            $name = $t->name;
+            $currentColumn = $current->getByColumnName($name);
+            if ($currentColumn === null) {
                 continue;
             }
-            $changedAttributes = $this->compareCanonicalVirtualColumns($t, $current[$name]);
+            $changedAttributes = $this->compareCanonicalVirtualColumns($t, $currentColumn);
             if (!$changedAttributes) {
                 continue;
             }
@@ -1737,7 +1765,7 @@ class DatabaseSchemaDiffService
             $diff->columnName = $name;
             $diff->changeKind = DBVirtualColumnDiff::CHANGE_KIND_MODIFY;
             $diff->targetVirtualColumn = $vc;
-            $diff->currentDefinition = $current[$name];
+            $diff->currentDefinition = $currentColumn;
             $diff->changedAttributes = $changedAttributes;
             // MySQL cannot ALTER a generation expression — drop + add. The execution path picks
             // these halves apart into phases 3 + 8; the field below is for frontend display only.
@@ -1791,22 +1819,21 @@ class DatabaseSchemaDiffService
     // ----- indexes ------------------------------------------------------------------------------
 
     /**
-     * @param array<string, DBCanonicalIndex> $target  Keyed by match key.
-     * @param array<string, DBCanonicalIndex> $current Keyed by live INDEX_NAME.
+     * Two-loop set-diff for indexes. Both sides are keyed by `matchKey` (`indexType|columns`) so
+     * lookup is direct via {@see DBCanonicalIndexes::getByMatchKey()} — no live-side rekey loop
+     * is needed (the introspection service already produces a matchKey-keyed set).
      */
-    protected function diffIndexes(DatabaseModel $databaseModel, array $target, array $current): DBIndexDiffs
-    {
+    protected function diffIndexes(
+        DatabaseModel $databaseModel,
+        DBCanonicalIndexes $target,
+        DBCanonicalIndexes $current
+    ): DBIndexDiffs {
         $tableName = $databaseModel->sqlTableName;
         $diffs = new DBIndexDiffs();
 
-        // Index live by match key so we can do set-diff symmetrically.
-        $currentByMatchKey = [];
-        foreach ($current as $c) {
-            $currentByMatchKey[$c->matchKey] = $c;
-        }
-
-        foreach ($target as $key => $t) {
-            if (isset($currentByMatchKey[$key])) {
+        foreach ($target->getElements() as $t) {
+            $key = $t->matchKey;
+            if ($current->getByMatchKey($key) !== null) {
                 continue;
             }
             $idx = $this->findTargetIndexByMatchKey($databaseModel, $key);
@@ -1818,8 +1845,9 @@ class DatabaseSchemaDiffService
             $tmp = $diff;
             $diffs->add($tmp);
         }
-        foreach ($currentByMatchKey as $key => $c) {
-            if (isset($target[$key])) {
+        foreach ($current->getElements() as $c) {
+            $key = $c->matchKey;
+            if ($target->getByMatchKey($key) !== null) {
                 continue;
             }
             $diff = new DBIndexDiff();
@@ -1857,24 +1885,21 @@ class DatabaseSchemaDiffService
     // ----- foreign keys -------------------------------------------------------------------------
 
     /**
-     * @param array<string, DBCanonicalForeignKey> $target  Keyed by match key.
-     * @param array<string, DBCanonicalForeignKey> $current Keyed by live CONSTRAINT_NAME.
+     * Three-loop set-diff for foreign keys. Both sides are keyed by `matchKey`
+     * (`internalIdColumn->foreignTable.foreignIdColumn`) so lookup is direct via
+     * {@see DBCanonicalForeignKeys::getByMatchKey()} — no live-side rekey loop needed.
      */
     protected function diffForeignKeys(
         DatabaseModel $databaseModel,
-        array $target,
-        array $current
+        DBCanonicalForeignKeys $target,
+        DBCanonicalForeignKeys $current
     ): DBForeignKeyDiffs {
         $tableName = $databaseModel->sqlTableName;
         $diffs = new DBForeignKeyDiffs();
 
-        $currentByMatchKey = [];
-        foreach ($current as $c) {
-            $currentByMatchKey[$c->matchKey] = $c;
-        }
-
-        foreach ($target as $key => $t) {
-            if (isset($currentByMatchKey[$key])) {
+        foreach ($target->getElements() as $t) {
+            $key = $t->matchKey;
+            if ($current->getByMatchKey($key) !== null) {
                 continue;
             }
             $fk = $this->findTargetForeignKeyByMatchKey($databaseModel, $key);
@@ -1886,8 +1911,9 @@ class DatabaseSchemaDiffService
             $tmp = $diff;
             $diffs->add($tmp);
         }
-        foreach ($currentByMatchKey as $key => $c) {
-            if (isset($target[$key])) {
+        foreach ($current->getElements() as $c) {
+            $key = $c->matchKey;
+            if ($target->getByMatchKey($key) !== null) {
                 continue;
             }
             $diff = new DBForeignKeyDiff();
@@ -1899,11 +1925,13 @@ class DatabaseSchemaDiffService
             $tmp = $diff;
             $diffs->add($tmp);
         }
-        foreach ($target as $key => $t) {
-            if (!isset($currentByMatchKey[$key])) {
+        foreach ($target->getElements() as $t) {
+            $key = $t->matchKey;
+            $currentFk = $current->getByMatchKey($key);
+            if ($currentFk === null) {
                 continue;
             }
-            $changedAttributes = $this->compareCanonicalForeignKeys($t, $currentByMatchKey[$key]);
+            $changedAttributes = $this->compareCanonicalForeignKeys($t, $currentFk);
             if (!$changedAttributes) {
                 continue;
             }
@@ -1912,8 +1940,8 @@ class DatabaseSchemaDiffService
             $diff->matchKey = $key;
             $diff->changeKind = DBForeignKeyDiff::CHANGE_KIND_MODIFY;
             $diff->targetForeignKey = $fk;
-            $diff->currentConstraintName = $currentByMatchKey[$key]->constraintName;
-            $diff->currentDefinition = $currentByMatchKey[$key];
+            $diff->currentConstraintName = $currentFk->constraintName;
+            $diff->currentDefinition = $currentFk;
             $diff->changedAttributes = $changedAttributes;
             // MySQL needs drop + add for any FK action change. Halves are split into phases 1 + 10
             // by the executor; the field below is for frontend display only.
@@ -1922,7 +1950,7 @@ class DatabaseSchemaDiffService
             // would synthesize the default `fk_{table}_{column}` name, which renames pt-osc-prefixed
             // constraints (`_fk_*`) on every diff cycle — a cosmetic ping-pong that triggers a
             // fresh COPY-forcing diff after every pt-osc run.
-            $currentName = (string)$currentByMatchKey[$key]->constraintName;
+            $currentName = (string)$currentFk->constraintName;
             $drop = $this->renderForeignKeyDropSql($tableName, $currentName);
             $add = $fk !== null ? $this->renderForeignKeyAddSql($tableName, $fk, $currentName) : '';
             $diff->sql = $add !== '' ? $drop . ";\n" . $add : $drop;
@@ -1996,58 +2024,65 @@ class DatabaseSchemaDiffService
      * change is implemented as DROP + CREATE (phases 0 + 12 of the assembler).
      *
      * Matching: target triggers are extracted from DatabaseModel::$triggers by reading each
-     * trigger's source .sql file and parsing the CREATE TRIGGER header. They are keyed by trigger
-     * name (the same name the live trigger uses). Live triggers come from INFORMATION_SCHEMA.
-     * Body comparison runs through DatabaseSchemaIntrospectionService::normaliseTriggerBody on
-     * both sides so whitespace, casing and a wrapping BEGIN…END do not falsely flag changes.
+     * trigger's source .sql file and parsing the CREATE TRIGGER header. Both sides are keyed by
+     * `tableName.triggerName` via {@see DBCanonicalTrigger::uniqueKey()}, so lookups use
+     * {@see DBCanonicalTriggers::getByTriggerName()}. Body comparison runs through
+     * `normaliseTriggerBody` on both sides so whitespace, casing and a wrapping BEGIN…END do not
+     * falsely flag changes.
      *
-     * @param array<string, DBCanonicalTrigger> $currentTriggers Keyed by trigger name.
      * @throws ReflectionException
      */
-    protected function diffTriggers(DatabaseModel $databaseModel, array $currentTriggers): DBTriggerDiffs
-    {
+    protected function diffTriggers(
+        DatabaseModel $databaseModel,
+        DBCanonicalTriggers $currentTriggers
+    ): DBTriggerDiffs {
         $diffs = new DBTriggerDiffs();
         $targetTriggers = $this->canonicaliseTargetTriggers($databaseModel);
+        $tableName = $databaseModel->sqlTableName;
 
-        foreach ($targetTriggers as $triggerName => $t) {
-            if (isset($currentTriggers[$triggerName])) {
+        foreach ($targetTriggers->getElements() as $t) {
+            $triggerName = $t->triggerName;
+            if ($currentTriggers->getByTriggerName($tableName, $triggerName) !== null) {
                 continue;
             }
             $diff = new DBTriggerDiff();
             $diff->triggerName = $triggerName;
-            $diff->tableName = $databaseModel->sqlTableName;
+            $diff->tableName = $tableName;
             $diff->changeKind = DBTriggerDiff::CHANGE_KIND_ADD;
             $diff->targetSql = (string)$t->rawSql;
             $diff->sql = $diff->targetSql;
             $tmp = $diff;
             $diffs->add($tmp);
         }
-        foreach ($currentTriggers as $triggerName => $c) {
-            if (isset($targetTriggers[$triggerName])) {
+        foreach ($currentTriggers->getElements() as $c) {
+            $triggerName = $c->triggerName;
+            if ($targetTriggers->getByTriggerName($tableName, $triggerName) !== null) {
                 continue;
             }
             $diff = new DBTriggerDiff();
             $diff->triggerName = $triggerName;
-            $diff->tableName = $databaseModel->sqlTableName;
+            $diff->tableName = $tableName;
             $diff->changeKind = DBTriggerDiff::CHANGE_KIND_DROP;
             $diff->currentDefinition = $c;
             $diff->sql = $this->renderTriggerDropSql($triggerName);
             $tmp = $diff;
             $diffs->add($tmp);
         }
-        foreach ($targetTriggers as $triggerName => $t) {
-            if (!isset($currentTriggers[$triggerName])) {
+        foreach ($targetTriggers->getElements() as $t) {
+            $triggerName = $t->triggerName;
+            $currentTrigger = $currentTriggers->getByTriggerName($tableName, $triggerName);
+            if ($currentTrigger === null) {
                 continue;
             }
-            if ($t->normalisedBody === $currentTriggers[$triggerName]->normalisedBody) {
+            if ($t->normalisedBody === $currentTrigger->normalisedBody) {
                 continue;
             }
             $diff = new DBTriggerDiff();
             $diff->triggerName = $triggerName;
-            $diff->tableName = $databaseModel->sqlTableName;
+            $diff->tableName = $tableName;
             $diff->changeKind = DBTriggerDiff::CHANGE_KIND_MODIFY;
             $diff->targetSql = (string)$t->rawSql;
-            $diff->currentDefinition = $currentTriggers[$triggerName];
+            $diff->currentDefinition = $currentTrigger;
             $diff->sql = $this->renderTriggerDropSql($triggerName) . ";\n" . $diff->targetSql;
             $tmp = $diff;
             $diffs->add($tmp);
@@ -2056,12 +2091,16 @@ class DatabaseSchemaDiffService
     }
 
     /**
-     * @return array<string, DBCanonicalTrigger> Keyed by trigger name. Each entry has rawSql + normalisedBody populated.
+     * Builds the target side's triggers as a typed set, keyed by `tableName.triggerName` via
+     * {@see DBCanonicalTrigger::uniqueKey()}. Each entry has rawSql + normalisedBody populated;
+     * `timing`, `event`, `actionStatement` stay null because the target side carries that
+     * information inside `rawSql`.
+     *
      * @throws ReflectionException
      */
-    protected function canonicaliseTargetTriggers(DatabaseModel $databaseModel): array
+    protected function canonicaliseTargetTriggers(DatabaseModel $databaseModel): DBCanonicalTriggers
     {
-        $triggers = [];
+        $triggers = new DBCanonicalTriggers();
         if ($databaseModel->triggers === null) {
             return $triggers;
         }
@@ -2076,7 +2115,7 @@ class DatabaseSchemaDiffService
                 $canonical->tableName = $databaseModel->sqlTableName;
                 $canonical->rawSql = $extracted['rawSql'];
                 $canonical->normalisedBody = $this->introspectionService->normaliseTriggerBody($extracted['body']);
-                $triggers[$canonical->triggerName] = $canonical;
+                $triggers->add($canonical);
             }
         }
         return $triggers;

@@ -6,9 +6,12 @@ namespace DDD\Domain\Common\Services;
 
 use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalColumn;
 use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalForeignKey;
+use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalForeignKeys;
 use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalIndex;
+use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalIndexes;
 use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalTable;
 use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalTrigger;
+use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalTriggers;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseForeignKey;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseIndex;
@@ -91,9 +94,9 @@ class DatabaseSchemaIntrospectionService
         foreach ($this->fetchColumnRows($tableName) as $row) {
             $column = $this->buildCanonicalColumn($row, $jsonValidColumns);
             if ($column->isGenerated) {
-                $table->virtualColumns[$column->name] = $column;
+                $table->virtualColumns->add($column);
             } else {
-                $table->columns[$column->name] = $column;
+                $table->columns->add($column);
             }
         }
 
@@ -320,10 +323,16 @@ class DatabaseSchemaIntrospectionService
     }
 
     /**
-     * @return array<string, DBCanonicalIndex> Keyed by live INDEX_NAME (PRIMARY skipped).
+     * Returns the table's secondary indexes (PRIMARY skipped — it lives inside the CREATE TABLE
+     * column definitions and is not part of the diff scope). Each {@see DBCanonicalIndex} is
+     * indexed by `matchKey` (`indexType|columns`) so target and live sides share lookup semantics.
+     *
+     * The live `indexName` is still carried per element so DROP statements can target the actual
+     * DB-side identifier.
+     *
      * @throws Exception
      */
-    protected function fetchIndexes(string $tableName): array
+    protected function fetchIndexes(string $tableName): DBCanonicalIndexes
     {
         $connection = EntityManagerFactory::getInstance()->getConnection();
         $rows = $connection->fetchAllAssociative(
@@ -334,11 +343,14 @@ class DatabaseSchemaIntrospectionService
             ['table' => $tableName]
         );
 
+        // Two-pass: first group rows by INDEX_NAME (one row per (indexName, column) pair), then
+        // emit one DBCanonicalIndex per index with matchKey computed after all columns are known.
+        // We can't add to the Set during pass one because matchKey (=uniqueKey) isn't yet stable.
         $grouped = [];
         foreach ($rows as $row) {
             $indexName = (string)$row['INDEX_NAME'];
             if ($indexName === 'PRIMARY') {
-                continue; // PK is part of CREATE TABLE, not the diff scope.
+                continue;
             }
             $indexType = $this->mapIndexType((string)$row['INDEX_TYPE'], (int)$row['NON_UNIQUE']);
             if (!isset($grouped[$indexName])) {
@@ -346,16 +358,17 @@ class DatabaseSchemaIntrospectionService
                 $index->indexName = $indexName;
                 $index->indexType = $indexType;
                 $index->indexColumns = [];
-                // matchKey is populated after the columns are known, below.
                 $grouped[$indexName] = $index;
             }
             $grouped[$indexName]->indexColumns[] = (string)$row['COLUMN_NAME'];
         }
-        // Finalize matchKey now that all columns are gathered.
+
+        $indexes = new DBCanonicalIndexes();
         foreach ($grouped as $index) {
             $index->matchKey = $this->buildIndexMatchKey($index->indexType, $index->indexColumns);
+            $indexes->add($index);
         }
-        return $grouped;
+        return $indexes;
     }
 
     /**
@@ -388,10 +401,14 @@ class DatabaseSchemaIntrospectionService
     }
 
     /**
-     * @return array<string, DBCanonicalForeignKey> Keyed by live CONSTRAINT_NAME.
+     * Returns the table's foreign keys, indexed by `matchKey`
+     * (`internalIdColumn->foreignTable.foreignIdColumn`) so target and live sides share lookup
+     * semantics. The live `constraintName` is still carried per element so DROP statements can
+     * target the actual DB-side identifier.
+     *
      * @throws Exception
      */
-    protected function fetchForeignKeys(string $tableName): array
+    protected function fetchForeignKeys(string $tableName): DBCanonicalForeignKeys
     {
         $connection = EntityManagerFactory::getInstance()->getConnection();
         $rows = $connection->fetchAllAssociative(
@@ -406,11 +423,10 @@ class DatabaseSchemaIntrospectionService
             ['table' => $tableName]
         );
 
-        $foreignKeys = [];
+        $foreignKeys = new DBCanonicalForeignKeys();
         foreach ($rows as $row) {
-            $constraintName = (string)$row['CONSTRAINT_NAME'];
             $fk = new DBCanonicalForeignKey();
-            $fk->constraintName = $constraintName;
+            $fk->constraintName = (string)$row['CONSTRAINT_NAME'];
             $fk->internalIdColumn = (string)$row['COLUMN_NAME'];
             $fk->foreignTable = (string)$row['REFERENCED_TABLE_NAME'];
             $fk->foreignIdColumn = (string)$row['REFERENCED_COLUMN_NAME'];
@@ -421,7 +437,7 @@ class DatabaseSchemaIntrospectionService
                 $fk->foreignTable,
                 $fk->foreignIdColumn
             );
-            $foreignKeys[$constraintName] = $fk;
+            $foreignKeys->add($fk);
         }
         return $foreignKeys;
     }
@@ -438,10 +454,12 @@ class DatabaseSchemaIntrospectionService
     }
 
     /**
-     * @return array<string, DBCanonicalTrigger> Keyed by trigger name.
+     * Returns the table's triggers, indexed by `tableName.triggerName` composite (see
+     * {@see DBCanonicalTrigger::uniqueKey()}).
+     *
      * @throws Exception
      */
-    protected function fetchTriggers(string $tableName): array
+    protected function fetchTriggers(string $tableName): DBCanonicalTriggers
     {
         $connection = EntityManagerFactory::getInstance()->getConnection();
         $rows = $connection->fetchAllAssociative(
@@ -452,18 +470,17 @@ class DatabaseSchemaIntrospectionService
             ['table' => $tableName]
         );
 
-        $triggers = [];
+        $triggers = new DBCanonicalTriggers();
         foreach ($rows as $row) {
-            $triggerName = (string)$row['TRIGGER_NAME'];
             $actionStatement = (string)$row['ACTION_STATEMENT'];
             $trigger = new DBCanonicalTrigger();
-            $trigger->triggerName = $triggerName;
+            $trigger->triggerName = (string)$row['TRIGGER_NAME'];
             $trigger->tableName = $tableName;
             $trigger->timing = strtoupper((string)$row['ACTION_TIMING']);
             $trigger->event = strtoupper((string)$row['EVENT_MANIPULATION']);
             $trigger->actionStatement = $actionStatement;
             $trigger->normalisedBody = $this->normaliseTriggerBody($actionStatement);
-            $triggers[$triggerName] = $trigger;
+            $triggers->add($trigger);
         }
         return $triggers;
     }
