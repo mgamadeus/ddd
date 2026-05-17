@@ -26,7 +26,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  */
 class EntityModelGeneratorService
 {
-    protected static DatabaseModels $databaseModels;
+    protected static ?DatabaseModels $databaseModels = null;
 
     /**
      * Creates Tables for given entity class names. If null is passed, it searches for all Entities in Project
@@ -126,16 +126,25 @@ class EntityModelGeneratorService
     }
 
     /**
-     * Removes entity classes that are overridden by descendant entities present in the same set.
+     * Removes entity classes that are overridden by application-side entities present in the same
+     * set. Two override conventions are recognised:
      *
-     * An override is detected when a descendant entity extends an ancestor entity with the same
-     * short class name (e.g. App\...\Account extends DDD\...\Account). Both classes resolve to the
-     * same SQL table name (table name is derived from the EntitySet's short name, which stays
-     * identical across overrides), so generating SQL/Doctrine models for the ancestor produces
-     * duplicate definitions for a table the descendant already owns.
+     *  1. **Inheritance override** — a descendant entity extends an ancestor entity with the same
+     *     short class name (e.g. App\…\Account extends DDD\…\Account). The ancestor is dropped
+     *     because the descendant owns the same SQL table (table name is derived from the EntitySet's
+     *     short name, which stays identical across overrides).
+     *  2. **Sibling override** — two unrelated entity classes share the same short class name but
+     *     live in different namespaces (e.g. App\…\CacheScopeInvalidation and DDD\…\CacheScopeInvalidation,
+     *     both extending Entity directly). Without override resolution both would produce a
+     *     DatabaseModel for the same `sqlTableName`, and the second one's `add()` to the DatabaseModels
+     *     ObjectSet would be silently dropped by content-equality dedup — usually the app's variant,
+     *     because the vendor-side class loads first under composer's autoload order. The app-side
+     *     class wins by convention; "app-side" is detected via the absence of `/vendor/` in the
+     *     class's source-file path.
      *
      * Single Table Inheritance hierarchies are preserved: an ancestor carrying #[SubclassIndicator]
-     * is never marked as overridden, and the walk stops there so STI siblings above it are kept too.
+     * is never marked as overridden, and the inheritance walk stops there so STI siblings above it
+     * are kept too.
      *
      * @param ClassWithNamespace[] $entityClasses
      * @return ClassWithNamespace[]
@@ -150,6 +159,8 @@ class EntityModelGeneratorService
         }
 
         $overriddenClassNames = [];
+
+        // ── Convention 1: inheritance overrides (App\X extends DDD\X) ──────────────────────────
         foreach ($entityClasses as $classWithNamespace) {
             $reflectionClass = ReflectionClass::instance($classWithNamespace->getNameWithNamespace());
             $shortName = $classWithNamespace->name;
@@ -178,6 +189,38 @@ class EntityModelGeneratorService
             }
         }
 
+        // ── Convention 2: sibling overrides (App\X and DDD\X both extend Entity) ───────────────
+        // Group by short class name. For any short name with multiple classes where at least one
+        // lives outside vendor/, drop the vendor-resident classes from the set.
+        /** @var array<string, ClassWithNamespace[]> $byShortName */
+        $byShortName = [];
+        foreach ($entityClasses as $classWithNamespace) {
+            $byShortName[$classWithNamespace->name][] = $classWithNamespace;
+        }
+        foreach ($byShortName as $shortName => $group) {
+            if (count($group) < 2) {
+                continue;
+            }
+            $hasAppSide = false;
+            foreach ($group as $cwn) {
+                if (!self::classLivesInVendor($cwn->getNameWithNamespace())) {
+                    $hasAppSide = true;
+                    break;
+                }
+            }
+            if (!$hasAppSide) {
+                // All variants are in vendor (e.g. two DDD packages with name collision). Nothing
+                // to disambiguate by the app-wins rule — leave the inheritance pass's decision
+                // (or lack thereof) untouched.
+                continue;
+            }
+            foreach ($group as $cwn) {
+                if (self::classLivesInVendor($cwn->getNameWithNamespace())) {
+                    $overriddenClassNames[$cwn->getNameWithNamespace()] = true;
+                }
+            }
+        }
+
         if (!$overriddenClassNames) {
             return $entityClasses;
         }
@@ -188,6 +231,39 @@ class EntityModelGeneratorService
                 static fn(ClassWithNamespace $cwn) => !isset($overriddenClassNames[$cwn->getNameWithNamespace()])
             )
         );
+    }
+
+    /**
+     * True when the class's source file is loaded from `vendor/` — used to disambiguate sibling
+     * entity overrides (app-side beats vendor-side, see {@see self::filterOutOverriddenEntities()}).
+     * Reflection-based so it works regardless of namespace convention or composer.json structure.
+     *
+     * @throws ReflectionException
+     */
+    protected static function classLivesInVendor(string $fqcn): bool
+    {
+        $file = ReflectionClass::instance($fqcn)->getFileName();
+        if ($file === false) {
+            return false; // Built-in / eval'd class — treat as app-side.
+        }
+        // Normalise to forward slashes so the substring check works identically on Windows.
+        $normalised = str_replace('\\', '/', $file);
+        return str_contains($normalised, '/vendor/');
+    }
+
+    /**
+     * Clears the per-process static cache of generated {@see DatabaseModels}. The cache is keyed
+     * by nothing — it's a single instance reused for the lifetime of the PHP process. In long-
+     * running workers (Symfony Messenger, PHP-FPM with high MaxRequestsPerChild) where entity PHP
+     * files can hot-reload between requests, the static cache otherwise yields a stale schema
+     * snapshot that diverges from the freshly-introspected live DB. Callers that need a guaranteed-
+     * fresh recompute (e.g. {@see \DDD\Domain\Common\Services\DatabaseSchemaDiffService::applyDiffs()}
+     * inside its advisory-lock body) MUST call this alongside
+     * {@see \DDD\Domain\Common\Services\DatabaseSchemaIntrospectionService::invalidateCache()}.
+     */
+    public static function invalidateCache(): void
+    {
+        self::$databaseModels = null;
     }
 
     public static function getDatabaseModels(?array $entityClasses = null): DatabaseModels

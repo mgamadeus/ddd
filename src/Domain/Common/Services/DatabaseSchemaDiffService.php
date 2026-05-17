@@ -15,14 +15,21 @@ use DDD\Domain\Base\Repo\DB\Database\DatabaseIndex;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModels;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseVirtualColumn;
+use DDD\Domain\Base\Repo\DB\Database\Diff\DBCollationChange;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBColumnDiff;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBColumnDiffs;
+use DDD\Domain\Base\Repo\DB\Database\Diff\DBCopyForcingOperation;
+use DDD\Domain\Base\Repo\DB\Database\Diff\DBCopyForcingOperations;
+use DDD\Domain\Base\Repo\DB\Database\Diff\DBExpectedDiffSignature;
+use DDD\Domain\Base\Repo\DB\Database\Diff\DBExpectedDiffSignatures;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBForeignKeyDiff;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBForeignKeyDiffs;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBIndexDiff;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBIndexDiffs;
+use DDD\Domain\Base\Repo\DB\Database\Diff\DBSqlStatements;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBTableDiff;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBTableDiffs;
+use DDD\Domain\Base\Repo\DB\Database\Diff\DBTableSizeStats;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBTriggerDiff;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBTriggerDiffs;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBVirtualColumnDiff;
@@ -233,12 +240,10 @@ class DatabaseSchemaDiffService
             return; // No live table yet → no size/rows, no guard applies.
         }
         $stats = $this->getTableSizeStats($diff->sqlTableName);
-        $diff->tableSizeMb = $stats['size_mb'] ?? null;
-        $diff->tableRowCount = $stats['row_count'] ?? null;
+        $diff->tableSizeMb = $stats?->sizeMb;
+        $diff->tableRowCount = $stats?->rowCount;
 
-        $isLarge = ($diff->tableSizeMb !== null && $diff->tableSizeMb > self::LARGE_TABLE_SIZE_THRESHOLD_MB)
-            || ($diff->tableRowCount !== null && $diff->tableRowCount > self::LARGE_TABLE_ROW_THRESHOLD);
-        if (!$isLarge) {
+        if ($stats === null || !$stats->isLarge(self::LARGE_TABLE_SIZE_THRESHOLD_MB, self::LARGE_TABLE_ROW_THRESHOLD)) {
             return;
         }
 
@@ -250,9 +255,9 @@ class DatabaseSchemaDiffService
         // copy-forcing op so the same block path applies.
         if ($diff->changeType === DBTableDiff::CHANGE_TYPE_DROP_TABLE) {
             $diff->directApplyBlocked = true;
-            $diff->copyForcingOperations = [
+            $diff->copyForcingOperations = DBCopyForcingOperations::fromDescriptionList([
                 "DROP TABLE on large table (size $diff->tableSizeMb MB / $diff->tableRowCount rows) — Galera TOI block during file unlink + binlog write",
-            ];
+            ]);
             $diff->directApplyBlockReason = $this->buildProductionGuardMessage(
                 $diff->sqlTableName,
                 $diff->tableSizeMb,
@@ -263,7 +268,7 @@ class DatabaseSchemaDiffService
         }
 
         $risky = $this->detectCopyForcingOperations($diff);
-        if (empty($risky)) {
+        if ($risky->count() === 0) {
             return;
         }
         $diff->directApplyBlocked = true;
@@ -280,20 +285,18 @@ class DatabaseSchemaDiffService
      * Builds the human-readable refusal message for the Production-Guard. Shared between the
      * compute-time decorator ({@see self::populateProductionGuardSignal()}) and the apply-time
      * thrower ({@see self::assertSafeForDirectApply()}) so both paths surface the same text.
-     *
-     * @param string[] $riskyOperations
      */
     protected function buildProductionGuardMessage(
         string $tableName,
         ?int $sizeMb,
         ?int $rowCount,
-        array $riskyOperations
+        DBCopyForcingOperations $riskyOperations
     ): string {
         $sizeThreshold = self::LARGE_TABLE_SIZE_THRESHOLD_MB;
         $rowThreshold = self::LARGE_TABLE_ROW_THRESHOLD;
         $sizeShown = $sizeMb !== null ? "{$sizeMb} MB" : 'unknown MB';
         $rowsShown = $rowCount !== null ? number_format($rowCount) . ' rows' : 'unknown rows';
-        $offending = "    • " . implode("\n    • ", $riskyOperations);
+        $offending = "    • " . implode("\n    • ", $riskyOperations->toDescriptionList());
         return "Direct apply on large table `$tableName` ($sizeShown, $rowsShown — exceeds thresholds {$sizeThreshold} MB / " . number_format($rowThreshold) . " rows) is BLOCKED.\n\n" .
             "The diff contains operations that force ALGORITHM=COPY under Galera TOI, which would block the entire cluster for the duration of the table rewrite:\n" .
             $offending . "\n\n" .
@@ -317,7 +320,7 @@ class DatabaseSchemaDiffService
         DBTableDiffs $diffs,
         bool $disableForeignKeyChecks = true,
         bool $bypassProductionGuard = false,
-        ?array $expectedDiffSignaturesBySqlTableName = null
+        ?DBExpectedDiffSignatures $expectedDiffSignatures = null
     ): DBTableDiffs {
         $connection = EntityManagerFactory::getInstance()->getConnection();
 
@@ -366,16 +369,25 @@ class DatabaseSchemaDiffService
             // CLI/messenger callers pass $expected = null and keep the trust-the-caller path
             // unchanged — they're authoritative and the snapshot they hold IS the intent.
             //
-            // The introspection cache must be invalidated FIRST: the caller's earlier
-            // computeDiffs() in the same HTTP request already populated it with the pre-lock
-            // live state. Without invalidation, the fresh recompute would re-use the cached
-            // canonical tables — the very state we're trying to verify against — and the gate
-            // would be tautological (same cached snapshot on both sides).
-            if ($expectedDiffSignaturesBySqlTableName !== null) {
+            // Both caches must be invalidated FIRST:
+            //   1. The introspection cache (live DB state) — the caller's earlier computeDiffs()
+            //      in the same HTTP request already populated it. Without invalidation the fresh
+            //      recompute re-uses the cached canonical tables — the very state we're trying
+            //      to verify against — and the gate would be tautological.
+            //   2. The EntityModelGenerator static cache (target-derived models) — a process-
+            //      level cache that's NOT scoped per request. In dev with PHP-FPM, two requests
+            //      on the same worker see the SAME cached models even if an entity file was
+            //      edited between them, producing a stale TARGET side that doesn't match the
+            //      live INFORMATION_SCHEMA the introspection just re-read. The user-visible
+            //      symptom is a perpetual signature mismatch where the frontend's captured
+            //      diff and the backend's recomputed diff disagree because they were generated
+            //      from different entity reflection snapshots.
+            if ($expectedDiffSignatures !== null) {
                 $this->introspectionService->invalidateCache();
+                EntityModelGeneratorService::invalidateCache();
                 $diffs = $this->computeDiffsForTables($affectedTableNames);
             }
-            $this->assertDiffSignaturesMatch($diffs, $expectedDiffSignaturesBySqlTableName);
+            $this->assertDiffSignaturesMatch($diffs, $expectedDiffSignatures);
             if (!$bypassProductionGuard) {
                 foreach ($diffs->getElements() as $diff) {
                     $this->assertSafeForDirectApply($diff);
@@ -434,10 +446,15 @@ class DatabaseSchemaDiffService
     ): DBTableDiffs {
         $set = new DBTableDiffs();
         $set->add($diff);
-        $expectedMap = $expectedDiffSignature !== null
-            ? [$diff->sqlTableName => $expectedDiffSignature]
-            : null;
-        return $this->applyDiffs($set, $disableForeignKeyChecks, $bypassProductionGuard, $expectedMap);
+        $expected = null;
+        if ($expectedDiffSignature !== null) {
+            $entry = new DBExpectedDiffSignature();
+            $entry->sqlTableName = $diff->sqlTableName;
+            $entry->signature = $expectedDiffSignature;
+            $expected = new DBExpectedDiffSignatures();
+            $expected->add($entry);
+        }
+        return $this->applyDiffs($set, $disableForeignKeyChecks, $bypassProductionGuard, $expected);
     }
 
     /**
@@ -466,12 +483,11 @@ class DatabaseSchemaDiffService
      * map silently lets the un-covered diffs apply ungated (the exact "view ≠ execute" gap the
      * signature gate exists to close).
      *
-     * @param array<string,string>|null $expected Keyed by sqlTableName.
      * @throws BadRequestException
      */
     protected function assertDiffSignaturesMatch(
         DBTableDiffs $diffs,
-        ?array $expected
+        ?DBExpectedDiffSignatures $expected
     ): void {
         if ($expected === null) {
             return;
@@ -481,23 +497,27 @@ class DatabaseSchemaDiffService
         foreach ($diffs->getElements() as $diff) {
             $diffTableNames[$diff->sqlTableName] = true;
         }
+        $expectedTableNames = [];
+        foreach ($expected->getElements() as $entry) {
+            $expectedTableNames[$entry->sqlTableName] = true;
+        }
 
-        // Strict-cover: every expected key must correspond to a diff in the set, and every diff
-        // must have an expected signature. Partial maps would reintroduce the very gap this gate
-        // exists to close.
-        $missingFromExpected = array_diff(array_keys($diffTableNames), array_keys($expected));
-        $extraInExpected = array_diff(array_keys($expected), array_keys($diffTableNames));
+        // Strict-cover: every expected entry must correspond to a diff in the set, and every diff
+        // must have an expected signature. Partial coverage would reintroduce the very gap this
+        // gate exists to close.
+        $missingFromExpected = array_diff(array_keys($diffTableNames), array_keys($expectedTableNames));
+        $extraInExpected = array_diff(array_keys($expectedTableNames), array_keys($diffTableNames));
         if ($missingFromExpected !== [] || $extraInExpected !== []) {
             $parts = [];
             if ($missingFromExpected !== []) {
                 $parts[] = 'missing signatures for: ' . implode(', ', $missingFromExpected);
             }
             if ($extraInExpected !== []) {
-                $parts[] = 'unknown tables in signature map: ' . implode(', ', $extraInExpected);
+                $parts[] = 'unknown tables in signature set: ' . implode(', ', $extraInExpected);
             }
             throw new BadRequestException(
                 self::ERROR_CODE_DIFF_SIGNATURE_MISMATCH
-                . ' Signature map does not cover the diff set ('
+                . ' Signature set does not cover the diff set ('
                 . implode('; ', $parts)
                 . '). Refresh the diff page and re-submit so every diff in the batch carries a signature.'
             );
@@ -518,12 +538,13 @@ class DatabaseSchemaDiffService
                     . 'framework — pass null/omit expectedDiffSignature for hand-built diffs.'
                 );
             }
-            if ($actual !== $expected[$tableName]) {
+            $expectedSignature = $expected->getSignatureByTableName($tableName);
+            if ($actual !== $expectedSignature) {
                 throw new BadRequestException(
                     self::ERROR_CODE_DIFF_SIGNATURE_MISMATCH
                     . " Diff for table `$tableName` changed since it was last viewed. "
                     . 'Refresh the diff page, review the new SQL, and apply again. '
-                    . "Expected signature: `{$expected[$tableName]}`, current: `$actual`."
+                    . "Expected signature: `$expectedSignature`, current: `$actual`."
                 );
             }
         }
@@ -576,48 +597,46 @@ class DatabaseSchemaDiffService
         if ($diff->directApplyBlocked && $diff->directApplyBlockReason !== null) {
             throw new BadRequestException($diff->directApplyBlockReason);
         }
-        $sizeMb = null;
-        $rowCount = null;
-        if (!$this->isLargeTable($diff->sqlTableName, $sizeMb, $rowCount)) {
+        $stats = $this->getTableSizeStats($diff->sqlTableName);
+        if ($stats === null || !$stats->isLarge(self::LARGE_TABLE_SIZE_THRESHOLD_MB, self::LARGE_TABLE_ROW_THRESHOLD)) {
             return;
         }
         $riskyOperations = $this->detectCopyForcingOperations($diff);
-        if (empty($riskyOperations)) {
+        if ($riskyOperations->count() === 0) {
             return;
         }
         throw new BadRequestException(
-            $this->buildProductionGuardMessage($diff->sqlTableName, $sizeMb, $rowCount, $riskyOperations)
+            $this->buildProductionGuardMessage(
+                $diff->sqlTableName,
+                $stats->sizeMb,
+                $stats->rowCount,
+                $riskyOperations
+            )
         );
     }
 
     /**
-     * True when the table exceeds either the size or the row-count threshold. Both metrics are
-     * looked up from `INFORMATION_SCHEMA.TABLES` in a single query. Out-parameters surface the
-     * exact figures so the caller can include them in error messages.
-     *
-     * `table_rows` from INFORMATION_SCHEMA is an *estimate* on InnoDB (statistics-derived, not a
-     * COUNT(*)). For guardrail purposes the estimate is more than accurate enough — we're checking
-     * orders of magnitude, not exact thresholds.
+     * True when the table exceeds either the size or row threshold. Convenience wrapper around
+     * {@see self::getTableSizeStats()} + {@see DBTableSizeStats::isLarge()} for external callers
+     * that just want a yes/no answer (the diff service itself reaches for the structured stats VO
+     * so it can also surface the figures in error messages).
      */
-    public function isLargeTable(string $sqlTableName, ?int &$sizeMb = null, ?int &$rowCount = null): bool
+    public function isLargeTable(string $sqlTableName): bool
     {
-        $stats = $this->getTableSizeStats($sqlTableName);
-        $sizeMb = $stats['size_mb'] ?? null;
-        $rowCount = $stats['row_count'] ?? null;
-        if ($sizeMb === null && $rowCount === null) {
-            return false;
-        }
-        return ($sizeMb !== null && $sizeMb > self::LARGE_TABLE_SIZE_THRESHOLD_MB)
-            || ($rowCount !== null && $rowCount > self::LARGE_TABLE_ROW_THRESHOLD);
+        return $this->getTableSizeStats($sqlTableName)
+            ?->isLarge(self::LARGE_TABLE_SIZE_THRESHOLD_MB, self::LARGE_TABLE_ROW_THRESHOLD)
+            ?? false;
     }
 
     /**
      * Returns the live table's size in MB and estimated row count, or null when the table is
      * missing or the query fails.
      *
-     * @return array{size_mb: ?int, row_count: ?int}|null
+     * `table_rows` from INFORMATION_SCHEMA is an *estimate* on InnoDB (statistics-derived, not a
+     * COUNT(*)). For guardrail purposes the estimate is more than accurate enough — we're checking
+     * orders of magnitude, not exact thresholds.
      */
-    public function getTableSizeStats(string $sqlTableName): ?array
+    public function getTableSizeStats(string $sqlTableName): ?DBTableSizeStats
     {
         $connection = EntityManagerFactory::getInstance()->getConnection();
         try {
@@ -634,22 +653,20 @@ class DatabaseSchemaDiffService
         if (!$row) {
             return null;
         }
-        return [
-            'size_mb' => $row['size_mb'] !== null ? (int)$row['size_mb'] : null,
-            'row_count' => $row['row_count'] !== null ? (int)$row['row_count'] : null,
-        ];
+        $stats = new DBTableSizeStats();
+        $stats->sizeMb = $row['size_mb'] !== null ? (int)$row['size_mb'] : null;
+        $stats->rowCount = $row['row_count'] !== null ? (int)$row['row_count'] : null;
+        return $stats;
     }
 
     /**
      * Enumerates which child diffs in a table-level diff are COPY-forcing under MariaDB/InnoDB.
      * Used by {@see self::assertSafeForDirectApply()} to build the error message. Returns an empty
-     * array when the diff is online-safe (i.e. all operations are INSTANT- or INPLACE-eligible).
-     *
-     * @return string[] Human-readable descriptions of the risky operations.
+     * set when the diff is online-safe (i.e. all operations are INSTANT- or INPLACE-eligible).
      */
-    protected function detectCopyForcingOperations(DBTableDiff $diff): array
+    protected function detectCopyForcingOperations(DBTableDiff $diff): DBCopyForcingOperations
     {
-        $risky = [];
+        $risky = new DBCopyForcingOperations();
         // Column attribute changes that force or risk ALGORITHM=COPY:
         //   - sqlType: type change (INT→BIGINT, ENUM→VARCHAR, etc.) → always COPY
         //   - length: VARCHAR shrink/grow → typically COPY
@@ -660,12 +677,17 @@ class DatabaseSchemaDiffService
         //     on large tables — the operator should explicitly choose pt-osc with the right hints.
         $copyForcingColumnAttributes = ['sqlType', 'length', 'vectorDimensions', 'allowsNull'];
 
+        $append = static function (DBCopyForcingOperations $set, string $description): void {
+            $op = new DBCopyForcingOperation();
+            $op->description = $description;
+            $set->add($op);
+        };
         foreach ($diff->columnDiffs->getElements() as $cd) {
             if ($cd->changeKind !== DBColumnDiff::CHANGE_KIND_MODIFY) {
                 continue;
             }
             if ($cd->requiresFullReset) {
-                $risky[] = "MODIFY column `$cd->columnName` requires full reset (VECTOR re-dimensioning forces DROP+ADD+backfill)";
+                $append($risky, "MODIFY column `$cd->columnName` requires full reset (VECTOR re-dimensioning forces DROP+ADD+backfill)");
                 continue;
             }
             $copyForcingChanges = array_intersect($cd->changedAttributes, $copyForcingColumnAttributes);
@@ -673,12 +695,12 @@ class DatabaseSchemaDiffService
                 $reason = in_array('allowsNull', $copyForcingChanges, true) && count($copyForcingChanges) === 1
                     ? 'nullability change can force full row-scan ALTER on large tables (use pt-osc with INPLACE/LOCK hint)'
                     : 'column-type or size change forces ALGORITHM=COPY';
-                $risky[] = "MODIFY column `$cd->columnName` — changes " . implode(', ', $copyForcingChanges) . " ($reason)";
+                $append($risky, "MODIFY column `$cd->columnName` — changes " . implode(', ', $copyForcingChanges) . " ($reason)");
             }
         }
         foreach ($diff->virtualColumnDiffs->getElements() as $vcd) {
             if ($vcd->changeKind === DBVirtualColumnDiff::CHANGE_KIND_MODIFY) {
-                $risky[] = "MODIFY virtual column `$vcd->columnName` (generation-expression change requires DROP+ADD — MySQL forbids in-place ALTER)";
+                $append($risky, "MODIFY virtual column `$vcd->columnName` (generation-expression change requires DROP+ADD — MySQL forbids in-place ALTER)");
             }
         }
         foreach ($diff->indexDiffs->getElements() as $id) {
@@ -686,7 +708,7 @@ class DatabaseSchemaDiffService
                 && $id->targetIndex !== null
                 && $id->targetIndex->indexType === DatabaseIndex::TYPE_FULLTEXT) {
                 $indexName = $id->targetIndex->indexName ?? '(unnamed)';
-                $risky[] = "ADD FULLTEXT INDEX `$indexName` (FULLTEXT index creation forces ALGORITHM=COPY)";
+                $append($risky, "ADD FULLTEXT INDEX `$indexName` (FULLTEXT index creation forces ALGORITHM=COPY)");
             }
         }
         return $risky;
@@ -714,14 +736,14 @@ class DatabaseSchemaDiffService
             return;
         }
         $connection = EntityManagerFactory::getInstance()->getConnection();
-        foreach ($diff->sqlStatements as $statement) {
+        foreach ($diff->sqlStatements->getElements() as $statement) {
             // Defensive: each sqlStatements entry SHOULD already be a single executable statement.
             // CREATE_TABLE diffs originally come from DatabaseModel::getSql() as one multi-statement
             // blob and we pre-split them in computeTableDiff. We re-split here as belt-and-braces
             // so a future caller cannot accidentally hand us a multi-statement entry that Doctrine
             // DBAL would reject (executeStatement() goes through prepare+execute → MySQL forbids
             // multi-statement prepared queries by default).
-            foreach ($this->splitMultiStatementSql($statement) as $singleStatement) {
+            foreach ($this->splitMultiStatementSql($statement->sql) as $singleStatement) {
                 $connection->executeStatement($singleStatement);
             }
         }
@@ -762,7 +784,9 @@ class DatabaseSchemaDiffService
             $createTableSql = $databaseModel->getSql();
             $diff->sql = $createTableSql;
             // Pre-split so executeStatement receives single statements (see splitMultiStatementSql).
-            $diff->sqlStatements = $this->splitMultiStatementSql($createTableSql);
+            $diff->sqlStatements = DBSqlStatements::fromStringList(
+                $this->splitMultiStatementSql($createTableSql)
+            );
             $diff->severity = DBTableDiff::SEVERITY_ADDITIVE;
             // Signature is set by computeDiffs() after the production-guard decorator runs so the
             // hash covers severity/blocked/size fields too. See self::computeDiffSignature().
@@ -789,10 +813,10 @@ class DatabaseSchemaDiffService
         $diff->triggerDiffs = $this->diffTriggers($databaseModel, $current->triggers);
 
         if (strcasecmp($databaseModel->collation, $current->collation) !== 0) {
-            $diff->collationChange = [
-                'from' => $current->collation,
-                'to'   => $databaseModel->collation,
-            ];
+            $collationChange = new DBCollationChange();
+            $collationChange->from = $current->collation;
+            $collationChange->to = $databaseModel->collation;
+            $diff->collationChange = $collationChange;
         }
 
         if ($diff->isEmpty()) {
@@ -801,8 +825,12 @@ class DatabaseSchemaDiffService
         }
 
         $diff->changeType = DBTableDiff::CHANGE_TYPE_ALTER_TABLE;
-        $diff->sqlStatements = $this->assemblePhaseOrderedStatements($databaseModel, $diff);
-        $diff->sql = $diff->sqlStatements ? implode(";\n", $diff->sqlStatements) . ';' : '';
+        $diff->sqlStatements = DBSqlStatements::fromStringList(
+            $this->assemblePhaseOrderedStatements($databaseModel, $diff)
+        );
+        $diff->sql = $diff->sqlStatements->count() > 0
+            ? implode(";\n", $diff->sqlStatements->toStringList()) . ';'
+            : '';
         $diff->severity = $this->classifySeverity($diff);
         // Signature is set by computeDiffs() after the production-guard decorator runs so the
         // hash covers severity/blocked/size fields too. See self::computeDiffSignature().
@@ -851,7 +879,7 @@ class DatabaseSchemaDiffService
             'severity' => $diff->severity,
             'directApplyBlocked' => $diff->directApplyBlocked,
             'sizeBucket' => $this->bucketTableMagnitude($diff->tableSizeMb),
-            'statements' => $this->canonicalSortedSqlStatements($diff->sqlStatements),
+            'statements' => $this->canonicalSortedSqlStatements($diff->sqlStatements->toStringList()),
         ];
         $encoded = json_encode(
             $payload,
@@ -1130,7 +1158,7 @@ class DatabaseSchemaDiffService
         $diff->severity = DBTableDiff::SEVERITY_DESTRUCTIVE;
         $statement = "DROP TABLE `$tableName`";
         $diff->sql = $statement . ';';
-        $diff->sqlStatements = [$statement];
+        $diff->sqlStatements = DBSqlStatements::fromStringList([$statement]);
         // Signature is set by computeDiffs() after the production-guard decorator runs so live
         // tableSizeMb / tableRowCount get mixed in — without that, every DROP_TABLE for the same
         // table name produces the same signature forever (the SQL is `DROP TABLE \`x\``, period),

@@ -65,17 +65,17 @@ class DBTableDiff extends ValueObject
     public DBTriggerDiffs $triggerDiffs;
 
     /**
-     * @var array|null Collation change descriptor: ['from' => …, 'to' => …]. Null if collation
-     * matches between target and current.
+     * @var DBCollationChange|null Collation transition between live (`from`) and target (`to`).
+     * Null when collation matches between target and current.
      */
-    public ?array $collationChange = null;
+    public ?DBCollationChange $collationChange = null;
 
     /**
-     * @var string[] Individual SQL statements that, executed in order, bring the live table to the
-     * target shape. Each statement is independently executable (already wrapped in ALTER TABLE …
-     * where required). Useful for granular per-operation apply in the UI.
+     * @var DBSqlStatements Phase-ordered executable statements that, run in this order, bring the
+     * live table to the target shape. Ordering is meaningful — DROP→ALTER→ADD→BACKFILL→CREATE
+     * (see {@see \DDD\Domain\Common\Services\DatabaseSchemaDiffService::assemblePhaseOrderedStatements()}).
      */
-    public array $sqlStatements = [];
+    public DBSqlStatements $sqlStatements;
 
     /** @var string Concatenated SQL — convenience field, equal to implode(";\n", sqlStatements) + ";". */
     public string $sql = '';
@@ -122,13 +122,13 @@ class DBTableDiff extends ValueObject
     public ?string $directApplyBlockReason = null;
 
     /**
-     * @var string[] Per-operation descriptions of why direct apply is blocked. Useful for
-     * structured rendering (one bullet per risk). Empty when not blocked.
+     * @var DBCopyForcingOperations|null Per-operation descriptions of why direct apply is blocked.
+     * Useful for structured rendering (one bullet per risk). Null when not blocked.
      */
-    public array $copyForcingOperations = [];
+    public ?DBCopyForcingOperations $copyForcingOperations = null;
 
     /**
-     * Initialises the five child diff sets so consumers can always append without a null check
+     * Initialises every child collection so consumers can always append without a null check
      * (e.g. `$tableDiff->columnDiffs->add(...)` directly after `new DBTableDiff()`).
      */
     public function __construct()
@@ -139,6 +139,7 @@ class DBTableDiff extends ValueObject
         $this->indexDiffs = new DBIndexDiffs();
         $this->foreignKeyDiffs = new DBForeignKeyDiffs();
         $this->triggerDiffs = new DBTriggerDiffs();
+        $this->sqlStatements = new DBSqlStatements();
     }
 
     public function uniqueKey(): string
