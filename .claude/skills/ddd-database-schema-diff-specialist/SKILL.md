@@ -385,6 +385,169 @@ const LARGE_TABLE_ROW_THRESHOLD = 100_000
 
 ---
 
+## Migrating Existing Endpoints (pre-v2.19 → v2.20)
+
+If the consuming app already has a `DatabaseModelsController` from before v2.19, work through this checklist before reading the greenfield guide below. **The wire shape DID break** for two fields in v2.19; frontends are MUST-fix.
+
+### Backend breaking changes — controller + DTOs
+
+| Where | Before (pre-v2.19) | After (v2.20) |
+|---|---|---|
+| `applyDiffs()` named arg | `?array $expectedDiffSignaturesBySqlTableName` | `?DBExpectedDiffSignatures $expectedDiffSignatures` (name AND type changed) |
+| `applyDiff()` last arg | `?string $expectedDiffSignature` | unchanged (still `?string`) |
+| `getTableSizeStats()` return | `?array{size_mb, row_count}` | `?DBTableSizeStats` |
+| `isLargeTable()` signature | `(string, ?int &$size, ?int &$rows): bool` | `(string): bool` — out-params removed |
+| `detectCopyForcingOperations()` return | `string[]` | `DBCopyForcingOperations` |
+| `buildProductionGuardMessage()` 4th param | `array` | `DBCopyForcingOperations` |
+| `EntityModelGeneratorService::$databaseModels` static | `DatabaseModels` (non-nullable) | `?DatabaseModels` |
+
+### DTO migration — concrete diffs
+
+`ApplyDiffsRequestDto`:
+
+```diff
+ public ?array $sqlTableNames = null;
+ public bool $disableForeignKeyChecks = true;
++public bool $bypassProductionGuard = false;
+-public ?array $expectedDiffSignaturesBySqlTableName = null;
++public ?DBExpectedDiffSignatures $expectedDiffSignatures = null;
+```
+
+`ApplyDiffRequestDto`:
+
+```diff
+ public string $sqlTableName;
+ public bool $disableForeignKeyChecks = true;
++public bool $bypassProductionGuard = false;
+ public ?string $expectedDiffSignature = null;
+```
+
+Add the missing `use DDD\Domain\Base\Repo\DB\Database\Diff\DBExpectedDiffSignatures;`. The Set deserialises automatically from `{"elements":[{"sqlTableName":"x","signature":"y"}]}` — no controller-side conversion needed.
+
+### Controller migration — concrete diffs
+
+```diff
+ public function applyDiffs(...): DBTableDiffsGetResponseDto {
+     $diffs = $databaseSchemaDiffService->computeDiffs();
+     // … scope-filter unchanged …
+-    $refreshed = $databaseSchemaDiffService->applyDiffs($diffs, $requestDto->disableForeignKeyChecks);
++    $refreshed = $databaseSchemaDiffService->applyDiffs(
++        $diffs,
++        $requestDto->disableForeignKeyChecks,
++        $requestDto->bypassProductionGuard,
++        $requestDto->expectedDiffSignatures
++    );
+     // …
+ }
+```
+
+```diff
+ public function applyDiff(...): DBTableDiffsGetResponseDto {
+     // …
+-    $refreshed = $databaseSchemaDiffService->applyDiff($diff, $requestDto->disableForeignKeyChecks);
++    $refreshed = $databaseSchemaDiffService->applyDiff(
++        $diff,
++        $requestDto->disableForeignKeyChecks,
++        $requestDto->bypassProductionGuard,
++        $requestDto->expectedDiffSignature
++    );
+     // …
+ }
+```
+
+If the app reads `getTableSizeStats()` directly elsewhere (rare — usually only the framework does):
+
+```diff
+-$stats = $diffService->getTableSizeStats($name);
+-$sizeMb = $stats['size_mb'] ?? null;
+-$rowCount = $stats['row_count'] ?? null;
++$stats = $diffService->getTableSizeStats($name);
++$sizeMb = $stats?->sizeMb;
++$rowCount = $stats?->rowCount;
+```
+
+If the app called `isLargeTable($name, $size, $rows)` for the out-params:
+
+```diff
+-$size = $rows = null;
+-$isLarge = $diffService->isLargeTable($name, $size, $rows);
++$stats = $diffService->getTableSizeStats($name);
++$size = $stats?->sizeMb;
++$rows = $stats?->rowCount;
++$isLarge = $stats?->isLarge(100, 100_000) ?? false;
+```
+
+### Frontend wire-shape breaking changes — MUST regen SDK
+
+Two fields on `DBTableDiff` flipped shape in v2.19. The JSON over the wire changed; generated TypeScript types **must** be regenerated.
+
+| Field | Before (v2.18) | After (v2.19+) |
+|---|---|---|
+| `sqlStatements` | `["DROP COLUMN …", "ADD COLUMN …"]` | `{"elements":[{"sql":"DROP COLUMN …"},{"sql":"ADD COLUMN …"}]}` |
+| `copyForcingOperations` | `["MODIFY …", "ADD FULLTEXT …"]` (or absent) | `{"elements":[{"description":"MODIFY …"},{"description":"ADD FULLTEXT …"}]}` or `null` |
+| `collationChange` | `{"from":"utf8mb4_general_ci","to":"utf8mb4_unicode_ci"}` | **JSON unchanged** — but PHP type is now `DBCollationChange` so generated TS type renames from inline object to named interface |
+
+Frontend code that read `diff.sqlStatements.join('\n')` must become `diff.sqlStatements.elements.map(s => s.sql).join('\n')`. Same shape transform for `copyForcingOperations.elements[i].description`.
+
+### Frontend new fields — non-breaking additions
+
+These ship in v2.19+ and the frontend should consume them; pre-existing UIs work without changes but lose the guards:
+
+- `diff.diffSignature: string` — capture per-table at view time, echo back on apply in `expectedDiffSignatures.elements[]`. See *Wiring the signature gate*.
+- `diff.directApplyBlocked: bool` — disable the per-row Apply button when true.
+- `diff.directApplyBlockReason: string` — show on hover / inline when blocked.
+- `diff.copyForcingOperations: { elements: [{description}] } | null` — structured risk bullets.
+- `diff.tableSizeMb`, `diff.tableRowCount` — operator metadata for the diff card.
+
+### SDK regen impact — files that must change
+
+After `composer update mgamadeus/ddd` to ≥ v2.20.0 + `npm run gen:SDK`:
+
+- `apps/web/src/models/DDD/Domain/Base/Repo/DB/Database/Diff/DbTableDiff.ts` — adds 5 new fields, changes 2 field types.
+- `apps/web/src/models/DDD/Domain/Base/Repo/DB/Database/Diff/DbSqlStatements.ts` — new generated interface.
+- `apps/web/src/models/DDD/Domain/Base/Repo/DB/Database/Diff/DbCopyForcingOperations.ts` — new generated interface.
+- `apps/web/src/models/DDD/Domain/Base/Repo/DB/Database/Diff/DbCollationChange.ts` — new generated interface.
+- `apps/web/src/models/.../DbExpectedDiffSignatures.ts` + `DbExpectedDiffSignature.ts` — needed for the apply mutation body.
+- `apps/web/src/api/adminApi.ts` — the long body-key names on `applyDiff{s}` change to include `bypassProductionGuard` and `expectedDiffSignatures`. Confirm via `grep -n appPresentationApiAdminCommonDtosDatabaseModelsApplyDiff apps/web/src/api/adminApi.ts`.
+
+### Consumer-side typed wrappers (recommended, optional)
+
+If the app needs to refer to a single table name or a list of table names as an explicit type at the API boundary (e.g. for cross-cutting validators, audit-log payloads, or React form models), create a typed wrapper rather than passing bare `string`/`string[]`:
+
+```php
+// App\Presentation\Api\Admin\Common\Dtos\DatabaseModels\SqlTableName.php
+class SqlTableName extends ValueObject {
+    public string $sqlTableName;
+    public function uniqueKey(): string { return self::uniqueKeyStatic($this->sqlTableName); }
+}
+
+// App\Presentation\Api\Admin\Common\Dtos\DatabaseModels\SqlTableNames.php
+/** @method SqlTableName getByUniqueKey(string $uniqueKey) */
+class SqlTableNames extends ObjectSet {
+    public static function fromList(array $names): self {
+        $set = new self();
+        foreach ($names as $n) {
+            $entry = new SqlTableName();
+            $entry->sqlTableName = (string)$n;
+            $set->add($entry);
+        }
+        return $set;
+    }
+}
+```
+
+Tavlo did this; Radbonus may want to mirror it for symmetry. **Not required** — a flat `string[]` is allowed under AGENTS.md for simple lists, and `ApplyDiffsRequestDto::$sqlTableNames` ships that way out of the box. The typed wrapper is a stylistic upgrade, not a correctness requirement.
+
+### Migration verification
+
+1. `php -l` every changed file.
+2. `composer install` clean (no version conflicts).
+3. `curl -sf "<env>/api/admin/documentation/openApi" | jq '.paths | keys[] | select(test("databaseModels"))'` — expect three paths.
+4. Apply an ADDITIVE diff end-to-end with the new signature gate active — confirm no `[DIFF_SIGNATURE_MISMATCH]` on the happy path.
+5. Frontend regression: open the schema diff screen, verify SQL preview renders (catches the `sqlStatements.elements[].sql` access fix).
+
+---
+
 ## Building the Admin Interface in a Consuming App
 
 This is the boilerplate that ships in every project's `App\` namespace. Same code regardless of project — only namespaces change.
