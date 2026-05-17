@@ -3,7 +3,7 @@ name: ddd-database-schema-diff-specialist
 description: Understand and operate the DDD live-vs-target database schema diff system, and stand up an admin interface for it in a consuming application. Use when computing diffs between entity-derived schema and the live database, applying drift fixes, debugging false positives, or wiring the diff endpoints + admin screen into a new project.
 metadata:
   author: mgamadeus
-  version: "1.0.0"
+  version: "2.0.0"
 ---
 
 # DDD Database Schema Diff Specialist
@@ -24,15 +24,19 @@ All diff machinery is in `mgamadeus/ddd`. Consuming apps build only thin endpoin
 
 ### Value objects — `src/Domain/Base/Repo/DB/Database/Canonical/`
 
-Both sides of the diff (live introspection and target generator) converge on these typed snapshots. The typed constructors catch field-drift bugs at parse time.
+Both sides of the diff (live introspection and target generator) converge on these typed snapshots. The typed constructors catch field-drift bugs at parse time. Every collection on `DBCanonicalTable` is a typed `ObjectSet` (since v2.20) — keyed lookups go through `getByX(...)`, never through array `[$name]` indexing.
 
 | File | Purpose |
 |---|---|
-| `DBCanonicalColumn.php` | One column (real OR virtual — `isGenerated` discriminates). |
-| `DBCanonicalIndex.php` | One index. Matched by `(indexType, indexColumns)` — name irrelevant. |
-| `DBCanonicalForeignKey.php` | One FK. Matched by `(internalIdColumn, foreignTable, foreignIdColumn)`. |
-| `DBCanonicalTrigger.php` | One trigger. Carries `actionStatement` (live) + `rawSql` (target). |
-| `DBCanonicalTable.php` | Aggregate of columns / virtualColumns / indexes / foreignKeys / triggers + collation. |
+| `DBCanonicalColumn.php` | One column (real OR virtual — `isGenerated` discriminates). `uniqueKey` = column name. |
+| `DBCanonicalColumns.php` / `DBCanonicalVirtualColumns.php` | Typed sets of `DBCanonicalColumn`. Helper: `getByColumnName(string)`. Separate classes mirror the framework precedent on `DatabaseModel` (`DatabaseColumns` / `DatabaseVirtualColumns`). |
+| `DBCanonicalIndex.php` | One index. Matched by `(indexType, indexColumns)` via `matchKey` — name irrelevant. `uniqueKey` = matchKey. |
+| `DBCanonicalIndexes.php` | Typed set. Helper: `getByMatchKey(string)`. |
+| `DBCanonicalForeignKey.php` | One FK. Matched by `(internalIdColumn, foreignTable, foreignIdColumn)` via `matchKey`. `uniqueKey` = matchKey. |
+| `DBCanonicalForeignKeys.php` | Typed set. Helper: `getByMatchKey(string)`. |
+| `DBCanonicalTrigger.php` | One trigger. Carries `actionStatement` (live) + `rawSql` (target). `uniqueKey` = `tableName.triggerName`. |
+| `DBCanonicalTriggers.php` | Typed set. Helper: `getByTriggerName(string $table, string $name)`. |
+| `DBCanonicalTable.php` | Aggregate of typed Sets (columns / virtualColumns / indexes / foreignKeys / triggers) + collation. Constructor initialises every child Set so consumers append without null checks. |
 
 ### Diff value objects — `src/Domain/Base/Repo/DB/Database/Diff/`
 
@@ -43,7 +47,14 @@ Both sides of the diff (live introspection and target generator) converge on the
 | `DBIndexDiff(s).php` | Index ADD/DROP. No MODIFY: matched by definition, any difference *is* the key. |
 | `DBForeignKeyDiff(s).php` | FK ADD/DROP/MODIFY (MODIFY = DROP+ADD). |
 | `DBTriggerDiff(s).php` | Trigger ADD/DROP/MODIFY (MODIFY = DROP+CREATE). |
-| `DBTableDiff(s).php` | Per-table aggregate. Carries `changeType`, `severity`, child diff sets, phase-ordered `sqlStatements`. |
+| `DBTableDiff(s).php` | Per-table aggregate. Carries `changeType`, `severity`, child diff sets, phase-ordered `sqlStatements`, signature, and production-guard signal. |
+| `DBCollationChange.php` | Typed `{from, to}` collation transition VO (replaces the legacy `?array{from,to}`). |
+| `DBSqlStatement(s).php` | Typed Set of phase-ordered executable statements. `uniqueKey` is `spl_object_id`-based (identity, not content) because identical statements may legitimately repeat across phases and content-keyed dedup would corrupt insertion order. |
+| `DBCopyForcingOperation(s).php` | Typed Set of production-guard risk descriptions. Same `spl_object_id` rationale as `DBSqlStatement`. |
+| `DBExpectedDiffSignature(s).php` | Typed Set of `(sqlTableName, signature)` pairs captured by the frontend at view time and echoed back on apply. `uniqueKey` content-keyed on `sqlTableName` (table-name uniqueness IS the dedup intent). |
+| `DBTableSizeStats.php` | Typed `(sizeMb, rowCount)` snapshot returned by `getTableSizeStats()`. Owns the `isLarge(int $sizeThreshold, int $rowThreshold): bool` predicate.
+
+> **AGENTS.md rule recap.** No `public array $foo` on any of these VOs. Array-shaped public surface is permitted only for flat `string[]` / `int[]` lists (e.g. `DBColumnDiff::$changedAttributes`, `DBCanonicalIndex::$indexColumns`) — never for struct shapes or object-valued maps. See AGENTS.md *Arrays Are Not a Substitute for ValueObjects / ObjectSets*.
 
 ### Services — `src/Domain/Common/Services/`
 
@@ -360,11 +371,17 @@ const LARGE_TABLE_ROW_THRESHOLD = 100_000
 | `indexDiffs` | `DBIndexDiffs` | |
 | `foreignKeyDiffs` | `DBForeignKeyDiffs` | |
 | `triggerDiffs` | `DBTriggerDiffs` | |
-| `collationChange` | `?array{from,to}` | Table-level collation delta. |
+| `collationChange` | `?DBCollationChange` | Typed `{from,to}` VO (since v2.19; was `?array{from,to}`). |
 | `sql` | `string` | Concat of `sqlStatements` joined by `;\n` — for frontend display only. |
-| `sqlStatements` | `string[]` | Phase-ordered list of individually-executable statements. |
+| `sqlStatements` | `DBSqlStatements` | Typed Set of phase-ordered executable statements (since v2.19; was `string[]`). Wire shape: `{"elements":[{"sql":"…"}]}`. |
+| `diffSignature` | `?string` | SHA-256 digest of the diff payload (statements + severity + change-type + size bucket + directApplyBlocked) — captured by the frontend at view time, echoed back on apply for the signature gate. |
+| `tableSizeMb` | `?int` | Live table size in MB. Null for CREATE_TABLE. |
+| `tableRowCount` | `?int` | InnoDB-estimated row count. Null for CREATE_TABLE. |
+| `directApplyBlocked` | `bool` | True when the production guard refuses direct apply (large-table + COPY-forcing op). Frontend disables the Apply button. |
+| `directApplyBlockReason` | `?string` | Human-readable refusal message including the risky operations and the recommended path (pt-osc). |
+| `copyForcingOperations` | `?DBCopyForcingOperations` | Typed Set of per-operation risk descriptions for structured rendering (one bullet per risk). Null when not blocked. |
 
-`DBColumnDiff` carries `columnName`, `changeKind` (`ADD`/`DROP`/`MODIFY`), `targetColumn` (hidden), `currentDefinition` (`?DBCanonicalColumn`), `changedAttributes` (`string[]` for MODIFY), `requiresFullReset`, `resetSql`, `sql`. Same structural pattern for the other per-aspect diff types.
+`DBColumnDiff` carries `columnName`, `changeKind` (`ADD`/`DROP`/`MODIFY`), `targetColumn` (hidden), `currentDefinition` (`?DBCanonicalColumn`), `changedAttributes` (`string[]` for MODIFY — flat list of attribute names, allowed under AGENTS.md), `requiresFullReset`, `resetSql`, `sql`. Same structural pattern for the other per-aspect diff types.
 
 ---
 
@@ -374,12 +391,14 @@ This is the boilerplate that ships in every project's `App\` namespace. Same cod
 
 ### Step 0. Pre-flight
 
-- Confirm the framework version contains `src/Domain/Base/Repo/DB/Database/Diff/DBTableDiff.php`. Available from `mgamadeus/ddd` v2.10.37+. If not present, escalate — the feature doesn't exist in your framework version.
+- Confirm the framework version is ≥ `mgamadeus/ddd` v2.20.0. v2.20 ships the final typed-VO surface (typed `DBSqlStatements` / `DBCollationChange` / `DBExpectedDiffSignatures` / `DBCopyForcingOperations` / `DBTableSizeStats` on `DBTableDiff`, typed `DBCanonical{Columns,VirtualColumns,Indexes,ForeignKeys,Triggers}` on `DBCanonicalTable`). Earlier versions either lack the signature gate (< v2.18) or still carry array-shaped fields the typed admin DTOs can't bind (v2.18, v2.19 partial).
 - Confirm the project follows the `App\Presentation\Api\Admin\…` controller convention and uses the DDD endpoint specialist's `RequestDto` / `RestResponseDto` pattern.
 
 ### Step 1. Backend — controller
 
 Create or extend `App\Presentation\Api\Admin\Common\Controller\DatabaseModelsController` with three methods. Class-level attributes stay as in any other admin controller: `#[Route('/common/databaseModels')]`, `#[Tag(group: 'Common', name: 'Database Models ', …)]`, `#[LogRequest(…)]`, behind `ROLE_ADMIN`.
+
+The controller passes the request DTO's typed signature set and production-guard flag straight through to the service. The service does its own in-lock recompute against the live DB and refuses execution if either gate trips — the controller is intentionally a thin pass-through.
 
 ```php
 #[Get('/diff')]
@@ -399,6 +418,7 @@ public function applyDiffs(
     ApplyDiffsRequestDto $requestDto,
     DatabaseSchemaDiffService $databaseSchemaDiffService
 ): DBTableDiffsGetResponseDto {
+    // Scope filter — flat string[] is the simple-list shape AGENTS.md allows.
     $diffs = $databaseSchemaDiffService->computeDiffs();
     if ($requestDto->sqlTableNames !== null) {
         $filtered = new DBTableDiffs();
@@ -410,7 +430,17 @@ public function applyDiffs(
         }
         $diffs = $filtered;
     }
-    $refreshed = $databaseSchemaDiffService->applyDiffs($diffs, $requestDto->disableForeignKeyChecks);
+
+    // Signature gate + production-guard pass-through. Both are opt-in: omit either to fall back
+    // to legacy behaviour. The HTTP frontend always sends $expectedDiffSignatures populated;
+    // CLI / messenger callers leave it null.
+    $refreshed = $databaseSchemaDiffService->applyDiffs(
+        $diffs,
+        $requestDto->disableForeignKeyChecks,
+        $requestDto->bypassProductionGuard,
+        $requestDto->expectedDiffSignatures
+    );
+
     $responseDto = new DBTableDiffsGetResponseDto();
     $responseDto->diffs = $refreshed;
     return $responseDto;
@@ -427,23 +457,83 @@ public function applyDiff(
     if ($diff === null || $diff->changeType === DBTableDiff::CHANGE_TYPE_NO_CHANGE) {
         throw new NotFoundException("No pending diff for table `$requestDto->sqlTableName`");
     }
-    $refreshed = $databaseSchemaDiffService->applyDiff($diff, $requestDto->disableForeignKeyChecks);
+    $refreshed = $databaseSchemaDiffService->applyDiff(
+        $diff,
+        $requestDto->disableForeignKeyChecks,
+        $requestDto->bypassProductionGuard,
+        $requestDto->expectedDiffSignature
+    );
     $responseDto = new DBTableDiffsGetResponseDto();
     $responseDto->diffs = $refreshed;
     return $responseDto;
 }
 ```
 
-### Step 2. Backend — four DTOs
+### Step 2. Backend — DTOs
 
-In `App\Presentation\Api\Admin\Common\Dtos\DatabaseModels\`:
+In `App\Presentation\Api\Admin\Common\Dtos\DatabaseModels\`. **DTO discipline**: every field is a typed scalar, enum, typed VO, or `ObjectSet` — never `array<…, struct>` (per AGENTS.md). The one place a plain `array` appears here is `ApplyDiffsRequestDto::$sqlTableNames`, which is a flat `string[]` of table names — the simple-list shape explicitly allowed.
 
-| File | Body |
+| File | Fields |
 |---|---|
-| `DBTableDiffsGetRequestDto.php` | Empty `RequestDto`. No query params. |
+| `DBTableDiffsGetRequestDto.php` | Empty `RequestDto` — no query params. |
 | `DBTableDiffsGetResponseDto.php` | Extends `RestResponseDto`. `public DBTableDiffs $diffs;` with `#[Parameter(in: Parameter::RESPONSE, required: true)]`. |
-| `ApplyDiffsRequestDto.php` | `public ?array $sqlTableNames = null;` + `public bool $disableForeignKeyChecks = true;` — both `#[Parameter(in: Parameter::BODY, required: false)]`. |
-| `ApplyDiffRequestDto.php` | `public string $sqlTableName;` (required) + `public bool $disableForeignKeyChecks = true;`. |
+| `ApplyDiffsRequestDto.php` | `public ?array $sqlTableNames = null;` (`#[Parameter(in: Parameter::BODY, required: false)]`, `string[]` — scope filter), `public bool $disableForeignKeyChecks = true;`, `public bool $bypassProductionGuard = false;`, `public ?DBExpectedDiffSignatures $expectedDiffSignatures = null;`. |
+| `ApplyDiffRequestDto.php` | `public string $sqlTableName;` (required), `public bool $disableForeignKeyChecks = true;`, `public bool $bypassProductionGuard = false;`, `public ?string $expectedDiffSignature = null;`. |
+
+> **What NOT to do.** A `?array $expectedSignatures = null` of shape `array<string, string>` would deserialize fine and "work" — and would violate AGENTS.md. The typed `DBExpectedDiffSignatures` Set ships in Core for this exact reason; consumers must use it. Same applies to a `?array $copyForcingOperations` style field on any custom response DTO — use `DBCopyForcingOperations` instead.
+
+### Step 2a. Wiring the signature gate (frontend ↔ backend contract)
+
+The signature gate closes the "what you saw is not what got executed" window between GET /diff and POST /applyDiff{s}. Two-step protocol:
+
+1. **GET /diff returns** `DBTableDiff` entries each carrying `diffSignature: string` (sha256 over the canonicalised diff payload — statements, severity, change-type, size bucket, directApplyBlocked).
+2. **Frontend captures** a `{sqlTableName → signature}` map from the rendered diffs and **echoes it back** on apply as `expectedDiffSignatures.elements: [{sqlTableName, signature}, …]`.
+3. **Service recomputes inside the apply lock**, compares fresh signatures against the echoed map, and **rejects** with `[DIFF_SIGNATURE_MISMATCH]` if any drift is detected (concurrent apply, entity edit, live drift since view time).
+4. **Strict cover** — every diff in the apply batch must have an expected signature, and every expected entry must correspond to a diff in the batch. Partial coverage throws.
+
+Frontend (TS, generated DTO names):
+
+```ts
+const expectedMap = diffs.elements.map(d => ({
+  sqlTableName: d.sqlTableName,
+  signature: d.diffSignature!,
+}));
+
+await applyDiffs({
+  appPresentationApiAdminCommonDtosDatabaseModelsApplyDiffsRequestDto: {
+    sqlTableNames: selectedTables, // or null for "all"
+    disableForeignKeyChecks: true,
+    bypassProductionGuard: false,
+    expectedDiffSignatures: { elements: expectedMap },
+  },
+}).unwrap();
+```
+
+CLI / messenger callers leave `expectedDiffSignatures = null` to skip the gate — explicit opt-out, the contract mirrors `bypassProductionGuard`.
+
+### Step 2b. Wiring the production guard
+
+The production guard refuses direct apply of COPY-forcing operations on large tables (>100 MB or >100K rows). The signal is computed on every diff and surfaced as three fields:
+
+- `directApplyBlocked: bool` — disable the Apply button.
+- `directApplyBlockReason: string` — show as a tooltip / inline message.
+- `copyForcingOperations: ?DBCopyForcingOperations` — render each `element.description` as a bullet for structured display.
+
+Frontend pattern:
+
+```tsx
+if (diff.directApplyBlocked) {
+  return (
+    <Tooltip content={diff.directApplyBlockReason}>
+      <Button disabled>Apply (blocked)</Button>
+    </Tooltip>
+  );
+}
+```
+
+Programmatic override exists for CLI / messenger callers via `bypassProductionGuard: true`. The admin HTTP path exposes the flag in `ApplyDiff{s}RequestDto` so operators can opt out from a trusted UI surface — but the **default must be `false`**, and any UI that exposes the toggle must put it behind a "I know what I'm doing" confirm.
+
+Lock-busy error: when two admins apply at once, the second receives `[DIFF_APPLY_LOCK_BUSY]` (HTTP 400). Frontend matches on this prefix and renders a "retry in a few seconds" affordance — distinct from the signature-mismatch refresh prompt.
 
 ### Step 3. Backend — wiring
 
@@ -627,11 +717,13 @@ curl -sS -X POST "https://<env>/api/admin/common/databaseModels/applyDiff" \
 ## Known Limitations
 
 - **No atomic rollback.** MySQL DDL is implicit-commit; partial-apply failures leave a mixed state. Mitigation: re-introspection on every apply response surfaces what's still pending.
-- **No concurrent-apply guard.** Two admins applying at the same time can race. Rare in practice; defensible to add a re-introspection check inside `applyDiff` per statement.
 - **NOT NULL VECTOR ADD on populated table** isn't fully handled — ADD COLUMN fails before backfill can run. Workaround would be ADD-nullable → backfill → MODIFY NOT NULL (currently not implemented).
 - **VECTOR index option changes** (`distanceMetric`, `maxNeighbors`) aren't currently diffed. Match key is `(indexType, columns)` — two VECTOR indexes on the same columns with different metrics look identical.
 - **`CURRENT_TIMESTAMP` defaults aren't expressible on the target side.** Live wins by design (`defaultIsExpression` short-circuits the compare). Removing such a default requires a manual `ALTER`.
 - **Performance.** ~5N `INFORMATION_SCHEMA` queries for N tables. Acceptable for admin endpoints; batchable down to ~5 queries total if it ever matters.
+- **Duplicate live indexes / FKs with the same `matchKey`** (e.g. botched migration creating two indexes on the same columns with different INDEX_NAMEs) are deduped at introspection time — only the first survives. Pre-v2.20 produced two DROPs; v2.20 produces one. The post-apply re-introspect catches any leftover. Pathological case in practice.
+
+**No longer a limitation (v2.18):** concurrent applies are guarded via a MariaDB `GET_LOCK('ddd_schema_diff_apply', 30)` connection-level advisory lock. Two admins applying at once: the second receives `[DIFF_APPLY_LOCK_BUSY]` (HTTP 400) until the first releases. Combined with the signature gate's in-lock fresh recompute, the apply path is race-free.
 
 ## Coexistence With `pt-online-schema-change` FK Renaming
 
@@ -698,9 +790,13 @@ Caveat: any new rich-DDD-type field needs both `#[HideProperty]` AND `#[Ignore]`
 | Diff shows hundreds of `defaultValue` MODIFYs on nullable columns | MariaDB `"NULL"` normalisation missing (§B). Framework bug — escalate. |
 | Diff shows every table as ALTER on a fresh DB | Either generation-expression normalisation (§D) or trigger normalisation (§F) is missing/regressed. |
 | Generated frontend hook missing after SDK regen | The OpenAPI endpoint didn't list the route. Re-run §Step 5; ensure backend deployed. |
-| `Only variables can be passed by reference` runtime error in `applyDiffs` | Somewhere a `$set->add(new X(...))` slipped in. `ObjectSet::add()` takes `&...$elements`; assign to a variable first. |
-| `applyDiff` succeeds but the table still appears in the next diff | Re-introspection cache hit. `DatabaseSchemaIntrospectionService::invalidateCache()` is called inside `applyDiff` — confirm you're on a framework version where this is wired. |
+| `Only variables can be passed by reference` runtime error in `applyDiffs` | Somewhere a `$set->add(new X(...))` or `$set->add($this->makeX())` slipped in. `ObjectSet::add()` takes `&...$elements`; assign to a variable first. AGENTS.md "by-ref `add()` pattern" — see the framework-wide rule. |
+| `applyDiff` succeeds but the table still appears in the next diff | Re-introspection cache hit. `DatabaseSchemaIntrospectionService::invalidateCache()` AND `EntityModelGeneratorService::invalidateCache()` are both called inside `applyDiffs` since v2.19 — confirm you're on ≥ v2.19 (long-running PHP-FPM workers used to see stale entity reflection without the second invalidation). |
+| Frontend gets `[DIFF_SIGNATURE_MISMATCH]` on every apply | Either the frontend isn't capturing `diff.diffSignature` correctly, or it's not echoing every diff in the batch (strict cover requires 1:1 between batch and signature map). Inspect the request body — `expectedDiffSignatures.elements` should contain exactly the same `sqlTableName`s as `sqlTableNames` (or as the unfiltered diff set if `sqlTableNames === null`). |
+| Frontend gets `[DIFF_APPLY_LOCK_BUSY]` | Another admin (or a CLI command) is mid-apply. Wait 5-10 seconds and retry. Repeated busy responses indicate a stuck process holding the connection's advisory lock — the lock releases on session close. |
+| Apply button stuck disabled with no obvious reason | Check `diff.directApplyBlocked === true` + `diff.directApplyBlockReason`. The production guard blocks large-table COPY-forcing ops by default. For admin override, the request DTO carries `bypassProductionGuard: bool` — confirm the UI exposes it behind a "I know what I'm doing" confirm. |
 | Multi-statement SQL crash from `executeStatement()` | A statement made it past `splitMultiStatementSql`. Check for embedded `;` inside string literals (rare but possible in trigger bodies). |
+| Phantom DROPs after applying a CREATE_TABLE diff | The targeted refresh after `applyDiffs` uses `computeDiffsForTables($sqlTableNames)`, scoped to the table names just touched. A phantom DROP means an unrelated live table appeared in the result — confirm `applyDiffs` is on ≥ v2.18 (the round-2 audit fix). |
 
 ## Conventions
 
