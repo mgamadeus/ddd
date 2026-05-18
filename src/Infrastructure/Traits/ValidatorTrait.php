@@ -52,6 +52,16 @@ trait ValidatorTrait
         bool $customValidation = false,
         ?CustomValidationInputs $customValidationInputs = null
     ): bool|ValidationErrors {
+        // Translatable bridge: HTTP-deserialization fills `translationInfos.translationsStore` via
+        // reflection but never bridges those translations to the parent scalar property — leaving
+        // e.g. `$campaign->name` null on CREATE and tripping NotNull. We materialize the scalars
+        // here, right before constraint checks run, so the framework sees the correct values.
+        // The materializer self-skips (fingerprint sentinel + per-class cache) when there's nothing
+        // to do, so the cost on non-Translatable entities is a single `method_exists` lookup.
+        // Method lives on TranslatableTrait — see TranslatableTrait::materializeTranslatablePropertiesFromInfos().
+        if (method_exists($this, 'materializeTranslatablePropertiesFromInfos')) {
+            $this->materializeTranslatablePropertiesFromInfos();
+        }
         // check for recursion
         if (!$this->toBeValidated) {
             return false;
