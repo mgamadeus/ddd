@@ -16,7 +16,10 @@ use DDD\Infrastructure\Validation\ValidationErrors;
 use DDD\Infrastructure\Validation\ValidationResult;
 use JsonException;
 use ReflectionException;
+use Symfony\Component\Validator\Constraints\NotBlank;
+use Symfony\Component\Validator\Constraints\NotNull;
 use Symfony\Component\Validator\{ConstraintViolation,
+    ConstraintViolationInterface,
     ConstraintViolationList,
     Validation,
     Validator\ValidatorInterface};
@@ -52,16 +55,6 @@ trait ValidatorTrait
         bool $customValidation = false,
         ?CustomValidationInputs $customValidationInputs = null
     ): bool|ValidationErrors {
-        // Translatable bridge: HTTP-deserialization fills `translationInfos.translationsStore` via
-        // reflection but never bridges those translations to the parent scalar property — leaving
-        // e.g. `$campaign->name` null on CREATE and tripping NotNull. We materialize the scalars
-        // here, right before constraint checks run, so the framework sees the correct values.
-        // The materializer self-skips (fingerprint sentinel + per-class cache) when there's nothing
-        // to do, so the cost on non-Translatable entities is a single `method_exists` lookup.
-        // Method lives on TranslatableTrait — see TranslatableTrait::materializeTranslatablePropertiesFromInfos().
-        if (method_exists($this, 'materializeTranslatablePropertiesFromInfos')) {
-            $this->materializeTranslatablePropertiesFromInfos();
-        }
         // check for recursion
         if (!$this->toBeValidated) {
             return false;
@@ -178,14 +171,86 @@ trait ValidatorTrait
     {
         $validator = $this->createValidatorForAnnotation();
         try {
-            return $validator->validate($this);
+            $violations = $validator->validate($this);
         } catch (Throwable $t) {
             // we surporess class not found errors (unfortunatelly they come as generic Errors
             if (!preg_match('/Class .* not found/i', $t->getMessage(), $output_array)) {
                 throw $t;
             }
+            return new ConstraintViolationList();
         }
-        return new ConstraintViolationList();
+        return $this->filterTranslatableNullViolations($violations);
+    }
+
+    /**
+     * Suppresses `NotNull` / `NotBlank` violations on `#[Translatable]` scalar properties whose
+     * actual value lives in `$this->translationInfos->translationsStore` rather than on the scalar
+     * itself. HTTP-deserialisation fills the store via reflection but never bridges the scalar —
+     * the scalar stays uninitialised, Symfony's PropertyAccessor resolves it to null, and NotNull
+     * fires even though the operator did provide a value.
+     *
+     * Why filter at validation time rather than materialise the scalar:
+     *  • The persist path ({@see \DDD\Domain\Base\Repo\DB\DBEntity}) already bridges store → DB
+     *    column independently (forces `$setProperty = true` when the store has entries, then writes
+     *    the value via `getTranslationsForProperty()`), so the persist works without help.
+     *  • Materialising the scalar at validate time locks in whichever language the current locale
+     *    fallback chain picked, which can disagree with the operator's input locale and surface as
+     *    "wrong language in the DB". Suppressing the violation leaves the scalar untouched and
+     *    leaves the canonical-language decision to the persist path (which honours the operator's
+     *    explicit translations directly).
+     *
+     * Only `NotNull` and `NotBlank` qualify — other built-in Symfony constraints (`Length`, `Type`,
+     * `Choice`, custom `UniqueProperty`) either skip null inputs or are not applicable to this gap.
+     * Non-translatable entities pay only a `method_exists` lookup per violation set.
+     *
+     * @param ConstraintViolationList<int, ConstraintViolationInterface> $violations
+     */
+    protected function filterTranslatableNullViolations(ConstraintViolationList $violations): ConstraintViolationList
+    {
+        if ($violations->count() === 0
+            || !method_exists($this, 'hasTranslationsInStoreForProperty')
+            || !method_exists($this, 'getTranslatableProperties')) {
+            return $violations;
+        }
+        $translatablePropertyNames = [];
+        foreach ($this->getTranslatableProperties() as $reflectionProperty) {
+            $translatablePropertyNames[$reflectionProperty->getName()] = true;
+        }
+        if ($translatablePropertyNames === []) {
+            return $violations;
+        }
+
+        $filtered = new ConstraintViolationList();
+        foreach ($violations as $violation) {
+            if ($this->isSuppressibleTranslatableNullViolation($violation, $translatablePropertyNames)) {
+                continue;
+            }
+            $filtered->add($violation);
+        }
+        return $filtered;
+    }
+
+    /**
+     * @param array<string, true> $translatablePropertyNames
+     */
+    protected function isSuppressibleTranslatableNullViolation(
+        ConstraintViolationInterface $violation,
+        array $translatablePropertyNames
+    ): bool {
+        $constraint = $violation->getConstraint();
+        if (!($constraint instanceof NotNull) && !($constraint instanceof NotBlank)) {
+            return false;
+        }
+        $propertyPath = $violation->getPropertyPath();
+        // Top-level property only — nested paths (e.g. `child.foo`) are owned by the recursive
+        // validate() pass and resolve against `$this->child`, not against `$this`'s translation store.
+        if ($propertyPath === '' || str_contains($propertyPath, '.') || str_contains($propertyPath, '[')) {
+            return false;
+        }
+        if (!isset($translatablePropertyNames[$propertyPath])) {
+            return false;
+        }
+        return $this->hasTranslationsInStoreForProperty($propertyPath);
     }
 
     /**

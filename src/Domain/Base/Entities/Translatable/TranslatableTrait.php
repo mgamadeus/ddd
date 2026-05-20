@@ -21,15 +21,6 @@ trait TranslatableTrait
     #[DatabaseColumn(ignoreProperty: true)]
     public ?TranslationInfos $translationInfos;
 
-    /**
-     * Per-instance sentinel that captures `spl_object_id($this->translationInfos)` of the last
-     * successful materialization run. When the next validate() pass on this instance sees the
-     * same translationInfos identity, the materialization loop is skipped — protects against
-     * redundant work when validate() is called multiple times within the same update lifecycle
-     * (DTO-level → repo-level → recursive child-level).
-     */
-    protected ?int $lastTranslatableMaterializationFingerprint = null;
-
     public function getTranslationInfos(): TranslationInfos
     {
         if (isset($this->translationInfos)) {
@@ -130,95 +121,32 @@ trait TranslatableTrait
     }
 
     /**
-     * Materializes the scalar value of every #[Translatable] property from the translations carried
-     * in `$this->translationInfos->translationsStore`. Called from {@see \DDD\Infrastructure\Traits\ValidatorTrait::validate()}
-     * as a preamble so constraint checks (NotNull, NotBlank, …) see the populated scalar rather
-     * than the post-deserialization null.
+     * True when `$this->translationInfos->translationsStore` carries at least one non-empty
+     * translation for the named property. Used by {@see \DDD\Infrastructure\Traits\ValidatorTrait}
+     * to suppress NotNull / NotBlank violations on #[Translatable] scalar properties whose value
+     * sits in the translations store rather than on the scalar itself (HTTP-deserialisation path).
      *
-     * The HTTP-deserialization path through {@see \DDD\Infrastructure\Traits\Serializer\SerializerTrait::setPropertiesFromObject()}
-     * fills `translationsStore` via reflection but never calls {@see TranslationInfos::setTranslationsForProperty()},
-     * which is the only place that bridges the store to the parent scalar property. The DB→Entity
-     * path doesn't have this gap because {@see \DDD\Domain\Base\Repo\DB\DBEntity::mapToEntity()} calls
-     * `setTranslationsForProperty()` directly. This method closes the HTTP gap.
-     *
-     * Selection logic per property:
-     *   1. Skip when no translations carried for the property.
-     *   2. Skip when the scalar is already non-null (never overwrite an existing value — protects
-     *      PATCH flows where `find()` already populated the scalar from the DB column).
-     *   3. Try the standard fallback chain: {@see TranslationInfos::getTranslationForProperty()}
-     *      with `useFallBack: true` walks (country-strip → alt-writing-style → default-language →
-     *      native value).
-     *   4. Last-resort: pick the first non-empty entry from the property's translations subarray.
-     *      Covers the "operator typed in a locale not present in the request's current-language
-     *      configuration" case (e.g. world.supportedWorldLocales doesn't contain the admin's
-     *      account languageCode).
-     *
-     * Performance:
-     *   - Skipped entirely when `translationInfos` is unset or `translationsStore` is empty.
-     *   - Skipped on repeat invocations for the same `translationInfos` instance via the
-     *     per-instance fingerprint sentinel.
-     *   - Reflection cost amortised by {@see self::getTranslatableProperties()}'s existing per-class
-     *     cache in {@see StaticRegistry::$translatableProperties}.
-     *   - Locale state (currentLanguageCode/Country/WritingStyle) read once per call into locals.
-     *
-     * @throws ReflectionException
+     * Validation suppression is the right layer for this — the persist path
+     * ({@see \DDD\Domain\Base\Repo\DB\DBEntity}) already bridges store → DB column independently
+     * (forces `$setProperty = true` when the store has entries, then writes the value via
+     * `getTranslationsForProperty()`), so we never need to materialise onto the scalar at validate
+     * time. Keeping the scalar untouched avoids locking in the wrong language as the canonical
+     * value when current-locale ≠ operator's input locale.
      */
-    public function materializeTranslatablePropertiesFromInfos(): void
+    public function hasTranslationsInStoreForProperty(string $propertyName): bool
     {
         if (!isset($this->translationInfos) || empty($this->translationInfos->translationsStore)) {
-            return;
+            return false;
         }
-        $fingerprint = spl_object_id($this->translationInfos);
-        if ($this->lastTranslatableMaterializationFingerprint === $fingerprint) {
-            return;
+        $entries = $this->translationInfos->translationsStore[$propertyName] ?? null;
+        if (empty($entries)) {
+            return false;
         }
-
-        $translatableProperties = $this->getTranslatableProperties();
-        if ($translatableProperties === []) {
-            $this->lastTranslatableMaterializationFingerprint = $fingerprint;
-            return;
-        }
-
-        $lang = Translatable::getCurrentLanguageCode();
-        $country = Translatable::getCurrentCountryCode();
-        $writingStyle = Translatable::getCurrentWritingStyle();
-        $store = $this->translationInfos->translationsStore;
-
-        foreach ($translatableProperties as $reflectionProperty) {
-            $propertyName = $reflectionProperty->getName();
-            $entries = $store[$propertyName] ?? null;
-            if (empty($entries)) {
-                continue;
-            }
-            // Never overwrite an already-set scalar. Protects PATCH flows where find() populated
-            // the scalar from the DB column, and the request only carries a sparse translations
-            // diff whose fallback chain would otherwise resolve to a different (possibly null)
-            // value than what's currently persisted.
-            if (isset($this->{$propertyName}) && $this->{$propertyName} !== null) {
-                continue;
-            }
-            $value = $this->translationInfos->getTranslationForProperty(
-                $propertyName,
-                $lang,
-                $country,
-                $writingStyle,
-                useFallBack: true
-            );
-            // Last-resort: any non-empty entry in the property's translations subarray. Iterates
-            // only the relevant subarray (already in hand), not the full store.
-            if ($value === null) {
-                foreach ($entries as $candidate) {
-                    if (is_string($candidate) && $candidate !== '') {
-                        $value = $candidate;
-                        break;
-                    }
-                }
-            }
-            if ($value !== null) {
-                $this->{$propertyName} = $value;
+        foreach ($entries as $candidate) {
+            if (is_string($candidate) && $candidate !== '') {
+                return true;
             }
         }
-
-        $this->lastTranslatableMaterializationFingerprint = $fingerprint;
+        return false;
     }
 }
