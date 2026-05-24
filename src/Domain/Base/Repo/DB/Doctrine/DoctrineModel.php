@@ -16,11 +16,11 @@ use ReflectionProperty;
 
 abstract class DoctrineModel
 {
-    public const MODEL_ALIAS = '';
+    public const string MODEL_ALIAS = '';
 
-    public const TABLE_NAME = '';
+    public const string TABLE_NAME = '';
 
-    public const ENTITY_CLASS = '';
+    public const string ENTITY_CLASS = '';
 
     protected static $tableNameCache = [];
 

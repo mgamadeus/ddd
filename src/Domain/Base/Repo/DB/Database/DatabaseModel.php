@@ -682,7 +682,7 @@ class DatabaseModel extends ValueObject
             $parentModelClassWithNamespace = self::getModelClassWithNamespaceForEntityClassWithNamespace(
                 $this->parentEntityCLassWithNamespace
             );
-            $modelClassContent = "#[ORM\Entity]\nclass {$this->getModelClassNameWithNameSpace()->name} extends $parentModelClassWithNamespace->name\n{\n\tpublic const ENTITY_CLASS = '{$this->entityClassWithNamespace->getNameWithNamespace()}';\n\n";
+            $modelClassContent = "#[ORM\Entity]\nclass {$this->getModelClassNameWithNameSpace()->name} extends $parentModelClassWithNamespace->name\n{\n\tpublic const string ENTITY_CLASS = '{$this->entityClassWithNamespace->getNameWithNamespace()}';\n\n";
         } else {
             $subclassIndicatorDeclarations = '';
             if ($this->subclassIndicator) {
