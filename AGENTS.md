@@ -411,6 +411,37 @@ Database tables and schema changes are managed **manually and separately** by th
 - Creates PHP service files
 - Generates `DB*Model.php` Doctrine model classes (auto-generated, never edit manually)
 
+### `postProcessAfterMapping` Must Respect the Active Default Select
+
+When overriding `postProcessAfterMapping()` in a DB repository to synthesise derived properties from loaded columns (defaults, inherited values from parent entities, generated URLs, …), each synthesis block must be **gated on whether the property is in the active default select**. Callers that narrow the select (via `Entity::getDefaultQueryOptions()->setSelect(...)`, possibly under a `setDefaultQueryOptionsSnapshot()` scope) expect synthesis-driven side effects to be skipped for excluded properties.
+
+**Pattern:**
+
+```php
+public function postProcessAfterMapping(Entity $entity, ...): void
+{
+    $select = static::ENTITY_CLASS::getDefaultQueryOptions()->getSelect();
+    $settingIsSelected = $select === null
+        || $select->getSelectOptionByName('setting') !== null;
+
+    if ($settingIsSelected) {
+        if (!isset($entity->setting)) {
+            $entity->setting = new EntitySetting();
+        }
+        // … theme inheritance, parent-chain lazy-loads, URL generators tied to setting …
+    }
+}
+```
+
+**Why this matters — concrete failure mode:**
+
+Without the gate, a caller asking for "lite Entity without `setting`" pays an N-deep parent-entity lazy-load cascade *because of the post-processor*: it fabricates an empty `setting`, then sees its theme is empty, then triggers `$entity->parent->setting->theme` which fires the parent's own `postProcessAfterMapping`, which fabricates the parent's setting, which recurses up the parent chain. The narrowing accomplishes nothing — the framework's expand-join select fallback (added in v2.24) is undermined entity-side.
+
+**Two reasons to honour the gate:**
+
+1. **Correctness**: don't fabricate what the caller deliberately excluded — they may downstream check `isset()` to decide whether to render the property at all, and a synthesised default lies about presence.
+2. **Performance**: don't trigger lazy-load cascades for excluded properties — the cost of the cascade can exceed the cost of just SELECTing the column you skipped.
+
 ### Entity Attributes Reference
 
 - `#[LazyLoad]` -- Deferred loading of relationships
@@ -610,6 +641,48 @@ Entities `Cron` and `CronExecution` in `Domain/Common/Entities/Crons/` provide s
 | `File` | File upload metadata (name, mimeType, path, error) |
 | `Person` | Person details (name, title, gender) with name combination generation |
 | `Roles` | Role collection with `isAdmin()` and `hasRoles()` checks |
+
+---
+
+## Composer Commands — HARD RULE: ALWAYS `--ignore-platform-reqs`
+
+> **EVERY `composer install` / `composer update` / `composer require` invocation by an agent MUST include `--ignore-platform-reqs`. NO EXCEPTIONS.** Not "if needed", not "when extensions are missing" — ALWAYS.
+
+```bash
+# CORRECT — every single time
+composer update mgamadeus/ddd --ignore-platform-reqs
+composer install --ignore-platform-reqs
+composer require some/package --ignore-platform-reqs
+
+# WRONG — will break production
+composer update mgamadeus/ddd
+composer install
+composer require some/package
+composer update mgamadeus/ddd --ignore-platform-req=ext-imagick   # targeted ≠ acceptable; STILL leaks PHP-version mismatches
+```
+
+**Why this is non-negotiable:**
+
+Local dev machines run a newer PHP (commonly 8.4 via Homebrew) than the production deployment target (commonly 8.3). When Composer's resolver runs against the local PHP version, it picks transitive dependencies whose `require.php` is `>= 8.4`. Those packages get written into `composer.lock`. On production deploy, Composer's autoload generates `vendor/composer/platform_check.php` from the lockfile's effective platform requirements, and the autoload then **FATALS at runtime** with:
+
+```
+Fatal error: Composer detected issues in your platform: Your Composer dependencies
+require a PHP version ">= 8.4.0". You are running 8.3.4.
+```
+
+This has burned production once on this codebase already. `--ignore-platform-reqs` causes Composer to skip platform-constraint evaluation entirely AND skip the platform_check.php fatal emission. The trade-off (production might silently use a package that depends on a PHP 8.4 feature) is accepted by the project owner because the alternative — different lockfile content depending on which dev's machine ran `composer update` — is worse.
+
+**The targeted variant `--ignore-platform-req=ext-xxx` is NOT a substitute.** It only ignores the named platform requirement at resolution time but still writes the picked versions' constraints into the lockfile and still emits platform_check.php. The PHP-version axis must specifically be silenced, and the flag that does both jobs is the broad `--ignore-platform-reqs`.
+
+**Local extensions:** missing `ext-imagick` / `ext-amqp` / `ext-redis` etc. are typical on macOS Homebrew PHP installs without those PECL extensions. The broad ignore covers them without enumerating each — one more reason to use it.
+
+**When the resolver needs to upgrade transitive deps along with the targeted package**, also add `-W` (`--with-all-dependencies`). The full canonical form for an agent-driven upgrade is:
+
+```bash
+composer update <pkg> --ignore-platform-reqs --no-scripts -W
+```
+
+`--no-scripts` skips post-install hooks (Doctrine model regen, cache clears) which an agent rarely needs and which can otherwise add minutes per run.
 
 ---
 

@@ -18,6 +18,23 @@ trait QueryOptionsTrait
     use ReflectorTrait;
 
     protected static $defaultQueryOptions = [];
+
+    /**
+     * Per-class stack of snapshotted default query options. Pushed by
+     * {@see self::setDefaultQueryOptionsSnapshot()}, popped by
+     * {@see self::restoreDefaultQueryOptionsSnapshot()}.
+     *
+     * Stack-based (vs Translatable's single-slot) so that nested call paths
+     * — controller → service → lazy-load → another service — can safely
+     * snapshot/mutate/restore without clobbering an outer caller's state.
+     *
+     * Keyed by the same class resolution as {@see self::$defaultQueryOptions}
+     * (argus entities key on parent class; see {@see self::resolveDefaultQueryOptionsClassKey()}).
+     *
+     * @var array<string, array<int, AppliedQueryOptions>>
+     */
+    protected static array $defaultQueryOptionsSnapshotStack = [];
+
     /** @var AppliedQueryOptions Applied Query Options */
     protected AppliedQueryOptions $queryOptions;
 
@@ -80,6 +97,73 @@ trait QueryOptionsTrait
     {
         $className = static::class;
         self::$defaultQueryOptions[$className] = $queryOptions;
+    }
+
+    /**
+     * Snapshots the current default query options for this class so a caller can
+     * safely mutate them locally and restore the prior state via
+     * {@see self::restoreDefaultQueryOptionsSnapshot()}.
+     *
+     * The default query options are per-class static state. Long-lived PHP-FPM
+     * workers share this state across requests, so any service method or
+     * lazy-load that narrows the default for a local concern silently leaks the
+     * narrowed state to subsequent unrelated requests handled by the same worker.
+     * This snapshot/restore pair scopes the mutation to a `try`/`finally` block.
+     *
+     * Usage:
+     *   Entity::setDefaultQueryOptionsSnapshot();
+     *   try {
+     *       Entity::getDefaultQueryOptions()->setSelect(...);
+     *       // work
+     *   } finally {
+     *       Entity::restoreDefaultQueryOptionsSnapshot();
+     *   }
+     *
+     * @throws ReflectionException
+     */
+    public static function setDefaultQueryOptionsSnapshot(): void
+    {
+        $className = static::resolveDefaultQueryOptionsClassKey();
+        if (!isset(self::$defaultQueryOptionsSnapshotStack[$className])) {
+            self::$defaultQueryOptionsSnapshotStack[$className] = [];
+        }
+        // Clone so subsequent set...() calls don't bleed into the snapshot.
+        self::$defaultQueryOptionsSnapshotStack[$className][] =
+            clone static::getDefaultQueryOptions();
+    }
+
+    /**
+     * Restores the most recent snapshot pushed via
+     * {@see self::setDefaultQueryOptionsSnapshot()}. No-op on empty stack — safe
+     * to call defensively inside a `finally` block.
+     *
+     * @throws ReflectionException
+     */
+    public static function restoreDefaultQueryOptionsSnapshot(): void
+    {
+        $className = static::resolveDefaultQueryOptionsClassKey();
+        if (empty(self::$defaultQueryOptionsSnapshotStack[$className])) {
+            return;
+        }
+        self::$defaultQueryOptions[$className] =
+            array_pop(self::$defaultQueryOptionsSnapshotStack[$className]);
+    }
+
+    /**
+     * Resolves the class key used to index default query options (and their
+     * snapshot stack). Mirrors the resolution in {@see self::getDefaultQueryOptions()}
+     * — argus entities key on the parent class, regular entities on themselves —
+     * so the snapshot's restore lands on exactly the same slot the original push
+     * came from.
+     *
+     * @throws ReflectionException
+     */
+    protected static function resolveDefaultQueryOptionsClassKey(): string
+    {
+        if (property_exists(static::class, 'isArgusEntity')) {
+            return ReflectionClass::instance(static::class)->getParentClass()->getName();
+        }
+        return static::class;
     }
 
     /**

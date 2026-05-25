@@ -284,6 +284,44 @@ class ExpandOptions extends ObjectSet
                     baseModelAlias: $expandOption->joinAlias,
                     joinPath: $expandOption->getPropertyPathRecursively(),
                 );
+            } else {
+                // No inline `select=` clause on this expand option. Fall back to the
+                // target entity's programmatic default select (set via
+                // `Entity::getDefaultQueryOptions()->setSelect(...)`, typically by a
+                // service-level helper that wants to shed heavy TEXT/JSON columns).
+                //
+                // Without this fallback, expand-joins emit a full-column SELECT on the
+                // joined entity regardless of any default select the consumer app has
+                // configured. Heavy columns then leak into Cartesian-product result
+                // sets — measured ~95 MB result sets where 98% was three TEXT columns
+                // on a parent entity that was never directly queried.
+                //
+                // Behaviour matrix:
+                //   URL has `expand=foo(select=…)` → inline wins (unchanged).
+                //   URL has plain `expand=foo`, entity has default select → applied (NEW).
+                //   URL has plain `expand=foo`, entity has no default select → all columns
+                //     (unchanged).
+                //
+                // The `defined()` + `method_exists()` guards skip the fallback cleanly
+                // for legacy hand-written DoctrineModel subclasses that don't expose
+                // the typed `ENTITY_CLASS` constant (pre-v2.23 form) or for entity
+                // classes that lack the QueryOptionsTrait surface.
+                if (defined($targetPropertyModelClass . '::ENTITY_CLASS')) {
+                    $targetEntityClass = $targetPropertyModelClass::ENTITY_CLASS;
+                    if (is_string($targetEntityClass)
+                        && $targetEntityClass !== ''
+                        && method_exists($targetEntityClass, 'getDefaultQueryOptions')) {
+                        $defaultSelect = $targetEntityClass::getDefaultQueryOptions()->getSelect();
+                        if (isset($defaultSelect)) {
+                            $defaultSelect->applySelectToDoctrineQueryBuilder(
+                                queryBuilder: $queryBuilder,
+                                baseModelClass: $targetPropertyModelClass,
+                                baseModelAlias: $expandOption->joinAlias,
+                                joinPath: $expandOption->getPropertyPathRecursively(),
+                            );
+                        }
+                    }
+                }
             }
             if (isset($expandOption->filters)) {
                 $expandOption->filters->applyFiltersToJoin(
@@ -483,14 +521,42 @@ class ExpandOptions extends ObjectSet
             $joinClauses[] = $clause;
         }
 
-        $subqueryDQL = sprintf(
-            'SELECT %s.id FROM %s %s%s WHERE %s',
-            $tempBaseAlias,
-            $from->getFrom(),
-            $tempBaseAlias,
-            $joinClauses ? ' ' . implode(' ', $joinClauses) : '',
-            $whereString
-        );
+        $innerSelect = sprintf('%s.id', $tempBaseAlias);
+        $innerFrom = sprintf('%s %s', $from->getFrom(), $tempBaseAlias);
+        $innerJoinsClause = $joinClauses ? implode(' ', $joinClauses) : '';
+        $innerWhereExpression = $whereString;
+
+        // Correlate the IN-subquery to the outer target row via PK-equality. The outer
+        // wrapper is already `<targetJoinAlias>.id IN (...)`, so with this correlation
+        // the inner returns either `{<targetJoinAlias>.id}` (predicate passes) or `∅`
+        // (predicate fails) — truth-table identical to the unbounded form, only the
+        // optimiser strategy differs. MariaDB flips from MATERIALIZED (which builds the
+        // full accessible-IDs set once — expensive when the set is 200k–500k rows) to
+        // DEPENDENT SUBQUERY (PK-lookup per outer row). Empirically: 1.8 s → ~5 ms on
+        // a chat-member fetch with deep rights wraps.
+        //
+        // Alias collision guard: when the rights QB's base alias coincides with the
+        // expand's join alias, the correlation reduces to `<alias>.id = <alias>.id` —
+        // a tautology that contributes nothing. Skip the correlation in that case to
+        // avoid the misleading clause; the IN-wrapper still bounds correctness.
+        // Theoretical: rights base alias is class-level (`getBaseModelAlias()`),
+        // expand alias is path-derived — they're constructed by disjoint code paths.
+        if ($tempBaseAlias !== $targetJoinAlias) {
+            $innerWhereExpression = sprintf(
+                '(%s) AND %s.id = %s.id',
+                $innerWhereExpression,
+                $tempBaseAlias,
+                $targetJoinAlias
+            );
+        }
+        $innerWhere = sprintf('WHERE %s', $innerWhereExpression);
+
+        $subqueryParts = ['SELECT', $innerSelect, 'FROM', $innerFrom];
+        if ($innerJoinsClause !== '') {
+            $subqueryParts[] = $innerJoinsClause;
+        }
+        $subqueryParts[] = $innerWhere;
+        $subqueryDQL = implode(' ', $subqueryParts);
 
         $this->appendToLeftJoinOnCondition(
             $mainQueryBuilder,
