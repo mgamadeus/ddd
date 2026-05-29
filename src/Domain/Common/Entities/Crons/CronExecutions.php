@@ -12,7 +12,7 @@ use DDD\Domain\Common\Repo\DB\Crons\DBCronExecutions;
 use DDD\Domain\Common\Services\CronExecutionsService;
 
 /**
- * @property Cron[] $elements;
+ * @property CronExecution[] $elements;
  * @method CronExecution getByUniqueKey(string $uniqueKey)
  * @method CronExecution first()
  * @method CronExecution[] getElements()
