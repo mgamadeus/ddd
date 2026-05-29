@@ -18,11 +18,17 @@ class ReflectionAllowedTypes
     public bool $allowsNull = false;
     public int $allowedTypesCount = 0;
 
+    protected string $propertyName = '';
+
+    protected string $propertyClass = '';
+
     public function __construct(\ReflectionProperty|ReflectionProperty &$property)
     {
+        $this->propertyName = $property->getName();
+        $this->propertyClass = $property->class;
         $propertyType = $property->getType();
         if (!$propertyType) {
-            throw new InternalErrorException($property->getName() . ' has no Type definition');
+            throw new InternalErrorException($property->class . '::$' . $property->getName() . ' has no Type definition');
         }
         $this->allowsNull = $propertyType->allowsNull();
         if ($propertyType instanceof ReflectionArrayType) {
@@ -39,8 +45,14 @@ class ReflectionAllowedTypes
         }
     }
 
-    protected function processType(\ReflectionNamedType $type): void
+    protected function processType(?\ReflectionNamedType $type): void
     {
+        if ($type === null) {
+            throw new InternalErrorException(
+                'Property ' . $this->propertyClass . '::$' . $this->propertyName
+                . ' has a type that could not be resolved to a named type'
+            );
+        }
         $typeName = $type->getName();
         if (!$typeName) {
             return;
