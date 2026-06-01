@@ -490,6 +490,26 @@ class ExpandOptions extends ObjectSet
         /** @var \Doctrine\ORM\Query\Expr\From $from */
         $from = $fromParts[0];
 
+        // Rename the rights QB's base alias inside the subquery to a guaranteed-unique
+        // form. DQL is stricter than SQL on alias scoping — it forbids the outer FROM
+        // alias from being re-declared inside a subselect FROM, even though SQL would
+        // shadow them. This bites whenever the expand target resolves to the same DB
+        // model as the parent (self-referential expand like `World.joinableChildWorlds`),
+        // because both rights QB and outer QB then call the same `getBaseModelAlias()`
+        // and Doctrine refuses to parse the second declaration.
+        //
+        // The rename is unconditional — the renamed alias is purely subquery-internal
+        // and never escapes, so it's safe even when the outer base alias differs.
+        //
+        // Token safety: the regex uses a negative-word-boundary lookbehind plus a
+        // positive `\.` lookahead so we only rewrite `<alias>.<member>` references.
+        // `_rights_<alias>` (the renamed form), `<alias>_<suffix>` path-derived aliases
+        // (e.g. `World_account_rights`), and any `X<alias>` substring are all left
+        // untouched. The pattern is therefore idempotent on its own output, which keeps
+        // the rewrite safe if it ever runs over an already-rewritten string.
+        $renamedTempBaseAlias = '_rights_' . $tempBaseAlias;
+        $aliasFromPattern = '/(?<![A-Za-z0-9_])' . preg_quote($tempBaseAlias, '/') . '(?=\.)/';
+
         // Reindex named parameters from the rights QB onto the main QB as positional
         // placeholders. The subquery references the same placeholders in its own scope —
         // Doctrine compiles DQL placeholders into the outer SQL parameter list either way,
@@ -500,15 +520,19 @@ class ExpandOptions extends ObjectSet
             $mainQueryBuilder,
             $rightsQueryBuilder->getParameters()
         );
+        $whereString = preg_replace($aliasFromPattern, $renamedTempBaseAlias, $whereString);
 
-        // Carry over the rights' internal LEFT JOINs into the subquery body verbatim.
-        // No alias swapping needed — the subquery scope is independent from the main
-        // query, and Doctrine resolves DQL aliases per (sub)select.
+        // Carry over the rights' internal LEFT JOINs into the subquery body with the
+        // alias rename applied to both the join target (LEFT side of `<alias>.relation`)
+        // and any WITH-condition referencing the base alias. The join's right-side alias
+        // (e.g. `World_account_rights`) is left as-is — it's a path-derived identifier
+        // that does not match the `<alias>.` pattern.
         $joinClauses = [];
         $allJoins = $rightsQueryBuilder->getDQLPart('join')[$tempBaseAlias] ?? [];
         foreach ($allJoins as $join) {
             /** @var Join $join */
-            $clause = sprintf('LEFT JOIN %s %s', $join->getJoin(), $join->getAlias());
+            $joinTarget = preg_replace($aliasFromPattern, $renamedTempBaseAlias, $join->getJoin());
+            $clause = sprintf('LEFT JOIN %s %s', $joinTarget, $join->getAlias());
             $joinCondition = $join->getCondition();
             if ($joinCondition) {
                 $joinCondition = $this->reindexPlaceholdersAndApplyParameters(
@@ -516,13 +540,14 @@ class ExpandOptions extends ObjectSet
                     $mainQueryBuilder,
                     $rightsQueryBuilder->getParameters()
                 );
+                $joinCondition = preg_replace($aliasFromPattern, $renamedTempBaseAlias, $joinCondition);
                 $clause .= ' ' . ($join->getConditionType() ?: Join::WITH) . ' ' . $joinCondition;
             }
             $joinClauses[] = $clause;
         }
 
-        $innerSelect = sprintf('%s.id', $tempBaseAlias);
-        $innerFrom = sprintf('%s %s', $from->getFrom(), $tempBaseAlias);
+        $innerSelect = sprintf('%s.id', $renamedTempBaseAlias);
+        $innerFrom = sprintf('%s %s', $from->getFrom(), $renamedTempBaseAlias);
         $innerJoinsClause = $joinClauses ? implode(' ', $joinClauses) : '';
         $innerWhereExpression = $whereString;
 
@@ -535,20 +560,15 @@ class ExpandOptions extends ObjectSet
         // DEPENDENT SUBQUERY (PK-lookup per outer row). Empirically: 1.8 s → ~5 ms on
         // a chat-member fetch with deep rights wraps.
         //
-        // Alias collision guard: when the rights QB's base alias coincides with the
-        // expand's join alias, the correlation reduces to `<alias>.id = <alias>.id` —
-        // a tautology that contributes nothing. Skip the correlation in that case to
-        // avoid the misleading clause; the IN-wrapper still bounds correctness.
-        // Theoretical: rights base alias is class-level (`getBaseModelAlias()`),
-        // expand alias is path-derived — they're constructed by disjoint code paths.
-        if ($tempBaseAlias !== $targetJoinAlias) {
-            $innerWhereExpression = sprintf(
-                '(%s) AND %s.id = %s.id',
-                $innerWhereExpression,
-                $tempBaseAlias,
-                $targetJoinAlias
-            );
-        }
+        // The previous `$tempBaseAlias !== $targetJoinAlias` guard is no longer needed:
+        // the renamed alias is by construction `_rights_<base>` which can never equal
+        // a path-derived join alias.
+        $innerWhereExpression = sprintf(
+            '(%s) AND %s.id = %s.id',
+            $innerWhereExpression,
+            $renamedTempBaseAlias,
+            $targetJoinAlias
+        );
         $innerWhere = sprintf('WHERE %s', $innerWhereExpression);
 
         $subqueryParts = ['SELECT', $innerSelect, 'FROM', $innerFrom];
