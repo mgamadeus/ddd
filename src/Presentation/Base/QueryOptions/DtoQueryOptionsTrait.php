@@ -13,8 +13,10 @@ use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Presentation\Base\OpenApi\Attributes\Parameter;
+use DDD\Presentation\Base\OpenApi\Exceptions\TypeDefinitionMissingOrWrong;
 use ReflectionException;
 use Symfony\Component\HttpFoundation\Request;
+use Throwable;
 
 /**
  * Provides query options logic to DTO
@@ -166,9 +168,33 @@ trait DtoQueryOptionsTrait
      */
     public function setPropertiesFromRequest(Request $request): void
     {
+        /**
+         * This `parent::` is intentional and load-bearing: a using class always extends
+         * RequestDto (the base type), so `parent::setPropertiesFromRequest()` chains the
+         * base population pass before the QueryOptions validation below. PhpStorm flags
+         * this because parent-resolution happens at the using class, not at the trait
+         * itself, hence the @noinspection.
+         * @noinspection PhpUndefinedMethodInspection
+         */
         parent::setPropertiesFromRequest($request);
+
         $dtoQueryOptionsAttributeInstance = static::getDtoQueryOptions();
-        $queryOptions = $dtoQueryOptionsAttributeInstance->getQueryOptions();
+        if ($dtoQueryOptionsAttributeInstance === null) {
+            throw new TypeDefinitionMissingOrWrong(
+                'Class ' . static::class . ' uses DtoQueryOptionsTrait (QueryOptions) but has no #['
+                . DtoQueryOptions::class . '] attribute on the class or any parent — '
+                . 'add the attribute (with its baseEntity) or remove the trait.'
+            );
+        }
+
+        try {
+            $queryOptions = $dtoQueryOptionsAttributeInstance->getQueryOptions();
+        } catch (Throwable $e) {
+            throw new TypeDefinitionMissingOrWrong(
+                'Failed to resolve QueryOptions for ' . static::class . ' from its #['
+                . DtoQueryOptions::class . '] attribute: ' . $e->getMessage()
+            );
+        }
 
         if (isset($this->expand)) {
             $this->expand->validateAgainstDefinitionsFromReferenceClass($dtoQueryOptionsAttributeInstance->baseEntity);
@@ -215,17 +241,28 @@ trait DtoQueryOptionsTrait
 
     /**
      * Returns instance of DtoQueryOptions Attribute.
-     * @return DtoQueryOptions
+     *
+     * Walks the class hierarchy so a `#[DtoQueryOptions]` placed on a base DTO is picked
+     * up by subclasses (PHP attributes aren't reflection-inherited by default). Returns
+     * null when no class in the hierarchy declares the attribute — callers must handle
+     * null and throw a {@see TypeDefinitionMissingOrWrong} naming the offending class.
+     *
+     * @return DtoQueryOptions|null
      * @throws ReflectionException
      */
-    public static function getDtoQueryOptions(): DtoQueryOptions
+    public static function getDtoQueryOptions(): ?DtoQueryOptions
     {
-        $reflectionClass = ReflectionClass::instance(static::class);
-        /** @var DtoQueryOptions|null $dtoQueryOptionsAttributeInstance */
-        $dtoQueryOptionsAttributeInstance = $reflectionClass->getAttributeInstance(
-            DtoQueryOptions::class
-        );
-        return $dtoQueryOptionsAttributeInstance;
+        $className = static::class;
+        while ($className !== false) {
+            /** @var DtoQueryOptions|null $dtoQueryOptionsAttributeInstance */
+            $dtoQueryOptionsAttributeInstance = ReflectionClass::instance($className)
+                ->getAttributeInstance(DtoQueryOptions::class);
+            if ($dtoQueryOptionsAttributeInstance !== null) {
+                return $dtoQueryOptionsAttributeInstance;
+            }
+            $className = get_parent_class($className);
+        }
+        return null;
     }
 
     /**

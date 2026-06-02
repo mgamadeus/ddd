@@ -200,8 +200,13 @@ class PathParameterSchema
                             }
                             $parameter->description .= '</details>';
                         } elseif ($typeName == ExpandOptions::class) {
-                            /** @var DtoQueryOptions $dtoQueryOptionsAttributeInstane */
+                            /** @var DtoQueryOptions|null $dtoQueryOptionsAttributeInstane */
                             $dtoQueryOptionsAttributeInstane = $schemaReflectionClassName::getDtoQueryOptions();
+                            if (!$dtoQueryOptionsAttributeInstane) {
+                                throw new TypeDefinitionMissingOrWrong(
+                                    'Class ' . $schemaReflectionClassName . ' uses QueryOptions without having an attribute of type ' . DtoQueryOptions::class
+                                );
+                            }
                             $baseEntityReflectionClass = ReflectionClass::instance(
                                 $dtoQueryOptionsAttributeInstane->baseEntity
                             );
