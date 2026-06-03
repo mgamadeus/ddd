@@ -35,8 +35,29 @@ trait SerializerTrait
     use ReflectorTrait;
 
     /**
-     * @var bool Enables Token-Oriented Object Notation (TOON) serialization for this class.
+     * Master gate for the **declarative** TOON activation route (`#[SerializeInToonFormat]`
+     * attribute on a property). When `false`, the attribute is silently ignored and the
+     * property serializes as a regular JSON array — even if the property carries
+     * `#[SerializeInToonFormat]`. When `true`, attributed properties emit TOON.
+     *
+     * The **imperative** routes — `setStaticPropertiesToSerializeAsToon()` /
+     * `addPropertiesToSerializeAsToon()` / their checked counterpart
+     * {@see self::isPropertySerializedAsToon()} — remain ungated. Those are explicit
+     * per-call opt-ins, so flipping this flag does NOT suppress them.
+     *
+     * Declared on the trait (and hence on `DefaultObject` via inheritance) without
+     * subclass redeclaration → late-static-bound reads (`static::$toonEnabledSerialization`)
+     * all resolve to the same shared static slot. So `Entity::$toonEnabledSerialization = true`
+     * enables TOON for every TOON-attributed property in the current process pass.
+     *
+     * **Long-lived workers caveat:** this is a raw static. PHP-FPM resets it per request
+     * automatically; for queue workers or in-process agent loops a consumer that sets it
+     * `true` must reset it `false` afterwards (try/finally), otherwise it leaks into the
+     * next message in the same worker.
+     *
      *  https://github.com/toon-format/toon
+     *
+     * @var bool
      */
     protected static $toonEnabledSerialization = false;
 
@@ -165,12 +186,23 @@ trait SerializerTrait
     //   1. ACTIVATION  — "should this property's array be emitted as TOON instead of regular
     //                    JSON-array-of-objects?". Activation can be per-property:
     //                      a) declarative via #[SerializeInToonFormat] attribute on the property
+    //                         — gated on the master switch $toonEnabledSerialization (see the
+    //                         flag's docblock for full semantics). When the switch is off, the
+    //                         attribute is a silent no-op, so REST endpoints can ship the same
+    //                         entity as plain JSON while an MCP/agent consumer flips the switch
+    //                         to receive TOON.
     //                      b) imperative class-wide via setStaticPropertiesToSerializeAsToon()
+    //                         — UNGATED, fires regardless of $toonEnabledSerialization.
     //                      c) imperative per-instance via addPropertiesToSerializeAsToon()
-    //                    All three sources are OR-combined inside toObject(). The emitted
-    //                    output property name is the original property name plus the suffix
-    //                    SerializeInToonFormat::TOON_PROPERTY_POSTFIX (i.e. "InToonFormat") so
-    //                    consumers can distinguish TOON output from regular JSON.
+    //                         — UNGATED.
+    //                    Routes (b) + (c) are explicit per-call opt-ins. Route (a) is the
+    //                    declarative TOON-able marker, activated only when the consumer
+    //                    actually wants TOON for that pass.
+    //                    All three (after the route-(a) gate) are OR-combined inside toObject().
+    //                    The emitted output property name is the original property name plus
+    //                    the suffix SerializeInToonFormat::TOON_PROPERTY_POSTFIX (i.e.
+    //                    "InToonFormat") so consumers can distinguish TOON output from regular
+    //                    JSON.
     //
     //   2. COLUMN SPEC — "which inner-object fields appear as columns, in what order, under
     //                    what names?". Two sources, the instance-level wins over class-level:
@@ -630,7 +662,10 @@ trait SerializerTrait
                     is_array($propertyValue)
                     && is_array($serializedValue)
                     && (
-                        $property->hasAttribute(SerializeInToonFormat::class, ReflectionAttribute::IS_INSTANCEOF)
+                        (
+                            static::$toonEnabledSerialization
+                            && $property->hasAttribute(SerializeInToonFormat::class, ReflectionAttribute::IS_INSTANCEOF)
+                        )
                         || $this->isPropertySerializedAsToon($propertyName)
                     )
                 ) {
