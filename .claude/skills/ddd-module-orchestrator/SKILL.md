@@ -65,6 +65,55 @@ Level 2 (depends on Level 0+1):
 
 Any application using DDD modules needs `composer update --ignore-platform-reqs` after module releases. Check the application's `composer.json` for `mgamadeus/*` dependencies.
 
+The known consuming apps and their workspace paths:
+
+| App | Path | DATABASE_TABLE_PREFIX |
+|---|---|---|
+| Tavlo | `/Users/marius/Development/Tavlo/tavlo_backend/backend` | `''` (none) |
+| Radbonus | `/Users/marius/Development/Radbonus/rb-backend` | `''` (none) |
+| RC | `/Users/marius/Development/RC/rc-app-backend/app` | `Entity` |
+
+#### CRITICAL: never pass `--no-scripts` when updating a consuming app
+
+Consuming apps wire the Doctrine model generator into composer's lifecycle:
+
+```jsonc
+"scripts": {
+  "post-update-cmd":  ["php bin/console cache:clear",
+                       "php bin/console app:generate-doctrine-models-for-entities"],
+  "post-install-cmd": ["php bin/console cache:clear",
+                       "php bin/console app:generate-doctrine-models-for-entities"]
+}
+```
+
+`composer update` overwrites `vendor/` with each package's **shipped** `DB*Model` files —
+generated upstream with the upstream prefix (none) and without the consumer's entity
+overrides. The `post-update-cmd` hook **regenerates** them against the consumer's own
+`DATABASE_TABLE_PREFIX` and overridden entities. Skipping it with `--no-scripts` leaves the
+vendor models on the upstream table names, so any framework-internal code that uses a vendor
+repo directly (`new DBCacheScopeInvalidation()`, etc.) hits a non-existent table at runtime
+(`SQLSTATE[42S02] … doesn't exist`) — surfacing only on the code path that touches it (e.g. a
+cache-hit). This caused a real production 500 on RC (`CacheScopeInvalidations` vs
+`EntityCacheScopeInvalidations`).
+
+Therefore, the canonical update form **differs between modules and apps**:
+
+```bash
+# Framework MODULES (Core, AI, Argus, Geo, Money, Political, Translations) — no gen hook,
+# --no-scripts is safe and faster:
+composer update mgamadeus/ddd --ignore-platform-reqs --no-scripts -W
+
+# Consuming APPS (Tavlo, Radbonus, RC) — let the scripts run, NEVER --no-scripts:
+composer update mgamadeus/ddd --ignore-platform-reqs
+```
+
+If a throwaway resolver-only check genuinely needs `--no-scripts` on an app, run the generator
+yourself immediately after: `php bin/console app:generate-doctrine-models-for-entities`.
+
+RC additionally needs `--ignore-platform-req=php` (its `require.php` is strict `8.3.*` with no
+`config.platform.php` override) — combine the targeted ignores rather than the broad form when
+you must preserve the lockfile's platform constraints; but still without `--no-scripts`.
+
 ---
 
 ## Workflow: Study a Module Before Making Changes
@@ -125,24 +174,30 @@ When releasing a new DDD Core version, ALL modules need updating.
 
 ```
 1. Core           -> release, wait 10s
-2. Money, Argus   -> composer update, make changes if needed, release, wait 10s
-3. Political, AI  -> composer update, make changes if needed, release, wait 10s
-4. Geo, Translations -> composer update, make changes if needed, release, wait 10s
-5. Consuming apps -> composer update
+2. Money, Argus   -> composer update (--no-scripts ok), make changes if needed, release, wait 10s
+3. Political, AI  -> composer update (--no-scripts ok), make changes if needed, release, wait 10s
+4. Geo, Translations -> composer update (--no-scripts ok), make changes if needed, release, wait 10s
+5. Consuming apps -> composer update (NEVER --no-scripts — see "Consuming Applications")
 ```
 
 **At each level:** modules within the same level can be processed in parallel (they don't depend on each other).
 
-For each module at each level:
+For each MODULE at each level (modules have no gen hook, so `--no-scripts` is safe and faster):
 ```bash
-cd "$MODULE_PATH" && composer update --ignore-platform-reqs
+cd "$MODULE_PATH" && composer update --ignore-platform-reqs --no-scripts -W
 if [ -n "$(git diff composer.lock)" ]; then
   git add composer.lock
   git commit -m "Update composer dependencies
 
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
   git push
 fi
+```
+
+For each consuming APP at level 5 (let the `post-update-cmd` model generator run — **no `--no-scripts`**):
+```bash
+cd "$APP_PATH" && composer update mgamadeus/ddd --ignore-platform-reqs   # RC: add --ignore-platform-req=php
+# post-update-cmd auto-runs: cache:clear + app:generate-doctrine-models-for-entities
 ```
 
 ---
@@ -161,7 +216,8 @@ When updating AGENTS.md, skills, or README across multiple modules:
 ## Key Conventions
 
 - **`--ignore-platform-reqs`** is required for `composer update` because modules may require PHP extensions not available on the current machine
-- **Wait ~10 seconds** between pushing a tag and running `composer update` in dependents -- Packagist needs time to register the new version
+- **`--no-scripts` on framework modules only, NEVER on consuming apps.** Modules have no composer lifecycle hooks; apps wire `app:generate-doctrine-models-for-entities` into `post-update-cmd`, and skipping it leaves vendor `DB*Model` files on upstream (prefix-less, override-less) table names → runtime `SQLSTATE[42S02]` 500. See [Consuming Applications](#consuming-applications).
+- **Wait ~10 seconds** between pushing a tag and running `composer update` in dependents -- Packagist needs time to register the new version (in practice often longer; if `composer update` reports the old version, clear the cache with `composer clear-cache` and retry, or poll `https://repo.packagist.org/p2/<vendor>/<pkg>.json`)
 - **Always commit `composer.lock`** changes in modules after dependency updates
 - **Never force-push tags** unless explicitly asked
 - **Tag format:** `v` prefix required (e.g., `v2.10.12`) -- Packagist matches `v*` pattern

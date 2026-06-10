@@ -679,10 +679,35 @@ This has burned production once on this codebase already. `--ignore-platform-req
 **When the resolver needs to upgrade transitive deps along with the targeted package**, also add `-W` (`--with-all-dependencies`). The full canonical form for an agent-driven upgrade is:
 
 ```bash
-composer update <pkg> --ignore-platform-reqs --no-scripts -W
+composer update <pkg> --ignore-platform-reqs -W
 ```
 
-`--no-scripts` skips post-install hooks (Doctrine model regen, cache clears) which an agent rarely needs and which can otherwise add minutes per run.
+**NEVER pass `--no-scripts` on a consumer app.** Consumer apps wire the Doctrine model
+generator into composer's lifecycle:
+
+```jsonc
+"scripts": {
+  "post-update-cmd":  ["php bin/console cache:clear",
+                       "php bin/console app:generate-doctrine-models-for-entities"],
+  "post-install-cmd": ["php bin/console cache:clear",
+                       "php bin/console app:generate-doctrine-models-for-entities"]
+}
+```
+
+`composer update` overwrites `vendor/` with the package's shipped (upstream, prefix-less)
+`DB*Model` files. The `post-update-cmd` hook then regenerates them against the consumer's
+own `DATABASE_TABLE_PREFIX` and entity overrides. `--no-scripts` skips that hook, so the
+vendor models stay on the upstream table names — and any framework-internal code that uses
+a vendor repo directly (`new DBCacheScopeInvalidation()`, etc.) hits a non-existent table
+at runtime (`SQLSTATE[42S02] … doesn't exist`), surfacing only on the code path that touches
+it (e.g. a cache-hit). This burned a real 500 once already.
+
+So: let the scripts run. The minutes the regeneration costs are the price of a correct
+`vendor/`. If you genuinely need to skip scripts for a throwaway resolver check, run the
+generator yourself afterwards: `php bin/console app:generate-doctrine-models-for-entities`.
+
+(Pure-package upgrades inside the framework modules — Core, AI, Geo, … — have no such hook,
+so `--no-scripts` is harmless there. The rule is about CONSUMER apps: Tavlo, Radbonus, RC.)
 
 ---
 
