@@ -50,8 +50,11 @@ use ReflectionException;
  * live database, and applies that diff back when requested.
  *
  * Pipeline:
- *   1. Target side: {@see EntityModelGeneratorService::getDatabaseModels()} (already filters out
- *      overridden DDD entities — see EntityModelGeneratorService::filterOutOverriddenEntities()).
+ *   1. Target side: {@see EntityModelGeneratorService::getDatabaseModels()} called with
+ *      filterOverriddenEntities: true, so app-side overrides collapse their vendor parent out and
+ *      a single table yields a single target definition (see
+ *      EntityModelGeneratorService::filterOutOverriddenEntities()). The model generator, by
+ *      contrast, calls it unfiltered so each entity still gets its own regenerated DB*Model.
  *   2. Current side: {@see DatabaseSchemaIntrospectionService} reads INFORMATION_SCHEMA.
  *   3. Per table: canonicalise both sides into the same struct shape, run three-loop set diff per
  *      aspect (ADD/DROP/MODIFY), classify severity, render SQL.
@@ -90,7 +93,7 @@ class DatabaseSchemaDiffService
      */
     public function computeDiffs(?array $entityClasses = null): DBTableDiffs
     {
-        $databaseModels = EntityModelGeneratorService::getDatabaseModels($entityClasses);
+        $databaseModels = EntityModelGeneratorService::getDatabaseModels($entityClasses, filterOverriddenEntities: true);
         $liveTableNames = $this->introspectionService->getLiveTableNames();
         $ignoredLiveTables = $this->getIgnoredLiveTables();
 
@@ -163,7 +166,7 @@ class DatabaseSchemaDiffService
         }
         $scopeSet = array_fill_keys($sqlTableNames, true);
 
-        $databaseModels = EntityModelGeneratorService::getDatabaseModels();
+        $databaseModels = EntityModelGeneratorService::getDatabaseModels(filterOverriddenEntities: true);
         $liveTableNames = $this->introspectionService->getLiveTableNames();
         $ignoredLiveTables = $this->getIgnoredLiveTables();
 

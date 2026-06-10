@@ -26,7 +26,15 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
  */
 class EntityModelGeneratorService
 {
-    protected static ?DatabaseModels $databaseModels = null;
+    /**
+     * Per-process cache of computed {@see DatabaseModels}, keyed by the override-filter mode
+     * ('filtered' / 'unfiltered'). Two slots so the model-generator (unfiltered) and the
+     * schema-diff / SQL-create paths (filtered) never serve each other a wrong-shaped set
+     * when both run in the same process.
+     *
+     * @var array<string, DatabaseModels>
+     */
+    protected static array $databaseModelsByFilterMode = [];
 
     /**
      * Creates Tables for given entity class names. If null is passed, it searches for all Entities in Project
@@ -38,7 +46,9 @@ class EntityModelGeneratorService
     public function createOrUpdateDatabaseTablesForEntities(?array $entityClasses = null): string
     {
         if (!$entityClasses) {
-            $entityClasses = $this->getAllEntityClasses();
+            // SQL CREATE TABLE path: collapse app-override duplicates so two classes mapping to
+            // the same table don't emit two competing CREATE statements.
+            $entityClasses = $this->getAllEntityClasses(filterOverriddenEntities: true);
         } else {
             $entityClasses = [];
             foreach ($entityClasses as $entityClassName) {
@@ -47,7 +57,7 @@ class EntityModelGeneratorService
             }
         }
 
-        $databaseModels = self::getDatabaseModels($entityClasses);
+        $databaseModels = self::getDatabaseModels($entityClasses, filterOverriddenEntities: true);
         $sql = $databaseModels->getSql();
         $entityManager = EntityManagerFactory::getInstance();
         $entityManager->getConnection()->executeStatement('SET FOREIGN_KEY_CHECKS=0;');
@@ -60,11 +70,27 @@ class EntityModelGeneratorService
      * Returns all Entity classes in Domain
      * If $restrictToClasesWithLazyloadRepoType is a string, then ony classes that have LazyLoadRepo
      * attribute with corresponding repoType = $restrictToClasesWithLazyloadRepoType will be considered
+     *
+     * $filterOverriddenEntities controls whether app-side overrides of vendor entities collapse the
+     * vendor-side class out of the result (see {@see self::filterOutOverriddenEntities()}):
+     *  - **false (default)** — keep BOTH the app override and its vendor parent. This is the correct
+     *    mode for the **Doctrine model generator**: each entity (app AND vendor) must get its own
+     *    regenerated DB*Model so that framework-internal code referencing the vendor repo directly
+     *    (e.g. `new DBCacheScopeInvalidation()`) still resolves a model carrying the consumer's
+     *    DATABASE_TABLE_PREFIX. Filtering here was the root cause of vendor models silently keeping
+     *    the upstream (prefix-less) table name after an override was introduced.
+     *  - **true** — collapse vendor-side duplicates. Correct for the schema-diff and SQL-create paths,
+     *    where two classes mapping to the same `sqlTableName` must not produce two competing
+     *    table definitions.
+     *
      * @param string|null $restrictToClasesWithLazyloadRepoType
+     * @param bool $filterOverriddenEntities
      * @return ClassWithNamespace[]
      */
-    public static function getAllEntityClasses(?string $restrictToClasesWithLazyloadRepoType = LazyLoadRepo::DB): array
-    {
+    public static function getAllEntityClasses(
+        ?string $restrictToClasesWithLazyloadRepoType = LazyLoadRepo::DB,
+        bool $filterOverriddenEntities = false
+    ): array {
         DDDService::instance()->deactivateCaches();
         $classesFromFramework = ClassFinder::getClassesInDirectory(DDDService::instance()->getFrameworkRootDir() . '/Domain');
         $classesFromApplication = ClassFinder::getClassesInDirectory(DDDService::instance()->getRootDir() . '/src/Domain');
@@ -120,7 +146,9 @@ class EntityModelGeneratorService
                 }
             }
         }
-        $entityClasses = self::filterOutOverriddenEntities($entityClasses);
+        if ($filterOverriddenEntities) {
+            $entityClasses = self::filterOutOverriddenEntities($entityClasses);
+        }
         DDDService::instance()->restoreCachesSnapshot();
         return $entityClasses;
     }
@@ -263,27 +291,33 @@ class EntityModelGeneratorService
      */
     public static function invalidateCache(): void
     {
-        self::$databaseModels = null;
+        self::$databaseModelsByFilterMode = [];
     }
 
-    public static function getDatabaseModels(?array $entityClasses = null): DatabaseModels
-    {
-        if (!isset(self::$databaseModels)) {
-            self::$databaseModels = new DatabaseModels();
-            $entityClassesWithNamespace = self::getAllEntityClasses();
+    public static function getDatabaseModels(
+        ?array $entityClasses = null,
+        bool $filterOverriddenEntities = false
+    ): DatabaseModels {
+        $cacheKey = $filterOverriddenEntities ? 'filtered' : 'unfiltered';
+        if (!isset(self::$databaseModelsByFilterMode[$cacheKey])) {
+            $databaseModelsForMode = new DatabaseModels();
+            $entityClassesWithNamespace = self::getAllEntityClasses(
+                filterOverriddenEntities: $filterOverriddenEntities
+            );
             foreach ($entityClassesWithNamespace as $entityClassWithNamespace) {
                 $databaseModel = DatabaseModel::fromEntityClass($entityClassWithNamespace->getNameWithNamespace());
                 if ($databaseModel) {
-                    self::$databaseModels->add($databaseModel);
+                    $databaseModelsForMode->add($databaseModel);
                 }
             }
+            self::$databaseModelsByFilterMode[$cacheKey] = $databaseModelsForMode;
         }
         if (!$entityClasses) {
-            return self::$databaseModels;
+            return self::$databaseModelsByFilterMode[$cacheKey];
         }
         $databaseModels = new DatabaseModels();
         foreach ($entityClasses as $entityClass) {
-            if ($databaseModel = self::$databaseModels->getModelByEntityClass($entityClass)) {
+            if ($databaseModel = self::$databaseModelsByFilterMode[$cacheKey]->getModelByEntityClass($entityClass)) {
                 $databaseModels->add($databaseModel);
             }
         }
