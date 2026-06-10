@@ -150,7 +150,7 @@ class FiltersOptionsParser
     {
         $left = $this->parseIdentifier();
         $operator = $this->parseOperator();
-        $right = $this->parseLiteral();
+        $right = $this->parseLiteral($operator);
         $filterOptions = new FiltersOptions();
         $filterOptions->type = FiltersOptions::TYPE_EXPRESSION;
         $filterOptions->property = $left;
@@ -182,9 +182,7 @@ class FiltersOptionsParser
             $this->index = $tIndex;
             return $identifier;
         }
-        throw new BadRequestException(
-            "Parsing of FiltersOptions failed: variable/filter identifier (e.g. varName) expected at index $this->index for input: $this->input"
-        );
+        throw $this->buildParseException('variable/filter identifier (e.g. varName) expected');
     }
 
     /**
@@ -212,9 +210,11 @@ class FiltersOptionsParser
                 return $potentialOperator;
             }
         }
-        throw new BadRequestException(
-            "Parsing of FiltersOptions failed: operator (e.g. eq, lq, gt ...) expected at index $this->index for input: $this->input"
-        );
+        $hint = null;
+        if (($this->input[$this->getFailureIndex()] ?? null) === '=') {
+            $hint = "'=' is not a valid operator, use 'eq' instead (e.g. status eq 'active')";
+        }
+        throw $this->buildParseException('operator (e.g. eq, ne, gt, lt, ge, le, in, ni, bw) expected', $hint);
     }
 
     /**
@@ -223,11 +223,13 @@ class FiltersOptionsParser
      * - numeric (int or float)
      * - string need to be encapsuled in ''
      * - array in json format, e.g. [123,234,"asd"]
+     *   (for the array operators in, ni, bw also SQL-style parentheses are accepted, e.g. in (123,'asd'))
      * - null
+     * @param string|null $operator The operator preceding the literal, used to allow SQL-style paren lists on array operators
      * @return string|float|int|array
      * @throws BadRequestException
      */
-    protected function parseLiteral(): string|float|int|array|null
+    protected function parseLiteral(?string $operator = null): string|float|int|array|null
     {
         $tIndex = $this->index + $this->getWhiteSpaceCharactersCountAtBeginning();
 
@@ -247,9 +249,7 @@ class FiltersOptionsParser
                 if (!(ctype_digit($curChar) || $curChar == '.') || $curChar === null) {
                     // only valid options after end of number sequence
                     if (!(ctype_space($curChar) || $curChar == ')' || $curChar === null)) {
-                        throw new BadRequestException(
-                            "Parsing of FiltersOptions failed: invalid number literal at index $this->index for input: $this->input"
-                        );
+                        throw $this->buildParseException('invalid number literal');
                     }
                     $this->index = $tIndex;
                     return is_int($literal) ? (int)$literal : (float)$literal;
@@ -263,8 +263,9 @@ class FiltersOptionsParser
                 $this->index = $tIndex;
                 return null;
             }
-            throw new BadRequestException(
-                "Parsing of FiltersOptions failed: string literal without quotes at index $this->index for input: $this->input"
+            throw $this->buildParseException(
+                'string literal without quotes found',
+                "scalar values must be wrapped in single quotes, e.g. name eq 'value'"
             );
         } // string literal
         elseif ($curChar == "'") {
@@ -275,9 +276,7 @@ class FiltersOptionsParser
                 $curChar = $this->input[$tIndex] ?? null;
 
                 if ($curChar === null) {
-                    throw new BadRequestException(
-                        "Parsing of FiltersOptions failed: not ending string literal found at index $this->index for input: $this->input"
-                    );
+                    throw $this->buildParseException('not ending string literal found (missing closing single quote)');
                 }
 
                 if ($curChar == "'" && $prevChar !== "\\") {
@@ -291,55 +290,114 @@ class FiltersOptionsParser
             }
         } // array literal
         elseif ($curChar == '[') {
-            // Initialize a variable to keep track of whether we're inside a string literal
-            $insideString = false;
-
-            $openingBrackets = 0;
-            //can be ' or "
-            $stringDefiner = false;
-            // Parse the array literal character by character
-            $prevChar = '';
-            while (true) {
-                $tIndex++;
-                // we skip the first one as it is a single bracket [
-                if ($curChar === null) {
-                    throw new BadRequestException(
-                        "Parsing of FiltersOptions failed: invalid formatted array literal found at index $this->index for input: $this->input"
-                    );
-                } elseif ($stringDefiner === false && ($curChar === '"' || $curChar === "'")) {
-                    // a string starts
-                    $stringDefiner = $curChar;
-                    // in order to have valid json, we convert ' to "
-                    $curChar = '"';
-                } elseif ($curChar === $stringDefiner && $prevChar !== "\\") {
-                    // a string ends
-                    $stringDefiner = false;
-                    // in order to have valid json, we convert ' to "
-                    $curChar = '"';
-                } elseif (!$stringDefiner && $curChar == '[') {
-                    $openingBrackets++;
-                } elseif (!$stringDefiner && $curChar == ']') {
-                    $openingBrackets--;
-                }
-                $literal .= $curChar;
-                if ($openingBrackets == 0) {
-                    // we have the end of the array
-                    $jsonDecodedLiteral = json_decode($literal);
-                    if (json_last_error() !== JSON_ERROR_NONE) {
-                        throw new BadRequestException(
-                            "Parsing of FiltersOptions failed: invalid formatted array literal found at index $this->index for input: $this->input"
-                        );
-                    }
-                    $this->index = $tIndex;
-                    return $jsonDecodedLiteral;
-                }
-                $prevChar = $curChar;
-                $curChar = $this->input[$tIndex] ?? null;
-            }
+            return $this->parseArrayLiteral($tIndex, '[', ']');
+        } // SQL-style array literal: '(' directly after an array operator (in, ni, bw) opens a list;
+        // everywhere else '(' remains a grouping bracket for boolean expressions
+        elseif ($curChar == '(' && in_array($operator, FiltersOptions::ALLOWED_OPERATORS_ON_ARRAY_VALUE, true)) {
+            return $this->parseArrayLiteral($tIndex, '(', ')');
         }
-        throw new BadRequestException(
-            "Parsing of FiltersOptions failed: literal expected at index $this->index for input: $this->input"
-        );
+        $hint = null;
+        if ($curChar !== null && ctype_alpha($curChar)) {
+            $hint = "scalar values must be wrapped in single quotes, e.g. name eq 'value'";
+        }
+        throw $this->buildParseException('literal expected', $hint);
         // Parse literal (e.g., '2023-01-01')
+    }
+
+    /**
+     * Parses an array literal starting at $tIndex, delimited by $openingChar/$closingChar
+     * (brackets for json-style arrays, parentheses for SQL-style lists after in/ni/bw);
+     * delimiters and single quotes are normalized to valid json before decoding
+     * @param int $tIndex Index of the opening delimiter in the input
+     * @param string $openingChar
+     * @param string $closingChar
+     * @return array
+     * @throws BadRequestException
+     */
+    protected function parseArrayLiteral(int $tIndex, string $openingChar, string $closingChar): array
+    {
+        $literal = '';
+        $openingBrackets = 0;
+        //can be ' or "
+        $stringDefiner = false;
+        // Parse the array literal character by character
+        $prevChar = '';
+        $curChar = $this->input[$tIndex] ?? null;
+        while (true) {
+            $tIndex++;
+            // we skip the first one as it is a single opening delimiter
+            if ($curChar === null) {
+                throw $this->buildParseException('invalid formatted array literal found');
+            } elseif ($stringDefiner === false && ($curChar === '"' || $curChar === "'")) {
+                // a string starts
+                $stringDefiner = $curChar;
+                // in order to have valid json, we convert ' to "
+                $curChar = '"';
+            } elseif ($curChar === $stringDefiner && $prevChar !== "\\") {
+                // a string ends
+                $stringDefiner = false;
+                // in order to have valid json, we convert ' to "
+                $curChar = '"';
+            } elseif (!$stringDefiner && $curChar == $openingChar) {
+                $openingBrackets++;
+                // in order to have valid json, we convert ( to [
+                $curChar = '[';
+            } elseif (!$stringDefiner && $curChar == $closingChar) {
+                $openingBrackets--;
+                // in order to have valid json, we convert ) to ]
+                $curChar = ']';
+            }
+            $literal .= $curChar;
+            if ($openingBrackets == 0) {
+                // we have the end of the array
+                $jsonDecodedLiteral = json_decode($literal);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    throw $this->buildParseException('invalid formatted array literal found');
+                }
+                $this->index = $tIndex;
+                return $jsonDecodedLiteral;
+            }
+            $prevChar = $curChar;
+            $curChar = $this->input[$tIndex] ?? null;
+        }
+    }
+
+    /**
+     * @return int Returns the index of the first non-whitespace character at the current parse position,
+     * i.e. the position the parser failed on
+     */
+    protected function getFailureIndex(): int
+    {
+        $failureIndex = $this->index;
+        while ($failureIndex < $this->inputLength && $this->isWhitespace($failureIndex)) {
+            $failureIndex++;
+        }
+        return $failureIndex;
+    }
+
+    /**
+     * Builds a BadRequestException whose message tells the caller (human or language model) what was expected,
+     * shows the input around the failure position and reminds the correct filter syntax
+     * @param string $expected What the parser expected at the failure position
+     * @param string|null $hint Optional targeted hint on how to fix the filter
+     * @return BadRequestException
+     */
+    protected function buildParseException(string $expected, ?string $hint = null): BadRequestException
+    {
+        $failureIndex = $this->getFailureIndex();
+        $excerptRadius = 30;
+        $excerptStart = max(0, $failureIndex - $excerptRadius);
+        $inputBeforeFailure = substr($this->input, $excerptStart, $failureIndex - $excerptStart);
+        $inputAfterFailure = substr($this->input, $failureIndex, $excerptRadius);
+        $excerpt = ($excerptStart > 0 ? '…' : '') . $inputBeforeFailure . '⟨here⟩' . $inputAfterFailure
+            . ($failureIndex + $excerptRadius < $this->inputLength ? '…' : '');
+        $message = "Parsing of FiltersOptions failed: $expected at index $failureIndex for input: $this->input. "
+            . "Failure position: $excerpt. ";
+        if ($hint) {
+            $message .= "Hint: $hint. ";
+        }
+        $message .= "Syntax reminder: Lists use brackets with quoted items: keyword in ['a','b']; "
+            . "every scalar must be single-quoted; combine with and/or.";
+        return new BadRequestException($message);
     }
 }
