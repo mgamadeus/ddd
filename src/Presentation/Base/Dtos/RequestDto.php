@@ -24,9 +24,31 @@ class RequestDto
 {
     use SerializerTrait, ValidatorTrait;
 
+    /** Default response shape: the full structured payload (current behaviour). */
+    public const string OUTPUT_FORMAT_STRUCTURED = 'structured';
+
+    /** Compact, LLM-/human-friendly rendering — an endpoint that opts in returns the Markdown produced by an
+     *  {@see \DDD\Domain\Base\Entities\LlmMarkdownRenderable} object instead of the full structured payload. */
+    public const string OUTPUT_FORMAT_LLM = 'llm';
+
     /** @var string If set to true, no EntityRegistry Argus Caching will be used */
     #[Parameter(in: Parameter::QUERY, required: false)]
     public bool $noCache = false;
+
+    /**
+     * @var string|null Preferred response shape. `null`/`structured` = the full structured payload (default).
+     * `llm` asks an endpoint THAT SUPPORTS IT (opt-in per endpoint) to return a compact Markdown rendering
+     * optimized for an LLM/human reader instead — endpoints whose payload object implements
+     * {@see \DDD\Domain\Base\Entities\LlmMarkdownRenderable}. Endpoints that don't support it ignore this.
+     */
+    #[Parameter(in: Parameter::QUERY, required: false)]
+    public ?string $outputFormat = null;
+
+    /** Whether the caller asked for the LLM-optimized Markdown shape (see {@see self::OUTPUT_FORMAT_LLM}). */
+    public function wantsLlmOutput(): bool
+    {
+        return $this->outputFormat === self::OUTPUT_FORMAT_LLM;
+    }
 
     protected ?RequestStack $requestStack = null;
 
