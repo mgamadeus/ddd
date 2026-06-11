@@ -221,7 +221,7 @@ trait DefaultObjectTrait
      * @return $this
      * @throws ReflectionException
      */
-    public function clone(array &$clonedObjectCache = [], int $maxDepth = PHP_INT_MAX): DefaultObject
+    public function clone(array &$clonedObjectCache = [], int $maxDepth = PHP_INT_MAX): static
     {
         if (isset($clonedObjectCache[spl_object_id($this)])) {
             return $clonedObjectCache[spl_object_id($this)];
