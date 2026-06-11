@@ -211,12 +211,17 @@ trait DefaultObjectTrait
     }
 
     /**
-     * Clones Object recursively
-     * @param array $callPath
+     * Deep-clones the object graph. `$maxDepth` bounds how far the clone descends into object-valued properties:
+     * the DEFAULT (PHP_INT_MAX) is the unchanged, fully-recursive deep clone. With `$maxDepth = 0` only the object's
+     * own scalar/array-of-scalar properties are copied and nested objects/sets are left unset — a cheap "shallow"
+     * clone for cases that need an independent, re-parentable copy but not the whole reachable graph (e.g. building a
+     * transient reference/count set). Each descent decrements the budget.
+     * @param array $clonedObjectCache
+     * @param int $maxDepth
      * @return $this
      * @throws ReflectionException
      */
-    public function clone(array &$clonedObjectCache = []): DefaultObject
+    public function clone(array &$clonedObjectCache = [], int $maxDepth = PHP_INT_MAX): DefaultObject
     {
         if (isset($clonedObjectCache[spl_object_id($this)])) {
             return $clonedObjectCache[spl_object_id($this)];
@@ -244,13 +249,16 @@ trait DefaultObjectTrait
                 foreach ($propertyValue as $arrayIndex => $arrayValue) {
                     $clonedArrayValue = null;
                     if (is_object($arrayValue)) {
+                        if ($maxDepth <= 0) {
+                            continue; // depth-limited clone: skip nested objects in arrays
+                        }
                         // if element is already cloned, we use the already created clone
                         $objectId = spl_object_id($arrayValue);
                         if (isset($clonedObjectCache[$objectId])) {
                             $clonedArrayValue = $clonedObjectCache[$objectId];
                         } else {
                             if ($arrayValue instanceof DefaultObject) {
-                                $clonedArrayValue = $arrayValue->clone($clonedObjectCache);
+                                $clonedArrayValue = $arrayValue->clone($clonedObjectCache, $maxDepth - 1);
                                 // if there is a parent - child relationship between $this and $arrayValue
                                 // we create it as well between the $clone and $clonedArrayValue
                                 if ($arrayValue->getParent() === $this) {
@@ -267,12 +275,15 @@ trait DefaultObjectTrait
                     $clone->$propertyName[$arrayIndex] = $clonedArrayValue;
                 }
             } elseif (is_object($propertyValue)) {
+                if ($maxDepth <= 0) {
+                    continue; // depth-limited clone: leave nested object properties unset on the shallow clone
+                }
                 $objectId = spl_object_id($propertyValue);
                 if (isset($clonedObjectCache[$objectId])) {
                     $clonedPropertyValue = $clonedObjectCache[$objectId];
                 } else {
                     if ($propertyValue instanceof DefaultObject) {
-                        $clonedPropertyValue = $propertyValue->clone($clonedObjectCache);
+                        $clonedPropertyValue = $propertyValue->clone($clonedObjectCache, $maxDepth - 1);
                         // if there is a parent - child relationship between $this and $propertyValue
                         // we create it as well between the $clone and $clonedPropertyValue
                         if ($propertyValue->getParent() === $this) {
