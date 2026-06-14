@@ -632,11 +632,20 @@ trait SerializerTrait
                 (!$ignoreNullValues && $property->isInitialized($this) && $property->isPublic() && !$property->isStatic(
                     )) || ($ignoreNullValues && isset($this->$propertyName))
             ) { // we process only properties that are initialized
+                // $ignoreHideAttributes (set by mapToRepository() and every persistence/cache serialization) must
+                // bypass the FULL hide logic — the #[HideProperty] attribute AND isPropertyVisible() (which consults
+                // the process-static addStaticPropertiesToHide registry + the instance propertiesToHide). Otherwise a
+                // runtime display-hide (e.g. Entity::addStaticPropertiesToHide(false, 'objectType') in an MCP tool)
+                // leaks into persistence and drops STRUCTURAL fields: the union-type discriminator objectType vanishes
+                // from a cached/persisted ObjectSet, and the read-back can no longer resolve Email|PhoneNumber etc.
+                // The two hide conditions are therefore grouped under the single !$ignoreHideAttributes guard.
                 if (
-                    !$ignoreHideAttributes && $property->getAttributes(
-                        HideProperty::class,
-                        ReflectionAttribute::IS_INSTANCEOF
-                    ) || !$this->isPropertyVisible($propertyName)
+                    !$ignoreHideAttributes && (
+                        $property->getAttributes(
+                            HideProperty::class,
+                            ReflectionAttribute::IS_INSTANCEOF
+                        ) || !$this->isPropertyVisible($propertyName)
+                    )
                 ) {
                     continue;
                 }
