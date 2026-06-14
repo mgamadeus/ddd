@@ -95,6 +95,34 @@ class DatabaseModel extends ValueObject
     public $potentialOneToManyRelationships = [];
 
     /**
+     * Resolves the SQL table name for an Entity class. A {@see DatabaseTableName} attribute on the Entity
+     * (preferred) or its EntitySet overrides the default `DATABASE_TABLE_PREFIX` + EntitySet-name convention
+     * with a verbatim name. Used for both the entity's own table and foreign-key references pointing to it.
+     *
+     * @param string $entityClassName
+     * @return string
+     * @throws ReflectionException
+     */
+    protected static function resolveSqlTableName(string $entityClassName): string
+    {
+        $entityReflectionClass = ReflectionClass::instance($entityClassName);
+        /** @var Entity $entityClassName */
+        $entitySetClass = $entityClassName::getEntitySetClass();
+        $entitySetReflectionClass = $entitySetClass ? ReflectionClass::instance($entitySetClass) : null;
+
+        /** @var DatabaseTableName|null $tableNameOverride */
+        $tableNameOverride = $entityReflectionClass->getAttributeInstance(DatabaseTableName::class)
+            ?? $entitySetReflectionClass?->getAttributeInstance(DatabaseTableName::class);
+        if ($tableNameOverride !== null) {
+            return $tableNameOverride->name;
+        }
+
+        $entitySetName = $entitySetReflectionClass?->getClassWithNamespace()->name
+            ?? $entityReflectionClass->getClassWithNamespace()->name;
+        return Config::getEnv('DATABASE_TABLE_PREFIX') . $entitySetName;
+    }
+
+    /**
      * Generates DatabaseModel from Entity class definitions
      * @param string $entityClassName
      * @return DatabaseModel
@@ -119,9 +147,7 @@ class DatabaseModel extends ValueObject
         $databaseModel->name = $databaseModel->entityClassWithNamespace->name;
         $databaseModel->modelClassWithNamespace = $databaseModel->getModelClassNameWithNameSpace();
 
-        $databaseModel->sqlTableName = Config::getEnv(
-                'DATABASE_TABLE_PREFIX'
-            ) . $databaseModel->entitySetClassWithNamespace->name;
+        $databaseModel->sqlTableName = self::resolveSqlTableName($entityClassName);
         $databaseModel->columns = new DatabaseColumns();
         $databaseModel->virtualColumns = new DatabaseVirtualColumns();
         $databaseModel->indexes = new DatabaseIndexes();
@@ -453,9 +479,7 @@ class DatabaseModel extends ValueObject
                             $foreignClassWithNamespace
                         );
                         $foreignModelClassName = $foreignModelClassWithNamespace->name;
-                        $foreignTableName = Config::getEnv(
-                                'DATABASE_TABLE_PREFIX'
-                            ) . $foreignEntitySetClassWithNamespace->name;
+                        $foreignTableName = self::resolveSqlTableName((string)$foreignClassName);
 
                         // foreign model is from different namespace, we need to add an import
                         if ($databaseModel->modelClassWithNamespace->namespace != $foreignModelClassWithNamespace->namespace) {
