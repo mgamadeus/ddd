@@ -16,17 +16,17 @@ class Choice extends \Symfony\Component\Validator\Constraints\Choice
 
     public function __construct(
         array|string $options = [],
-        array $choices = null,
-        callable|string $callback = null,
-        bool $multiple = null,
-        bool $strict = null,
-        int $min = null,
-        int $max = null,
-        string $message = null,
-        string $multipleMessage = null,
-        string $minMessage = null,
-        string $maxMessage = null,
-        array $groups = null,
+        ?array $choices = null,
+        callable|string|null $callback = null,
+        ?bool $multiple = null,
+        ?bool $strict = null,
+        ?int $min = null,
+        ?int $max = null,
+        ?string $message = null,
+        ?string $multipleMessage = null,
+        ?string $minMessage = null,
+        ?string $maxMessage = null,
+        ?array $groups = null,
         mixed $payload = null
     ) {
         if ($callback) {

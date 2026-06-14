@@ -117,7 +117,7 @@ trait DefaultObjectTrait
      * @param array $callPath
      * @param bool $cloneProperties
      *
-     * @return DefaultObject
+     * @return $this
      * @throws ReflectionException
      */
     public function overwritePropertiesFromOtherObject(

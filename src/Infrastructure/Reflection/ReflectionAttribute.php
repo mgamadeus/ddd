@@ -20,7 +20,7 @@ class ReflectionAttribute extends \ReflectionAttribute
     public function __construct(
         \ReflectionAttribute $attribute,
         string $reflectionClassName,
-        string $reflectionPropertyName = null,
+        ?string $reflectionPropertyName = null,
         int $attributeIndex = 0
     ) {
         $this->attribute = $attribute;

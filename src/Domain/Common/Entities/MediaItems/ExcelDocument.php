@@ -167,7 +167,7 @@ class ExcelDocument extends Document
      * @param array|null $headers Optional header row to prepend to the data
      * @return ExcelDocument Returns the current ExcelDocument instance for chaining
      */
-    public function addSheetFromData(string $sheetTitle, array $data, array $headers = null): ExcelDocument
+    public function addSheetFromData(string $sheetTitle, array $data, ?array $headers = null): ExcelDocument
     {
         $spreadsheet = $this->getSpreadsheet();
         self::createSheetFromArray($spreadsheet, self::cleanSheetTitle($sheetTitle), $data, $headers);

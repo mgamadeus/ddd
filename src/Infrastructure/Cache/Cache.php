@@ -66,7 +66,7 @@ abstract class Cache
         $this->ttl = (int)$config['defaultTTL'] ?? self::DEEFAULT_TTL;
     }
 
-    public static function instance(string $cacheGroup = null): static
+    public static function instance(?string $cacheGroup = null): static
     {
         if (!$cacheGroup) {
             $cacheGroup = self::CACHE_GROUP_APC;
@@ -219,7 +219,7 @@ abstract class Cache
      * @return void
      * @throws InvalidArgumentException
      */
-    public function set(string $key, mixed $value, int $ttl = null, bool $deferred = false): void
+    public function set(string $key, mixed $value, ?int $ttl = null, bool $deferred = false): void
     {
         $ttl = $ttl ? $ttl : $this->ttl;
         $cache = $this->getCacheAdapter();

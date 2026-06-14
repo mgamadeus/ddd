@@ -24,6 +24,9 @@ use Doctrine\ORM\OptimisticLockException;
 use Psr\Cache\InvalidArgumentException;
 use ReflectionException;
 
+/**
+ * @method Cron find(string|int|null $entityId, bool $useEntityRegistrCache = true)
+ */
 class CronsService extends EntitiesService
 {
     public const string DEFAULT_ENTITY_CLASS = Cron::class;

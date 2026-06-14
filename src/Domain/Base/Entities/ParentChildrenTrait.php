@@ -69,7 +69,7 @@ trait ParentChildrenTrait
      * @param DefaultObject $parent
      * @return void
      */
-    public function setParent(DefaultObject &$parent = null)
+    public function setParent(?DefaultObject &$parent = null)
     {
         $this->parent = $parent;
     }
