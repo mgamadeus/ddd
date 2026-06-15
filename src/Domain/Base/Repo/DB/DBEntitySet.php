@@ -491,24 +491,37 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
                 }
             }
         } else {
-            foreach ($baseEntityReflectionClass->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
-                // if initiating entity is of a type that we have also in our basee entity and we have an id of this as property,
-                // we filter for the id of the initiating entity so we load all dependent entities of it
-                if (
-                    $property->getType() instanceof ReflectionNamedType and is_a(
-                        $initiatingEntity::class,
-                        $property->getType()->getName(),
-                        true
-                    ) && $baseEntityReflectionClass->hasProperty($property->getName() . 'Id')
-                ) {
-                    $foreignKey = $property->getName() . 'Id';
-                    $baseModelAlias = $baseRepoEntityOrEntitySetClassName::getBaseModelAlias();
-                    $queryBuilder->andWhere("$baseModelAlias.$foreignKey = :foreign_key_id")->setParameter(
-                        'foreign_key_id',
-                        $initiatingEntity->id
-                    );
-                    $whereClausesApplied = true;
-                    break;
+            // Deterministic disambiguation first: read the generated ORM model's mappedBy for this lazyload property
+            // (works for both OneToOne 1:1 inverses and OneToMany collections) so the inverse FK column is chosen
+            // from the explicit mapping rather than the fragile declaration-order scan below (which silently picks
+            // the wrong FK when the target has two columns to the same type).
+            $inverseForeignKeyColumn = self::resolveInverseForeignKeyColumnFromOrmModel($initiatingEntity, $lazyloadAttributeInstance);
+            if ($inverseForeignKeyColumn !== null && $baseEntityReflectionClass->hasProperty($inverseForeignKeyColumn)) {
+                $baseModelAlias = $baseRepoEntityOrEntitySetClassName::getBaseModelAlias();
+                $queryBuilder->andWhere("$baseModelAlias.$inverseForeignKeyColumn = :foreign_key_id")
+                    ->setParameter('foreign_key_id', $initiatingEntity->id);
+                $whereClausesApplied = true;
+            }
+            if (!$whereClausesApplied) {
+                foreach ($baseEntityReflectionClass->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
+                    // if initiating entity is of a type that we have also in our basee entity and we have an id of this as property,
+                    // we filter for the id of the initiating entity so we load all dependent entities of it
+                    if (
+                        $property->getType() instanceof ReflectionNamedType and is_a(
+                            $initiatingEntity::class,
+                            $property->getType()->getName(),
+                            true
+                        ) && $baseEntityReflectionClass->hasProperty($property->getName() . 'Id')
+                    ) {
+                        $foreignKey = $property->getName() . 'Id';
+                        $baseModelAlias = $baseRepoEntityOrEntitySetClassName::getBaseModelAlias();
+                        $queryBuilder->andWhere("$baseModelAlias.$foreignKey = :foreign_key_id")->setParameter(
+                            'foreign_key_id',
+                            $initiatingEntity->id
+                        );
+                        $whereClausesApplied = true;
+                        break;
+                    }
                 }
             }
         }
@@ -516,6 +529,53 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
             return null;
         }
         return $queryBuilder;
+    }
+
+    /**
+     * Resolves the inverse FK column deterministically from the initiating entity's generated ORM model: finds the
+     * property named after the lazyload property, reads its #[ORM\OneToOne] / #[ORM\OneToMany] mappedBy and returns
+     * `mappedBy . 'Id'`. Returns null (→ caller falls back to the declaration-order scan) when there is no DB repo,
+     * no such ORM property, or no mappedBy. Makes inverse loads declaration-order independent (correct even when the
+     * target carries two FK columns to the same type).
+     */
+    protected static function resolveInverseForeignKeyColumnFromOrmModel(
+        DefaultObject $initiatingEntity,
+        LazyLoad $lazyloadAttributeInstance
+    ): ?string {
+        $propertyName = $lazyloadAttributeInstance->propertyName ?? null;
+        if (!$propertyName) {
+            return null;
+        }
+        $initiatingEntityClass = $initiatingEntity::class;
+        if (!method_exists($initiatingEntityClass, 'getRepoClass')) {
+            return null;
+        }
+        /** @var DBEntity|null $initiatingRepoClass */
+        $initiatingRepoClass = $initiatingEntityClass::getRepoClass(LazyLoadRepo::DB);
+        if (!$initiatingRepoClass) {
+            return null;
+        }
+        $ormModelClass = $initiatingRepoClass::BASE_ORM_MODEL;
+        $ormReflectionClass = ReflectionClass::instance($ormModelClass);
+        if (!$ormReflectionClass->hasProperty($propertyName)) {
+            return null;
+        }
+        $ormProperty = $ormReflectionClass->getProperty($propertyName);
+        foreach (
+            [\Doctrine\ORM\Mapping\OneToOne::class, \Doctrine\ORM\Mapping\OneToMany::class] as $mappingAttributeClass
+        ) {
+            $mappingAttributes = $ormProperty->getAttributes($mappingAttributeClass);
+            if (!$mappingAttributes) {
+                continue;
+            }
+            /** @var \Doctrine\ORM\Mapping\OneToOne|\Doctrine\ORM\Mapping\OneToMany $mappingInstance */
+            $mappingInstance = $mappingAttributes[0]->newInstance();
+            $mappedByProperty = $mappingInstance->mappedBy ?? null;
+            if ($mappedByProperty) {
+                return $mappedByProperty . 'Id';
+            }
+        }
+        return null;
     }
 
     /**

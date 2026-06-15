@@ -507,7 +507,13 @@ class ExpandOptions extends ObjectSet
         // (e.g. `World_account_rights`), and any `X<alias>` substring are all left
         // untouched. The pattern is therefore idempotent on its own output, which keeps
         // the rewrite safe if it ever runs over an already-rewritten string.
-        $renamedTempBaseAlias = '_rights_' . $tempBaseAlias;
+        // Derive the rename from $targetJoinAlias (the expand's per-PATH LEFT JOIN alias), NOT the entity's constant
+        // base alias: when the SAME entity is expanded at two depths in one query this method runs twice and would
+        // otherwise emit two sibling IN-subqueries both declaring `FROM <Model> _rights_<Entity>` — DQL (unlike SQL)
+        // rejects the re-declared FROM alias. $targetJoinAlias is unique per expand path, so the subquery aliases
+        // stay distinct. The regex still matches $tempBaseAlias (the alias actually present in the rights QB's DQL);
+        // only the REPLACEMENT token differs, so the pushed predicate is byte-identical in content.
+        $renamedTempBaseAlias = '_rights_' . $targetJoinAlias;
         $aliasFromPattern = '/(?<![A-Za-z0-9_])' . preg_quote($tempBaseAlias, '/') . '(?=\.)/';
 
         // Reindex named parameters from the rights QB onto the main QB as positional

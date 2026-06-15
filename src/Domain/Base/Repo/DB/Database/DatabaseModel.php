@@ -82,6 +82,9 @@ class DatabaseModel extends ValueObject
     /** @var DatabaseOneToManyRelationships|null Database one to many relationships */
     public ?DatabaseOneToManyRelationships $oneToManyRelationships;
 
+    /** @var DatabaseOneToOneInverseRelationships|null Inverse side of bidirectional 1:1 relations (FK on the target) */
+    public ?DatabaseOneToOneInverseRelationships $oneToOneInverseRelationships;
+
     /** @var DatabaseTriggers|null Database Triggers */
     public ?DatabaseTriggers $triggers;
 
@@ -93,6 +96,9 @@ class DatabaseModel extends ValueObject
 
     /** @var ReflectionProperty[] */
     public $potentialOneToManyRelationships = [];
+
+    /** @var ReflectionProperty[] Single-Entity #[LazyLoad] inverse props (no own {name}Id) — candidate 1:1 inverses */
+    public $potentialOneToOneInverseRelationships = [];
 
     /**
      * Resolves the SQL table name for an Entity class. A {@see DatabaseTableName} attribute on the Entity
@@ -537,6 +543,12 @@ class DatabaseModel extends ValueObject
                     $foreignKey->foreignTable = $foreignTableName;
                     $foreignKey->foreignModelClassName = $foreignModelClassName;
                     $databaseModel->foreignKeys->add($foreignKey);
+                } elseif ($propertyDBRepoLazyloadAttribute) {
+                    // No own {name}Id column ⇒ single-Entity #[LazyLoad] property is the INVERSE side of a relation
+                    // whose FK lives on the TARGET. If the target's FK back to us is UNIQUE it is a 1:1; resolved/
+                    // filtered later in getOneToOneInverseRelationships() (mirrors potentialOneToManyRelationships
+                    // for EntitySets).
+                    $databaseModel->potentialOneToOneInverseRelationships[] = $reflectionProperty;
                 }
             }
         }
@@ -820,9 +832,14 @@ class DatabaseModel extends ValueObject
         }
 
         // belongs to
-        // Belongs-to / ManyToOne Relationsships
+        // Belongs-to / ManyToOne Relationsships (flipped to OneToOne when this FK is the owning side of a 1:1)
         foreach ($this->foreignKeys->getElements() as $foreignKey) {
-            $modelClassContent .= "\t#[ORM\ManyToOne(targetEntity: $foreignKey->foreignModelClassName::class)]\n";
+            $inversedByPropertyName = $this->resolveOneToOneOwningInversedBy($foreignKey);
+            if ($inversedByPropertyName !== null) {
+                $modelClassContent .= "\t#[ORM\OneToOne(targetEntity: $foreignKey->foreignModelClassName::class, inversedBy: '$inversedByPropertyName')]\n";
+            } else {
+                $modelClassContent .= "\t#[ORM\ManyToOne(targetEntity: $foreignKey->foreignModelClassName::class)]\n";
+            }
             $modelClassContent .= "\t#[ORM\JoinColumn(name: '$foreignKey->internalIdColumn', referencedColumnName: '$foreignKey->foreignIdColumn')]\n";
             $modelClassContent .= "\tpublic " . ($this->columns->getColumnByName(
                     $foreignKey->internalIdColumn
@@ -832,6 +849,11 @@ class DatabaseModel extends ValueObject
         foreach ($this->getOneToManyRelationsShips()->getElements() as $oneToManyRelationship) {
             $modelClassContent .= "\t#[ORM\OneToMany(targetEntity: $oneToManyRelationship->targetModelName::class, mappedBy: '$oneToManyRelationship->mappedByPropertyName')]\n";
             $modelClassContent .= "\tpublic PersistentCollection $" . $oneToManyRelationship->propertyName . ";\n\n";
+        }
+        // one to one inverse relationships (the single reference back on the parent; FK lives on the target)
+        foreach ($this->getOneToOneInverseRelationships()->getElements() as $oneToOneInverseRelationship) {
+            $modelClassContent .= "\t#[ORM\OneToOne(targetEntity: $oneToOneInverseRelationship->targetModelName::class, mappedBy: '$oneToOneInverseRelationship->mappedByPropertyName')]\n";
+            $modelClassContent .= "\tpublic ?$oneToOneInverseRelationship->targetModelName $" . $oneToOneInverseRelationship->propertyName . ";\n\n";
         }
         // imports need to be generated after getOneToManyRelationShips, as within the generation of oneToManyRelationShips
         // additional imports of Models from foreign namespaces can be added
@@ -884,6 +906,98 @@ class DatabaseModel extends ValueObject
             $this->oneToManyRelationships->add($databaseOneToManyRelationShip);
         }
         return $this->oneToManyRelationships;
+    }
+
+    public function getOneToOneInverseRelationships(): DatabaseOneToOneInverseRelationships
+    {
+        if (isset($this->oneToOneInverseRelationships)) {
+            return $this->oneToOneInverseRelationships;
+        }
+        $this->oneToOneInverseRelationships = new DatabaseOneToOneInverseRelationships();
+        $databaseModels = EntityModelGeneratorService::getDatabaseModels();
+        $thisModelName = $this->getModelClassNameWithNameSpace()->name;
+        foreach ($this->potentialOneToOneInverseRelationships as $reflectionProperty) {
+            /** @var Entity $targetEntityClass */
+            $targetEntityClass = $reflectionProperty->getType()->getName();
+            $targetModel = $databaseModels->getModelByEntityClass((string)$targetEntityClass);
+            if (!$targetModel) {
+                continue;
+            }
+            // Pick the target FK back to us whose id-column is UNIQUE (the 1:1 FK), NOT the addAsParent 1:N FK.
+            $owningPropertyName = null;
+            foreach ($targetModel->foreignKeys->getElements() as $candidateForeignKey) {
+                if ($candidateForeignKey->foreignModelClassName !== $thisModelName) {
+                    continue;
+                }
+                if (self::columnHasUniqueIndex($targetModel->indexes, $candidateForeignKey->internalIdColumn)) {
+                    $owningPropertyName = $candidateForeignKey->internalColumn;
+                    break;
+                }
+            }
+            if ($owningPropertyName === null) {
+                continue;
+            }
+            // if current namespace differs from target class, we need to add it as import
+            if (
+                $this->modelClassWithNamespace->namespace != $targetModel->getModelClassNameWithNameSpace()->namespace
+            ) {
+                $modelImport = new DatabaseModelImport(
+                    $targetModel->getModelClassNameWithNameSpace(), $this->modelClassWithNamespace->namespace
+                );
+                $this->modelImports->add($modelImport);
+            }
+            $databaseOneToOneInverseRelationship = new DatabaseOneToOneInverseRelationship(
+                $reflectionProperty->getName(),
+                $targetModel->getModelClassNameWithNameSpace()->name,
+                $owningPropertyName
+            );
+            $this->oneToOneInverseRelationships->add($databaseOneToOneInverseRelationship);
+        }
+        return $this->oneToOneInverseRelationships;
+    }
+
+    /**
+     * Returns the inverse property name to use as Doctrine `inversedBy` when this $foreignKey is the OWNING side of
+     * a bidirectional 1:1, or null when it is a plain ManyToOne. The owning side qualifies only when its own
+     * id-column is UNIQUE AND the foreign model declares a matching {@see getOneToOneInverseRelationships()} entry
+     * (target == this model, mappedBy == this FK's property). Keeps the ManyToOne/OneToOne flip symmetric across
+     * the two generated models.
+     */
+    protected function resolveOneToOneOwningInversedBy(DatabaseForeignKey $foreignKey): ?string
+    {
+        if (!self::columnHasUniqueIndex($this->indexes, $foreignKey->internalIdColumn)) {
+            return null;
+        }
+        $thisModelName = $this->getModelClassNameWithNameSpace()->name;
+        foreach (EntityModelGeneratorService::getDatabaseModels()->getElements() as $candidateModel) {
+            if ($candidateModel->getModelClassNameWithNameSpace()->name !== $foreignKey->foreignModelClassName) {
+                continue;
+            }
+            foreach ($candidateModel->getOneToOneInverseRelationships()->getElements() as $inverseRelationship) {
+                if ($inverseRelationship->targetModelName === $thisModelName
+                    && $inverseRelationship->mappedByPropertyName === $foreignKey->internalColumn) {
+                    return $inverseRelationship->propertyName;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Whether $columnName has a single-column UNIQUE index in $indexes. Scans columns + type directly because
+     * {@see DatabaseIndexes::getIndexForSingleColumnName()} looks up by a key WITHOUT the index-type suffix while
+     * {@see DatabaseIndex::uniqueKey()} bakes the type into the key, so that helper never matches a typed index.
+     */
+    protected static function columnHasUniqueIndex(DatabaseIndexes $indexes, string $columnName): bool
+    {
+        foreach ($indexes->getElements() as $index) {
+            if ($index->indexType === DatabaseIndex::TYPE_UNIQUE
+                && count($index->indexColumns) === 1
+                && $index->indexColumns[0] === $columnName) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public function uniqueKey(): string
