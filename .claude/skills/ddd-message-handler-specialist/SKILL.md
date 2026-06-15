@@ -381,6 +381,18 @@ sudo supervisorctl update
 
 — this picks up the new config without bouncing all unaffected workers.
 
+### Step 5.2: Rebuild the container BEFORE (re)starting workers — `--no-debug` does NOT auto-rebuild
+
+**Symptom pattern:** you change a transport (e.g. flip `sync://` ↔ AMQP, add a new transport), `supervisorctl start`/`restart` the workers, and they're either absent, crash-looping, or behave as if the old config were still active — the queue is never declared, messages aren't consumed, or a publish runs inline instead of being queued.
+
+**Cause:** supervisor consumer commands run with `--no-debug` (`messenger:consume <transport> --no-debug …`). `--no-debug` disables the debug kernel, which is the thing that **rebuilds the compiled container on a config-file change**. So a `--no-debug` worker reads the *stale* compiled container — it keeps seeing the OLD transport DSN (e.g. still `sync://`), so `messenger:consume <transport>` on a now-sync transport crashes immediately, or consumes the wrong transport. FPM and any `messenger:consume` run *without* `--no-debug` self-heal (they rebuild on change), which is why a foreground `messenger:consume <transport> -vv` "works" while the supervisor-managed `--no-debug` workers silently don't.
+
+**Rule: rebuild the container + reset the cache BEFORE every supervisor `start`/`stop`/`restart` that follows a code or transport change.** Either:
+- `bin/console cache:clear` (the kernel the workers run under), or
+- start the worker once **without** `--no-debug` (`messenger:consume <transport> -vv`) — the debug kernel rebuilds the shared container, then Ctrl-C and let supervisor take over.
+
+FPM and the workers share the same `var/cache/<env>` dir, so one rebuild fixes both the consume side (workers) and the publish side (the dispatching request). **Diagnose a silently-failing worker by running it in the foreground without `--no-debug`** — that prints the real exception (transport-not-found / does-not-support-receiving / AMQP error) instead of swallowing it into a supervisor logfile.
+
 ### Step 6: Use From Service
 
 ```php
