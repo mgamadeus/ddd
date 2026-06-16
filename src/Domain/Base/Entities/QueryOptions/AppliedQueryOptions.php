@@ -136,6 +136,62 @@ class AppliedQueryOptions extends ValueObject
     }
 
     /**
+     * Adds $additionalFilters to the EXISTING filters, connected by a top-level AND. The existing filter tree AND
+     * $additionalFilters are each kept as an ATOMIC nested child of a fresh AND operation — neither side's internal
+     * grouping is flattened, and the existing filters are NOT replaced. This is the safe way to attach a server-side
+     * MANDATORY condition (e.g. a tenant / owner / conversation scope) on top of whatever filter a client supplied
+     * via QueryOptions: regardless of the client filter's shape (even a top-level OR), the added condition is a
+     * guaranteed top-level AND and cannot be "OR-ed around". If there are no existing filters, $additionalFilters
+     * simply become the filters.
+     *
+     * @param FiltersOptions $additionalFilters the additional, AND-connected filters (a whole tree)
+     * @param bool $validateAgainstDefinitions validate the resulting tree against the entity's FiltersDefinitions
+     * @return AppliedQueryOptions
+     * @throws BadRequestException
+     */
+    public function addFiltersConnectedByAnd(
+        FiltersOptions $additionalFilters,
+        bool $validateAgainstDefinitions = true
+    ): AppliedQueryOptions {
+        return $this->addFiltersConnectedBy($additionalFilters, FiltersOptions::JOIN_OPERATOR_AND, $validateAgainstDefinitions);
+    }
+
+    /**
+     * Adds $additionalFilters to the EXISTING filters, connected by a top-level OR (the OR-sibling of
+     * {@see self::addFiltersConnectedByAnd()}; widens the result set). Both sides are kept as atomic nested children;
+     * existing filters are not replaced. If there are no existing filters, $additionalFilters become the filters.
+     *
+     * @param FiltersOptions $additionalFilters the additional, OR-connected filters (a whole tree)
+     * @param bool $validateAgainstDefinitions validate the resulting tree against the entity's FiltersDefinitions
+     * @return AppliedQueryOptions
+     * @throws BadRequestException
+     */
+    public function addFiltersConnectedByOr(
+        FiltersOptions $additionalFilters,
+        bool $validateAgainstDefinitions = true
+    ): AppliedQueryOptions {
+        return $this->addFiltersConnectedBy($additionalFilters, FiltersOptions::JOIN_OPERATOR_OR, $validateAgainstDefinitions);
+    }
+
+    /**
+     * Shared implementation for {@see self::addFiltersConnectedByAnd()} / {@see self::addFiltersConnectedByOr()}.
+     *
+     * @throws BadRequestException
+     */
+    protected function addFiltersConnectedBy(
+        FiltersOptions $additionalFilters,
+        string $joinOperator,
+        bool $validateAgainstDefinitions = true
+    ): AppliedQueryOptions {
+        $existingFilters = $this->getFilters();
+        if (!$existingFilters instanceof FiltersOptions) {
+            return $this->setFilters($additionalFilters, $validateAgainstDefinitions);
+        }
+        $connectedFilters = FiltersOptions::buildConnected($joinOperator, $existingFilters, $additionalFilters);
+        return $this->setFilters($connectedFilters, $validateAgainstDefinitions);
+    }
+
+    /**
      * @param ExpandOptions|null $expand
      * @param bool $validateAgainstDefinitions if true, validates against definitions and sets FiltersDefinitions recursively
      * @return $this

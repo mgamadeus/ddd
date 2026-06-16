@@ -196,6 +196,39 @@ class FiltersOptions extends ObjectSet
     }
 
     /**
+     * Builds and returns a NEW operation node connecting the given filter trees with $joinOperator. Each passed tree
+     * is kept as ONE ATOMIC child of the new operation — its internal structure (including a top-level OR) is
+     * preserved, NOT flattened into the new operation. Mirrors how {@see FiltersOptionsParser} composes operations
+     * ($left/$right as atomic children). Use this (or the {@see AppliedQueryOptions::addFiltersConnectedByAnd()}
+     * convenience) to combine two filter trees safely instead of {@see self::addExpressionsFromFiltersOptions()},
+     * which flattens the OTHER tree's top-level expressions into the receiver (and on a TYPE_OPERATION receiver makes
+     * them inherit the receiver's joinOperator).
+     *
+     * Pass two or more trees (fewer is a degenerate operation). Note: two CONTENT-IDENTICAL trees collapse to one
+     * child (the set dedups by content `uniqueKey`); for AND/OR that is a logical no-op, but be aware of it.
+     *
+     * @param string $joinOperator self::JOIN_OPERATOR_AND | self::JOIN_OPERATOR_OR
+     * @param FiltersOptions ...$filtersTrees the trees to connect; each becomes one atomic child
+     * @return static the new operation node
+     * @throws \InvalidArgumentException if $joinOperator is not a valid join operator
+     */
+    public static function buildConnected(string $joinOperator, FiltersOptions ...$filtersTrees): static
+    {
+        if (!in_array($joinOperator, [self::JOIN_OPERATOR_AND, self::JOIN_OPERATOR_OR], true)) {
+            throw new \InvalidArgumentException(
+                "Invalid join operator '$joinOperator'; expected one of '" . self::JOIN_OPERATOR_AND . "', '" . self::JOIN_OPERATOR_OR . "'."
+            );
+        }
+        $operation = new static();
+        $operation->type = self::TYPE_OPERATION;
+        $operation->joinOperator = $joinOperator;
+        foreach ($filtersTrees as $filtersTree) {
+            $operation->add($filtersTree);
+        }
+        return $operation;
+    }
+
+    /**
      * Returns OpenApi schmea definition regex
      * @return string
      */
@@ -938,7 +971,7 @@ class FiltersOptions extends ObjectSet
             foreach ($filtersOptions->getExpressions() as $filtersOption) {
                 if ($presentOption = $this->getExpressionForProperty($filtersOption->property)) {
                     $presentOption->value = $filtersOption->value;
-                    $presentOption->operator = $filtersOption->value;
+                    $presentOption->operator = $filtersOption->operator;
                 } else {
                     $this->add($filtersOption);
                 }

@@ -371,6 +371,27 @@ EntityNames::setDefaultQueryOptions($originalQueryOptions);
 
 **Always clone and restore** the original QueryOptions. Other code (lazy loading, controllers) relies on defaults being unmodified.
 
+### Adding a MANDATORY server-side filter on top of a client filter (`addFiltersConnectedByAnd`)
+
+A very common need: a request DTO carries a client `$filter` (via `DtoQueryOptions`), and the controller must additionally enforce a **server-side mandatory scope** — a tenant / owner / parent-id condition the client must not be able to escape. Use:
+
+```php
+// Client $filter / $top / $orderBy / $expand already applied:
+$queryOptions = SomeEntities::getDefaultQueryOptions();
+$queryOptions->setQueryOptionsFromRequestDto($requestDto);
+
+// AND-connect the mandatory scope on top — guaranteed top-level AND, client filter kept as an atomic group:
+$scopeFilters = FiltersOptions::fromString("accountId eq '{$authAccount->id}'");
+$queryOptions->addFiltersConnectedByAnd($scopeFilters);
+```
+
+- **`AppliedQueryOptions::addFiltersConnectedByAnd(FiltersOptions $additional)`** wraps the existing filter tree AND `$additional` as two **atomic children** of a fresh top-level AND (via `FiltersOptions::buildConnected`). The client filter — **whatever its shape, including a top-level `or`** — stays parenthesized as one nested group, so the scope is always a top-level AND and **can never be OR-ed around**. If there is no existing filter, `$additional` simply becomes the filter. OR-sibling: **`addFiltersConnectedByOr`** (widens the set).
+- **DO NOT** enforce a scope with `FiltersOptions::addExpressionsFromFiltersOptions()` — it **flattens** the other tree's top-level expressions into the receiver and, on a `TYPE_OPERATION` (e.g. `or`-rooted) receiver, makes them **inherit the receiver's join operator** → the scope becomes an `or`-sibling and the guard is bypassed. `addExpressionsFromFiltersOptions` is for merging same-property expressions, not for a mandatory AND-scope.
+- **DO NOT** enforce a scope by building the cursor/scope as a separate typed param + `setFilters(serverString)` overwriting the client filter — that throws away the client's QueryOptions navigation. Keep the client on pure QueryOptions (`$filter`) and add the scope with `addFiltersConnectedByAnd`.
+- Still wrap in snapshot/restore (the static-default leak rule above): `SomeEntities::setDefaultQueryOptionsSnapshot()` … `finally { restoreDefaultQueryOptionsSnapshot(); }`.
+
+`FiltersOptions::buildConnected(string $joinOperator, FiltersOptions ...$trees): static` is the low-level factory (builds a new operation node connecting the given trees as atomic children; throws `\InvalidArgumentException` on an invalid join operator).
+
 ### All Operators Available Programmatically
 
 | Operator | Meaning | Example String |
