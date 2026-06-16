@@ -51,7 +51,7 @@ Level 2 (depends on Level 0+1):
 
 ### Reverse Dependencies (Who Depends on What)
 
-| If you change... | These need `composer update`: |
+| If you release a fix in... | These children must bump their floor + re-release: |
 |------------------|-------------------------------|
 | **ddd** (Core) | Money, Argus, Political, AI, Geo, Translations (ALL) |
 | **ddd-common-money** | AI, Translations |
@@ -60,6 +60,45 @@ Level 2 (depends on Level 0+1):
 | **ddd-ai** | Translations |
 | **ddd-common-geo** | (none -- leaf module) |
 | **ddd-common-translations** | (none -- leaf module) |
+
+> **GitHub repo names ≠ package names for two packages:** `mgamadeus/ddd-common-translations` lives in the repo
+> `mgamadeus/ddd-translations`, and `mgamadeus/ddd` (Core) lives in `mgamadeus/ddd`. When pushing via HTTPS, resolve
+> the real repo with `git remote get-url origin` (or the Packagist `source.url`) — do not assume the repo matches the
+> package name.
+
+### Dependency-Floor Cascade (propagating a fix DOWNSTREAM, not just locally)
+
+**A `composer update` in a child only refreshes that child's OWN lock — it does NOT change what downstream consumers
+can resolve.** The published constraint is what gates consumers. If `ddd-ai` declares `ddd-common-money: ^1.0`, then
+*any* app pulling `ddd-ai` may legally resolve money `1.0.x` and silently miss a fix shipped in `1.1.1` — even after
+you `composer update`-d the `ddd-ai` working tree. (Real incident: the Currency `#[Choice]` DRY fix shipped in money
+`1.1.1`, but `ddd-ai` + `ddd-common-translations` both still floored money at `^1.0`, so RC resolved the buggy money
+behind `ddd-ai`. Fix: floors raised to `^1.1.1`, both children re-released → `ddd-ai 1.4.1`, `ddd-translations 1.0.23`.)
+
+**Two distinct actions — do not confuse them:**
+
+| Action | What it does | Forces downstream onto the fix? |
+|--------|--------------|---------------------------------|
+| `composer update` in the child | refreshes the child's resolved deps (its lock) | ❌ No — published `require` floor unchanged |
+| Bump the `require` floor + **re-release** the child | raises the minimum the child (and its consumers) may resolve | ✅ Yes |
+
+**The rule:** when you release a module with a fix/feature that consumers **must not be able to resolve around**,
+walk the reverse-dependency graph and, for **every** dependent (transitively, down to the leaves):
+
+1. Raise the `require` floor in the dependent's `composer.json` to the **exact fixed version** — `^1.1.1`, NOT `^1.1`
+   (a caret on the full `MAJOR.MINOR.PATCH` excludes the buggy `1.1.0`; `^1.1` would re-admit it).
+2. Bump the dependent's own version (PATCH for a pure floor raise) and **re-release** it (commit + tag + push).
+3. That re-release makes the dependent a *new upstream release* → repeat for **its** children. The cascade is
+   transitive: `money 1.1.1` → bump `ddd-ai` floor (re-release `1.4.1`) → `ddd-ai` is now upgraded → bump
+   `ddd-common-translations`'s `ddd-ai` floor (and its `money` floor) → re-release `translations 1.0.23` → done
+   (translations is a leaf).
+4. Only after all module floors are raised + re-released do you `composer update` the **consuming apps** — they then
+   resolve the whole fixed graph (verify with `composer why mgamadeus/<pkg>` that the floor, not luck, pins it).
+
+**Release the cascade in dependency order** (parent before child, so the child can resolve the parent's new tag —
+wait for Packagist between each; see [Multi-Module Release](#workflow-release-core--propagate-to-all)). A floor raise
+that the existing caret already satisfies (e.g. bumping `^2.10`→`^2.10` for a Core patch) needs no child re-release —
+but a *new minimum* (`^1.0`→`^1.1.1`) always does.
 
 ### Consuming Applications
 

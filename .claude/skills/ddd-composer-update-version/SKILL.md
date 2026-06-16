@@ -196,6 +196,17 @@ When releasing multiple DDD modules, process in dependency order:
 
 If updating dependency version constraints (e.g., requiring a new core version), update `composer.json` `require` entries before bumping.
 
+### Propagating a fix downstream = floor bump + re-release (NOT just `composer update`)
+
+A `composer update` in a dependent only refreshes that dependent's own lock; it does **not** change the published
+`require` floor, so downstream apps can still resolve the old (buggy) upstream version. To actually force a fix
+through the ecosystem you must, for **every transitive dependent** (walk the reverse-dependency graph in the
+`ddd-module-orchestrator` skill): raise its `require` floor to the **exact fixed version** (`^1.1.1`, not `^1.1` —
+the latter re-admits the buggy `1.1.0`), bump its own version (PATCH for a pure floor raise), and re-release it. The
+re-release makes that dependent a new upstream release, so the cascade repeats for its children down to the leaves.
+Only then `composer update` the consuming apps. See **Dependency-Floor Cascade** in `ddd-module-orchestrator` for the
+full rule and a worked example (money `1.1.1` → `ddd-ai 1.4.1` → `ddd-translations 1.0.23`).
+
 ## DDD Module Packages
 
 See the `ddd-module-orchestrator` skill for the complete module ecosystem, dependency graph, and release order.
