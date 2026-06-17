@@ -45,18 +45,7 @@ class EntityModelGeneratorService
      */
     public function createOrUpdateDatabaseTablesForEntities(?array $entityClasses = null): string
     {
-        if (!$entityClasses) {
-            // SQL CREATE TABLE path: collapse app-override duplicates so two classes mapping to
-            // the same table don't emit two competing CREATE statements.
-            $entityClasses = $this->getAllEntityClasses(filterOverriddenEntities: true);
-        } else {
-            $entityClasses = [];
-            foreach ($entityClasses as $entityClassName) {
-                $entityClassWithNamespace = new ClassWithNamespace($entityClassName);
-                $entityClasses[] = $entityClassWithNamespace;
-            }
-        }
-
+        // $entityClasses is a list of FQN strings (or null = all); getDatabaseModels() filters by them.
         $databaseModels = self::getDatabaseModels($entityClasses, filterOverriddenEntities: true);
         $sql = $databaseModels->getSql();
         $entityManager = EntityManagerFactory::getInstance();
