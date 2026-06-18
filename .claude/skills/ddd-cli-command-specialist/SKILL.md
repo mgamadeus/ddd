@@ -27,6 +27,7 @@ Symfony console commands within the DDD Core framework (`mgamadeus/ddd`).
 ```
 src/Symfony/Commands/
 +-- Base/
+|   +-- Database/ShowEntitySql.php, ListEntities.php
 |   +-- DoctrineModels/CreateDoctrineModels.php
 |   +-- Messages/ProcessCLIMessage.php
 +-- Common/
@@ -425,14 +426,36 @@ Run `* * * * * app:import --fraction=0.25` four times per hour to cover all item
 
 ## Framework-Provided Commands
 
-The DDD Core framework ships these commands:
+The DDD Core framework ships these commands — run them via the consuming app's `bin/console`.
 
-| Command | Purpose |
-|---------|---------|
-| `app:generate-doctrine-models-for-entities` | Generates `DB*Model.php` Doctrine model classes from entity attributes |
-| `app:process-cli-message` | Processes a serialized `AppMessage` via CLI (used for cross-workspace message handling) |
-| `app:crons:execute` | Executes all cron jobs that are due |
-| `app:crons:list` | Lists all registered cron jobs with status |
+### Schema inspection — understand the SQL an entity produces
+
+| Command | Arguments | Purpose |
+|---------|-----------|---------|
+| `app:entity:show-sql [entity]` | `entity` (optional): short name (`Account`) or FQN; omit ⇒ every entity | Prints the generated `CREATE TABLE` + index / foreign-key DDL for the entity, derived from its attributes. **Read-only — executes nothing.** The fastest way to see the *exact* schema an entity maps to: default per-column indexes, FK indexes, spatial/vector/fulltext indexes, and trait columns (`id`, `created`/`updated`). |
+| `app:entity:list [filter]` | `filter` (optional): case-insensitive substring over name / table / FQN | Lists every DB-mapped entity with its SQL table name and FQN. Use it to discover entity names/tables before `show-sql`. STI subclasses are shown as folding into their parent table. |
+
+```bash
+# What SQL does the Account entity generate?
+php bin/console app:entity:show-sql Account
+# Ambiguous short name? pass the fully-qualified class name:
+php bin/console app:entity:show-sql 'DDD\Domain\Common\Entities\Accounts\Account'
+# The whole target schema (all entities):
+php bin/console app:entity:show-sql
+# Find an entity / its table name:
+php bin/console app:entity:list memory
+```
+
+> **Agentic tip:** when reasoning about an entity's persistence, run `app:entity:show-sql <Entity>` to see the *exact* DDL the generator emits instead of guessing from the PHP. For *how* those indexes/columns are decided, see `ddd-entity-specialist` → "Database Indexes & Virtual Columns"; for migrating a live database to this target schema, see `ddd-database-schema-diff-specialist`.
+
+### Code generation, messaging, scheduling
+
+| Command | Arguments | Purpose |
+|---------|-----------|---------|
+| `app:generate-doctrine-models-for-entities` | — | Generates `DB*Model.php` Doctrine model classes from entity attributes (wired into the apps' composer `post-update-cmd`) |
+| `app:process-cli-message <message> [--useTempFile]` | `message` (required), `--useTempFile` (flag) | Decodes an `AppMessage` and invokes its handler (cross-workspace / CLI message handling) |
+| `app:crons:execute` | — | Executes all cron jobs that are due |
+| `app:crons:list` | — | Lists all registered cron jobs with status |
 
 ---
 
