@@ -217,6 +217,60 @@ return (int) $qb->getQuery()->getSingleScalarResult();
 
 ---
 
+## Concurrency-safe writes — atomic SQL/DQL, NEVER read-modify-write through `update()`
+
+`$entity->update()` persists through `DoctrineEntityManager::upsert()` — an `INSERT … ON DUPLICATE KEY UPDATE <col> = VALUES(<col>)` over **every *initialized* field** of the model (a property that is unset *and* has no default is the only thing skipped). So `update()` is a **last-writer-wins snapshot of the whole row**.
+
+Under concurrency this is a data race: two workers each load the entity, mutate one field in memory, and `update()` → the second write **clobbers the first's other columns** (and a counter read-modify-write loses increments). For any field on a row that more than one process can mutate — a counter, a status/flag, a timestamp, an exactly-once gate — do NOT go through `update()`. Issue a **single atomic statement** in the DB:
+
+- **counter** → `SET col = col ± 1` in SQL (never `$e->col++; $e->update()`), guarded (`… AND col > 0`).
+- **state transition / exactly-once gate** → compare-and-set `SET col = :to WHERE id = :id AND col = :from` (or `… AND col IS NULL`); the **affected-rows count tells you whether you won** the race (exactly one winner).
+- mirror the new value back onto the in-memory entity afterwards if the rest of the request needs it.
+
+### Two forms (both bypass the clobbering upsert)
+
+```php
+// (1) Raw DBAL — the common form for counters / compare-and-set
+$connection = EntityManagerFactory::getInstance()->getConnection();
+$won = (int) $connection->executeStatement(
+    "UPDATE {$tableName} SET status = :to WHERE id = :id AND status = :from",
+    ['to' => $toStatus, 'from' => $fromStatus, 'id' => $id]
+);
+// $won === 1 → this caller claimed the transition; 0 → another worker already did.
+
+// (2) ORM DQL via the QueryBuilder ->update()->set()->execute()
+$repoClass::createQueryBuilder()
+    ->update($repoClass::BASE_ORM_MODEL, $alias)
+    ->set("{$alias}.needsRegeneration", ':v')->setParameter('v', true)
+    ->andWhere("{$alias}.someColumn IS NOT NULL")
+    ->getQuery()->execute();
+```
+
+### ALWAYS derive the table name from the model — never hardcode the literal
+
+A raw-SQL string MUST get its table name from the ORM model, so the table name lives in ONE place (the model) and survives a rename:
+
+```php
+$tableName = (self::BASE_ORM_MODEL)::getTableName();   // inside a repo (its own const) — preferred
+$tableName = SomeDoctrineModel::getTableName();        // inside a service (reference the model class)
+// NEVER: "UPDATE EntityFooBar SET …"  ← hardcoded literal — silently breaks on a table rename + duplicates the source of truth
+```
+
+(`getTableName()` is the static accessor on `DoctrineModel`; prefer it over reading the `TABLE_NAME` const directly.)
+
+### Multi-writer guarantees (when a single CAS isn't enough)
+
+When the decision depends on a **derived count or several rows** (e.g. "settle a batch once N children are terminal"), wrap the read+write in a transaction with `SET TRANSACTION ISOLATION LEVEL READ COMMITTED` + a **lock-first `SELECT … FOR UPDATE`** on the coordinating row, then the conditional UPDATE under the held lock — so concurrent settlers serialize on that row and exactly one wins the `… WHERE gate IS NULL` flip. (Pattern reference: a fork-join "claim the wake exactly once" settle.)
+
+### Key rules
+
+- A field mutated by >1 process → atomic SQL/DQL, never `entity->update()`.
+- Counter → `SET col = col ± 1`; state/flag → compare-and-set `WHERE col = :from` / `WHERE col IS NULL`; check affected-rows for the winner.
+- Table name ALWAYS from `Model::getTableName()` / `(self::BASE_ORM_MODEL)::getTableName()` — never a hardcoded string.
+- `entity->update()` stays correct for the single-writer case (creation, an aggregate only one process owns at a time).
+
+---
+
 ## PHPDoc & @throws Convention
 
 Every public service method MUST have complete PHPDoc with `@param`, `@return`, and `@throws`. The `@throws` declarations propagate upward — controllers that call service methods must declare the same exceptions.
