@@ -156,6 +156,14 @@ public function sendReply(int $ticketId, string $replyBody): SupportMessage
 
 ## QueryBuilder Pattern -- ALWAYS Use Base Model Alias
 
+> **Before writing a complex query, inspect the real table.** A property name is NOT always the column you
+> query: `#[Translatable]` fields become JSON columns (searched via the generated `virtual{Name}Search`
+> column), `#[DatabaseVirtualColumn]` properties become `virtualFoo` / JSON-extraction columns, FK relations
+> become `{name}Id` columns, and only some columns are indexed. Run `php bin/console app:entity:show-sql <Entity>`
+> (read-only) to see the **exact columns — including generated/virtual columns — the indexes, and the foreign
+> keys** before hand-writing DQL/SQL, so you filter/order on real, indexed columns instead of guessing. See
+> `ddd-cli-command-specialist`; how those columns/indexes are generated is in `ddd-entity-specialist`.
+
 All custom queries MUST use the **base model alias** as a column prefix. Queries without the alias fail at runtime.
 
 ### Pattern: Single Entity

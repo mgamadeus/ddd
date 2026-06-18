@@ -557,6 +557,16 @@ Checked by `DatabaseRepoEntity::canUpdateOrDeleteBasedOnRoles()` before both `up
 
 ## Database Indexes & Virtual Columns
 
+> **Verify the whole entity, don't guess.** To see the *exact* DDL the generator emits — every real column
+> (including **generated/virtual columns** such as `virtualNameSearch` or JSON-extraction columns), the
+> per-column + FK + spatial/vector/fulltext **indexes**, the **foreign-key constraints**, and the
+> trait-injected columns (`id`, `created`, `updated`) — run `php bin/console app:entity:show-sql <Entity>`
+> (short name or FQN; omit the arg for the whole schema), and `app:entity:list [filter]` to discover
+> entity/table names. Both are read-only (execute nothing). This is the fastest way to confirm what an entity
+> *actually* maps to — not just the index rules below, but the complete table shape. See
+> `ddd-cli-command-specialist` → "Framework-Provided Commands"; for migrating a live DB to this target schema
+> see `ddd-database-schema-diff-specialist`.
+
 ### Default index generation — what gets indexed automatically, and how
 
 **The generator indexes EVERY scalar column by default.** Each persisted property becomes a column, and
@@ -1107,3 +1117,4 @@ use Symfony\Component\Validator\Constraints\Regex;
 - **Entity-level access control** — `ddd-rights-specialist` (`applyReadRightsQuery` / `applyUpdateRightsQuery` on the `DB{Entity}` repo, `#[RolesRequiredForUpdate]`, and `mapToEntity` property hiding — the runtime enforcement behind the `#[HideProperty]` / role attributes declared here).
 - **Serialization of these properties** — `ddd-serializer-specialist` (how `#[HideProperty]`, `#[HidePropertyOnSystemSerialization]`, `#[OverwritePropertyName]`, `#[Aliases]`, and `#[DontPersistProperty]` actually drive API vs DB output via the SerializerTrait every entity inherits).
 - **Migrating the generated schema** — `ddd-database-schema-diff-specialist` (how the columns/indexes derived from these attributes are diffed against the live DB and applied — e.g. a forgotten `#[NotNull]` surfacing as a `MODIFY [allowsNull]`).
+- **Inspecting/verifying the generated SQL** — `ddd-cli-command-specialist` (the `app:entity:show-sql` / `app:entity:list` console commands that print the exact emitted DDL for an entity — use them to confirm the index/column rules above).

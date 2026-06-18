@@ -974,3 +974,4 @@ Caveat: any new rich-DDD-type field needs both `#[HideProperty]` AND `#[Ignore]`
 - **The target schema this diffs** (entity attributes that generate columns/indexes — `#[DatabaseColumn]`, `#[DatabaseIndex(TYPE_NONE)]`, `#[NotNull]`, the `EntityModelGeneratorService` source of truth) — see `ddd-entity-specialist`.
 - **SRID / VECTOR re-dimensioning** (why a geometry or `VECTOR(N)` column shows a destructive MODIFY, the `SPATIAL_SQL_TYPES` upsert branch, zero-vector backfill) — see `ddd-geometry-and-vector-specialist`.
 - **Cross-module release & migration flow** (propagating the framework version that ships the typed-VO wire shape, coordinating diff-apply across the ecosystem) — see `ddd-module-orchestrator`.
+- **Inspecting the target SQL itself** (the `app:entity:show-sql` console command prints the exact generated DDL — the "target" side of the diff — for one entity or all) — see `ddd-cli-command-specialist`.
