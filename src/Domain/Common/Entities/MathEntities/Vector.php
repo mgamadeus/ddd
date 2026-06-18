@@ -19,7 +19,7 @@ class Vector extends ValueObject
 
     public const int DIMENSION_OPENAI_EMBEDDING_LARGE = 3072;
 
-    /** @var array|float[]|null */
+    /** @var float[]|null */
     #[HideProperty]
     public ?array $vectorValues = [];
 
