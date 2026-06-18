@@ -968,3 +968,9 @@ Caveat: any new rich-DDD-type field needs both `#[HideProperty]` AND `#[Ignore]`
 - **`disableForeignKeyChecks = true` is the safe default** for apply. Re-enable only if you have a specific reason and accept the apply-order brittleness.
 - **The legacy `generateDatabaseTables` text-dump endpoint** stays in place. Schema Diff is the supported path; the dump is a fallback utility.
 - **Hooks belong in frontend code, not backend.** Don't add `beforeApply` / `afterApply` hooks to the diff service — apply ordering is dictated by the phase assembler, not by per-app logic.
+
+## Cross-Reference
+
+- **The target schema this diffs** (entity attributes that generate columns/indexes — `#[DatabaseColumn]`, `#[DatabaseIndex(TYPE_NONE)]`, `#[NotNull]`, the `EntityModelGeneratorService` source of truth) — see `ddd-entity-specialist`.
+- **SRID / VECTOR re-dimensioning** (why a geometry or `VECTOR(N)` column shows a destructive MODIFY, the `SPATIAL_SQL_TYPES` upsert branch, zero-vector backfill) — see `ddd-geometry-and-vector-specialist`.
+- **Cross-module release & migration flow** (propagating the framework version that ships the typed-VO wire shape, coordinating diff-apply across the ecosystem) — see `ddd-module-orchestrator`.

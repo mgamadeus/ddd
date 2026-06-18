@@ -504,6 +504,14 @@ $message = $messagesService->sendReply($requestDto->ticketId, $requestDto->body)
 - **ALWAYS** `declare(strict_types=1)` in every file
 - **ALWAYS** set `$service->throwErrors = true;` before service calls
 
+## Cross-Reference
+
+- **Filtering / sorting / pagination / `$select` / `$expand` on request DTOs** — see `ddd-query-options-specialist`.
+- **Response / DTO serialization** (hiding fields, renaming output keys, `RestResponseDto` → JSON) — see `ddd-serializer-specialist`.
+- **DTO ↔ entity** (the entity and entity-set classes behind `#[DtoQueryOptions(baseEntity: ...)]`, `expand()`, `overwritePropertiesFromOtherObject`) — see `ddd-entity-specialist`.
+- **Endpoint authorization / audiences** (read/update/delete rights applied to the entities a controller returns) — see `ddd-rights-specialist`.
+- **Dispatching async work from a controller** (queue a Messenger message instead of doing slow work in the request) — see `ddd-message-handler-specialist`.
+
 ## Checklist
 
 - [ ] Controller extends appropriate base controller

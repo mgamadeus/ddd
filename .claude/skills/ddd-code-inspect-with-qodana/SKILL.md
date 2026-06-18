@@ -214,3 +214,8 @@ $traceReflector = new ReflectionProperty(Exception::class, 'trace');
 | `Cannot connect to Docker daemon` | Use `QODANA_DIST`, not `--linter` |
 | 0 problems but IntelliJ finds many | Pass `--profile-path` with project profile |
 | MCP tools not available | Restart Claude Code after MCP setup |
+
+## Cross-Reference
+
+- **Where inspection fits in the release/QA flow** — running a scan is a pre-release gate in the cross-module study/release pipeline; see `ddd-module-orchestrator`.
+- **Releasing once findings are clean** — bump, commit, tag, and Packagist release via `ddd-composer-update-version`.

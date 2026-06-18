@@ -557,7 +557,105 @@ Checked by `DatabaseRepoEntity::canUpdateOrDeleteBasedOnRoles()` before both `up
 
 ## Database Indexes & Virtual Columns
 
-Nullable fields in unique/composite indexes break integrity (NULL != NULL in SQL). Use virtual columns:
+### Default index generation — what gets indexed automatically, and how
+
+**The generator indexes EVERY scalar column by default.** Each persisted property becomes a column, and
+unless it carries an explicit `#[DatabaseIndex]`, it gets a default index whose **type is chosen from the
+column's SQL type** (`hasIndex` defaults to `true`; allocation in `DatabaseColumn::SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS`):
+
+| SQL type (from the PHP type, or `#[DatabaseColumn(sqlType:)]`) | Default index |
+|---|---|
+| `INT`, `BIGINT`, `FLOAT`, `DOUBLE`, `BOOL`, `VARCHAR`, `DATE`, `DATETIME` | `INDEX` (BTREE) |
+| `TEXT`, `MEDIUMTEXT`, `LONGTEXT` | `FULLTEXT` |
+| `POINT` (PHP `GeoPoint` / `Point2D`) | `SPATIAL` — **only if NOT NULL** (see gotcha) |
+| `VECTOR` | `VECTOR` (MariaDB HNSW) |
+| `JSON`, `BLOB`/`MEDIUMBLOB`/`LONGBLOB`, `LINESTRING`, `POLYGON` | none (`TYPE_NONE`) |
+
+So a plain `public string $status;` or `public ?int $count;` is **already indexed** — do NOT add
+`#[DatabaseIndex]` for a simple single-column lookup. (Conversely: many never-filtered scalar columns =
+needless index bloat → suppress them, see below.)
+
+**Auto-indexes that are NOT driven by a property's own type:**
+
+| Trigger | Index emitted |
+|---|---|
+| `id` (every `Entity`) | `PRIMARY KEY` (`INT UNSIGNED AUTO_INCREMENT`) — no secondary index |
+| Foreign-key column `{name}Id` (a `ManyToOne` / owning `OneToOne`) | BTREE `INDEX`, automatically; the column is also forced `UNSIGNED`. **Never hand-index an FK column.** |
+| `created` / `updated` (from `ChangeHistoryTrait`) | one BTREE `INDEX` each (both are nullable `DATETIME`) |
+| `#[Translatable(fullTextIndex: true)]` property | a stored `TEXT` virtual column `virtual{Name}Search` + a `FULLTEXT` index on it |
+
+### Suppressing the default index
+
+```php
+#[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
+public string $rarelyFiltered;   // column is created, but gets NO index
+```
+
+### Index types & where they apply
+
+`DatabaseIndex::TYPE_NONE | TYPE_INDEX | TYPE_UNIQUE | TYPE_FULLTEXT | TYPE_SPATIAL | TYPE_VECTOR`.
+
+- **Property-level** `#[DatabaseIndex]` always indexes that one property — `indexColumns` is ignored there, so pass only the type:
+  ```php
+  #[DatabaseIndex(indexType: DatabaseIndex::TYPE_UNIQUE)]
+  public string $name;            // single-column UNIQUE
+  ```
+- **Class-level** is the ONLY place `indexColumns` is honored — use it for composite / multi-column indexes (see below). Repeatable on both property and class.
+- A **single-column `UNIQUE` index on a `{name}Id` FK flips the relation `ManyToOne` → `OneToOne`** — this is how you declare a 1:1 owning side:
+  ```php
+  #[DatabaseIndex(indexType: DatabaseIndex::TYPE_UNIQUE)]
+  public ?int $profileId = null;  // → OneToOne
+  ```
+
+### Spatial & vector columns (geometry, embeddings)
+
+Geometry (`POINT` / `LINESTRING` / `POLYGON`) and `VECTOR` columns have their own index rules and a dedicated
+skill: **`ddd-geometry-and-vector-specialist`** owns the full type-selection matrix, declaration, DQL function
+catalog, and worked spatial/ANN query examples. The essentials as they touch index generation:
+
+- **`POINT`** (PHP `GeoPoint` / `Point2D`) → `SPATIAL` index by default — **but MySQL/MariaDB reject SPATIAL on a NULLable column** (error 1252), so a nullable POINT silently gets NO index. Add `#[NotNull]` to keep it.
+- **`LINESTRING` / `POLYGON`** → no index by default; opt in with `#[DatabaseIndex(indexType: DatabaseIndex::TYPE_SPATIAL)]` + `#[NotNull]`.
+- **`VECTOR(n)`** → always gets a `VECTOR` index (HNSW; defaults cosine, `M=8`). Declared by a `Vector`-typed property — typically an entity that **`extends Vector`** (e.g. `TextEmbedding` in `ddd-common-translations`) — or `#[DatabaseColumn(sqlType: DatabaseColumn::SQL_TYPE_VECTOR, vectorDimensions: n)]`. The dimension `n` is required.
+
+**How vector (semantic) search works — schematically.** A `Vector`-extending entity (e.g. `TextEmbedding`)
+maps to a `VECTOR(n)` column; the embedding is produced/written through its (Argus) repo, and the column
+carries the VECTOR index. Search is **NOT a QueryOptions feature** — it is a repo `createQueryBuilder()` that
+`ORDER BY`s a vector-distance DQL function, driven from a service that turns the query text into an embedding:
+
+```php
+// repo: order by cosine distance ASC (nearest first), bound query embedding, top-k
+$qb->addOrderBy("COSINE_DISTANCE({$alias}.embedding, VEC_FROM_TEXT(:searchVector))", 'ASC')
+   ->setParameter('searchVector', $vectorString)   // '[0.12,-0.04,…]' (the query embedding)
+   ->setMaxResults($k);
+```
+
+Full DQL function catalog (`COSINE_DISTANCE` / `COSINE_SIMILARITY` / `EUCLIDEAN_DISTANCE` / `VEC_DISTANCE` /
+`VEC_FROM_TEXT`) + ANN worked examples → **`ddd-geometry-and-vector-specialist`**; the embed-in-service →
+search-in-repo orchestration → **`ddd-service-specialist` → "Vector / semantic search"**.
+
+### `#[DatabaseColumn]` options (beyond `ignoreProperty` / `sqlType`)
+
+| Option | Effect |
+|---|---|
+| `ignoreProperty: true` | property is not persisted (no column) |
+| `sqlType: SQL_TYPE_*` | force the SQL type instead of deriving from the PHP type |
+| `allowsNull` | nullability (default `true`) — but prefer `#[NotNull]`, see Critical Rules |
+| `varCharLength` (default 255) / `isUnsigned` / `hasAutoIncrement` | VARCHAR length / INT modifiers |
+| `vectorDimensions` (default 1024) | `VECTOR(n)` dimension |
+| `encrypted: true` + `encryptionScope:` | at-rest column encryption (stored as `VARCHAR`/`TEXT`) |
+| `collation:` (`COLLATION_*`) | per-column `CHARACTER SET … COLLATE …` |
+| `isMergableJSONColumn: true` | JSON column upserted via `JSON_MERGE_PATCH` |
+| `onUpdateAction:` | custom `ON DUPLICATE KEY UPDATE` expression (e.g. counter increment) |
+
+### Virtual (generated) columns
+
+`#[DatabaseVirtualColumn(as: …, stored: true, createIndex: false)]` on property `foo` creates a
+`GENERATED ALWAYS AS (…) [STORED]` column named `virtualFoo`. Indexing is gated on **`createIndex` (default `false`)**:
+- `createIndex: false` → column only, no index.
+- `createIndex: true` + no `#[DatabaseIndex]` → a plain `INDEX` on `virtualFoo`.
+- `createIndex: true` + `#[DatabaseIndex(type)]` → that index type (e.g. `SPATIAL` on a generated geometry column).
+
+A common use is unique/composite indexes over a nullable column: NULL ≠ NULL in SQL breaks UNIQUE integrity, so index a NULL-collapsing virtual column instead:
 
 ```php
 use DDD\Domain\Base\Repo\DB\Database\DatabaseIndex;
@@ -829,7 +927,7 @@ class Product extends Entity
 public ?string $name = null;
 ```
 
-The DB model generator creates a stored virtual search column with a FULLTEXT index. API consumers filter on the logical property name, but queries target the virtual column.
+The DB model generator creates a **stored virtual column named `virtual{Property}Search`** (e.g. property `name` → column `virtualNameSearch`) holding the ` | `-joined translation values, with a `FULLTEXT` index on it. API consumers filter on the logical property name (`name`), but the generated query targets `virtualNameSearch` automatically. (This `name → virtualNameSearch` mapping is the same one referenced by the `ddd-query-options-specialist` `ft`/`fb` operators.)
 
 ```
 filters=name ft 'search terms'
@@ -1001,3 +1099,11 @@ use Symfony\Component\Validator\Constraints\Regex;
 ```
 
 **Translatable properties** -- ONLY get `#[Translatable]`, never validation constraints (they're stored as JSON).
+
+---
+
+## Cross-Reference
+
+- **Entity-level access control** — `ddd-rights-specialist` (`applyReadRightsQuery` / `applyUpdateRightsQuery` on the `DB{Entity}` repo, `#[RolesRequiredForUpdate]`, and `mapToEntity` property hiding — the runtime enforcement behind the `#[HideProperty]` / role attributes declared here).
+- **Serialization of these properties** — `ddd-serializer-specialist` (how `#[HideProperty]`, `#[HidePropertyOnSystemSerialization]`, `#[OverwritePropertyName]`, `#[Aliases]`, and `#[DontPersistProperty]` actually drive API vs DB output via the SerializerTrait every entity inherits).
+- **Migrating the generated schema** — `ddd-database-schema-diff-specialist` (how the columns/indexes derived from these attributes are diffed against the live DB and applied — e.g. a forgotten `#[NotNull]` surfacing as a `MODIFY [allowsNull]`).

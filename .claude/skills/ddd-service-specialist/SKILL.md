@@ -217,6 +217,64 @@ return (int) $qb->getQuery()->getSingleScalarResult();
 
 ---
 
+## Vector / semantic search — embed in the service, search in the repo
+
+Semantic search is **NOT a QueryOptions feature**; it splits across two layers:
+
+- **Service** owns embedding generation: turn the query text into an embedding via an embedding service, then
+  run the distance-ordered query. Never put embedding generation in the entity/repo.
+- **QueryBuilder** owns the query: `ORDER BY` a vector-distance DQL function over the `VECTOR(n)` column, the
+  query embedding bound as a parameter, `setMaxResults($k)` for top-k.
+
+```php
+public function findSimilarByText(string $searchText, int $limit = 10): SupportTickets
+{
+    $embedding = AppService::instance()->getService(AITextEmbeddingsService::class)
+        ->generateEmbeddingForText($searchText, Vector::DIMENSION_OPENAI_EMBEDDING_LARGE);
+    if ($embedding->isEmpty()) {
+        return new SupportTickets();
+    }
+
+    $vectorString = '[' . implode(',', $embedding->vectorValues) . ']';
+    $zeroVector   = '[' . implode(',', array_fill(0, Vector::DIMENSION_OPENAI_EMBEDDING_LARGE, '0')) . ']';
+
+    $repo  = $this->getEntitySetRepoClassInstance();
+    $alias = $repo::getBaseModelAlias();
+    $qb = $repo::createQueryBuilder()
+        // exclude rows with no real embedding (un-embedded rows carry the default zero vector)
+        ->andWhere("{$alias}.resolutionSummaryEmbedding != VEC_FROM_TEXT(:zeroVector)")
+        ->addOrderBy("COSINE_DISTANCE({$alias}.resolutionSummaryEmbedding, VEC_FROM_TEXT(:searchVector))", 'ASC')
+        ->setParameter('zeroVector', $zeroVector)
+        ->setParameter('searchVector', $vectorString)
+        ->setMaxResults($limit);
+
+    return $repo->find($qb);
+}
+```
+
+- **Zero-vector guard matters**: an un-embedded row stores the default zero vector, which would otherwise sort
+  as a (meaningless) near match — exclude it with `!= VEC_FROM_TEXT(:zeroVector)`. Pair this with a backfill
+  method that finds rows still `= VEC_FROM_TEXT(:zeroVector)` and generates their embeddings.
+- Optional: widen the pool (e.g. 3× the limit) and LLM-rerank the candidates when precision matters.
+
+Full DQL function catalog (`COSINE_DISTANCE` / `COSINE_SIMILARITY` / `EUCLIDEAN_DISTANCE` / `VEC_DISTANCE` /
+`VEC_FROM_TEXT`) + ANN/spatial worked examples → **`ddd-geometry-and-vector-specialist`**; the `VECTOR` column +
+index and the `TextEmbedding extends Vector` shape → **`ddd-entity-specialist` → "Spatial & vector columns"**.
+
+---
+
+## Fulltext search over Translatable properties
+
+A `#[Translatable(fullTextIndex: true)]` property (e.g. `name`) is backed by a generated, FULLTEXT-indexed
+stored column **`virtual{Property}Search`** (e.g. `virtualNameSearch`) holding the joined translation values.
+You normally do NOT touch that column name — fulltext search is exposed declaratively as QueryOptions
+`ft` / `fb` operators on the logical property (`filters=name ft 'pizza'`), and the generated query rewrites to
+`virtualNameSearch` automatically (see `ddd-query-options-specialist`). Only drop to a raw repo
+`MATCH(...) AGAINST(...)` on `virtualNameSearch` when you need a relevance score outside the QueryOptions flow.
+The column-generation side (`name → virtualNameSearch`) is documented in `ddd-entity-specialist`.
+
+---
+
 ## Concurrency-safe writes — atomic SQL/DQL, NEVER read-modify-write through `update()`
 
 `$entity->update()` persists through `DoctrineEntityManager::upsert()` — an `INSERT … ON DUPLICATE KEY UPDATE <col> = VALUES(<col>)` over **every *initialized* field** of the model (a property that is unset *and* has no default is the only thing skipped). So `update()` is a **last-writer-wins snapshot of the whole row**.
@@ -655,3 +713,10 @@ Features: error fingerprinting for deduplication, auto-detects entry point (HTTP
 ## Rights Protection System
 
 > **Full documentation:** See `ddd-rights-specialist` for the complete rights system: all 6 patterns (direct filter, leftJoin chain, subquery, custom update rights, property hiding, RolesRequiredForUpdate), the `_rights` alias convention, snapshot/restore mechanism, and real-world examples from 18+ repository implementations.
+
+---
+
+## Cross-Reference
+
+- **Async dispatch from a service** — `ddd-message-handler-specialist` (the message + handler pair behind the `$messageBus->dispatch(...)` in the *Async Message Dispatching* example: auth-context propagation, workspace routing, and messenger.yaml transport config).
+- **CLI entry points that call services** — `ddd-cli-command-specialist` (console commands set up the admin auth context, then resolve and invoke these services for batch/maintenance work).

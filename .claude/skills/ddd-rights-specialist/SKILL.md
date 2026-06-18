@@ -516,3 +516,11 @@ You don't have to do anything special in your `applyReadRightsQuery` — just en
 - [ ] If update stricter than read: override `applyUpdateRightsQuery()`. Apply read rights once via `static::applyReadRightsQuery($queryBuilder)` (NOT `parent::`), then `return true` — never `return parent::applyUpdateRightsQuery(...)`, that double-applies read rights.
 - [ ] If property hiding needed: override `mapToEntity()`, check `$applyRightsRestrictions` + auth
 - [ ] Never use `private` -- always `protected`
+
+---
+
+## Cross-Reference
+
+- **Entity declarations these rights protect** — `ddd-entity-specialist` (the `DB{Entity}` repo where you override the rights methods, the `#[RolesRequiredForUpdate]` attribute on the entity class, and the `#[HideProperty]` properties `mapToEntity` masks).
+- **Services that go through the rights gate** — `ddd-service-specialist` (`getService()->find()` applies `applyReadRightsQuery`; custom QueryBuilder queries inherit the same restrictions — and why direct repo access bypasses them).
+- **Where the auth context and `$expand` originate** — `ddd-endpoint-specialist` (controllers establish the `AuthService` account on each request and accept `?$expand=...`, which is what triggers the expand-merge return-value rule documented above).

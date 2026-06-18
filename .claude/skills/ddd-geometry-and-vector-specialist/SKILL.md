@@ -345,3 +345,4 @@ For when something new lands (e.g. `Circle`, `Polyline3D`, `MultiPolygon`):
 - **Schema migrations / diffs** — `ddd-database-schema-diff-specialist` (SRID changes, VECTOR re-dimensioning, the Production Guard for large-table COPY-forcing ops).
 - **Entities owning these properties** — `ddd-entity-specialist` (the `#[NotNull]` rule, default-index suppression, the lazy-load vs eager-load decisions for geometry-heavy aggregates).
 - **Serialization to API** — `ddd-serializer-specialist` (`__toString` is for SQL, not for JSON wire format; the serializer emits the VO's public properties directly).
+- **Vector-search orchestration** — `ddd-service-specialist` (the embed-in-service → search-in-repo flow that drives the `COSINE_DISTANCE` order-by query from business logic).

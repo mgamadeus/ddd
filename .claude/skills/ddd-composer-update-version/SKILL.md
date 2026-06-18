@@ -211,6 +211,10 @@ full rule and a worked example (money `1.1.1` → `ddd-ai 1.4.1` → `ddd-transl
 
 See the `ddd-module-orchestrator` skill for the complete module ecosystem, dependency graph, and release order.
 
+## Cross-Reference
+
+- **Pre-release static analysis** — run a Qodana/IntelliJ inspection pass and clear findings before bumping; see `ddd-code-inspect-with-qodana`.
+
 ## Rules
 
 - **Never** push a tag without first committing the version bump to `composer.json`

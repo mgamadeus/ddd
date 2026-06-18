@@ -299,6 +299,8 @@ Works on expanded relations too: `?$expand=business&$filter=business.name ft 'kf
 
 ## Fulltext Search (Translatable Properties)
 
+> **Fulltext ≠ vector search.** This section is keyword/`MATCH … AGAINST` fulltext over `#[Translatable(fullTextIndex: true)]` columns, exposed as QueryOptions `ft`/`fb` operators. **Vector / semantic (embedding) search is NOT a QueryOptions feature** — it's a DB-repo QueryBuilder pattern (`COSINE_DISTANCE` order-by) driven from the service; see `ddd-service-specialist` → "Vector / semantic search" and `ddd-entity-specialist` → "Vector search (querying a `VECTOR` column)".
+
 Entities using `#[Translatable(fullTextIndex: true)]` support fulltext search:
 
 ```php
@@ -462,3 +464,12 @@ ChildEntities::setDefaultQueryOptions($originalQueryOptions);
 | Programmatic QueryOptions leaking | Always clone + restore original QueryOptions |
 | OrderBy ignored | Check `setQueryOptionsFromRequestDto()` is called before `findAll()` |
 | Select not hiding properties | Properties are hidden from serialization, not from the query itself |
+
+---
+
+## Cross-Reference
+
+- **Where QueryOptions arrive over HTTP** (request DTOs with `#[DtoQueryOptions]` + `DtoQueryOptionsTrait`, the `&$requestDto` controller signature, `expand()` in the action) — see `ddd-endpoint-specialist`.
+- **Entities exposing `QueryOptionsTrait`** (auto-detected filterable/expandable properties, `#[LazyLoad]`, `#[Translatable(fullTextIndex: true)]`) — see `ddd-entity-specialist`.
+- **Programmatic QueryOptions in services** (clone/restore the static default, mandatory server-side scope filters) — see `ddd-service-specialist`.
+- **How `$select`-narrowed output is serialized** (property hiding / output-key renaming that composes with `$select`) — see `ddd-serializer-specialist`.

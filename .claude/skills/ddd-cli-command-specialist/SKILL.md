@@ -458,3 +458,11 @@ The DDD Core framework ships these commands:
 - [ ] Long batch operations use progress bars
 - [ ] Error handling with try/catch and formatted error output
 - [ ] Never use `private` -- always `protected`
+
+---
+
+## Cross-Reference
+
+- **Service resolution & business logic** — commands are thin entry points that delegate to services; see `ddd-service-specialist`.
+- **Async dispatch from a command** — when a command enqueues background work (`async: true`), the message + handler side lives in `ddd-message-handler-specialist`.
+- **Loading entities by ID / sets** — see `ddd-entity-specialist` for the `byId` / repository patterns commands use after setting the auth context.

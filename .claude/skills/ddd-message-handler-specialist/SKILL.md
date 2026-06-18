@@ -428,3 +428,11 @@ public function doSomething(int $fooBarId, bool $async = false): void
 - [ ] Supervisor config has a consumer for the transport
 - [ ] Service method has `bool $async = false` signature
 - [ ] Never use `private` -- always `protected`
+
+---
+
+## Cross-Reference
+
+- **The service the handler delegates to** — all business logic and the `bool $async = false` method live in the service; see `ddd-service-specialist`.
+- **Loading the entity by ID in the handler** — `FooBar::byId(...)` and the repository/lazy-load mechanics are owned by `ddd-entity-specialist`.
+- **Triggering a message from a console command** — see `ddd-cli-command-specialist` for the dispatch-from-CLI entry point.

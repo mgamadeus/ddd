@@ -343,3 +343,4 @@ Symlinks auto-update when `composer update` pulls new versions. Git tracks symli
 | Version management | Core `.claude/skills/ddd-composer-update-version` | Release process |
 | Code quality | Core `.claude/skills/ddd-code-inspect-with-qodana` | Static analysis |
 | Rights system | Core `.claude/skills/ddd-rights-specialist` | Access control patterns |
+| Schema migrations / diffs | Core `.claude/skills/ddd-database-schema-diff-specialist` | Live-vs-target schema diff + admin UI (the migration side of a release) |

@@ -572,3 +572,12 @@ $entity->setPropertiesFromSerializedObject($jsonString);
 // Cache
 SerializerRegistry::$toOjectCache = [];
 ```
+
+---
+
+## Cross-Reference
+
+- **Entities carrying these attributes** (`#[HideProperty]`, `#[DontPersistProperty]`, `#[Translatable]`, custom `toObject()` on value objects) — see `ddd-entity-specialist`.
+- **Serialized output as API responses** (`RestResponseDto`, `expand()`, the response payloads this trait emits) — see `ddd-endpoint-specialist`.
+- **Auth-driven property hiding** (the `mapToEntity()` rights pattern that calls `addPropertiesToHide`) — see `ddd-rights-specialist`.
+- **`$select` field selection** (the API-side way to narrow output, which composes with this trait's property hiding) — see `ddd-query-options-specialist`.
