@@ -455,8 +455,14 @@ abstract class DatabaseRepoEntity extends RepoEntity
             $modelName = static::BASE_ORM_MODEL;
             if (self::$applyRightsRestrictions) {
                 $updateRightsQueryBuilder = static::createQueryBuilder(true);
-                $updateRightsQueryApplied = static::applyUpdateRightsQuery($updateRightsQueryBuilder);
-                $updateRightsQueryBuilder = $updateRightsQueryApplied ? $updateRightsQueryBuilder : null;
+                // INSERT (new entity, no id) is gated by CREATE rights; UPDATE (existing id) by UPDATE rights.
+                // upsert() re-checks THIS same QB against the row after insert, so the create/update split must be
+                // decided here. applyCreateRightsQuery defaults to applyUpdateRightsQuery (no behaviour change unless
+                // an entity overrides it to allow create-but-not-update, e.g. shared lookup domains).
+                $rightsQueryApplied = $entityId
+                    ? static::applyUpdateRightsQuery($updateRightsQueryBuilder)
+                    : static::applyCreateRightsQuery($updateRightsQueryBuilder);
+                $updateRightsQueryBuilder = $rightsQueryApplied ? $updateRightsQueryBuilder : null;
             } else {
                 $updateRightsQueryBuilder = null;
             }
@@ -720,6 +726,21 @@ abstract class DatabaseRepoEntity extends RepoEntity
     public static function applyUpdateRightsQuery(DoctrineQueryBuilder &$queryBuilder): bool
     {
         return static::applyReadRightsQuery($queryBuilder);
+    }
+
+    /**
+     * Applies restrictions to the QueryBuilder used for the INSERT (create) branch of update()/upsert().
+     * Defaults to applyUpdateRightsQuery, so for every existing entity create == update rights (no behaviour
+     * change). Override to allow CREATE while DENYING UPDATE — e.g. a shared global lookup entity (Domain/Website)
+     * that any account may create-or-find but none may mutate. Without this split the upsert's post-insert rights
+     * re-check (DoctrineEntityManager::upsert) would roll back every insert whenever update rights are denied,
+     * because the freshly inserted row carries no account linkage to satisfy an update-rights WHERE.
+     * @param DoctrineQueryBuilder $queryBuilder
+     * @return bool
+     */
+    public static function applyCreateRightsQuery(DoctrineQueryBuilder &$queryBuilder): bool
+    {
+        return static::applyUpdateRightsQuery($queryBuilder);
     }
 
     /**
