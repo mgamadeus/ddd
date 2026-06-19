@@ -501,20 +501,35 @@ class ExpandOptions extends ObjectSet
         // The rename is unconditional — the renamed alias is purely subquery-internal
         // and never escapes, so it's safe even when the outer base alias differs.
         //
-        // Token safety: the regex uses a negative-word-boundary lookbehind plus a
-        // positive `\.` lookahead so we only rewrite `<alias>.<member>` references.
-        // `_rights_<alias>` (the renamed form), `<alias>_<suffix>` path-derived aliases
-        // (e.g. `World_account_rights`), and any `X<alias>` substring are all left
-        // untouched. The pattern is therefore idempotent on its own output, which keeps
-        // the rewrite safe if it ever runs over an already-rewritten string.
-        // Derive the rename from $targetJoinAlias (the expand's per-PATH LEFT JOIN alias), NOT the entity's constant
-        // base alias: when the SAME entity is expanded at two depths in one query this method runs twice and would
-        // otherwise emit two sibling IN-subqueries both declaring `FROM <Model> _rights_<Entity>` — DQL (unlike SQL)
-        // rejects the re-declared FROM alias. $targetJoinAlias is unique per expand path, so the subquery aliases
-        // stay distinct. The regex still matches $tempBaseAlias (the alias actually present in the rights QB's DQL);
-        // only the REPLACEMENT token differs, so the pushed predicate is byte-identical in content.
+        // Token safety: the regex anchors on a negative-word-boundary lookbehind so it only matches
+        // $tempBaseAlias at the START of an identifier (never `X<alias>` mid-token). It rewrites the base alias
+        // as a PREFIX — so it catches both the base alias's own `<alias>.<member>` references AND every
+        // path-derived rights alias (`<alias>_<prop>_rights`, `<alias>_<prop>_rights_<prop2>_rights`, …) the
+        // rights query introduced, in EVERY position (FROM/join references AND the standalone join-alias
+        // declaration). All those aliases share the `$tempBaseAlias` prefix, so a single prefix rewrite renames
+        // the whole subquery alias namespace consistently while preserving each suffix.
+        //
+        // WHY THE WHOLE NAMESPACE, not just `<alias>.` references (this was a real "alias already defined" bug):
+        // the path-derived join aliases used to be left untouched (a `(?=\.)` lookahead skipped them), on the
+        // assumption they were unique. They are NOT when the SAME entity's rights subquery embeds at two query
+        // depths of one statement — e.g. AIConversationMessage rights at the outer level AND again inside a nested
+        // `delegatedConversation(expand=messages)` rights subquery. Both then declare the identical un-prefixed
+        // `AIConversationMessage_aiConversation_rights`, and DQL (unlike SQL) rejects the re-declared alias.
+        //
+        // Derive the rename from $targetJoinAlias (the expand's per-PATH LEFT JOIN alias), NOT the entity's
+        // constant base alias: $targetJoinAlias is unique per expand path, so the renamed `_rights_<path>…`
+        // aliases stay distinct across sibling/nested subqueries. Replacement is byte-identical in content —
+        // only the alias tokens differ. Idempotent on its own output: the replacement starts `_rights_…`, so the
+        // inner `<alias>` it may contain is preceded by `_` and the lookbehind refuses to re-match it.
         $renamedTempBaseAlias = '_rights_' . $targetJoinAlias;
-        $aliasFromPattern = '/(?<![A-Za-z0-9_])' . preg_quote($tempBaseAlias, '/') . '(?=\.)/';
+        // Right-edge guard `(?![A-Za-z0-9])`: the base alias matches only when the next char is `_`, `.`, or
+        // end — i.e. exactly the two real continuations `<base>_<prop>_rights` and `<base>.relation`. It must
+        // NOT include `_` in the negated class (that would stop us rewriting the `<base>_<prop>` aliases this fix
+        // depends on). Without this guard a base alias that is a strict PREFIX of a sibling model alias (e.g.
+        // base `AIConversation` vs `AIConversationMessage`) would corrupt the longer token mid-string. Unreachable
+        // today (a rights subquery only references its own base-derived aliases; the sibling model FQN lives in the
+        // separately-assembled FROM, never regex'd), but cheap defence for a DDD-core edit that runs for every entity.
+        $aliasFromPattern = '/(?<![A-Za-z0-9_])' . preg_quote($tempBaseAlias, '/') . '(?![A-Za-z0-9])/';
 
         // Reindex named parameters from the rights QB onto the main QB as positional
         // placeholders. The subquery references the same placeholders in its own scope —
@@ -528,17 +543,18 @@ class ExpandOptions extends ObjectSet
         );
         $whereString = preg_replace($aliasFromPattern, $renamedTempBaseAlias, $whereString);
 
-        // Carry over the rights' internal LEFT JOINs into the subquery body with the
-        // alias rename applied to both the join target (LEFT side of `<alias>.relation`)
-        // and any WITH-condition referencing the base alias. The join's right-side alias
-        // (e.g. `World_account_rights`) is left as-is — it's a path-derived identifier
-        // that does not match the `<alias>.` pattern.
+        // Carry over the rights' internal LEFT JOINs into the subquery body with the alias rename applied to the
+        // join target (LEFT side of `<alias>.relation`), the join's own RIGHT-side alias, and any WITH-condition.
+        // The right-side alias (e.g. `AIConversationMessage_aiConversation_rights`) is path-derived from the base
+        // alias and so MUST be renamed too — leaving it as-is is what re-declared the identical alias across two
+        // embedded rights subqueries of the same entity and triggered the "alias already defined" DQL error.
         $joinClauses = [];
         $allJoins = $rightsQueryBuilder->getDQLPart('join')[$tempBaseAlias] ?? [];
         foreach ($allJoins as $join) {
             /** @var Join $join */
             $joinTarget = preg_replace($aliasFromPattern, $renamedTempBaseAlias, $join->getJoin());
-            $clause = sprintf('LEFT JOIN %s %s', $joinTarget, $join->getAlias());
+            $joinAlias = preg_replace($aliasFromPattern, $renamedTempBaseAlias, $join->getAlias());
+            $clause = sprintf('LEFT JOIN %s %s', $joinTarget, $joinAlias);
             $joinCondition = $join->getCondition();
             if ($joinCondition) {
                 $joinCondition = $this->reindexPlaceholdersAndApplyParameters(
