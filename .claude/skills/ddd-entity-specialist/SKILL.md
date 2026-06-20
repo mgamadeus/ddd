@@ -829,6 +829,22 @@ The corresponding service provides `getNextDisplayOrder()` (see `ddd-service-spe
 
 **Lazy loading makes most service query methods unnecessary.** Relationships load automatically on property access.
 
+### What triggers a lazy load — and what does NOT (the `isset` / `??` footgun)
+
+**Only a DIRECT property read triggers the load. `isset()`, `empty()`, `??` and `??=` do NOT — they silently skip it.**
+
+*Mechanism:* `LazyLoadTrait::prepareLazyLoad()` calls `$this->unset($propertyName)` on every `#[LazyLoad]` property, so the property is *unset* and reading it routes through the magic getter **`__get()`** — and `__get()` is the thing that actually runs the load. *Reason it's only `__get()`:* the entity layer defines **no `__isset()`**. PHP gates `isset()` / `empty()` / `??` / `??=` on `__isset()` (they **never** consult `__get()`); with the property unset and no `__isset()` present they all evaluate to "not set" **without ever calling `__get()`**, so the load never happens.
+
+| Access | calls `__get()`? | Lazy load? | Result |
+|---|---|---|---|
+| `$entity->relation` | yes | ✅ loads | the loaded entity / set |
+| `isset($entity->relation)` | no | ❌ never | `false` (even when a related row exists) |
+| `empty($entity->relation)` | no | ❌ never | `true` (it looks "empty" because it never loaded) |
+| `$entity->relation ?? $default` | no | ❌ never | **always `$default`** — never loads |
+| `$entity->relation ??= …` | no | ❌ never | assigns without ever loading |
+
+**Footgun:** `$x = $entity->relation ?? null;` reads like "load-or-default" but **never loads** — it always returns the default; likewise `if (isset($entity->relation))` / `if (empty($entity->relation))` guard on the *unset* state, not on the data. To load: read the property **directly** (`$entity->relation`), or trigger the whole expand tree (`$entity->expand()`). For "load, then fall back if empty", assign first, then test: `$rel = $entity->relation; if (!$rel) { … }`.
+
 ### Repository Types
 
 | Type | Constant | Use Case |
