@@ -337,6 +337,30 @@ When the decision depends on a **derived count or several rows** (e.g. "settle a
 
 ---
 
+## Partial-entity write — `updatePartialIgnoringRights(...$propertyNames)` (VO/JSON/vector columns, no detach)
+
+The atomic-SQL form above is right for a scalar/flag/counter. When the column you must persist is a **VO/JSON column, a `VECTOR` column, or a `Date`/`DateTime`**, hand-written SQL would have to re-implement the EntityManager's per-type encoding (JSON for VO, `VEC_FromText(...)` for vectors, the datetime format). And `$entity->update()` is wrong here: it writes the **whole row** (clobbers a column a concurrent writer just set) and, with `DB_USE_READ_AFTER_WRITE=true`, does `EntityManager::clear()` + `find()` afterwards — **detaching your live entity** (next lazy-load throws) and polluting the registry.
+
+Use **`$entity->updatePartialIgnoringRights('colA', 'colB')`** (instance method on every entity; repo twin `DBEntity::updatePartialIgnoringRights($entity, ...$names)`). It maps ONLY id + the named properties via `mapToRepository($entity, $names)` (reusing the per-type / translation / change-history handling) and passes the same allow-list to `upsert($model, null, $names)`, which writes **strictly those columns** — independent of the generated model's inline column defaults. No read-after-write, no detach, no rights applied (system write of a row the caller already loaded under rights). No-op if the entity has no id.
+
+```php
+$conversation->updatePartialIgnoringRights('summary');                 // async-computed VO column
+$message->updatePartialIgnoringRights('messageEmbedding');             // VECTOR column (VEC_FromText handled)
+$message->updatePartialIgnoringRights('toolCall', 'status');           // JSON VO + flag in one targeted write
+```
+
+**Decision guide — pick by what you're writing:**
+
+| You must write… | Use |
+|---|---|
+| a whole NEW row, or an aggregate only one process owns at a time | `$entity->update()` |
+| a scalar/flag/counter under concurrency, often compare-and-set | atomic raw SQL / DQL (prior section) |
+| one/few VO/JSON/vector/datetime columns of an EXISTING row, under concurrency, without detaching the live entity | `$entity->updatePartialIgnoringRights(...)` |
+
+**NEVER** hand-roll a "bare entity" partial write (`newInstanceWithoutConstructor()` + set one column + `update(0)`): `newInstanceWithoutConstructor` applies inline defaults so the "bare" model isn't bare → `update()` maps every initialized column and clobbers; and the read-after-write reload detaches your live entity. That anti-pattern is exactly what `updatePartialIgnoringRights()` replaces.
+
+---
+
 ## PHPDoc & @throws Convention
 
 Every public service method MUST have complete PHPDoc with `@param`, `@return`, and `@throws`. The `@throws` declarations propagate upward — controllers that call service methods must declare the same exceptions.

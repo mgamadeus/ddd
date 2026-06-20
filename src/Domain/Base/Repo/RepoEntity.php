@@ -22,8 +22,10 @@ abstract class RepoEntity
     abstract public function mapToEntity(bool $useEntityRegistryCache = true): DefaultObject|null;
 
     /**
-     * This method has to map an Entity representation to repository and either update or create rows
+     * This method has to map an Entity representation to repository and either update or create rows.
+     * @param string[]|null $restrictToPropertyNames When non-null, map ONLY the id + these properties (strict-partial
+     *   write — used by DBEntity::updatePartialIgnoringRights()). Null = map every set property (the normal full map).
      * @return Entity|null
      */
-    abstract protected function mapToRepository(DefaultObject &$entity): bool;
+    abstract protected function mapToRepository(DefaultObject &$entity, ?array $restrictToPropertyNames = null): bool;
 }

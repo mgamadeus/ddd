@@ -72,7 +72,14 @@ class DoctrineEntityManager extends EntityManager
      * @throws ForbiddenException
      * @throws ReflectionException
      */
-    public function upsert(DoctrineModel &$doctrineModel, ?QueryBuilder $updateRightsQueryBuilder = null): ?int
+    /**
+     * @param string[]|null $onlyFieldNames When non-null, write STRICTLY the identifier + exactly these fields and
+     *   nothing else — independent of which other model columns happen to be initialized (e.g. by the generated
+     *   model's inline defaults). This is the strict-partial-write primitive behind
+     *   {@see \DDD\Domain\Base\Repo\DB\DBEntity::updatePartialIgnoringRights()}. Null = the normal full upsert (every
+     *   initialized field).
+     */
+    public function upsert(DoctrineModel &$doctrineModel, ?QueryBuilder $updateRightsQueryBuilder = null, ?array $onlyFieldNames = null): ?int
     {
         $connection = $this->getConnection();
         $metadata = $this->getClassMetadata($doctrineModel::class);
@@ -88,6 +95,12 @@ class DoctrineEntityManager extends EntityManager
         foreach ($metadata->getFieldNames() as $fieldName) {
             // We ignore virtual columns
             if (isset($doctrineModel::$virtualColumns[$fieldName])) {
+                continue;
+            }
+            // STRICT partial write: with an explicit allow-list, write ONLY the identifier + the named fields. This is
+            // independent of which other columns are initialized (the generated model's inline defaults would otherwise
+            // be written and clobber a concurrent value), so the write touches strictly the desired columns.
+            if ($onlyFieldNames !== null && !$metadata->isIdentifier($fieldName) && !in_array($fieldName, $onlyFieldNames, true)) {
                 continue;
             }
             $value = $metadata->getFieldValue($doctrineModel, $fieldName);

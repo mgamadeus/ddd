@@ -486,11 +486,12 @@ abstract class DatabaseRepoEntity extends RepoEntity
                         $startedTransaction = true;
                     }
                     try {
+                        // NOTE: upsert() derives the created/modified column names itself (ChangeHistory defaults); the
+                        // two trailing args this used to pass were silently ignored (PHP drops extra positional args)
+                        // and collided with the new $onlyFieldNames param — dropped. Full upsert ⇒ $onlyFieldNames null.
                         $updatedID = $entityManager->upsert(
                             $this->ormInstance,
-                            $updateRightsQueryBuilder,
-                            $changeHistoryAttributeInstance ? $changeHistoryAttributeInstance?->getCreatedColumn() : null,
-                            $changeHistoryAttributeInstance ? $changeHistoryAttributeInstance?->getModifiedColumn() : ''
+                            $updateRightsQueryBuilder
                         );
                     } catch (Throwable $t) {
                         if ($startedTransaction) {
@@ -694,10 +695,13 @@ abstract class DatabaseRepoEntity extends RepoEntity
                     if ($repoInstance && !$hasNoRecursiveUpdateAttribute) {
                         if (method_exists($repoInstance, 'update')) {
                             $updatedChildProperties[$propertyName] = true;
-                            // $updatedChild = $repoInstance->update($value, --$depth);
                             // instead of using the repo update itself, we persist the Entity by calling it's udpate method
                             // since otherwise we miss to run custom code that has to be executed on update
-                            $updatedChild = $value->update($depth--);
+                            // RC plan 36: pass $depth - 1 (NOT the old post-decrement $depth--). $depth-- starved later
+                            // SIBLINGS — the first child got the full depth, each subsequent child one less, purely by
+                            // foreach order — making recursion depth depend on property declaration order. $depth - 1
+                            // decrements uniformly per level and mutates nothing. See upstream-handoff doc.
+                            $updatedChild = $value->update($depth - 1);
                             $entity->$propertyName = $updatedChild;
                             if ($updatedChild instanceof EntitySet) {
                                 $updatedChild->regenerateElementsByUniqueKey();

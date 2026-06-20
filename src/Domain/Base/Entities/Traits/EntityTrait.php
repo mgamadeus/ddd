@@ -9,6 +9,7 @@ use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Entities\StaticRegistry;
 use DDD\Domain\Base\Repo\DatabaseRepoEntity;
+use DDD\Domain\Base\Repo\DB\DBEntity;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
@@ -189,6 +190,24 @@ trait EntityTrait
     }
 
     /**
+     * Persist ONLY the named properties' columns of THIS already-persisted entity — a targeted, rights-bypassing,
+     * high-concurrency PARTIAL update that writes no other column and, unlike {@see update()}, does NOT reload/detach
+     * this instance. Use for competing single-column writes (run-state claim/heartbeat, async-computed
+     * summary/embedding/verdict) where a full-row update would clobber a concurrently-written column. No-op if this
+     * entity has no id. Delegates to {@see \DDD\Domain\Base\Repo\DB\DBEntity::updatePartialIgnoringRights()}.
+     *
+     * @param string ...$propertyNames Entity property names whose columns are the ONLY ones written.
+     */
+    public function updatePartialIgnoringRights(string ...$propertyNames): static
+    {
+        $repoClassInstance = static::getRepoClassInstance(LazyLoadRepo::DB);
+        if ($repoClassInstance instanceof DBEntity) {
+            $repoClassInstance->updatePartialIgnoringRights($this, ...$propertyNames);
+        }
+        return $this;
+    }
+
+    /**
      * Returns Entity by id
      * @param string|int $id
      * @return static|null
@@ -330,22 +349,44 @@ trait EntityTrait
             return false;
         }
         $propertiesToLazyLoad = self::getPropertiesToLazyLoad();
-        $propertyContainingId = null;
         $reflectionClass = self::getReflectionClass();
+        // Collect ALL DB-repo lazyload properties whose type matches the parent entity. With a SINGLE match this is the
+        // historical behaviour (most parent FKs do not set addAsParent). With MORE THAN ONE match — two relations typed
+        // with the same class, e.g. AIConversationMessage::$delegatedConversation (forward FK to a CHILD) and
+        // $aiConversation (the real parent, addAsParent) — TYPE alone cannot disambiguate, and returning the first by
+        // declaration order stamps the WRONG FK column (the conversation #298 self-edge: a message's own conversation
+        // id written into delegatedConversationId). So when ambiguous, the property explicitly marked addAsParent wins;
+        // a non-addAsParent forward FK is never adopted as the parent. (Mirrors the addAsParent exclusion the cascade
+        // already applies in DatabaseRepoEntity::updateDependentEntities.) RC plan 36 §3.2 — see upstream-handoff doc.
+        $firstMatchPropertyContainingId = null;
+        $addAsParentPropertyContainingId = null;
         foreach ($propertiesToLazyLoad as $propertyName => $repoTypeAndLazyloadAttributeInstance) {
             $reflectionProperty = $reflectionClass->getProperty($propertyName);
-            if ($reflectionProperty->getType() instanceof ReflectionNamedType) {
-                if (is_a($reflectionProperty->getType()->getName(), $entityOrSet::class, true)) {
-                    foreach ($repoTypeAndLazyloadAttributeInstance as $repoType => $lazyLoadAttributeInstance) {
-                        if (in_array($repoType, LazyLoadRepo::DATABASE_REPOS)) {
-                            if ($propertyContainingId = $lazyLoadAttributeInstance->getPropertyContainingId()) {
-                                return $propertyContainingId;
-                            }
-                        }
-                    }
+            if (!($reflectionProperty->getType() instanceof ReflectionNamedType)) {
+                continue;
+            }
+            if (!is_a($reflectionProperty->getType()->getName(), $entityOrSet::class, true)) {
+                continue;
+            }
+            foreach ($repoTypeAndLazyloadAttributeInstance as $repoType => $lazyLoadAttributeInstance) {
+                if (!in_array($repoType, LazyLoadRepo::DATABASE_REPOS)) {
+                    continue;
+                }
+                $propertyContainingId = $lazyLoadAttributeInstance->getPropertyContainingId();
+                if (!$propertyContainingId) {
+                    continue;
+                }
+                if ($firstMatchPropertyContainingId === null) {
+                    $firstMatchPropertyContainingId = $propertyContainingId;
+                }
+                if ($lazyLoadAttributeInstance->addAsParent && $addAsParentPropertyContainingId === null) {
+                    $addAsParentPropertyContainingId = $propertyContainingId;
                 }
             }
         }
-        return false;
+        if ($addAsParentPropertyContainingId !== null) {
+            return $addAsParentPropertyContainingId;
+        }
+        return $firstMatchPropertyContainingId ?? false;
     }
 }

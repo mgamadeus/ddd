@@ -20,6 +20,7 @@ use DDD\Domain\Base\Repo\DatabaseRepoEntity;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseVirtualColumn;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
+use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Domain\Common\Entities\Encryption\EncryptionScopes;
 use DDD\Infrastructure\Base\DateTime\Date;
 use DDD\Infrastructure\Base\DateTime\DateTime;
@@ -421,11 +422,15 @@ class DBEntity extends DatabaseRepoEntity
      * @return bool
      * @throws ReflectionException
      */
-    public function mapToRepository(DefaultObject &$entity): bool
+    public function mapToRepository(DefaultObject &$entity, ?array $restrictToPropertyNames = null): bool
     {
         if (!DefaultObject::isEntity($entity)) {
             return false;
         }
+        // Strict-partial allow-set: when $restrictToPropertyNames is given, map ONLY the id + those properties (the id
+        // is always mapped — it is the row key). Used by {@see updatePartialIgnoringRights}; reuses all the per-property
+        // special-type / translation handling below, scoped to the named columns. Null = map every set property (full).
+        $restrictedProperties = $restrictToPropertyNames === null ? null : array_fill_keys([...$restrictToPropertyNames, 'id'], true);
 
         $this->ormInstance = isset($this->ormInstance) && $this->ormInstance ? $this->ormInstance : new (static::getBaseModelNameForEntityInstance(
             $entity
@@ -434,6 +439,9 @@ class DBEntity extends DatabaseRepoEntity
         // map all fields from Entity to ormInstance to
         $mappedProperties = [];
         foreach ($entity as $propertyName => $propertyValue) {
+            if ($restrictedProperties !== null && !isset($restrictedProperties[$propertyName])) {
+                continue;
+            }
             $this->mapPropertyToRepository($entity, $propertyName);
             $mappedProperties[$propertyName] = true;
         }
@@ -443,6 +451,9 @@ class DBEntity extends DatabaseRepoEntity
             $translationsStore = $entity->translationInfos->translationsStore ?? [];
             $entityReflectionClass = ReflectionClass::instance($entity::class);
             foreach ($translationsStore as $propertyName => $translations) {
+                if ($restrictedProperties !== null && !isset($restrictedProperties[$propertyName])) {
+                    continue;
+                }
                 if (isset($mappedProperties[$propertyName])) {
                     continue;
                 }
@@ -453,6 +464,37 @@ class DBEntity extends DatabaseRepoEntity
             }
         }
         return true;
+    }
+
+    /**
+     * High-performance PARTIAL update for high-concurrency scenarios: writes STRICTLY the named properties' columns of
+     * an EXISTING row, leaving every other column untouched. Use it for competing single-column writes (run-state
+     * claim/heartbeat, an async-computed summary / embedding / verdict) where the full {@see DatabaseRepoEntity::update()}
+     * would clobber a column a concurrent writer just set — and where update()'s read-after-write reload
+     * (`EntityManager::clear()` + `find()`) would detach the caller's live entity (breaking its lazy-load relations)
+     * and pollute the entity registry.
+     *
+     * Strictly targeted by construction: {@see mapToRepository()} maps ONLY id + $propertyNames (reusing its
+     * special-type / translation / change-history handling), and {@see DoctrineEntityManager::upsert()} is passed the
+     * SAME allow-list so it writes exactly those columns — independent of the generated model's inline column defaults.
+     * No rights are applied (a null rights QueryBuilder makes upsert skip the rights check entirely — it never consults
+     * the rights state otherwise); this is a system write of a row the caller already loaded under rights.
+     *
+     * @param string ...$propertyNames Entity property names whose columns are the ONLY ones written.
+     * @return int|null The row id, or null when the entity is not persisted (no id) — a partial update needs an existing row.
+     * @throws ReflectionException
+     */
+    public function updatePartialIgnoringRights(DefaultObject &$entity, string ...$propertyNames): ?int
+    {
+        if (!DefaultObject::isEntity($entity) || !isset($entity->id) || !$entity->id) {
+            return null;
+        }
+        if (!is_a($entity::class, (string)$this::BASE_ENTITY_CLASS, true)) {
+            return null;
+        }
+        $this->ormInstance = new (static::getBaseModelNameForEntityInstance($entity))();
+        $this->mapToRepository($entity, $propertyNames);
+        return EntityManagerFactory::getInstance()->upsert($this->ormInstance, null, $propertyNames);
     }
 
     public function mapCreatedAndUpdatedTime(DefaultObject &$entity): void
