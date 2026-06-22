@@ -208,6 +208,54 @@ class ExpandOptions extends ObjectSet
         return '^(?P<expandOptions>\w+(\s*\(.+\))?)$';
     }
 
+    /**
+     * The generic, endpoint-INDEPENDENT `expand` grammar (OData-inspired). Single source of truth, emitted ONCE per
+     * surface; the per-endpoint allowed-relations list is appended separately by the documenter. See {@see QueryOptionsSyntax}.
+     * (Static unlike the legacy instance method {@see self::getRegexForOpenApi()} — the documenters/aggregator call it
+     * without an instance.)
+     */
+    public static function getSyntaxDocumentation(): string
+    {
+        return <<<'MD'
+### expand
+
+Expand Options (OData-inspired)
+
+Comma-separated list of relations to include:
+`someRelation,otherRelation`
+
+A relation may define clauses in parentheses. **Clauses are separated by semicolons (`;`)**:
+`someRelation(select=someField,otherField;filters=...;orderBy=someField desc;top=50;skip=0;expand=otherRelation(select=someField))`
+
+Supported clauses (inside `(...)`):
+- `select=<prop>,<prop>,...` (comma-separated list, no quotes)
+- `filters=<filterExpr>` (same language as `filters`)
+- `orderBy=<propertyPath> <direction>?` (same language as `orderBy`)
+- `top=<int>`
+- `skip=<int>`
+- `expand=<relation>[...],...` (comma-separated, recursive)
+
+Rules / restrictions:
+- Expandable relations and selectable/orderable fields are **endpoint-specific** and validated against the endpoint QueryOptions definitions.
+- `and` / `or` inside `filters` are case-insensitive.
+
+Examples:
+- `someRelation,otherRelation`
+- `someRelation(select=someField,otherField)`
+- `someRelation(expand=otherRelation(select=someField))`
+- `someRelation(orderBy=someField desc;top=50;skip=0;select=someField,otherField;expand=otherRelation(select=someField))`
+MD;
+    }
+
+    /**
+     * One-line summary used as the `expand` parameter description (the per-endpoint allowed-relations list is appended
+     * after it). Full grammar + examples live ONCE in {@see self::getSyntaxDocumentation()}.
+     */
+    public static function getParameterSummary(): string
+    {
+        return 'Expand Options (OData-inspired). Expandable relations below. Syntax: see "QueryOptions syntax".';
+    }
+
     public function uniqueKey(): string
     {
         $key = md5(json_encode($this->toObject(true, true)));

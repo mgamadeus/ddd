@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Presentation\Base\OpenApi;
 
+use DDD\Domain\Base\Entities\QueryOptions\QueryOptionsSyntax;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Traits\Serializer\Attributes\OverwritePropertyName;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
@@ -212,6 +213,13 @@ class Document
         }
         // sort tags if present by name
         $this?->tags?->sortByName();
+
+        // Emit the shared, endpoint-independent QueryOptions grammar ONCE at document level (instead of inlining it into
+        // every filters/orderBy/expand/select parameter description — PathParameterSchema now renders only the short
+        // per-parameter summary + the endpoint's allowed-property list). info.description is the document-level channel.
+        if ($this->info) {
+            $this->info->description = ($this->info->description ?? '') . QueryOptionsSyntax::getSyntaxDocumentation();
+        }
     }
 
     public static function getControllerClassForRoute(Route $route): ?string

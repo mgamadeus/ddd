@@ -244,6 +244,69 @@ class FiltersOptions extends ObjectSet
     }
 
     /**
+     * The generic, endpoint-INDEPENDENT `filters` grammar (OData-inspired). Single source of truth for both the OpenApi
+     * documenter and the MCP/agent documenter — emitted ONCE per surface (OpenApi `info.description`, MCP system
+     * instructions) instead of inlined into every parameter description. The per-endpoint allowed-property list is
+     * appended separately by each documenter from the endpoint's FiltersDefinitions. See {@see QueryOptionsSyntax}.
+     */
+    public static function getSyntaxDocumentation(): string
+    {
+        return <<<'MD'
+### filters
+
+Filter Options (OData-inspired)
+Basics:
+- Combine comparisons with `and` / `or` (case-insensitive).
+- Use parentheses `(...)` for grouping / precedence (nesting allowed).
+
+Comparison:
+- `<property> <operator> <value>`
+- `<property>` may use dot-notation: `foo`, `fooBar`, `foo.bar_baz`
+
+Operators:
+- `eq`, `ne`, `gt`, `ge`, `lt`, `le`  -> single scalar value
+- `in`                                -> list of scalars: `['A','B']`
+- `ni`                                -> not in list of scalars: `['A','B']`
+- `bw`                                -> list of exactly 2 scalars: `['from','to']`
+- `ft`                                -> fulltext search (MATCH AGAINST) in natural language mode
+- `fb`                                -> fulltext search (MATCH AGAINST) in boolean mode
+
+Fulltext notes:
+- `ft` / `fb` require that the target column is FULLTEXT-indexed in the database.
+- For `#[Translatable(fullTextIndex: true)]` properties, the system uses a generated stored virtual
+  search column (e.g. `virtualNameSearch`) behind the scenes, so filtering still targets `name` in
+  the API while the database query targets the virtual FULLTEXT column.
+
+Value rules (strict):
+- Every scalar MUST be wrapped in single quotes: `'...'` (numbers and dates included).
+- NULL MUST be written as the scalar `'NULL'`.
+- Lists MUST use brackets and comma separation, with every item quoted: `['A','B']`.
+
+Examples:
+- `someInt lt '10'`
+- `someDate ge '2025-01-01'`
+- `someEntity.subEntity.someProperty eq 'mydomain.com'`
+- `someStatus in ['UPCOMING','RUNNING']`
+- `someStatus ni ['CANCELLED','DELETED']`
+- `someDate bw ['2026-01-01','2026-01-22']`
+- `name ft 'berlin brandenburg'`
+- `name fb '+berlin +brandenburg -potsdam'`
+- `business.name ft 'kfc arad'`
+- `someDate eq 'NULL' or someDate gt '2025-01-01'`
+- `(someStatus in ['UPCOMING','RUNNING'] and someInt ge '2') or otherInt eq '42'`
+MD;
+    }
+
+    /**
+     * One-line, endpoint-INDEPENDENT summary used as the `filters` parameter description (the per-endpoint allowed-list
+     * is appended after it by the documenter). The full grammar + examples live ONCE in {@see self::getSyntaxDocumentation()}.
+     */
+    public static function getParameterSummary(): string
+    {
+        return 'Filter Options (OData-inspired). Allowed properties below. Syntax: see "QueryOptions syntax".';
+    }
+
+    /**
      * Recursively sets definitions to FilterOptions so earch FilterOption has access to it's corresponding definition
      * @param FiltersDefinition $filtersDefinition
      */

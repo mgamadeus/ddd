@@ -52,6 +52,49 @@ class OrderByOptions extends ObjectSet
         return '^(?:(?:\s*,\s*)?(?<property>[a-z]+)(\s+?<direction>asc|desc)?)+?$';
     }
 
+    /**
+     * The generic, endpoint-INDEPENDENT `orderBy` grammar (OData-inspired). Single source of truth, emitted ONCE per
+     * surface; the per-endpoint sortable-property list is appended separately by the documenter. See {@see QueryOptionsSyntax}.
+     */
+    public static function getSyntaxDocumentation(): string
+    {
+        return <<<'MD'
+### orderBy
+
+OrderBy Options (OData-inspired)
+
+Comma-separated list of sort keys:
+`<propertyPath> <direction>?, <propertyPath> <direction>? ...`
+
+Rules / restrictions:
+- `<propertyPath>` is **not quoted** and supports dot-notation.
+- Sortable fields are **endpoint-specific** and validated against the endpoint QueryOptions definitions.
+- Sorting by expanded relations is supported via `<relation>.<field>` if that relation is included via `expand`.
+- `<direction>` is optional (defaults to `asc`), allowed: `asc`, `desc` (case-insensitive).
+- Fulltext relevance score ordering is supported via the `{propertyName}Score` suffix (e.g. `nameScore desc`).
+  This requires a corresponding fulltext filter on the base property using `ft` or `fb`.
+- Score ordering also works on expanded relations using dot-notation (e.g. `business.nameScore desc`),
+  but requires:
+  - the relation to be included via `expand=business`
+  - a fulltext filter on the matching base property (e.g. `filters=business.name ft 'kfc arad'`)
+
+Examples:
+- `someField asc, otherField desc`
+- `someRelation.someField desc`
+- `nameScore desc`
+- `business.nameScore desc`
+MD;
+    }
+
+    /**
+     * One-line summary used as the `orderBy` parameter description (the per-endpoint sortable list is appended after it).
+     * Full grammar + examples live ONCE in {@see self::getSyntaxDocumentation()}.
+     */
+    public static function getParameterSummary(): string
+    {
+        return 'OrderBy Options (OData-inspired). Syntax: see "QueryOptions syntax".';
+    }
+
     public function getOrderByOptionByName(string $orderByOptionName): ?OrderByOption
     {
         foreach ($this->getElements() as $orderByOption) {

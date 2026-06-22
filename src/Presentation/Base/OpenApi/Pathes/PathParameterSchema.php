@@ -170,6 +170,10 @@ class PathParameterSchema
                                 continue;
                             }
                             $this->pattern = FiltersOptions::getRegexForOpenApi();
+                            // Reset the PHPDoc-derived description to the short, endpoint-independent summary — the full
+                            // grammar is emitted once at document level (Document::info.description). Then append this
+                            // endpoint's allowed-filter list (unchanged, incl. its custom option values).
+                            $parameter->description = FiltersOptions::getParameterSummary();
                             $parameter->description .= "\n\n<details><summary>Allowed filter properties:</summary>  \n\n";
                             $queryOptionsBaseReflectionClass = ReflectionClass::instance($dtoQueryOptions->baseEntity);
                             $constantDescriptions = $queryOptionsBaseReflectionClass->getConstantsDescriptions();
@@ -194,11 +198,27 @@ class PathParameterSchema
                                 continue;
                             }
                             $this->pattern = OrderByOptions::getRegexForOpenApi();
-                            $parameter->description .= "\n\n<details><summary>Allowed orderBy properties:</summary>  \n\n";
-                            foreach ($queryOptions->getOrderByDefinitions() as $allowedField) {
-                                $parameter->description .= "\n- `$allowedField`";
+                            // Reset to the short summary (full grammar once at document level).
+                            $parameter->description = OrderByOptions::getParameterSummary();
+                            // Top-level orderBy mirrors the filter property names for structural entities — don't repeat
+                            // the identical list under both params; reference `filters`. Render the list only when it
+                            // diverges (custom #[QueryOptions(orderBy: …)] keys), so those custom keys are still shown.
+                            $orderByDefinitions = $queryOptions->getOrderByDefinitions();
+                            $topFilterPropertyNames = [];
+                            if ($queryOptions->getFiltersDefinitions()) {
+                                foreach ($queryOptions->getFiltersDefinitions()->getElements() as $allowedField) {
+                                    $topFilterPropertyNames[] = $allowedField->propertyName;
+                                }
                             }
-                            $parameter->description .= '</details>';
+                            if ($topFilterPropertyNames !== [] && self::isSamePropertySet($topFilterPropertyNames, $orderByDefinitions)) {
+                                $parameter->description .= "\n\nSortable by the same properties as the `filters` parameter.";
+                            } else {
+                                $parameter->description .= "\n\n<details><summary>Allowed orderBy properties:</summary>  \n\n";
+                                foreach ($orderByDefinitions as $allowedField) {
+                                    $parameter->description .= "\n- `$allowedField`";
+                                }
+                                $parameter->description .= '</details>';
+                            }
                         } elseif ($typeName == ExpandOptions::class) {
                             /** @var DtoQueryOptions|null $dtoQueryOptionsAttributeInstane */
                             $dtoQueryOptionsAttributeInstane = $schemaReflectionClassName::getDtoQueryOptions();
@@ -219,15 +239,31 @@ class PathParameterSchema
                                 continue;
                             }
                             //$this->pattern = $queryOptions->orderBy->getRegexForOpenApi();
+                            // Reset to the short summary (full grammar once at document level); then the endpoint's list.
+                            $parameter->description = ExpandOptions::getParameterSummary();
                             $parameter->description .= "\n\n<details><summary>Allowed expand properties:</summary>  \n\n";
 
                             foreach ($expandDefinitions->getElements() as $expandDefinition) {
                                 $parameter->description .= "\n- `$expandDefinition->propertyName`";
-                                if ($expandDefinition->getFiltersDefinitions()) {
-                                    $parameter->description .= "\n  - Allowed filter properties are:";
-                                    foreach (
-                                        $expandDefinition->getFiltersDefinitions()->getElements() as $allowedField
-                                    ) {
+                                $expandFiltersDefinitions = $expandDefinition->getFiltersDefinitions();
+                                $expandOrderByDefinitions = $expandDefinition->getOrderbyDefinitions() ?? [];
+                                // orderBy mirrors the filter property names verbatim for purely structural relations
+                                // (orderBy is derived from the filter names) — render ONCE as a combined block. They
+                                // DIVERGE when the target entity declares custom #[QueryOptions(orderBy: …)] keys — then
+                                // render both, so no custom orderBy key is lost.
+                                $expandFilterPropertyNames = [];
+                                if ($expandFiltersDefinitions) {
+                                    foreach ($expandFiltersDefinitions->getElements() as $allowedField) {
+                                        $expandFilterPropertyNames[] = $allowedField->propertyName;
+                                    }
+                                }
+                                $orderBySameAsFilters = $expandFilterPropertyNames !== []
+                                    && self::isSamePropertySet($expandFilterPropertyNames, $expandOrderByDefinitions);
+                                if ($expandFiltersDefinitions) {
+                                    $parameter->description .= $orderBySameAsFilters
+                                        ? "\n  - Allowed filter & orderBy properties are:"
+                                        : "\n  - Allowed filter properties are:";
+                                    foreach ($expandFiltersDefinitions->getElements() as $allowedField) {
                                         $parameter->description .= "\n    - `$allowedField->propertyName`";
                                         if ($allowedField->options) {
                                             $parameter->description .= ': one of [';
@@ -240,9 +276,9 @@ class PathParameterSchema
                                         }
                                     }
                                 }
-                                if ($expandDefinition->getOrderbyDefinitions()) {
+                                if (!$orderBySameAsFilters && $expandOrderByDefinitions !== []) {
                                     $parameter->description .= "\n  - Allowed orderBy properties are:";
-                                    foreach ($expandDefinition->getOrderbyDefinitions() as $allowedField) {
+                                    foreach ($expandOrderByDefinitions as $allowedField) {
                                         $parameter->description .= "\n    - `$allowedField`";
                                     }
                                 }
@@ -299,5 +335,25 @@ class PathParameterSchema
                 }
             }
         }
+    }
+
+    /**
+     * True if both lists contain the SAME set of property names (order- and duplicate-insensitive). Used to dedup the
+     * expand block's filter vs orderBy sub-lists: only collapse them when genuinely identical, so custom orderBy-only
+     * keys (or filter-only virtual/fulltext columns) are never silently dropped.
+     *
+     * @param string[] $a
+     * @param string[] $b
+     */
+    protected static function isSamePropertySet(array $a, array $b): bool
+    {
+        $a = array_values(array_unique($a));
+        $b = array_values(array_unique($b));
+        if (count($a) !== count($b)) {
+            return false;
+        }
+        sort($a);
+        sort($b);
+        return $a === $b;
     }
 }

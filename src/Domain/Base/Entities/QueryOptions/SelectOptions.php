@@ -61,6 +61,44 @@ class SelectOptions extends ObjectSet
         return '^(?:(?:\s*,\s*)?(?<property>[a-z]+))+$';
     }
 
+    /**
+     * The generic, endpoint-INDEPENDENT `select` grammar (OData-inspired). Single source of truth, emitted ONCE per
+     * surface via {@see QueryOptionsSyntax}. NOTE: `select` has NO per-endpoint allowed-list rendering and NO reset
+     * branch in either documenter — its parameter description is the shrunk one-line trait PHPDoc. This method feeds
+     * ONLY the aggregated once-block.
+     */
+    public static function getSyntaxDocumentation(): string
+    {
+        return <<<'MD'
+### select
+
+Select Options (OData-inspired)
+
+Comma-separated list of properties to include in the response.
+
+Rules / restrictions:
+- Properties are **not quoted**.
+- Whitespace around commas is ignored.
+- Dot-notation is allowed (e.g. `nested.fieldName`).
+- Selectable fields are **endpoint-specific** and validated against the endpoint QueryOptions definitions.
+- Not allowed: operators (`eq`, `gt`, ...), lists (`[...]`), parentheses, or any functions.
+
+Examples:
+- `id,name`
+- `scope,identifier,type,publicUrl`
+- `nested.fieldName,nested.otherField`
+MD;
+    }
+
+    /**
+     * One-line summary for the `select` parameter description. Full grammar + examples live ONCE in
+     * {@see self::getSyntaxDocumentation()}.
+     */
+    public static function getParameterSummary(): string
+    {
+        return 'Select Options (OData-inspired). Syntax: see "QueryOptions syntax".';
+    }
+
     public function getSelectOptionByName(string $selectOptionName): ?SelectOption
     {
         foreach ($this->getElements() as $selectOption) {

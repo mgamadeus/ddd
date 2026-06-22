@@ -15,6 +15,12 @@ class Info extends Base
     public ?string $title = null;
     public ?string $version = null;
 
+    /**
+     * OpenApi `info.description` (Markdown). Not set via the attribute constructor — populated programmatically by the
+     * Document builder (e.g. to emit the shared QueryOptions grammar once per document). Serialized automatically.
+     */
+    public ?string $description = null;
+
     public function __construct(string $title, string $version = '1.0')
     {
         $this->title = $title;
