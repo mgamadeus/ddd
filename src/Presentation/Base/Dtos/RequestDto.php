@@ -13,6 +13,7 @@ use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 use DDD\Infrastructure\Traits\ValidatorTrait;
 use DDD\Presentation\Base\OpenApi\Attributes\Parameter;
+use DDD\Presentation\Base\OpenApi\Attributes\SharedRequestParameter;
 use DDD\Symfony\Extended\EncryptedCookie;
 use ReflectionAttribute;
 use ReflectionException;
@@ -33,6 +34,7 @@ class RequestDto
 
     /** @var string If set to true, no EntityRegistry Argus Caching will be used */
     #[Parameter(in: Parameter::QUERY, required: false)]
+    #[SharedRequestParameter]
     public bool $noCache = false;
 
     /**
@@ -42,6 +44,7 @@ class RequestDto
      * {@see \DDD\Domain\Base\Entities\LlmMarkdownRenderable}. Endpoints that don't support it ignore this.
      */
     #[Parameter(in: Parameter::QUERY, required: false)]
+    #[SharedRequestParameter]
     public ?string $outputFormat = null;
 
     /** Whether the caller asked for the LLM-optimized Markdown shape (see {@see self::OUTPUT_FORMAT_LLM}). */

@@ -6,6 +6,7 @@ namespace DDD\Presentation\Base\OpenApi;
 
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptionsSyntax;
 use DDD\Infrastructure\Reflection\ReflectionClass;
+use DDD\Presentation\Base\Dtos\SharedRequestParametersSyntax;
 use DDD\Infrastructure\Traits\Serializer\Attributes\OverwritePropertyName;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 use DDD\Presentation\Base\OpenApi\Attributes\Ignore;
@@ -218,7 +219,9 @@ class Document
         // every filters/orderBy/expand/select parameter description — PathParameterSchema now renders only the short
         // per-parameter summary + the endpoint's allowed-property list). info.description is the document-level channel.
         if ($this->info) {
-            $this->info->description = ($this->info->description ?? '') . QueryOptionsSyntax::getSyntaxDocumentation();
+            $this->info->description = ($this->info->description ?? '')
+                . QueryOptionsSyntax::getSyntaxDocumentation()
+                . "\n\n" . SharedRequestParametersSyntax::getDocumentation();
         }
     }
 

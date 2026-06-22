@@ -6,7 +6,9 @@ namespace DDD\Presentation\Base\OpenApi\Pathes;
 
 use DDD\Infrastructure\Reflection\ReflectionDocComment;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
+use DDD\Presentation\Base\Dtos\SharedRequestParametersSyntax;
 use DDD\Presentation\Base\OpenApi\Attributes\Parameter;
+use DDD\Presentation\Base\OpenApi\Attributes\SharedRequestParameter;
 use DDD\Presentation\Base\OpenApi\Exceptions\TypeDefinitionMissingOrWrong;
 use ReflectionClass;
 use ReflectionProperty;
@@ -77,6 +79,13 @@ class PathParameter
             elseif ($examples) {
                 $this->example = $examples[0];
             }
+        }
+        // Shared, endpoint-independent param (outputFormat/noCache/skip/top/skiptoken) — render a short pointer; the full
+        // doc is emitted once in info.description (see SharedRequestParametersSyntax), not repeated on every endpoint.
+        if ($requestDtoReflectionProperty->getAttributes(SharedRequestParameter::class)) {
+            $this->description = SharedRequestParametersSyntax::PARAMETER_POINTER;
+            $this->example = null;
+            $this->examples = null;
         }
         foreach ($requestDtoReflectionProperty->getAttributes() as $requestDtoPropertyAttribute) {
             $requestDtoPropertyAttributeInstance = $requestDtoPropertyAttribute->newInstance();

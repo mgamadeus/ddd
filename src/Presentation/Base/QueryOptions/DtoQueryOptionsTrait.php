@@ -13,6 +13,7 @@ use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Presentation\Base\OpenApi\Attributes\Parameter;
+use DDD\Presentation\Base\OpenApi\Attributes\SharedRequestParameter;
 use DDD\Presentation\Base\OpenApi\Exceptions\TypeDefinitionMissingOrWrong;
 use ReflectionException;
 use Symfony\Component\HttpFoundation\Request;
@@ -25,14 +26,17 @@ trait DtoQueryOptionsTrait
 {
     /** @var int Number of results to be skipped / offsetted */
     #[Parameter(in: Parameter::QUERY, required: false)]
+    #[SharedRequestParameter]
     public ?int $skip = null;
 
     /** @var int The number of results to be returned */
     #[Parameter(in: Parameter::QUERY, required: false)]
+    #[SharedRequestParameter]
     public ?int $top = null;
 
     /** @var string|null Cursor for point to a resultset that was previously provided */
     #[Parameter(in: Parameter::QUERY, required: false)]
+    #[SharedRequestParameter]
     public ?string $skiptoken = null;
 
     // Grammar documented ONCE per surface via QueryOptionsSyntax; documenters reset this param's description to the
