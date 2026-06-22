@@ -10,7 +10,9 @@ use DDD\Presentation\Base\Dtos\SharedRequestParametersSyntax;
 use DDD\Presentation\Base\OpenApi\Attributes\Parameter;
 use DDD\Presentation\Base\OpenApi\Attributes\SharedRequestParameter;
 use DDD\Presentation\Base\OpenApi\Exceptions\TypeDefinitionMissingOrWrong;
+use DDD\Presentation\Base\QueryOptions\DtoQueryOptions;
 use ReflectionClass;
+use ReflectionNamedType;
 use ReflectionProperty;
 use Symfony\Component\Routing\Route;
 
@@ -86,6 +88,21 @@ class PathParameter
             $this->description = SharedRequestParametersSyntax::PARAMETER_POINTER;
             $this->example = null;
             $this->examples = null;
+        }
+        // Doc-only QueryOptions narrowing: if the owning DTO's #[DtoQueryOptions(expose: [...])] does not expose this
+        // param's QueryOptions family, mark it skipped — it is omitted from the OpenApi doc. The property stays
+        // functional server-side (hydrated/validated/writable); only the documentation is dropped.
+        $requestDtoPropertyType = $requestDtoReflectionProperty->getType();
+        if ($requestDtoPropertyType instanceof ReflectionNamedType) {
+            $queryOptionFamily = DtoQueryOptions::queryOptionFamilyForTypeName($requestDtoPropertyType->getName());
+            $requestDtoClass = $requestDtoReflectionClass->getName();
+            if ($queryOptionFamily !== null && method_exists($requestDtoClass, 'getDtoQueryOptions')) {
+                /** @var DtoQueryOptions|null $dtoQueryOptions */
+                $dtoQueryOptions = $requestDtoClass::getDtoQueryOptions();
+                if ($dtoQueryOptions !== null && !$dtoQueryOptions->exposes($queryOptionFamily)) {
+                    $this->setToBeSkipped(true);
+                }
+            }
         }
         foreach ($requestDtoReflectionProperty->getAttributes() as $requestDtoPropertyAttribute) {
             $requestDtoPropertyAttributeInstance = $requestDtoPropertyAttribute->newInstance();
