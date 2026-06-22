@@ -248,22 +248,14 @@ class FiltersDefinitions extends ObjectSet
                     if ($modifiedColumn) {
                         $allowedFilterProperties[$propertyPrefix . $modifiedColumn] = true;
                     }
-                } elseif (
-                    DefaultObject::isValueObject($type->getName()) && !is_a(
-                        $type->getName(),
-                        ObjectSet::class,
-                        true
-                    )
-                ) {
-                    $subObjectFilters = self::getFilterPropertiesForClass(
-                        $type->getName(),
-                        $propertyPrefix . $reflectionProperty->getName() . '.',
-                        $callPath
-                    );
-                    if ($subObjectFilters == [1]) {
-                        die($className);
-                    }
-                } elseif (DefaultObject::isEntity($type)) {
+                }
+                // A ValueObject is JSON-inlined in its parent row and select-controlled, NOT a navigable relation: its
+                // sub-fields are NOT filter/orderBy properties. Do NOT descend into a VO (e.g. MediaItem.settings would
+                // otherwise explode into settings.uberall.createdDateTime, settings.google.status, … per platform).
+                // orderBy definitions derive from these filter definitions (AppliedQueryOptions::getOrderByDefinitions),
+                // so skipping the VO descent here keeps VO sub-fields out of BOTH filter and orderBy. ObjectSets stay
+                // excluded (the "we do not include ObjectSets" rule above); Entities keep their guarded recursion below.
+                elseif (DefaultObject::isEntity($type)) {
                     // we do not add lazyloaded Entities as filters
                     if ($lazyloadAttribute = $reflectionProperty->getAttributes(LazyLoad::class, ReflectionAttribute::IS_INSTANCEOF)[0] ?? null) {
                         continue;
