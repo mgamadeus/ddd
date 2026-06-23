@@ -263,6 +263,17 @@ When updating AGENTS.md, skills, or README across multiple modules:
 - **Version in `composer.json`** must match tag (without `v` prefix)
 - **Co-Authored-By** header required on all commits
 
+### Ingesting an upstream handoff doc
+
+A handoff/donation doc is a **proposal, not authoritative spec**. Workflow for each one:
+
+1. **Convention-scan first** (not a verbatim copy): reject `array`-shaped public surface (use a `ValueObject`/`ObjectSet`; flat `string[]`/`int[]` OK), `private` (→ `protected`), `&$out` params, and any `\App\…` / consuming-app class names or repo-internal doc paths leaking into framework code (genericize them).
+2. **Apply** — prefer matching the donor's byte-validated vendor copy (the change usually already runs there); for small changes apply via `Edit`. Confirm **byte-identity to the vendor copy** + `php -l` + Qodana (`get_file_problems`).
+3. **Release** the module (correct semver bump) and **propagate** to consuming apps (see the release workflows above).
+4. **ALWAYS mark the doc done — as the FINAL step — by renaming it** `<name>-2026-06.md` → `<name>-2026-06-ingested-on-<YYYY-MM-DD>.md`. **Never leave ingested content sitting bare.** A doc that is byte-identical to one already ingested (a re-issue) is marked too; a doc whose fix is NOT yet present in the donor's vendor stays **bare** (do not mark — it is genuinely open).
+
+> Verify a doc's true state before (re-)ingesting: grep the *code* for the change's marker in BOTH our Core and the donor vendor — a doc can sit bare yet already be applied, or be marked yet diverge from a re-issue.
+
 ---
 
 ## Documentation Architecture
