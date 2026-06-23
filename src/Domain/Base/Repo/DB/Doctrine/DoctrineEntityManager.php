@@ -122,6 +122,21 @@ class DoctrineEntityManager extends EntityManager
             /** @var DatabaseColumn $databaseColumnAttributeInstance */
             $databaseColumnAttributeInstance = $reflectionProperty->getAttributeInstance(DatabaseColumn::class);
 
+            // A mergable JSON column may arrive here EITHER as a plain array (a Translatable-style column whose
+            // mapToRepository returns the array directly) OR as a JSON-encoded STRING (a ValueObject column whose
+            // mapToRepository returns an array that {@see \DDD\Domain\Base\Repo\DB\DBEntity::mapToRepository} then
+            // json_encodes to a string before setting the model field). The JSON_MERGE_PATCH branch below is guarded on
+            // is_array($value), so a string-valued mergable VO column would silently fall through to a plain VALUES()
+            // REPLACE — clobbering concurrent per-key writers (e.g. N delegation children each merging one key). Decode
+            // the string back to an array here so BOTH shapes take the same path: bound once via the JSON type AND
+            // merged. Only touches a mergable column whose value is a valid JSON string; everything else is untouched.
+            if ($databaseColumnAttributeInstance?->isMergableJSONColumn && is_string($value) && $value !== '') {
+                $decodedMergableValue = json_decode($value, true);
+                if (is_array($decodedMergableValue)) {
+                    $value = $decodedMergableValue;
+                }
+            }
+
             $type = $metadata->getTypeOfField($fieldName);
             $skipValueBinding = false;
             // Handle Spatial Types
