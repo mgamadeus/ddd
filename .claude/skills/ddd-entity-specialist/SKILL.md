@@ -245,6 +245,32 @@ If you forget `#[NotNull]` on a property that should be NOT NULL, the schema-dif
 - Implement `uniqueKey()` in every entity
 - `EntitiesBaseService` does **NOT** exist -- always use `EntitiesService`
 
+### Entity Properties Feed the API Schema — `@var T[]`, NOT `array<T>`
+
+Every **public** entity property is reflected into the generated OpenAPI / MCP tool schema whenever the entity is returned in a response. The Autodocumenter documents **entities and DTOs by the identical code path** (`Schema::buildSchema()` → `SchemaProperty` reflects the property's PHP type + its `@var` docblock + its attributes; its own comment: *"we document entities, entityDtos and request / response DTO classes in the same way"*). So a sloppy `@var` on ONE entity property breaks the API contract of **every** endpoint that embeds that entity — not just a single DTO. (Full mechanism, attribute effects, request/response scoping: `ddd-endpoint-specialist` → "How DTOs & Entities Become the API Schema".)
+
+The rules that bite at the point of property declaration:
+
+**1. List properties: `@var T[]`, never `@var array<T>`.** A list's PHP type is just `array`; the documenter recovers the element type from the docblock via `ReflectionArrayType::getArrayType()`, which parses the **bracket** form (`T[]`), NOT the generic form (`array<T>`):
+
+```php
+/** @var string[] Keyword names */       // ✅ → items: {type: string},  description: "Keyword names"
+public array $keywords;
+
+/** @var array<string> Keyword names */   // ❌ element type resolves to `array`, "<string>" leaks into the
+public array $keywords;                    //    description → items: {type: array} (no leaf) → Google AI Studio
+                                           //    400 INVALID_ARGUMENT on any Gemini tool exposing this entity
+```
+A list of objects → `/** @var ChildEntity[] */` (→ `items: {$ref: …}`). This is the same surface as AGENTS.md's array rule: a flat `string[]`/`int[]` is fine; a struct-shaped array → use a `ValueObject`; a keyed object map → use an `ObjectSet`.
+
+**2. Type every public property.** An untyped property is **rejected** by the documenter (`TypeDefinitionMissingOrWrong`); declared `object` is rejected too (use a typed VO/class); `mixed` documents as unconstrained.
+
+**3. `Date` / `DateTime` (the framework classes), never native `\DateTime`** — they document as `{type: string, format: date | date-time}`; native breaks both serialization and the schema (see "NEVER Use PHP's Native `\DateTime`" above).
+
+**4. A nested Entity / ValueObject / EntitySet** documents as a `$ref` and is recursively pulled into the schema — so VO/child typing correctness propagates outward. `#[Choice(choices)]` and PHP enums → `enum`; `#[NotNull]` / `#[Required]` → the property joins the schema's `required` list; `#[Ignore]` omits the property from the schema entirely — distinct from `#[HideProperty]`, which only drops the runtime bytes while the property stays in the schema (see `ddd-serializer-specialist`).
+
+**Verify:** `app:entity:show-sql` shows the DB shape; for the API shape, regenerate the OpenAPI doc (or inspect the MCP tool schema) for an endpoint returning the entity and confirm `items` / `$ref` / `enum` are right.
+
 ### Loading Entities by ID -- ALWAYS via the Service
 
 Caller code (controllers, message handlers, other services, CLI commands) that needs to load a single entity by id MUST go through the entity service:
