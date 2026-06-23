@@ -489,6 +489,13 @@ class DatabaseColumn extends ValueObject
             if ($columnAttributeInstance->sqlType !== null) {
                 $databaseColum->sqlType = $columnAttributeInstance->sqlType;
             }
+            // Propagate the user-declared JSON-merge flag onto the generated model so concurrent partial writes to this
+            // column merge (JSON_MERGE_PATCH) instead of replace. Without this, a user `#[DatabaseColumn(isMergableJSONColumn: true)]`
+            // is silently dropped from the model (the flag was only auto-set for #[Translatable] columns above), so the
+            // merge branch in DoctrineEntityManager::upsert never fires and concurrent per-key writers clobber each other.
+            if ($columnAttributeInstance->isMergableJSONColumn) {
+                $databaseColum->isMergableJSONColumn = true;
+            }
             $databaseColum->ignoreProperty = $columnAttributeInstance->ignoreProperty;
 
             if ($columnAttributeInstance->encrypted !== null && $columnAttributeInstance->encrypted) {
