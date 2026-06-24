@@ -1302,6 +1302,18 @@ trait SerializerTrait
     }
 
     /**
+     * Hydrates a single property of $this from $value (recursively for nested objects and array items).
+     *
+     * objectType contract — SINGLE vs MULTIPLE allowed types:
+     *  - SINGLE allowed (concrete) type: the declared type is AUTHORITATIVE. A provided `objectType` is honored only
+     *    when it names that exact type or a genuine subclass of it; ANY other value (stale/renamed, non-existent, or —
+     *    on an agent-facing MCP write tool — model-hallucinated) is IGNORED and the declared type is instantiated. The
+     *    object is NEVER dropped over a bad objectType (which previously left the typed property uninitialized →
+     *    "Typed property … must not be accessed before initialization"). objectTypeMigrations is therefore NOT consulted
+     *    in the single-type branches (redundant: a stale name fails is_a() and falls back to the current declared type
+     *    anyway); migrations stay load-bearing only for MULTIPLE types + in DBEntity.
+     *  - MULTIPLE allowed types: `objectType` is REQUIRED to pick the concrete type; a missing/unsupported value errors.
+     *
      * @param \ReflectionProperty|ReflectionProperty $property
      * @param mixed $value
      * @param $throwErrors
@@ -1490,19 +1502,15 @@ trait SerializerTrait
                         }
                     }
                 } else {
-                    // we allow a single type
+                    // we allow a single type → declared type is authoritative (see setPropertyFromObject() docblock
+                    // § single-type). Honor a per-ITEM objectType only when it is that type or a genuine subclass;
+                    // ignore anything else (stale / non-existent / model-hallucinated) and fall back to the declared
+                    // type. Read objectType off the array ITEM ($arrayItem) — the previous $value->objectType read the
+                    // ARRAY, so a legitimate per-item subtype was silently ignored. Migrations lookup dropped here
+                    // (redundant for a single allowed type).
                     $typeToInstance = array_key_first($allowedTypes->allowedTypes);
-                    // we allow subclasses as well if the objectType is of a subclass
-                    if (isset($value->objectType)) {
-                        if (isset(ReflectionClass::getObjectTypeMigrations()[$value->objectType])) {
-                            $value->objectType = ReflectionClass::getObjectTypeMigrations()[$value->objectType];
-                        }
-                        if (is_a($value->objectType, $typeToInstance, true)) {
-                            $typeToInstance = $value->objectType;
-                        } else {
-                            // objectType does not correspond with type to instance, skip this object
-                            $typeToInstance = null;
-                        }
+                    if (isset($arrayItem->objectType) && class_exists($arrayItem->objectType) && is_a($arrayItem->objectType, $typeToInstance, true)) {
+                        $typeToInstance = $arrayItem->objectType;
                     }
                     // scalar type was not correctly allocated
                     if ($allowedTypes->allowsScalar) {
@@ -1725,19 +1733,17 @@ trait SerializerTrait
                     }
                 }
             } else {
-                // we allow a single type
+                // we allow a single type → the declared type is authoritative. Honor a provided objectType ONLY when
+                // it names that exact type or a genuine subclass of it; ANY other objectType — stale/renamed,
+                // non-existent, or (on an agent-facing MCP write tool) model-hallucinated — is IGNORED and we fall back
+                // to the declared type, instead of dropping the object (which left the typed property uninitialized:
+                // "must not be accessed before initialization"). See setPropertyFromObject() docblock § single-type.
+                // With one allowed type the objectTypeMigrations lookup is redundant (a stale name fails is_a() and
+                // falls back to the current declared type anyway) — migrations stay load-bearing in the multi-type
+                // branch + DBEntity only.
                 $typeToInstance = array_key_first($allowedTypes->allowedTypes);
-                // we allow subclasses as well if the objectType is of a subclass
-                if (isset($value->objectType)) {
-                    if (isset(ReflectionClass::getObjectTypeMigrations()[$value->objectType])) {
-                        $value->objectType = ReflectionClass::getObjectTypeMigrations()[$value->objectType];
-                    }
-                    if (is_a($value->objectType, $typeToInstance, true)) {
-                        $typeToInstance = $value->objectType;
-                    } else {
-                        // objectType does not correspond with type to instance, skip this object
-                        $typeToInstance = null;
-                    }
+                if (isset($value->objectType) && class_exists($value->objectType) && is_a($value->objectType, $typeToInstance, true)) {
+                    $typeToInstance = $value->objectType;
                 }
                 // scalar type was not correctly allocated
                 if ($allowedTypes->allowsScalar) {
