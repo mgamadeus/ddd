@@ -109,17 +109,6 @@ class ExpandDefinitions extends ObjectSet
 
             $propertyName = $propertyToLazyLoad['propertyName'];
             $propertyType = $propertyToLazyLoad['property']->getType();
-            // A ValueObject is JSON-inlined in its parent row: it always comes WITH the parent and its presence is
-            // controlled by `select`, not `expand` — it is not separately loadable, so `expand=someValueObject` is a
-            // no-op and must NOT be offered as an expand option (e.g. Location.settings, a LocationSettings VO). Only
-            // Entities and ObjectSets (EntitySets / collections) are genuine, separately-loadable relations. Skip a
-            // leaf ValueObject target (a VO that is neither an Entity nor an ObjectSet).
-            if ($propertyType instanceof ReflectionNamedType && !$propertyType->isBuiltin()) {
-                $targetTypeName = $propertyType->getName();
-                if (!(DefaultObject::isEntity($targetTypeName) || is_a($targetTypeName, ObjectSet::class, true))) {
-                    continue;
-                }
-            }
             $expandDefinition = new ExpandDefinition();
             $expandDefinition->propertyName = $propertyName;
             $expandDefinition->referenceClass = $propertyToLazyLoad['class'];
