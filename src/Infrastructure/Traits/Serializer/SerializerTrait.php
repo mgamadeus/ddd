@@ -1543,7 +1543,12 @@ trait SerializerTrait
                         $item->setPropertiesFromObject($arrayItem, $throwErrors, false, $sanitizeInput);
                     }
                     $this->$propertyName[] = $item;
-                    $this->addChildren($item);
+                    // Guard addChildren the same way setParent is guarded below: a typed-object-array property on a
+                    // plain RequestDto/ValueObject (no Entity/ObjectSet children model) has no addChildren(), so an
+                    // unguarded call throws "Call to undefined method …::addChildren()" while hydrating the array.
+                    if (method_exists($this, 'addChildren')) {
+                        $this->addChildren($item);
+                    }
                     if (method_exists($item, 'setParent')) {
                         $item->setParent($this);
                     }
