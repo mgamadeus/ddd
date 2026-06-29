@@ -39,14 +39,25 @@ class JWTPayload
     }
 
     /**
-     * Encodes an array of associative parameters into a JWT
+     * Encodes an array of associative parameters into a JWT.
+     *
+     * Expiry precedence: an explicit `$expiresAt` (a fixed boundary — e.g. the end of the current hour — which makes
+     * the token byte-stable for every call inside that window, so a URL carrying it stays cacheable) wins; else
+     * `$validityInSeconds` from now; else the default period end ({@see getPeriodEndTimestamp()}).
+     *
      * @param array $parameters
      * @param int|null $validityInSeconds
+     * @param DateTime|null $expiresAt An explicit expiry timestamp; takes precedence over `$validityInSeconds`.
      * @return string
      */
-    public static function createJWTFromParameters(array $parameters, ?int $validityInSeconds = null): string
-    {
-        if ($validityInSeconds) {
+    public static function createJWTFromParameters(
+        array $parameters,
+        ?int $validityInSeconds = null,
+        ?DateTime $expiresAt = null
+    ): string {
+        if ($expiresAt !== null) {
+            $expirationDate = $expiresAt;
+        } elseif ($validityInSeconds) {
             $date = new DateTime();
             $date->modify("+$validityInSeconds seconds");
             $expirationDate = $date;
