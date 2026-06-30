@@ -304,7 +304,12 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
             echo $parameter->getName() . ' ' . $parameterValue ."\n";
         }
         echo "\n<br />\n<br />";*/
-        $ormInstances = $queryBuilder->applyDistinctSubqueryIfNeededAndGetResult();
+        // useEntityRegistrCache=false means the caller wants a FRESH load — pass it through as the refresh flag so the
+        // simple (no-join) branch sets Query::HINT_REFRESH and re-hydrates managed entities from the DB instead of
+        // returning the stale identity-map instance. (The single-entity DatabaseRepoEntity::find() already did this; the
+        // set path silently did not, so a long-running worker reloading a set got stale embedded VOs — e.g. an async
+        // delegation fold reading the parent delegate-call's delegationResults written by the child workers.)
+        $ormInstances = $queryBuilder->applyDistinctSubqueryIfNeededAndGetResult(!$useEntityRegistrCache);
 
         /** @var EntitySet $entitySetInstance */
         $entitySetInstance = new $baseEntitySetClass();

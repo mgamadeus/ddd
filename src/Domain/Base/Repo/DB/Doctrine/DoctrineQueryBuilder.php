@@ -209,7 +209,7 @@ class DoctrineQueryBuilder extends QueryBuilder
      *
      * @return mixed
      */
-    public function applyDistinctSubqueryIfNeededAndGetResult(): mixed
+    public function applyDistinctSubqueryIfNeededAndGetResult(bool $refresh = false): mixed
     {
         // Check if there are any joins and if there's a limit or offset set
         $hasLimitOrOffset = $this->getMaxResults() !== null || $this->getFirstResult();
@@ -217,7 +217,16 @@ class DoctrineQueryBuilder extends QueryBuilder
 
         // If no joins or no limit/offset, return the result directly
         if (!$hasLimitOrOffset || !$hasJoins) {
-            return $this->getQuery()->getResult();
+            $query = $this->getQuery();
+            // $refresh (a set-load with useEntityRegistrCache=false) must FORCE a fresh hydration: Doctrine's identity
+            // map otherwise returns the already-managed entity — with its STALE field/embedded-VO values from an earlier
+            // load in the same long-running process (e.g. a worker that loaded an entity in turn 1 and reloads it later)
+            // — instead of re-reading the fresh DB row. Mirrors the single-entity DatabaseRepoEntity::find() path. (The
+            // joins+limit branch below executes RAW SQL via the DBAL connection and maps fresh rows, so it is unaffected.)
+            if ($refresh) {
+                $query->disableResultCache()->useQueryCache(false)->setHint(Query::HINT_REFRESH, true);
+            }
+            return $query->getResult();
         }
 
         // Store the original limit and offset, then reset them
