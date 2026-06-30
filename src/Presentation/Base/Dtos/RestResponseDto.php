@@ -34,7 +34,10 @@ class RestResponseDto extends JsonResponse
     public function getContent(): string|false
     {
         if (!($this->content && $this->content != '{}')) {
-            $this->data = $this->toJSON();
+            // A REST response is OUTPUT, not persistence — serialize with forPersistence:false so #[DontPersistProperty]
+            // fields (transient/computed values the API needs) are NOT stripped. Default stays true for every other
+            // toJSON() caller (DB-blob persistence writes, cache keys).
+            $this->data = $this->toJSON(forPersistence: false);
             $this->update();
         }
         return $this->content;

@@ -841,11 +841,11 @@ trait SerializerTrait
         return null;
     }
 
-    public function jsonSerialize(bool $ignoreHideAttributes = false)
+    public function jsonSerialize(bool $ignoreHideAttributes = false, bool $forPersistence = true)
     {
         // unset toObject Cache
         SerializerRegistry::$toOjectCache = [];
-        return $this->toObject(ignoreHideAttributes: $ignoreHideAttributes);
+        return $this->toObject(ignoreHideAttributes: $ignoreHideAttributes, forPersistence: $forPersistence);
     }
 
     /**
@@ -1103,10 +1103,10 @@ trait SerializerTrait
         }
     }
 
-    public function toJSON(bool $ignoreHideAttributes = false)
+    public function toJSON(bool $ignoreHideAttributes = false, bool $forPersistence = true)
     {
         return json_encode(
-            $this->jsonSerialize($ignoreHideAttributes),
+            $this->jsonSerialize($ignoreHideAttributes, $forPersistence),
             JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
         );
     }
