@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Cache;
 
+use BadMethodCallException;
 use DDD\Infrastructure\Cache\Predis\Client;
 use DDD\Infrastructure\Libs\Config;
 use Psr\Cache\InvalidArgumentException;
@@ -264,4 +265,50 @@ abstract class Cache
         $cache = $this->getCacheAdapter();
         $cache->deleteItem(self::convertKeyToValidCacheKey($key));
     }
+
+    // region Atomic counter operations
+    //
+    // A DISTINCT keyspace from get()/set(): these operate on raw native counters (APCu `apcu_inc`, Redis `INCRBY`),
+    // NOT through the PSR-6 adapter, so a value written with increment() is NOT visible to get() and vice versa. The
+    // point is atomicity — a shared counter incremented without a read-modify-write race, for distributed counters
+    // (e.g. rate quotas synced across nodes). Supported by Apc / Redis / RedisSentinel; every other backend throws.
+
+    /**
+     * Atomically add $by to the counter at $key and return the NEW value. Creates the counter (at $by) if missing.
+     * On creation the entry gets $ttl seconds to live (null → the cache's default TTL).
+     */
+    public function increment(string $key, int $by = 1, ?int $ttl = null): int
+    {
+        throw new BadMethodCallException(static::class . ' does not support atomic counter operations.');
+    }
+
+    /** Atomically subtract $by from the counter at $key and return the NEW value. */
+    public function decrement(string $key, int $by = 1): int
+    {
+        throw new BadMethodCallException(static::class . ' does not support atomic counter operations.');
+    }
+
+    /** Read the counter at $key as an int (0 if missing). */
+    public function getCounter(string $key): int
+    {
+        throw new BadMethodCallException(static::class . ' does not support atomic counter operations.');
+    }
+
+    /** Remove the counter at $key. */
+    public function deleteCounter(string $key): void
+    {
+        throw new BadMethodCallException(static::class . ' does not support atomic counter operations.');
+    }
+
+    /**
+     * Namespaces a raw counter key. NOT routed through {@see self::convertKeyToValidCacheKey()} / the PSR-6 adapter —
+     * the counter keyspace is deliberately separate — but carries the cache namespace so counters of different apps /
+     * pools never collide.
+     */
+    protected function counterKey(string $key): string
+    {
+        return 'ddd.ctr.' . ($this->config['namespace'] ?? '') . '.' . $key;
+    }
+
+    // endregion
 }

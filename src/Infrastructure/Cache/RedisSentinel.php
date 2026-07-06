@@ -9,6 +9,8 @@ use Symfony\Component\Cache\Adapter\RedisAdapter;
 
 class RedisSentinel extends Cache
 {
+    use RedisAtomicCounterTrait;
+
     protected RedisAdapter $adapter;
 
     public function getCacheAdapter(): RedisAdapter
@@ -23,8 +25,9 @@ class RedisSentinel extends Cache
                 ],
                 'ttl' => $this->ttl,
             ];
-            $client = new Client($this->config['sentinels'], $options);
-            $this->adapter = new RedisAdapter($client, $this->config['namespace'], $this->ttl);
+            // Keep the Predis client for atomic counter ops (INCRBY/EXPIRE) — the PSR-6 adapter does not expose them.
+            $this->nativeRedisConnection = new Client($this->config['sentinels'], $options);
+            $this->adapter = new RedisAdapter($this->nativeRedisConnection, $this->config['namespace'], $this->ttl);
         }
         return $this->adapter;
     }
