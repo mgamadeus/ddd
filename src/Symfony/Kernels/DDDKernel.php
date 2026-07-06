@@ -3,6 +3,7 @@
 namespace DDD\Symfony\Kernels;
 
 use DDD\Symfony\CompilerPasses\ModuleCompilerPass;
+use DDD\Symfony\CompilerPasses\QuotaDefaultBindingsCompilerPass;
 use DDD\Symfony\CompilerPasses\ServiceClassCollectorPass;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\DependencyInjection\Container;
@@ -157,5 +158,9 @@ class DDDKernel extends Kernel
         $container->addCompilerPass(new ModuleCompilerPass());
         // In the ServiceClassCollectorPass we register all class / service name associations
         $container->addCompilerPass(new ServiceClassCollectorPass());
+        // Default bindings for the generic quota framework's ports, so an app that does not wire quotas still compiles
+        // (the QuotaSubscriber is auto-registered and depends on QuotaConsumerInterface / QuotaAccountResolverInterface).
+        // Only fills gaps — an app's own binding always wins.
+        $container->addCompilerPass(new QuotaDefaultBindingsCompilerPass());
     }
 }
