@@ -3,7 +3,7 @@
     "description": "A DDD Entity Framework on top of symfony and doctrine",
     "minimum-stability": "stable",
     "license": "MIT",
-    "version": "2.47.0",
+    "version": "2.48.0",
     "authors": [
         {
             "name": "Marius-Eugen Gerdan",
@@ -49,6 +49,8 @@
         "symfony/dotenv": "7.3.*",
         "symfony/yaml": "7.3.*",
         "symfony/routing": "7.3.*",
+        "symfony/rate-limiter": "7.3.*",
+        "symfony/lock": "7.3.*",
         "symfony/mime": ">=7.3 <9.0",
         "twig/twig": "^3.0",
         "dragonmantank/cron-expression": "^3.3",
