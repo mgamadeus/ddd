@@ -14,7 +14,11 @@ use Throwable;
 #[PhoneNumberConstraint]
 class PhoneNumber extends ContactInfo
 {
-    public const int DEFAULT_FORMAT = PhoneNumberFormat::E164;
+    // Untyped on purpose: libphonenumber\PhoneNumberFormat is int class-constants in 8.x but a PHP ENUM in 9.x, so a
+    // `const int` breaks on 9.x (TypeError on reflection → container build) and a `const PhoneNumberFormat` breaks on
+    // 8.x. An untyped constant holds the int on 8.x and the enum on 9.x, and PhoneNumberUtil::format() accepts each on
+    // its own major — so this stays compatible with giggsey/libphonenumber-for-php ^8.13 || ^9.
+    public const DEFAULT_FORMAT = PhoneNumberFormat::E164;
 
     public const string SCOPE_PHONE = 'PHONE';
 

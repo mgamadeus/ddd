@@ -19,7 +19,9 @@ use Throwable;
  */
 class PhoneNumberConstraintValidator extends ConstraintValidator
 {
-    public const int DEFAUL_FORMAT = PhoneNumberFormat::E164;
+    // Untyped: PhoneNumberFormat is int constants in libphonenumber 8.x but an enum in 9.x — an untyped constant holds
+    // either, keeping this compatible with ^8.13 || ^9 (a typed const breaks on one major or the other).
+    public const DEFAUL_FORMAT = PhoneNumberFormat::E164;
 
     /**
      * @throws NumberParseException
