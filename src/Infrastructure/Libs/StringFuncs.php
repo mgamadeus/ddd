@@ -7,6 +7,29 @@ namespace DDD\Infrastructure\Libs;
 class StringFuncs
 {
     /**
+     * Caps $text at $maxChars for a compact list rendering (e.g. toLlmMarkdown list rows), multibyte-safe, cut at a
+     * word boundary, and appends an explicit remainder marker so the reader KNOWS content was cut and how much:
+     * "Lorem ipsum dolor… [+1234 chars]". Returns $text unchanged when it fits. Unlike {@see self::shortenText}
+     * (byte-based, HTML ellipsis, silent), this is for LLM/plain-text output where a silent cut would hide data.
+     */
+    public static function capTextWithRemainderMarker(string $text, int $maxChars): string
+    {
+        $text = trim($text);
+        $textLength = mb_strlen($text);
+        if ($textLength <= $maxChars) {
+            return $text;
+        }
+        $cappedText = mb_substr($text, 0, $maxChars);
+        $lastSpacePosition = mb_strrpos($cappedText, ' ');
+        // Cut at the last word boundary unless that would sacrifice a large part of the budget (unbroken strings).
+        if ($lastSpacePosition !== false && $lastSpacePosition > (int)($maxChars * 0.6)) {
+            $cappedText = mb_substr($cappedText, 0, $lastSpacePosition);
+        }
+        $cappedText = rtrim($cappedText);
+        return $cappedText . '… [+' . ($textLength - mb_strlen($cappedText)) . ' chars]';
+    }
+
+    /**
      * Shortens text without splitting the words up
      * @param string $text
      * @param int $chars

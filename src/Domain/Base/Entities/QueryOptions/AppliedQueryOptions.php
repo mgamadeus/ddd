@@ -26,6 +26,13 @@ class AppliedQueryOptions extends ValueObject
     /** @var int The number of results to be returned */
     public ?int $top;
 
+    /**
+     * @var int|null Hard upper bound for `top` (from the #[QueryOptions(maxTop: …)] attribute): setTop() throws a
+     * BadRequestException above it. Null = no bound. System code that must legitimately exceed the bound writes
+     * the public $top property directly instead of calling setTop().
+     */
+    public ?int $maxTop = null;
+
     /** @var string|null Cursor for point to a resultset that was previously provided */
     public ?string $skiptoken;
 
@@ -59,6 +66,9 @@ class AppliedQueryOptions extends ValueObject
     ) {
         if (isset($queryOptions->top)) {
             $this->top = $queryOptions->top;
+        }
+        if (isset($queryOptions->maxTop)) {
+            $this->maxTop = $queryOptions->maxTop;
         }
         if (isset($queryOptions->skip)) {
             $this->skip = $queryOptions->skip;
@@ -99,12 +109,21 @@ class AppliedQueryOptions extends ValueObject
     }
 
     /**
-     * Sets limit for number of results returned.
+     * Sets limit for number of results returned. When the reference class declares #[QueryOptions(maxTop: …)],
+     * a larger $top is rejected with a BadRequestException (single enforcement point for the request-DTO path,
+     * expand clauses and programmatic callers alike).
      * @param int $top
      * @return AppliedQueryOptions
+     * @throws BadRequestException when $top exceeds the declared maxTop
      */
     public function setTop(int $top): AppliedQueryOptions
     {
+        if (isset($this->maxTop) && $top > $this->maxTop) {
+            throw new BadRequestException(
+                "top may be at most {$this->maxTop} here (got $top). Narrow the result with filters "
+                . '(e.g. a date range or status) and page with top/skip instead of requesting everything at once.'
+            );
+        }
         $this->top = max(1, $top);
         return $this;
     }
