@@ -107,6 +107,9 @@ class DatabaseIndex extends ValueObject
             }
             $indexName .= $columnsShort;
         }
+        // Cap at MariaDB's 64-char identifier limit: a single-column index name is `idx_` + the full
+        // column name and can overflow with long column names (error 1059).
+        $indexName = DatabaseIdentifier::shortenToMaxLength($indexName);
 
         $columnsSql = implode(
             ',',

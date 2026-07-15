@@ -67,9 +67,11 @@ class DatabaseForeignKey extends ValueObject
      */
     public function getSql(string $tableName, ?string $constraintNameOverride = null): string
     {
+        // The override (the LIVE constraint name) is used verbatim — it exists, so it is within the cap.
+        // A synthesized default name is capped at MariaDB's 64-char identifier limit (error 1059 otherwise).
         $constraintName = $constraintNameOverride !== null && $constraintNameOverride !== ''
             ? $constraintNameOverride
-            : "fk_{$tableName}_{$this->internalIdColumn}";
+            : DatabaseIdentifier::shortenToMaxLength("fk_{$tableName}_{$this->internalIdColumn}");
         return "ADD CONSTRAINT `{$constraintName}` FOREIGN KEY IF NOT EXISTS (`$this->internalIdColumn`) REFERENCES `$this->foreignTable` (`$this->foreignIdColumn`) ON UPDATE $this->onUpdateAction ON DELETE $this->onDeleteAction";
     }
 
