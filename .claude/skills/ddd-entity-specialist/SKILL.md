@@ -186,6 +186,16 @@ The rule is uniform: it does not matter whether the type's name "looks like" it 
 
 ## Critical Rules
 
+### NEVER Redeclare `$id`
+
+`$id` is inherited from `EntityTrait` as `public int|string|null $id = null;`. An entity MUST use it
+as-is and **never redeclare it** -- start the property list with the first real domain field. PHP
+typed properties are **invariant**, so a narrower redeclaration such as `public ?int $id = null;` is
+an incompatible override of `int|string|null` and throws a **fatal error at class load**. That fatal
+takes down OpenAPI doc generation (`/api/{audience}/documentation/openApi` returns a PHP error instead
+of JSON), which silently breaks SDK generation and all frontend work. If a value object genuinely
+needs an int-only id, that is a ValueObject concern, not an Entity -- Entities keep the union type.
+
 ### NEVER Modify Auto-Generated Files
 
 `DB{EntityName}Model.php` files are **auto-generated** from entity attributes. Never create, modify, or delete them manually.
@@ -344,7 +354,7 @@ class {EntityName} extends Entity
     public const string STATUS_ACTIVE = 'ACTIVE';
     public const string STATUS_INACTIVE = 'INACTIVE';
 
-    public ?int $id = null;
+    // NOTE: $id is inherited from EntityTrait as `int|string|null` — do NOT redeclare it.
 
     #[Length(max: 255)]
     public string $name;
@@ -806,7 +816,7 @@ For M:N relationships, create a thin junction entity with two foreign keys:
 #[LazyLoadRepo(LazyLoadRepo::DB, DBIngredientAllergen::class)]
 class IngredientAllergen extends Entity
 {
-    public ?int $id = null;
+    // $id is inherited from EntityTrait (int|string|null) — do NOT redeclare it.
     public int $ingredientId;
     public int $allergenId;
 
