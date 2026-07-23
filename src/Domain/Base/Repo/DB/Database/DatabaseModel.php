@@ -517,14 +517,15 @@ class DatabaseModel extends ValueObject
                         but foreign reference definitions applied by attribute on $entityClassName.{$reflectionProperty->getName()} define SET NULL on DELTE or UPDATE"
                         );
                     }
-                    // If there is a stored virtual Column present newer SQL Versions are not supporting Contraints that update the stored virtual Columns due to performance reasons
-                    // This results in errors on generation of Foreign Key contraints such as
-                    // [HY000][1901] (conn=7) Function or expression 'accountId' cannot be used in the GENERATED ALWAYS AS clause of `virtualAccountId`
-                    // In these cases we need to set on update action RESTRICT by default
+                    // MariaDB/MySQL forbid a FK with a CASCADE / SET NULL / SET DEFAULT referential action when the FK
+                    // column is the BASE column of a STORED generated (virtual) column: the action would have to
+                    // update/clear the base column that the stored expression is derived from. It fails with
+                    // "[HY000][1901] … cannot be used in the GENERATED ALWAYS AS clause" on UPDATE and
+                    // "[0A000][138] Cannot add foreign key on the base column of stored column" on DELETE. Only
+                    // RESTRICT / NO ACTION are permitted. So when this FK's column backs a STORED virtual column,
+                    // downgrade BOTH actions (update AND delete) to RESTRICT; explicit RESTRICT / NO ACTION pass through.
                     $internalDatabaseColumnInstance = $databaseModel->columns->getColumnByName($internalColumn);
-                    if (
-                        ($foreignKey->onUpdateAction == DatabaseForeignKey::ACTION_CASCADE || $foreignKey->onUpdateAction == DatabaseForeignKey::ACTION_SET_NULL) && isset($internalDatabaseColumnInstance->virtualColumnsBasedOnCurrentColumn)
-                    ) {
+                    if (isset($internalDatabaseColumnInstance->virtualColumnsBasedOnCurrentColumn)) {
                         $hasStoredVirtualColumn = false;
                         foreach (
                             $internalDatabaseColumnInstance->virtualColumnsBasedOnCurrentColumn->getElements() as $dependentDatabaseVirtualColumn
@@ -535,7 +536,17 @@ class DatabaseModel extends ValueObject
                             }
                         }
                         if ($hasStoredVirtualColumn) {
-                            $foreignKey->onUpdateAction = DatabaseForeignKey::ACTION_RESTRICT;
+                            $actionsDisallowedOnStoredColumnBase = [
+                                DatabaseForeignKey::ACTION_CASCADE,
+                                DatabaseForeignKey::ACTION_SET_NULL,
+                                DatabaseForeignKey::ACTION_SET_DEFAULT,
+                            ];
+                            if (in_array($foreignKey->onUpdateAction, $actionsDisallowedOnStoredColumnBase, true)) {
+                                $foreignKey->onUpdateAction = DatabaseForeignKey::ACTION_RESTRICT;
+                            }
+                            if (in_array($foreignKey->onDeleteAction, $actionsDisallowedOnStoredColumnBase, true)) {
+                                $foreignKey->onDeleteAction = DatabaseForeignKey::ACTION_RESTRICT;
+                            }
                         }
                     }
                     $foreignKey->internalColumn = $reflectionProperty->getName();
