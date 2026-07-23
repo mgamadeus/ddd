@@ -116,6 +116,10 @@ class EntityManagerFactory
         if (!self::$instances[$scope]->isOpen()) {
             self::create($scope);
         }
+        // Unthrottled transaction-state desync heal (DBAL nesting counter vs native PDO inTransaction) —
+        // MUST run before/independent of the throttled ping below: the SELECT-1 ping succeeds on a desynced
+        // connection and would never detect it. See DoctrineEntityManager::healDesyncedTransactionState().
+        self::$instances[$scope]->healDesyncedTransactionState();
         // Check if the connection is still pingable
         if (!self::$instances[$scope]->isConnectionActive()) {
             self::create($scope);

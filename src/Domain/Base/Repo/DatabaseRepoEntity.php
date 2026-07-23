@@ -509,8 +509,17 @@ abstract class DatabaseRepoEntity extends RepoEntity
                                 if ($startedTransaction) {
                                     try {
                                         $connection->commit();
-                                    } catch (Throwable) {
-                                        try { $connection->rollBack(); } catch (Throwable) {}
+                                    } catch (Throwable $commitFailure) {
+                                        // A failed COMMIT loses the whole upsert+reload transaction server-side, and
+                                        // DBAL has already zeroed its nesting counter (finally in Connection::commit) —
+                                        // a rollBack() here could never reach the driver again (the old fallback was a
+                                        // guaranteed no-op that left an orphaned server-side transaction poisoning the
+                                        // long-lived worker connection). close() clears the orphan (auto-reconnect on
+                                        // next use), and the failure is RETHROWN: a lost write must not look like a
+                                        // successful update. (If the reload find() above also threw, this commit
+                                        // failure replaces it — both surface the same broken write.)
+                                        $connection->close();
+                                        throw $commitFailure;
                                     }
                                 }
                             }
@@ -545,11 +554,13 @@ abstract class DatabaseRepoEntity extends RepoEntity
                     $this->ormInstance = isset($this->ormInstance) && $this->ormInstance ? $this->ormInstance : new (static::BASE_ORM_MODEL)();
                     $this->ormInstance->id = $entityId;
                     $this->mapCreatedAndUpdatedTime($entity);
+                    // Same 2-arg form as the main call site above: upsert() derives the created/modified columns
+                    // itself, and the old 3rd/4th args here flowed a ?string into the ?array $onlyFieldNames
+                    // parameter — a hard TypeError under strict_types whenever this translations+change-history
+                    // path ran with a non-null created column.
                     $entityManager->upsert(
                         $this->ormInstance,
-                        $updateRightsQueryBuilder,
-                        $changeHistoryAttributeInstance ? $changeHistoryAttributeInstance?->getCreatedColumn() : null,
-                        $changeHistoryAttributeInstance ? $changeHistoryAttributeInstance?->getModifiedColumn() : ''
+                        $updateRightsQueryBuilder
                     );
                 }
                 $translationAttributeInstance->updateOrCreateTranslation($entity, $this);

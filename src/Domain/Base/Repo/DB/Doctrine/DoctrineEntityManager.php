@@ -9,6 +9,7 @@ use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 use DDD\Infrastructure\Exceptions\ForbiddenException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Services\AuthService;
+use DDD\Infrastructure\Services\DDDService;
 use Doctrine\Common\Cache\Psr6\InvalidArgument;
 use Doctrine\Common\EventManager;
 use Doctrine\DBAL\Connection;
@@ -207,17 +208,23 @@ class DoctrineEntityManager extends EntityManager
             }
         }
 
-        $checkUpdateRights = false;
-        if (!$connection->isTransactionActive() && $updateRightsQueryBuilder) {
-            $checkUpdateRights = true;
-        }
         $modelAlias = $doctrineModel::MODEL_ALIAS;
 
-        // first we check if we perform an update or insert operation. If we already have an id, then we need to check before if
-        // rights are sufficient to update the Entity.
-        $checkedRightsOnUpdateOperation = false;
-        if ($checkUpdateRights && isset($doctrineModel->id)) {
-            $checkedRightsOnUpdateOperation = true;
+        // Rights enforcement is split by operation:
+        // - UPDATE path (id present): a plain rights-scoped SELECT — it needs no transaction, so it runs
+        //   REGARDLESS of an already-active (outer) transaction. The old single gate
+        //   (!isTransactionActive() && $updateRightsQueryBuilder) made every update executed inside ANY outer
+        //   transaction (e.g. the DB_USE_READ_AFTER_WRITE wrapper or an application-level transaction) skip
+        //   row-scoped rights entirely — with rights active, upsert() is the ONLY row-scope enforcer for writes.
+        // - INSERT path (no id): rights can only be verified AFTER inserting (the rights query needs the row),
+        //   and a denial must roll the insert back — so this check must OWN a transaction and stays gated on
+        //   transaction-free entry (inside a foreign transaction the insert runs unchecked, as before; making
+        //   it nest safely would require savepoints).
+        $checkUpdateRightsOnExistingId = $updateRightsQueryBuilder && isset($doctrineModel->id);
+        $checkInsertRightsInOwnTransaction = $updateRightsQueryBuilder && !isset($doctrineModel->id)
+            && !$connection->isTransactionActive();
+
+        if ($checkUpdateRightsOnExistingId) {
             $checkRightsQueryBuilder = clone $updateRightsQueryBuilder;
             $checkRightsQueryBuilder->andWhere("$modelAlias.id = :entityId");
             $checkRightsQueryBuilder->setParameter('entityId', $doctrineModel->id);
@@ -233,8 +240,8 @@ class DoctrineEntityManager extends EntityManager
                 );
             }
         }
-        // we need to start a transaction to be able to roll it back only if we did not perform an update operation
-        if ($checkUpdateRights && !$checkedRightsOnUpdateOperation) {
+        // we need to start a transaction to be able to roll the insert back if the post-insert rights check denies
+        if ($checkInsertRightsInOwnTransaction) {
             $connection->beginTransaction();
         }
         $sql = 'INSERT INTO ' . $doctrineModel->getTableName() . ' (' . implode(
@@ -244,42 +251,50 @@ class DoctrineEntityManager extends EntityManager
                 ', ',
                 $set
             ) . ')' . ' ON DUPLICATE KEY UPDATE ' . implode(', ', $update);
+        // EVERYTHING between our beginTransaction() and its commit() lives inside this try — the insert itself,
+        // lastInsertId, and the whole post-insert rights re-check. Before this, the rights re-check query ran
+        // OUTSIDE any try: a throw there (rights-join lock timeout, connection loss, schema drift) leaked the
+        // open transaction into the long-lived worker connection — silently disabling all subsequent rights
+        // checks and collecting every later write into a never-committed transaction (lost on worker death).
         try {
             $connection->executeStatement($sql, $values, $types);
-        }
-        catch(\Throwable $t){
-            // make shure we dont leave open transactions
-            if ($checkUpdateRights && !$checkedRightsOnUpdateOperation){
-                $connection->rollBack();
+            $entityId = $doctrineModel->id ?? (int)$connection->lastInsertId();
+
+            // INSERT rights check: the freshly inserted row must be visible under the rights query — otherwise
+            // deny; the catch below rolls the insert back.
+            if ($checkInsertRightsInOwnTransaction) {
+                $checkRightsQueryBuilder = clone $updateRightsQueryBuilder;
+                $checkRightsQueryBuilder->andWhere("$modelAlias.id = :entityId");
+                $checkRightsQueryBuilder->setParameter('entityId', $entityId);
+
+                $loadedOrmInstanceWithUpdateRightsQueryApplied = $checkRightsQueryBuilder->getQuery()->setMaxResults(
+                    1
+                )->getResult();
+                $loadedOrmInstanceWithUpdateRightsQueryApplied = $loadedOrmInstanceWithUpdateRightsQueryApplied[0] ?? null;
+
+                if (!$loadedOrmInstanceWithUpdateRightsQueryApplied) {
+                    $authAccount = AuthService::instance()->getAccount() ?? null;
+                    $authAccountId = $authAccount ? $authAccount->id : '(not logged in)';
+                    throw new ForbiddenException(
+                        'Account ' . $authAccountId . ' has no permission to update or create Entity ' . $doctrineModel::ENTITY_CLASS
+                    );
+                }
+                $connection->commit();
+            }
+        } catch (\Throwable $t) {
+            // Roll back ONLY the transaction WE began above — NEVER a caller's (the DB_USE_READ_AFTER_WRITE
+            // wrapper in DatabaseRepoEntity::update(), or an application-level transaction around update()).
+            if ($checkInsertRightsInOwnTransaction) {
+                if ($connection->isTransactionActive()) {
+                    $connection->rollBack();
+                } else {
+                    // commit() itself threw: DBAL has already zeroed its nesting counter (finally in
+                    // Connection::commit), so no rollBack() can reach the driver anymore — close() clears a
+                    // possibly orphaned server-side transaction; the connection reconnects on next use.
+                    $connection->close();
+                }
             }
             throw $t;
-        }
-        $entityId = $doctrineModel->id ?? (int)$connection->lastInsertId();
-
-        // if we need to check rights and we did not perform a check on an update operation, we are checking an insert operation here.
-        // the check os done in a way, that
-        if ($checkUpdateRights && !$checkedRightsOnUpdateOperation) {
-            $modelAlias = $doctrineModel::MODEL_ALIAS;
-
-            $checkRightsQueryBuilder = clone $updateRightsQueryBuilder;
-            $checkRightsQueryBuilder->andWhere("$modelAlias.id = :entityId");
-            $checkRightsQueryBuilder->setParameter('entityId', $entityId);
-
-            $loadedOrmInstanceWithUpdateRightsQueryApplied = $checkRightsQueryBuilder->getQuery()->setMaxResults(
-                1
-            )->getResult();
-            $loadedOrmInstanceWithUpdateRightsQueryApplied = $loadedOrmInstanceWithUpdateRightsQueryApplied[0] ?? null;
-
-            if (!$loadedOrmInstanceWithUpdateRightsQueryApplied) {
-                // no access to Entity, rolling back
-                $connection->rollBack();
-                $authAccount = AuthService::instance()->getAccount() ?? null;
-                $authAccountId = $authAccount ? $authAccount->id : '(not logged in)';
-                throw new ForbiddenException(
-                    'Account ' . $authAccountId . ' has no permission to update or create Entity ' . $doctrineModel::ENTITY_CLASS
-                );
-            }
-            $connection->commit();
         }
         return $entityId;
     }
@@ -417,5 +432,69 @@ class DoctrineEntityManager extends EntityManager
         } catch (ConnectionLost|Exception) {
             return false;
         }
+    }
+
+    /**
+     * Heals a transaction-state desync between DBAL's nesting counter and the native PDO connection.
+     *
+     * A driver-level COMMIT/ROLLBACK failure leaves DBAL's nesting counter at 0 (Connection::commit() decrements
+     * in a finally; rollBack() zeroes the counter BEFORE the driver call) while the server-side transaction can
+     * survive as an orphan — pdo_mysql's inTransaction() then keeps reporting true from the server status of
+     * every following OK packet. In that state every later beginTransaction() throws PDO "There is already an
+     * active transaction", and no rollBack() can ever reach the driver again (at counter 0 DBAL throws
+     * NoActiveTransaction). The reverse mismatch (counter > 0 with no server transaction — a failed driver BEGIN
+     * leaves the counter incremented, there is no try/finally around it) silently disables the upsert rights
+     * checks and degrades FOR UPDATE semantics to autocommit. Both directions are unhealable through the DBAL
+     * API; both hit long-lived Messenger workers, where the poisoned connection survives across messages.
+     *
+     * Detection compares the native PDO in-transaction status against DBAL's counter. pdo_mysql's flag reflects
+     * the server status of the LAST received OK/EOF packet and can lag one statement, so a mismatch is first
+     * re-checked after a refreshing SELECT 1 — only a persistent mismatch is healed. Heal = Connection::close():
+     * it zeroes the nesting counter and drops the PDO (the server rolls an orphaned transaction back on
+     * disconnect — it was uncommittable anyway, commit() at counter 0 throws), and the connection auto-reconnects
+     * on next use. Healing in place keeps method-local $connection references valid, unlike recreating the
+     * EntityManager.
+     *
+     * Called unthrottled from EntityManagerFactory::getInstance() — on the consistent (normal) path this is a
+     * client-side flag comparison with no server round-trip, so it must NOT sit behind the
+     * CONNECTION_CHECK_INTERVAL throttle (and the SELECT-1 ping cannot detect this state anyway: it succeeds on
+     * a desynced connection).
+     */
+    public function healDesyncedTransactionState(): void
+    {
+        $connection = $this->getConnection();
+        // Never force a connect just to inspect state — getNativeConnection() connects eagerly.
+        if (!$connection->isConnected()) {
+            return;
+        }
+        try {
+            $nativeConnection = $connection->getNativeConnection();
+        } catch (\Throwable) {
+            return;
+        }
+        if (!$nativeConnection instanceof \PDO) {
+            return;
+        }
+        if ($nativeConnection->inTransaction() === $connection->isTransactionActive()) {
+            return;
+        }
+        // The native flag can lag one statement behind the server; a successful query refreshes it, so a
+        // merely-stale mismatch dissolves here without dropping the connection.
+        try {
+            $connection->executeQuery('SELECT 1');
+        } catch (\Throwable) {
+            // Query failure on a mismatched connection — fall through to close(), reconnect covers this too.
+        }
+        if ($nativeConnection->inTransaction() === $connection->isTransactionActive()) {
+            return;
+        }
+        DDDService::instance()->getLogger()->warning(
+            sprintf(
+                'DoctrineEntityManager: healed desynced transaction state (DBAL nesting level %d, native inTransaction %s) by closing the connection',
+                $connection->getTransactionNestingLevel(),
+                $nativeConnection->inTransaction() ? 'true' : 'false'
+            )
+        );
+        $connection->close();
     }
 }
