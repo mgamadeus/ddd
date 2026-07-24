@@ -12,6 +12,7 @@ use DDD\Infrastructure\Services\AuthService;
 use DDD\Infrastructure\Services\DDDService;
 use Doctrine\Common\Cache\Psr6\InvalidArgument;
 use Doctrine\Common\EventManager;
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception;
 use Doctrine\DBAL\Exception\ConnectionLost;
@@ -19,6 +20,7 @@ use Doctrine\ORM\Configuration;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Exception\ORMException;
 use Doctrine\ORM\Mapping\MappingException;
+use Doctrine\ORM\Query\Parser;
 use Doctrine\ORM\QueryBuilder;
 use ReflectionException;
 
@@ -30,6 +32,16 @@ class DoctrineEntityManager extends EntityManager
 
     // The last time the connection was checked
     protected int $lastConnectionCheckTime = 0;
+
+    /**
+     * Monotonic per-process counter for the insert-rights savepoint names in {@see upsert()}. A savepoint name
+     * must be unique per invocation: `SAVEPOINT <name>` with an already-used name silently REPLACES the old
+     * mark, and upsert() nests (updateDependentEntities cascades into child upserts inside the same outer
+     * transaction) — a reused name would make the outer check's ROLLBACK TO stop at the inner mark, leaving a
+     * denied outer insert in place. A counter guarantees uniqueness structurally (savepoint scope is one
+     * transaction on one connection = one process) and keeps names log-correlatable, unlike random suffixes.
+     */
+    protected static int $insertRightsSavepointCounter = 0;
 
     /**
      * Factory method to create EntityManager instances.
@@ -92,6 +104,19 @@ class DoctrineEntityManager extends EntityManager
         $hasId = $metadata->containsForeignIdentifier;
         $createdColumn = ChangeHistory::DEFAULT_CREATED_COLUMN_NAME;
         $reflectionClass = ReflectionClass::instance($doctrineModel::class);
+
+        // Rights-scoped UPDATE path (id present + rights query): the write itself carries the rights condition
+        // (`UPDATE … WHERE id = ? AND id IN (<rights query>)`) — ONE atomic statement instead of the former
+        // read-then-write (a separate rights SELECT before the ODKU). That kills three problems at once: the
+        // check-then-write race, the extra round-trip, and the snapshot conflict the SELECT caused as first
+        // statement inside an outer transaction (MariaDB innodb_snapshot_isolation → error 1020 "Record has
+        // changed since last read"). No transaction-state check needed — the statement is correct with and
+        // without an outer transaction. The loop below builds the plain SET assignments for it in parallel to
+        // the ODKU assignments.
+        $rightsScopedUpdatePath = $updateRightsQueryBuilder && isset($doctrineModel->id) && $doctrineModel->id;
+        $rightsScopedUpdateAssignments = [];
+        $rightsScopedUpdateValues = [];
+        $rightsScopedUpdateTypes = [];
 
         foreach ($metadata->getFieldNames() as $fieldName) {
             // We ignore virtual columns
@@ -206,43 +231,137 @@ class DoctrineEntityManager extends EntityManager
             } else {
                 $update[] = "$column = VALUES($column)";
             }
+
+            // Mirror of the ODKU decision chain above for the rights-scoped direct UPDATE: same semantics per
+            // column, with `VALUES(col)` replaced by the bound placeholder expression itself. Identifier columns
+            // are skipped (the WHERE clause carries the id).
+            if ($rightsScopedUpdatePath && !$metadata->isIdentifier($fieldName)) {
+                $setExpressionForField = $set[array_key_last($set)];
+                $assignmentBindsValue = !$skipValueBinding;
+                if ($databaseColumnAttributeInstance?->isMergableJSONColumn && is_array($value)) {
+                    if (in_array($fieldName, $doctrineModel->columnsToReplaceInsteadOfMerge, true)) {
+                        $rightsScopedUpdateAssignments[] = "$column = $setExpressionForField";
+                    } else {
+                        $rightsScopedUpdateAssignments[] = "$column = JSON_MERGE_PATCH(COALESCE($column,'{}'), $setExpressionForField)";
+                    }
+                } elseif ($fieldName == $createdColumn) {
+                    // created is never overwritten on an update
+                    $rightsScopedUpdateAssignments[] = "$column = COALESCE($setExpressionForField, $column)";
+                } elseif (isset($databaseColumnAttributeInstance->onUpdateAction)) {
+                    // the action expression replaces the bound value entirely — nothing to bind for this column
+                    $rightsScopedUpdateAssignments[] = "$column = " . $databaseColumnAttributeInstance->onUpdateAction;
+                    $assignmentBindsValue = false;
+                } else {
+                    $rightsScopedUpdateAssignments[] = "$column = $setExpressionForField";
+                }
+                if ($assignmentBindsValue) {
+                    $rightsScopedUpdateValues[] = $value;
+                    $rightsScopedUpdateTypes[] = $types[array_key_last($types)];
+                }
+            }
         }
 
         $modelAlias = $doctrineModel::MODEL_ALIAS;
 
-        // Rights enforcement is split by operation:
-        // - UPDATE path (id present): a plain rights-scoped SELECT — it needs no transaction, so it runs
-        //   REGARDLESS of an already-active (outer) transaction. The old single gate
-        //   (!isTransactionActive() && $updateRightsQueryBuilder) made every update executed inside ANY outer
-        //   transaction (e.g. the DB_USE_READ_AFTER_WRITE wrapper or an application-level transaction) skip
-        //   row-scoped rights entirely — with rights active, upsert() is the ONLY row-scope enforcer for writes.
+        // Rights enforcement by operation:
+        // - UPDATE path (id present): the rights condition is part of the WRITE statement itself
+        //   (`UPDATE … WHERE id = ? AND id IN (<rights query>)`) — atomic, transaction-agnostic, no prior
+        //   SELECT. 0 affected rows = the row is not writable under the rights query (or the values were
+        //   identical — disambiguated below). Replaces the former read-then-write, whose SELECT (a) raced the
+        //   write and (b) froze the snapshot as first statement inside an outer transaction (MariaDB
+        //   innodb_snapshot_isolation → error 1020).
         // - INSERT path (no id): rights can only be verified AFTER inserting (the rights query needs the row),
-        //   and a denial must roll the insert back — so this check must OWN a transaction and stays gated on
-        //   transaction-free entry (inside a foreign transaction the insert runs unchecked, as before; making
-        //   it nest safely would require savepoints).
-        $checkUpdateRightsOnExistingId = $updateRightsQueryBuilder && isset($doctrineModel->id);
-        $checkInsertRightsInOwnTransaction = $updateRightsQueryBuilder && !isset($doctrineModel->id)
-            && !$connection->isTransactionActive();
+        //   and a denial must roll the insert back. The revert mechanism depends on the transaction context:
+        //   with no transaction open, the check OWNS a begin/commit; inside a foreign transaction it uses a
+        //   SAVEPOINT (unique per invocation — see $insertRightsSavepointCounter) so a denial reverts ONLY the
+        //   insert while the caller's transaction and its prior work stay intact. The old behavior — skipping
+        //   the check entirely inside a foreign transaction — let an attacker insert rows into foreign scopes
+        //   whenever any transaction happened to be open.
+        if ($rightsScopedUpdatePath) {
+            // Reduce the rights query to the visible ids and embed it as a derived table: the extra
+            // `SELECT * FROM (…)` wrapper materializes it, which is what makes referencing the UPDATE's own
+            // target table legal in MySQL/MariaDB (error 1093 otherwise).
+            $rightsIdQueryBuilder = clone $updateRightsQueryBuilder;
+            $rightsIdQueryBuilder->select("$modelAlias.id");
+            $rightsIdQuery = $rightsIdQueryBuilder->getQuery();
+            // getSQL() is the stable public way to the generated SQL (ORM ≥2.20 fills the ParserResult via the
+            // SqlFinalizer path, so ParserResult::getSqlExecutor() can be null); the Parser run below is still
+            // needed for the named-DQL-parameter → positional-SQL mapping, which has no public accessor on Query.
+            $rightsSelectSql = $rightsIdQuery->getSQL();
+            $rightsParserResult = (new Parser($rightsIdQuery))->parse();
+            // Flatten the DQL named parameters into SQL positional order via the parser's mapping.
+            $rightsParameterMappings = $rightsParserResult->getParameterMappings();
+            $rightsValuesBySqlPosition = [];
+            foreach ($rightsIdQuery->getParameters() as $rightsParameter) {
+                foreach ($rightsParameterMappings[$rightsParameter->getName()] ?? [] as $sqlPosition) {
+                    $rightsValuesBySqlPosition[$sqlPosition] = $rightsParameter->getValue();
+                }
+            }
+            ksort($rightsValuesBySqlPosition);
+            $rightsParameterValues = [];
+            $rightsParameterTypes = [];
+            foreach ($rightsValuesBySqlPosition as $rightsParameterValue) {
+                if ($rightsParameterValue instanceof \DateTimeInterface) {
+                    $rightsParameterValue = $rightsParameterValue->format('Y-m-d H:i:s');
+                }
+                if (is_array($rightsParameterValue)) {
+                    $rightsParameterTypes[] = is_int($rightsParameterValue[array_key_first($rightsParameterValue)] ?? null)
+                        ? ArrayParameterType::INTEGER
+                        : ArrayParameterType::STRING;
+                } elseif (is_int($rightsParameterValue)) {
+                    $rightsParameterTypes[] = 'integer';
+                } elseif (is_bool($rightsParameterValue)) {
+                    $rightsParameterTypes[] = 'boolean';
+                } else {
+                    $rightsParameterTypes[] = 'string';
+                }
+                $rightsParameterValues[] = $rightsParameterValue;
+            }
 
-        if ($checkUpdateRightsOnExistingId) {
-            $checkRightsQueryBuilder = clone $updateRightsQueryBuilder;
-            $checkRightsQueryBuilder->andWhere("$modelAlias.id = :entityId");
-            $checkRightsQueryBuilder->setParameter('entityId', $doctrineModel->id);
-            $loadedOrmInstanceWithUpdateRightsQueryApplied = $checkRightsQueryBuilder->getQuery()->setMaxResults(
-                1
-            )->getResult();
-            $loadedOrmInstanceWithUpdateRightsQueryApplied = $loadedOrmInstanceWithUpdateRightsQueryApplied[0] ?? null;
-            if (!$loadedOrmInstanceWithUpdateRightsQueryApplied) {
-                $authAccount = AuthService::instance()->getAccount() ?? null;
-                $authAccountId = $authAccount ? $authAccount->id : '(not logged in)';
-                throw new ForbiddenException(
-                    'Account ' . $authAccountId . ' has no permission to update Entity ' . $doctrineModel::ENTITY_CLASS . ' with id ' . $doctrineModel->id
+            $rightsScopedAffectedRows = 0;
+            if ($rightsScopedUpdateAssignments !== []) {
+                $sql = 'UPDATE ' . $doctrineModel->getTableName()
+                    . ' SET ' . implode(', ', $rightsScopedUpdateAssignments)
+                    . ' WHERE `id` = ? AND `id` IN (SELECT * FROM (' . $rightsSelectSql . ') dddUpdateRightsScope)';
+                $rightsScopedAffectedRows = (int)$connection->executeStatement(
+                    $sql,
+                    [...$rightsScopedUpdateValues, $doctrineModel->id, ...$rightsParameterValues],
+                    [...$rightsScopedUpdateTypes, 'integer', ...$rightsParameterTypes]
                 );
             }
+            if ($rightsScopedAffectedRows === 0) {
+                // MySQL reports CHANGED rows (not matched rows), so 0 also covers a PERMITTED update whose
+                // values were all identical (idempotent save) — and the no-assignment edge (only the id was
+                // initialized). ONE follow-up rights SELECT on this rare path separates "no-op, permitted"
+                // from "row not writable under rights" — the hot path stays single-statement.
+                $checkRightsQueryBuilder = clone $updateRightsQueryBuilder;
+                $checkRightsQueryBuilder->andWhere("$modelAlias.id = :entityId");
+                $checkRightsQueryBuilder->setParameter('entityId', $doctrineModel->id);
+                $rowVisibleUnderRightsQuery = $checkRightsQueryBuilder->getQuery()->setMaxResults(1)->getResult()[0] ?? null;
+                if (!$rowVisibleUnderRightsQuery) {
+                    $authAccount = AuthService::instance()->getAccount() ?? null;
+                    $authAccountId = $authAccount ? $authAccount->id : '(not logged in)';
+                    throw new ForbiddenException(
+                        'Account ' . $authAccountId . ' has no permission to update Entity ' . $doctrineModel::ENTITY_CLASS . ' with id ' . $doctrineModel->id
+                    );
+                }
+            }
+            return (int)$doctrineModel->id;
         }
-        // we need to start a transaction to be able to roll the insert back if the post-insert rights check denies
-        if ($checkInsertRightsInOwnTransaction) {
-            $connection->beginTransaction();
+
+        $checkInsertRights = $updateRightsQueryBuilder && !isset($doctrineModel->id);
+        $checkInsertRightsInOwnTransaction = false;
+        $insertRightsSavepointName = null;
+        // we need a revert point to be able to roll the insert back if the post-insert rights check denies:
+        // an own transaction when none is open, a savepoint inside a caller's transaction
+        if ($checkInsertRights) {
+            if (!$connection->isTransactionActive()) {
+                $checkInsertRightsInOwnTransaction = true;
+                $connection->beginTransaction();
+            } else {
+                $insertRightsSavepointName = 'DDD_UPSERT_INSERT_RIGHTS_' . ++self::$insertRightsSavepointCounter;
+                $connection->createSavepoint($insertRightsSavepointName);
+            }
         }
         $sql = 'INSERT INTO ' . $doctrineModel->getTableName() . ' (' . implode(
                 ', ',
@@ -261,8 +380,8 @@ class DoctrineEntityManager extends EntityManager
             $entityId = $doctrineModel->id ?? (int)$connection->lastInsertId();
 
             // INSERT rights check: the freshly inserted row must be visible under the rights query — otherwise
-            // deny; the catch below rolls the insert back.
-            if ($checkInsertRightsInOwnTransaction) {
+            // deny; the catch below reverts the insert (own-transaction rollback or savepoint rollback).
+            if ($checkInsertRights) {
                 $checkRightsQueryBuilder = clone $updateRightsQueryBuilder;
                 $checkRightsQueryBuilder->andWhere("$modelAlias.id = :entityId");
                 $checkRightsQueryBuilder->setParameter('entityId', $entityId);
@@ -279,10 +398,16 @@ class DoctrineEntityManager extends EntityManager
                         'Account ' . $authAccountId . ' has no permission to update or create Entity ' . $doctrineModel::ENTITY_CLASS
                     );
                 }
-                $connection->commit();
+                if ($checkInsertRightsInOwnTransaction) {
+                    $connection->commit();
+                } elseif ($insertRightsSavepointName !== null) {
+                    // permitted: drop the mark — the insert becomes part of the caller's transaction and
+                    // commits (or dies) with it
+                    $connection->releaseSavepoint($insertRightsSavepointName);
+                }
             }
         } catch (\Throwable $t) {
-            // Roll back ONLY the transaction WE began above — NEVER a caller's (the DB_USE_READ_AFTER_WRITE
+            // Revert ONLY what WE opened above — NEVER a caller's transaction (the DB_USE_READ_AFTER_WRITE
             // wrapper in DatabaseRepoEntity::update(), or an application-level transaction around update()).
             if ($checkInsertRightsInOwnTransaction) {
                 if ($connection->isTransactionActive()) {
@@ -292,6 +417,15 @@ class DoctrineEntityManager extends EntityManager
                     // Connection::commit), so no rollBack() can reach the driver anymore — close() clears a
                     // possibly orphaned server-side transaction; the connection reconnects on next use.
                     $connection->close();
+                }
+            } elseif ($insertRightsSavepointName !== null && $connection->isTransactionActive()) {
+                try {
+                    // undoes ONLY the insert; the caller's transaction and its prior work stay intact
+                    $connection->rollbackSavepoint($insertRightsSavepointName);
+                } catch (\Throwable) {
+                    // the caller's transaction is broken beyond savepoint reach (e.g. connection loss) — the
+                    // original exception carries the cause; the caller's own rollback / the central desync
+                    // heal covers the connection state
                 }
             }
             throw $t;
