@@ -275,6 +275,14 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
                 } elseif (isset($value->objectType) && is_a($value->objectType, array_keys($allowedTypes)[0], true)) {
                     // we have only one element
                     $typeToInstance = $value->objectType;
+                } elseif (isset($value->objectType) && count(get_object_vars((object)$value)) <= 1) {
+                    // Foreign objectType AND no data fields: a corrupt husk (stale toObject-cache splice, see the
+                    // root-pass clear in SerializerTrait::toObject()) — instantiating the declared type would create
+                    // a field-empty element whose leaf reads throw "must not be accessed before initialization"
+                    // (add() below calls uniqueKey(), which throws right away for element classes overriding it to
+                    // read their own fields). Skip the element. The explicit continue is REQUIRED: falling through
+                    // with a null $typeToInstance would TypeError in class_exists() below.
+                    continue;
                 } else {
                     $typeToInstance = array_key_first($allowedTypes);
                 }

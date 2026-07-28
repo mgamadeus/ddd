@@ -539,11 +539,18 @@ trait SerializerTrait
             $forPersistence,
             $flags
         );
-        // in order to avoid caching objects, manipulating them in the meantime and then having an outdated cache, on the first call
-        // we clear the SerializerRegistry. Currently this is deactivated, if problems occur, it can be activated again
-        /*if (empty($path)){
+        // Root pass (empty $path) → clear the static cache. The cache is keyed by spl_object_id, and ids are
+        // RECYCLED after GC: an entry surviving across passes can be returned for a DIFFERENT, later-created object
+        // with the same id, splicing e.g. a dead OpeningHoursDay's serialization into a City slot ("objectType
+        // corruption", 2026-07). Within one pass all serialized objects are alive, so intra-pass entries are safe;
+        // only cross-pass reuse is dangerous. jsonSerialize() already clears — this covers direct toObject() callers.
+        // Cleared only on CACHED root passes: a cached:false pass neither reads nor writes the cache, and every
+        // cached reader clears at its own entry first, so stale entries can never be read — clearing on cached:false
+        // roots (e.g. mapToRepository() persisting N ValueObjects) would only thrash the cache without protecting
+        // anything.
+        if ($cached && empty($path)) {
             SerializerRegistry::clearToObjectCache();
-        }*/
+        }
         $objectId = spl_object_id($this);
         $cacheKey = $objectId . '_' . $ignoreHideAttributes . '_' . $ignoreNullValues . '_' . $forPersistence . '_' . $flags . '_(' . implode(
                 '_',
@@ -560,6 +567,16 @@ trait SerializerTrait
                     return $cachedResult;
                 }
             }*/
+        }
+
+        // on each iteration we add the current spl_object_id to the path; when trying to add the same id again,
+        // this means we are in a recursion loop and have to skip. This MUST happen before the ObjectSet flag branch
+        // below: that branch serializes the elements with the $path it received, and a root-level set would otherwise
+        // hand an EMPTY $path to every element — each element would then look like a root pass and re-clear the cache
+        // built by its predecessors.
+        $path[$objectId] = true;
+        if ($entityId) {
+            $path[$entityId] = true;
         }
 
         // Special handling for ObjectSet when SERIALIZE_ELEMENTS_AS_ARRAY_IN_OBJECT_SETS flag is set
@@ -592,13 +609,6 @@ trait SerializerTrait
 
             return $result;
         }
-
-        // on each iteraton we add the current spl_obejct_hash to the path. when trying to add the same id again,
-        $path[$objectId] = true;
-        if ($entityId) {
-            $path[$entityId] = true;
-        }
-        // this means we are in an recursion loop and have to skip
 
         $resultArray = [];
 
@@ -1269,6 +1279,14 @@ trait SerializerTrait
                 continue;
             }
             $propertyName = $property->getName();
+            if ($propertyName === 'objectType') {
+                // objectType is the class discriminator, set authoritatively by the constructor of the class that
+                // was RESOLVED FROM the payload's objectType before instantiation. Copying the raw payload string
+                // here lets a corrupt/foreign discriminator overwrite the correct one on a real instance — it then
+                // re-persists on every write (round-trip amplification) and breaks isEqualTo(), which compares
+                // objectType first. The payload's objectType has already served its only purpose: type resolution.
+                continue;
+            }
             // We ignore elements property in ObjectSet as elements are handled by add() function there in their own setPropertiesFromObject function
             if ($this instanceof ObjectSet && $propertyName == 'elements') {
                 continue;
@@ -1511,6 +1529,10 @@ trait SerializerTrait
                     $typeToInstance = array_key_first($allowedTypes->allowedTypes);
                     if (isset($arrayItem->objectType) && class_exists($arrayItem->objectType) && is_a($arrayItem->objectType, $typeToInstance, true)) {
                         $typeToInstance = $arrayItem->objectType;
+                    } elseif (isset($arrayItem->objectType) && count(get_object_vars((object)$arrayItem)) <= 1) {
+                        // corrupt husk → skip this element (see the single-property branch below); a null
+                        // $typeToInstance flows into the `$item = null` arm and the element is not added
+                        $typeToInstance = null;
                     }
                     // scalar type was not correctly allocated
                     if ($allowedTypes->allowsScalar) {
@@ -1749,6 +1771,13 @@ trait SerializerTrait
                 $typeToInstance = array_key_first($allowedTypes->allowedTypes);
                 if (isset($value->objectType) && class_exists($value->objectType) && is_a($value->objectType, $typeToInstance, true)) {
                     $typeToInstance = $value->objectType;
+                } elseif (isset($value->objectType) && count(get_object_vars((object)$value)) <= 1) {
+                    // Foreign objectType AND no data fields: a corrupt husk (stale-cache splice, see the root-pass
+                    // clear in toObject()) — instantiating the declared type would create a field-empty object whose
+                    // leaf reads throw "must not be accessed before initialization". Treat as absent (pre-2.49
+                    // semantics for exactly this shape). A foreign objectType WITH data fields still hydrates into
+                    // the declared type (the 2.49 MCP-hallucination case is unchanged).
+                    $typeToInstance = null;
                 }
                 // scalar type was not correctly allocated
                 if ($allowedTypes->allowsScalar) {
