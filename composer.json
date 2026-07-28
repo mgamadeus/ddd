@@ -3,7 +3,7 @@
     "description": "A DDD Entity Framework on top of symfony and doctrine",
     "minimum-stability": "stable",
     "license": "MIT",
-    "version": "2.51.1",
+    "version": "2.51.2",
     "authors": [
         {
             "name": "Marius-Eugen Gerdan",
@@ -27,7 +27,7 @@
         "guzzlehttp/guzzle": "^7.5",
         "jms/parser-lib": "^1.0",
         "mockery/mockery": "^1.5",
-        "phpunit/phpunit": "^11.5",
+        "phpunit/phpunit": "^9.5",
         "predis/predis": "2.0.0",
         "symfony/amqp-messenger": "7.3.*",
         "symfony/console": "7.3.*",
