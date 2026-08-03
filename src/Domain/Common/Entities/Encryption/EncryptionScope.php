@@ -69,10 +69,17 @@ class EncryptionScope extends Entity
     public string $scopePassword;
 
 
-    public static function getScopes()
+    public static function getScopes(): array
     {
-        $reflectionClass = static::getReflectionClass();
-        return array_values($reflectionClass->getConstants(ReflectionClassConstant::IS_PUBLIC));
+        // getConstants(IS_PUBLIC) includes inherited constants (e.g. Entity::IS_ENTITY = true), which must not
+        // land in the Choice whitelist — only SCOPE_* string constants are scope names.
+        $scopeConstants = [];
+        foreach (static::getReflectionClass()->getConstants(ReflectionClassConstant::IS_PUBLIC) as $name => $value) {
+            if (str_starts_with($name, 'SCOPE_') && is_string($value)) {
+                $scopeConstants[] = $value;
+            }
+        }
+        return $scopeConstants;
     }
 
     /**

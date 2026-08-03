@@ -8,6 +8,7 @@ use DDD\Domain\Base\Services\EntitiesService;
 use DDD\Domain\Common\Entities\Encryption\EncryptionScope;
 use DDD\Domain\Common\Entities\Encryption\EncryptionScopePassword;
 use DDD\Domain\Common\Entities\Encryption\EncryptionScopePasswords;
+use DDD\Domain\Common\Entities\Encryption\EncryptionScopes;
 use DDD\Domain\Common\Repo\DB\Encryption\DBEncryptionScope;
 use DDD\Domain\Common\Repo\DB\Encryption\DBEncryptionScopePassword;
 use DDD\Infrastructure\Exceptions\BadRequestException;
@@ -22,8 +23,14 @@ use Doctrine\ORM\OptimisticLockException;
 use Psr\Cache\InvalidArgumentException;
 use ReflectionException;
 
+/**
+ * @method EncryptionScope|null find(string|int|null $entityId, bool $useEntityRegistrCache = true)
+ * @method EncryptionScopes|null findAll(?int $offset = null, ?int $limit = null, bool $useEntityRegistrCache = true)
+ */
 class EncryptionScopesService extends EntitiesService
 {
+    public const string DEFAULT_ENTITY_CLASS = EncryptionScope::class;
+
     /** @var string[] */
     public static $encryptionScopePasswordCache = [];
 
