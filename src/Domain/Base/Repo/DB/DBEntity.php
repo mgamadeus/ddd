@@ -239,13 +239,17 @@ class DBEntity extends DatabaseRepoEntity
 
         $encryptionScopePassword = null;
         if ($databaseColumnAttribute && $databaseColumnAttribute->encrypted) {
-            if (!Encrypt::$password) {
+            // A human-driven request supplies the password (cookie / Messenger message) and keeps precedence; a
+            // headless webhook or worker has neither and falls back to this scope's environment password.
+            $encryptionPassword = Encrypt::$password
+                ?: Encrypt::getEnvironmentPasswordForScope($databaseColumnAttribute->enryptionScope);
+            if (!$encryptionPassword) {
                 throw new UnauthorizedException(
                     'Encryption cannot be performed without an encryption password set in Encrypt class'
                 );
             }
             $encryptionScopePassword = EncryptionScopes::getService()->getScopePassword(
-                Encrypt::$password,
+                $encryptionPassword,
                 $databaseColumnAttribute->enryptionScope
             );
             if (!$encryptionScopePassword) {
@@ -688,13 +692,17 @@ class DBEntity extends DatabaseRepoEntity
                 DatabaseColumn::class
             );
             if ($databaseColumnAttribute && $databaseColumnAttribute->encrypted) {
-                if (!Encrypt::$password) {
+                // Same fallback as on the read path: a human-driven request keeps precedence, a headless webhook
+                // or worker uses this scope's environment password.
+                $encryptionPassword = Encrypt::$password
+                    ?: Encrypt::getEnvironmentPasswordForScope($databaseColumnAttribute->enryptionScope);
+                if (!$encryptionPassword) {
                     throw new UnauthorizedException(
                         'Encryption cannot be performed without an encryption password set in Encrypt class'
                     );
                 }
                 $scopePassword = EncryptionScopes::getService()->getScopePassword(
-                    Encrypt::$password,
+                    $encryptionPassword,
                     $databaseColumnAttribute->enryptionScope
                 );
                 if (!$scopePassword) {

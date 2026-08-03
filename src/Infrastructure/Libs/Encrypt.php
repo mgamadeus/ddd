@@ -13,6 +13,37 @@ class Encrypt
     /** @var string Current password used for encrpytion */
     public static ?string $password = null;
 
+    /** @var string Prefix of the per-scope environment variable a headless process authenticates with. */
+    public const string ENVIRONMENT_SCOPE_PASSWORD_PREFIX = 'ENCRYPTION_SCOPE_PASSWORD_';
+
+    /**
+     * The password a HEADLESS process uses to unlock ONE encryption scope.
+     *
+     * The scope machinery is built around a human: an admin types a password, the browser keeps it in the
+     * `encryptionPassword` cookie, and a Messenger job carries it along because a human started that job. A
+     * webhook or a polling worker has none of those — no cookie, no session, nobody to ask — so its password
+     * comes from the environment instead.
+     *
+     * This is NOT a new credential model. {@see \DDD\Domain\Common\Entities\Encryption\EncryptionScopePassword}
+     * already stores the same scope key once per holder, found by the hash of that holder's password; a service
+     * simply becomes one more holder. Nothing about the encryption itself changes.
+     *
+     * DELIBERATELY PER SCOPE, never one global variable: `AI.CHANNELS.CREDENTIALS` resolves to
+     * `ENCRYPTION_SCOPE_PASSWORD_AI_CHANNELS_CREDENTIALS`, so a leak of that value leaves every other scope
+     * (contractor data, invoices, contracts) shut.
+     *
+     * @param string $scopeName One of the {@see \DDD\Domain\Common\Entities\Encryption\EncryptionScope} SCOPE_* values.
+     * @return string|null The configured password, or null when this scope has no headless holder.
+     */
+    public static function getEnvironmentPasswordForScope(string $scopeName): ?string
+    {
+        $environmentKey = self::ENVIRONMENT_SCOPE_PASSWORD_PREFIX
+            . strtoupper(str_replace(['.', '-'], '_', $scopeName));
+        $environmentPassword = Config::getEnv($environmentKey);
+
+        return is_string($environmentPassword) && $environmentPassword !== '' ? $environmentPassword : null;
+    }
+
     /**
      * Hashes data with salt from Auth config
      * @param string $data

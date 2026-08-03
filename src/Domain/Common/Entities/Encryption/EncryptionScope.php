@@ -48,6 +48,15 @@ class EncryptionScope extends Entity
     /** @var string Access to Contractor remuneration */
     public const string SCOPE_INTERNAL_CONTRACTORS_REMUNERATION = 'INTERNAL.CONTRACTORS.REMUNERATION';
 
+    /**
+     * @var string Access to the credentials of the agent's communication channels — the spoken phone key an
+     * account authenticates with, and the tokens/logins with which a mailbox or calendar is operated. Unlocked
+     * headlessly via `ENCRYPTION_SCOPE_PASSWORD_AI_CHANNELS_CREDENTIALS`
+     * ({@see \DDD\Infrastructure\Libs\Encrypt::getEnvironmentPasswordForScope()}), because the inbound webhook
+     * and the mailbox worker have no admin cookie to read.
+     */
+    public const string SCOPE_AI_CHANNELS_CREDENTIALS = 'AI.CHANNELS.CREDENTIALS';
+
     /** @var string The Scope's name */
     #[DatabaseIndex(indexType: DatabaseIndex::TYPE_UNIQUE)]
     #[Choice(callback: [self::class, 'getScopes'])]
