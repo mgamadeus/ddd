@@ -11,6 +11,7 @@ use DDD\Domain\Common\Entities\Encryption\EncryptionScopePasswords;
 use DDD\Domain\Common\Entities\Encryption\EncryptionScopes;
 use DDD\Domain\Common\Repo\DB\Encryption\DBEncryptionScope;
 use DDD\Domain\Common\Repo\DB\Encryption\DBEncryptionScopePassword;
+use DDD\Domain\Common\Repo\DB\Encryption\DBEncryptionScopePasswords;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Exceptions\NotFoundException;
@@ -170,11 +171,35 @@ class EncryptionScopesService extends EntitiesService
     }
 
     /**
+     * Returns every holder of the given scope — one row per password the scope was granted to.
+     *
+     * @param EncryptionScope $encryptionScope
+     * @return EncryptionScopePasswords
+     * @throws BadRequestException
+     * @throws InternalErrorException
+     * @throws InvalidArgumentException
+     * @throws ReflectionException
+     */
+    public function findEncryptionScopePasswordsForScope(EncryptionScope $encryptionScope): EncryptionScopePasswords
+    {
+        $dbEncryptionScopePasswords = new DBEncryptionScopePasswords();
+        $queryBuilder = $dbEncryptionScopePasswords::createQueryBuilder();
+        $alias = $dbEncryptionScopePasswords::getBaseModelAlias();
+        $queryBuilder
+            ->andWhere("$alias.encryptionScopeId = :encryptionScopeId")
+            ->setParameter('encryptionScopeId', $encryptionScope->id);
+
+        return $dbEncryptionScopePasswords->find($queryBuilder) ?? new EncryptionScopePasswords();
+    }
+
+    /**
      * Creates for each passed scopeName an EncryptionScopePassword using masterPassword to decrypt the EncryptionScope's
      * password and the encryptionPassword to encrypt the EncryptionScope again in the EncyptionScopePassword
      * @param array $scopeNames
      * @param string $masterPassword
      * @param string $encryptionPassword
+     * @param string|null $holderName Who the new holder is, in plain words. Stored as-is; see
+     *                                {@see EncryptionScopePassword::$holderName} for why a holder needs one.
      * @return EncryptionScopePasswords
      * @throws BadRequestException
      * @throws InternalErrorException
@@ -185,7 +210,8 @@ class EncryptionScopesService extends EntitiesService
     public function createEncryptionScopePasswordsUsingMasterPassword(
         array $scopeNames,
         string $masterPassword,
-        string $encryptionPassword
+        string $encryptionPassword,
+        ?string $holderName = null
     ): EncryptionScopePasswords {
         $encryptionScopepasswords = new EncryptionScopePasswords();
         if (!count($scopeNames)) {
@@ -202,6 +228,7 @@ class EncryptionScopesService extends EntitiesService
             $encryptionScope->decryptScopePassword($masterPassword);
             $encryptionScopePassword = new EncryptionScopePassword();
             $encryptionScopePassword->encryptionScopeId = $encryptionScope->id;
+            $encryptionScopePassword->holderName = $holderName;
             $encryptionScopePassword->updateUsingPassword($encryptionPassword, $encryptionScope->scopePassword);
             $encryptionScopepasswords->add($encryptionScopePassword);
         }

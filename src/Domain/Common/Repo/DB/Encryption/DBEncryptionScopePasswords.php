@@ -9,7 +9,7 @@ use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Domain\Common\Entities\Encryption\EncryptionScopePasswords;
 
 /**
- * @method EncryptionScopePasswords find(DoctrineQueryBuilder $queryBuilder = null, $useEntityRegistrCache = true)
+ * @method EncryptionScopePasswords|null find(DoctrineQueryBuilder $queryBuilder = null, $useEntityRegistrCache = true)
  */
 class DBEncryptionScopePasswords extends DBEntitySet
 {

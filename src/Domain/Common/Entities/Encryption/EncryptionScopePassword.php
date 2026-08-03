@@ -17,6 +17,7 @@ use DDD\Domain\Common\Repo\DB\Encryption\DBEncryptionScopePassword;
 use DDD\Domain\Common\Services\EncryptionScopesService;
 use DDD\Infrastructure\Exceptions\UnauthorizedException;
 use DDD\Infrastructure\Libs\Encrypt;
+use Symfony\Component\Validator\Constraints\Length;
 
 /**
  * @method EncryptionScopes getParent()
@@ -46,6 +47,49 @@ class EncryptionScopePassword extends Entity
 
     /** @var string The Password of the Encrypted Scope, encrypted with the password */
     public string $encryptionScopePassword;
+
+    /**
+     * @var string|null Who this holder is, in plain words — "Marius' browser", "voice webhook (environment)".
+     *
+     * A holder is otherwise unidentifiable: a row carries a salted hash and a ciphertext, and nothing about
+     * either says whose password it is. Without a name, the only safe operation on a holder list is adding to
+     * it — nobody can tell which row may be revoked. Nullable because rows created before this field exist.
+     */
+    #[Length(max: 255)]
+    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
+    public ?string $holderName = null;
+
+    /**
+     * Whether this holder's password is the given one. Compares the salted hashes, never the passwords.
+     * @param string $password
+     * @return bool
+     */
+    public function matchesPassword(string $password): bool
+    {
+        if (!isset($this->passwordHash)) {
+            return false;
+        }
+        return hash_equals($this->passwordHash, Encrypt::hashWithSalt($password));
+    }
+
+    /**
+     * Whether this holder IS the headless one: the password in `ENCRYPTION_SCOPE_PASSWORD_<SCOPE>` that a webhook
+     * or worker unlocks the scope with ({@see Encrypt::getEnvironmentPasswordForScope()}).
+     *
+     * Takes the scope rather than reading `$this->encryptionScope`, which would lazy-load it from the database on
+     * every row of a list.
+     *
+     * @param EncryptionScope $encryptionScope
+     * @return bool
+     */
+    public function isEnvironmentPasswordForScope(EncryptionScope $encryptionScope): bool
+    {
+        $environmentPassword = Encrypt::getEnvironmentPasswordForScope($encryptionScope->scope);
+        if ($environmentPassword === null) {
+            return false;
+        }
+        return $this->matchesPassword($environmentPassword);
+    }
 
     /**
      * Updates the EncryptionScopePassword, saves passwordHash and encrypts its encryptionScopePassword using $encryptionPassword

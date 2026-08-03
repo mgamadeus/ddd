@@ -11,7 +11,7 @@ use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Domain\Common\Entities\Encryption\EncryptionScopePassword;
 
 /**
- * @method EncryptionScopePassword find(DoctrineQueryBuilder|string|int $idOrQueryBuilder, bool $useEntityRegistryCache = true, ?DoctrineModel &$loadedOrmInstance = null, bool $deferredCaching = false)
+ * @method EncryptionScopePassword|null find(DoctrineQueryBuilder|string|int $idOrQueryBuilder, bool $useEntityRegistryCache = true, ?DoctrineModel &$loadedOrmInstance = null, bool $deferredCaching = false)
  * @method EncryptionScopePassword update(Entity &$entity, int $depth = 1)
  * @property DBEncryptionScopePasswordModel $ormInstance
  */
