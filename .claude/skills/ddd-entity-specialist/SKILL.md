@@ -303,6 +303,33 @@ $account = Accounts::getRepoClassInstance()->find($id);
 
 Direct repo access (`getEntityRepoClassInstance()` / `getEntitySetRepoClassInstance()`) belongs **inside service methods** running custom QueryBuilder queries -- see the ddd-service-specialist skill for that pattern. Caller code never needs it.
 
+### Entity-Typed Parameters + Entity Shorthands (FINAL convention)
+
+A method whose NAME references an entity takes the **ENTITY**, never a naked id. Ids live on the wire (Messenger
+messages, HTTP path params); the domain works with entities — the caller `find()`s once, then passes the object:
+
+```php
+// CORRECT — the signature says what it operates on
+public function replaceForLocation(Location $location, OpeningHours $openingHours): OpeningHours
+
+// WRONG — id-plumbing in the domain; the name promises a Location, the param betrays it
+public function replaceForLocation(int $locationId, OpeningHours $openingHours): OpeningHours
+```
+
+And every such service operation gets a **SHORTHAND on the owning entity** that delegates to its own service
+(the "pure core on the object, repo tail in the service" pattern):
+
+```php
+// On the OpeningHours entity — the discoverable API surface:
+public function replaceForLocation(Location $location): static
+{
+    return self::getService()->replaceForLocation($location, $this);
+}
+```
+
+Both halves are mandatory for new facet/entity-scoped operations: entity-typed service signature + entity
+shorthand. This keeps APIs eineindeutig and the entity the primary API surface.
+
 ## Step 0: Load Domain Context
 
 Before creating any entity:
