@@ -263,23 +263,27 @@ class DBEntity extends DatabaseRepoEntity
             $possibleEntityTypeName = $possibleEntityType->getName();
             // Handling of simple types in case of encryption
             if ($encryptionScopePassword) {
+                // Compare the TYPE NAME, never the ReflectionNamedType object: the object's __toString() keeps
+                // the nullability marker ("?string"), so a loose object comparison against 'string' silently
+                // missed every NULLABLE encrypted property — the raw ciphertext then fell through to the
+                // generic assignment and was served as the value.
                 $decryptedString = Encrypt::decrypt($this->ormInstance->$propertyName, $encryptionScopePassword);
-                if ($possibleEntityType == ReflectionClass::STRING) {
+                if ($possibleEntityTypeName == ReflectionClass::STRING) {
                     $entity->$entityPropertyName = (string)$decryptedString;
                     continue;
-                } elseif ($possibleEntityType == ReflectionClass::INTEGER) {
+                } elseif ($possibleEntityTypeName == ReflectionClass::INTEGER) {
                     $entity->$entityPropertyName = (int)$decryptedString;
                     continue;
-                } elseif ($possibleEntityType == ReflectionClass::FLOAT) {
+                } elseif ($possibleEntityTypeName == ReflectionClass::FLOAT) {
                     $entity->$entityPropertyName = (float)$decryptedString;
                     continue;
-                } elseif ($possibleEntityType == ReflectionClass::BOOL) {
+                } elseif ($possibleEntityTypeName == ReflectionClass::BOOL) {
                     $entity->$entityPropertyName = (bool)$decryptedString;
                     continue;
-                } elseif ($possibleEntityType == DateTime::class) {
+                } elseif ($possibleEntityTypeName == DateTime::class) {
                     $entity->$entityPropertyName = DateTime::fromString($decryptedString);
                     continue;
-                } elseif ($possibleEntityType == Date::class) {
+                } elseif ($possibleEntityTypeName == Date::class) {
                     $entity->$entityPropertyName = Date::fromString($decryptedString);
                     continue;
                 }
