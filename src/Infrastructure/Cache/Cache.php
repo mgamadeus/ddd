@@ -9,6 +9,7 @@ use DDD\Infrastructure\Cache\Predis\Client;
 use DDD\Infrastructure\Libs\Config;
 use Psr\Cache\InvalidArgumentException;
 use Symfony\Component\Cache\Adapter\ApcuAdapter;
+use Symfony\Component\Cache\Adapter\ChainAdapter;
 use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
 use Symfony\Component\Cache\Adapter\RedisAdapter;
 use Symfony\Component\Cache\CacheItem;
@@ -44,6 +45,9 @@ abstract class Cache
     protected const string CACHE_TYPE_PHPFILES = 'phpfiles';
 
     protected const string CACHE_TYPE_REDIS_SENTINEL = 'redisSentinel';
+
+    /** @var string A TIERED group: a ChainAdapter over other groups' adapters ({@see Chain}) — tiers from CACHE_<GROUP>_TIERS. */
+    protected const string CACHE_TYPE_CHAIN = 'chain';
 
     protected const array CACHE_GROUP_TO_ENV_ALLOCATION = [
         self::CACHE_GROUP_APC => 'APC',
@@ -83,6 +87,7 @@ abstract class Cache
             self::CACHE_TYPE_REDIS => Redis::getInstance($cacheGroup, $cacheGroupConfig),
             self::CACHE_TYPE_PHPFILES => PhpFiles::getInstance($cacheGroup, $cacheGroupConfig),
             self::CACHE_TYPE_REDIS_SENTINEL => RedisSentinel::getInstance($cacheGroup, $cacheGroupConfig),
+            self::CACHE_TYPE_CHAIN => Chain::getInstance($cacheGroup, $cacheGroupConfig),
             default => Apc::getInstance($cacheGroup, $cacheGroupConfig),
         };
     }
@@ -105,6 +110,7 @@ abstract class Cache
             'DATABASE' => 'database',
             'SENTINELS' => 'sentinels',
             'CACHE_GROUP' => 'cacheGroup',
+            'TIERS' => 'tiers',
         ];
         foreach ($allocation as $envIndex => $variableIndex) {
             if ($envVariable = Config::getEnv("CACHE_{$cacheGroupIndex}_{$envIndex}")) {
@@ -209,7 +215,7 @@ abstract class Cache
      * returns instance of particular cache adapter
      * @return Redis
      */
-    abstract public function getCacheAdapter(): Client|ApcuAdapter|RedisAdapter|PhpFilesAdapter;
+    abstract public function getCacheAdapter(): Client|ApcuAdapter|RedisAdapter|PhpFilesAdapter|ChainAdapter;
 
     /**
      * Saves a value to cache, if $deferred is true, value is not commited until commit is explicitely called
