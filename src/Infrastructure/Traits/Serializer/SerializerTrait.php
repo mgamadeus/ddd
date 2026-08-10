@@ -1571,7 +1571,11 @@ trait SerializerTrait
                     if (method_exists($this, 'addChildren')) {
                         $this->addChildren($item);
                     }
-                    if (method_exists($item, 'setParent')) {
+                    // setParent's parameter is typed ?DefaultObject — when the CONTAINER is a plain
+                    // RequestDto (typed-VO-array property on a request DTO, e.g. an MCP tool input),
+                    // passing $this throws a TypeError. Parent wiring only applies within the
+                    // DefaultObject world; a DTO container simply holds the items.
+                    if (method_exists($item, 'setParent') && $this instanceof DefaultObject) {
                         $item->setParent($this);
                     }
                 }
