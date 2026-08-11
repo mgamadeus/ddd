@@ -1832,7 +1832,10 @@ trait SerializerTrait
                         $this->$propertyName->setPropertiesFromObject($value, $throwErrors, false, $sanitizeInput);
                     }
                 }
-                if (method_exists($this, 'addChildren')) {
+                // addChildren() accepts ?DefaultObject only — an object-typed property that is NOT a
+                // DefaultObject (e.g. a DDD DateTime hydrated from its serialized string) must not be
+                // wired into the parent/children tree (TypeError otherwise).
+                if (method_exists($this, 'addChildren') && $this->$propertyName instanceof DefaultObject) {
                     $this->addChildren($this->$propertyName);
                     if (method_exists($this->$propertyName, 'setParent')) {
                         $this->$propertyName->setParent($this);
