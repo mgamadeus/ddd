@@ -238,7 +238,11 @@ class DBEntity extends DatabaseRepoEntity
         );
 
         $encryptionScopePassword = null;
-        if ($databaseColumnAttribute && $databaseColumnAttribute->encrypted) {
+        // Resolve the scope ONLY when there is actually a stored value to DECRYPT: a NULL column needs no
+        // password, and resolving anyway couples every row of the entity to the encryption infrastructure —
+        // live incident 2026-08-12: saving a plain owner mobile (AccountChannelAddress, whose ONLY encrypted
+        // column voiceProviderRegistrations was NULL) died on the EncryptionScopes table lookup.
+        if ($databaseColumnAttribute && $databaseColumnAttribute->encrypted && ($this->ormInstance->$propertyName ?? null) !== null) {
             // A human-driven request supplies the password (cookie / Messenger message) and keeps precedence; a
             // headless webhook or worker has neither and falls back to this scope's environment password.
             $encryptionPassword = Encrypt::$password
@@ -695,7 +699,9 @@ class DBEntity extends DatabaseRepoEntity
                 $propertyName,
                 DatabaseColumn::class
             );
-            if ($databaseColumnAttribute && $databaseColumnAttribute->encrypted) {
+            // NULL is stored as NULL — nothing to encrypt, no scope resolution (mirror of the read-path guard:
+            // a row whose encrypted column is empty must not touch the encryption infrastructure at all).
+            if ($databaseColumnAttribute && $databaseColumnAttribute->encrypted && $mappedValue !== null) {
                 // Same fallback as on the read path: a human-driven request keeps precedence, a headless webhook
                 // or worker uses this scope's environment password.
                 $encryptionPassword = Encrypt::$password
