@@ -60,6 +60,28 @@ class AppliedQueryOptions extends ValueObject
     /** @var int|null The total results, will be populated if available */
     public ?int $totalResults;
 
+    /**
+     * PHP clone is SHALLOW — without this, a snapshot (`clone getDefaultQueryOptions()`) shares the
+     * FiltersOptions/OrderByOptions/ExpandOptions/SelectOptions instances with the live default, so in-place
+     * mutations of the live default (e.g. `getFilters()->addExpressionsFromFiltersOptions(...)`) poison the
+     * snapshot and restore re-installs the mutated state. Cloning the option sets isolates the snapshot.
+     */
+    public function __clone(): void
+    {
+        if (isset($this->filters) && $this->filters !== null) {
+            $this->filters = clone $this->filters;
+        }
+        if (isset($this->orderBy) && $this->orderBy !== null) {
+            $this->orderBy = clone $this->orderBy;
+        }
+        if (isset($this->expand) && $this->expand !== null) {
+            $this->expand = clone $this->expand;
+        }
+        if ($this->select !== null) {
+            $this->select = clone $this->select;
+        }
+    }
+
     public function __construct(
         QueryOptions $queryOptions = null,
         ?string $referenceClass = null
