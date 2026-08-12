@@ -217,6 +217,68 @@ class PhotoUtils
         }
     }
 
+    /**
+     * Slice a TALL image into vertical segments of at most $sliceHeight px each, at the source's NATIVE width, top
+     * to bottom. This is the token-optimal way to hand a long full-page screenshot to a vision model: a single very
+     * tall image (e.g. a 1024×10000 page) is downscaled by the model to fit its longest-side budget, which crushes
+     * text into illegibility, whereas each native-width segment stays readable on its own. $maxSlices caps the
+     * number returned (0 = no cap) — a page taller than $maxSlices × $sliceHeight yields only the TOP $maxSlices
+     * segments (bounded token cost; the top folds carry most of the signal). An image already shorter than or equal
+     * to $sliceHeight (or $sliceHeight ≤ 0) is returned unchanged as one blob. Uses Imagick::getImageRegion so the
+     * source is neither mutated nor fully cloned per slice. Null on a decoder failure (mirrors
+     * {@see self::adjustImageToRequirements()}).
+     *
+     * @param string $imageBlob The source image bytes.
+     * @param int $sliceHeight Maximum height in px of each segment.
+     * @param int $maxSlices Hard cap on the number of segments returned (0 = all).
+     * @return string[]|null The segment image blobs (source format), top-to-bottom; null on failure.
+     */
+    public static function sliceImageVertically(string $imageBlob, int $sliceHeight, int $maxSlices = 0): ?array
+    {
+        if ($sliceHeight <= 0) {
+            return [$imageBlob];
+        }
+        try {
+            $imagick = new Imagick();
+            $imagick->readImageBlob($imageBlob);
+            $width = $imagick->getImageWidth();
+            $height = $imagick->getImageHeight();
+            $format = $imagick->getImageFormat();
+
+            if ($height <= $sliceHeight) {
+                $imagick->clear();
+                $imagick->destroy();
+                return [$imageBlob];
+            }
+
+            $sliceCount = (int)ceil($height / $sliceHeight);
+            if ($maxSlices > 0) {
+                $sliceCount = min($sliceCount, $maxSlices);
+            }
+
+            $slices = [];
+            for ($sliceIndex = 0; $sliceIndex < $sliceCount; $sliceIndex++) {
+                $offsetY = $sliceIndex * $sliceHeight;
+                $segmentHeight = min($sliceHeight, $height - $offsetY);
+                if ($segmentHeight <= 0) {
+                    break;
+                }
+                $segment = $imagick->getImageRegion($width, $segmentHeight, 0, $offsetY);
+                $segment->setImageFormat($format);
+                $segment->setImagePage(0, 0, 0, 0); // reset the virtual canvas so the region IS the whole image
+                $slices[] = $segment->getImageBlob();
+                $segment->clear();
+                $segment->destroy();
+            }
+
+            $imagick->clear();
+            $imagick->destroy();
+            return $slices;
+        } catch (ImagickException) {
+            return null;
+        }
+    }
+
     public static function getLocationIdAndIdentifierForMediaItemFromRequestParams(array $requestParams): ?array
     {
         if (!($requestParams['file'] ?? null)) {
