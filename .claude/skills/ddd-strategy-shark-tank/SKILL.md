@@ -1,6 +1,6 @@
 ---
 name: ddd-strategy-shark-tank
-description: Iterative adversarial optimization of a strategy or business plan through a SHARK TANK of maximally diverse frontier models (Claude Opus/Fable via the Agent tool, OpenAI via the codex CLI, Google via the gemini CLI — roster auto-discovered on the machine). Sharks issue investment verdicts (IN/OUT, amount, equity demanded → implied valuation) round after round; the founder revises the plan between rounds; the loop terminates on pre-committed SUCCESS criteria (sharks in with significant capital at low equity) or ABORT criteria (converged kill reasons that revisions cannot fix). Use when the user says "shark tank this", "pitch this plan to investors", "optimize this strategy iteratively/adversarially", "would anyone invest in this", "iterate this business plan until it holds", "stress-test and IMPROVE this concept in rounds". Do NOT use for a single-pass adversarial review of one artifact (use a devils-advocate-style review skill if the project has one) or for code review.
+description: Iterative adversarial optimization of a strategy or business plan through a SHARK TANK of maximally diverse frontier models (Claude Opus/Fable via the Agent tool, OpenAI via the codex CLI, Google via the gemini CLI — roster auto-discovered on the machine). Sharks issue investment verdicts (IN/OUT, amount, equity demanded → implied valuation) round after round; between rounds an equally diverse FOUNDER FRONT (same model breadth) absorbs the feedback and works out the next plan iteration, merged by the lead founder; the loop terminates on pre-committed SUCCESS criteria (sharks in with significant capital at low equity) or ABORT criteria (converged kill reasons that revisions cannot fix). Use when the user says "shark tank this", "pitch this plan to investors", "optimize this strategy iteratively/adversarially", "would anyone invest in this", "iterate this business plan until it holds", "stress-test and IMPROVE this concept in rounds". Do NOT use for a single-pass adversarial review of one artifact (use a devils-advocate-style review skill if the project has one) or for code review.
 ---
 
 # Strategy Shark Tank — iterative multi-model adversarial plan optimization
@@ -147,14 +147,30 @@ founder must pick a side next round and rebut the other with evidence, satisfyin
 and **highest-praised elements** (what multiple sharks called the strongest parts — protected from
 dilution in revisions).
 
-**Founder revision** (the discipline that makes the loop honest):
-- Every CONVERGED objection MUST be answered by a **plan change** or by **evidence** (data, a committed
-  gate, a measurement) — never by re-wording. Log each in the ledger as `ADDRESSED-BY-CHANGE §x`.
-- A single-shark objection MAY be rebutted (`REBUTTED: <argument>`) — founders defend their vision;
-  capitulating to every voice produces mush. But a rebutted objection that re-converges next round
-  escalates to MUST-address.
-- The change log lists concrete plan deltas ("§4 replaced permanent locks with one executed action per
-  month") — the next round's sharks verify them.
+**Founder revision — run by the FOUNDER FRONT, not by one agent.** Between rounds, the founders are
+represented by an equally broad, equally diverse model front as the sharks (same discovery, same
+top-tier rule, ≥2 vendors; fresh instances — a founder run is never a continued shark run). The front
+works out the next plan iteration:
+
+1. **Parallel founder drafts.** Each founder agent receives the plan, the tally, and the ledger, and
+   returns: (a) per CONVERGED objection a concrete revision proposal at plan-diff level (which section
+   changes to what — substance, not wording), (b) rebuttal drafts for single-shark objections it deems
+   wrong, (c) a committed stance on every recorded shark-vs-shark dissent, (d) a "protect" list (the
+   praised elements no revision may dilute). Founders are told: defend the vision — capitulating to
+   every voice produces mush; but a converged objection is answered with change or evidence, never
+   re-wording.
+2. **Merge by the lead founder** (the invoking agent): where founder proposals agree → apply; where they
+   conflict → the lead decides and LOGS the decision with its reason (`founder-round-N.md` next to the
+   tally: each founder's proposals, the merge decisions, the resulting plan deltas). The lead may
+   overrule the front only with a written reason — silent overrules are the mush-vector in the other
+   direction.
+3. **The discipline that makes the loop honest** (unchanged): every CONVERGED objection ends as
+   `ADDRESSED-BY-CHANGE §x` (a real plan diff) or `ADDRESSED-BY-EVIDENCE` (data, a committed gate, a
+   measurement) — never re-wording. A single-shark objection MAY be `REBUTTED: <argument>`; a rebutted
+   objection that re-converges next round escalates to MUST-address. The change log lists concrete plan
+   deltas — the next round's sharks verify them against the text.
+
+Then the next round runs (Step 3) on the revised plan.
 
 ## Step 6 — Termination (pre-committed in round 0, checked after every tally)
 
@@ -199,7 +215,8 @@ shark-tank/                      (sibling folder of the plan doc)
 │   ├── shark-openai-hawk.md     raw verdicts (one per shark)
 │   ├── shark-google-operator.md
 │   ├── shark-anthropic-angel.md
-│   └── tally.md                 offers, implied valuations, converged objections
+│   ├── tally.md                 offers, implied valuations, converged objections, dissents, praised
+│   └── founder-round-1.md       founder-front drafts + lead merge decisions + plan deltas
 ├── round-1-ledger.md            objections → ADDRESSED/REBUTTED/OPEN + plan change log
 ├── round-2/ …
 └── final-verdict.md | post-mortem.md
