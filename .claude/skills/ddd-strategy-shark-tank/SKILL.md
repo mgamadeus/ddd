@@ -55,7 +55,9 @@ Roster rules:
 - **ABSOLUTE paths for everything a CLI shark touches** (output files, log files, `cd` targets):
   backgrounded shells do NOT inherit the session's working directory — relative paths silently land in
   the wrong place or fail (verified failure mode on first live run). `cd <repo-root>` explicitly inside
-  the command AND make every `--output-last-message` / redirect target absolute.
+  the command AND make every `--output-last-message` / redirect target absolute. **Close stdin on
+  backgrounded `codex exec` runs (`< /dev/null`)** — with a non-tty stdin codex may block on "reading
+  additional input from stdin" and hang until killed (verified on the second live run).
 - **Agent-tool sharks return their verdict as a message, not a file** — the founder persists it VERBATIM
   into the round folder (`shark-<vendor>-<persona>.md`) before tallying. Verbatim means verbatim: no
   summarizing, no reformatting beyond a one-line provenance header.
