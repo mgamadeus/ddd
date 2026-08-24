@@ -27,7 +27,7 @@ Symfony console commands within the DDD Core framework (`mgamadeus/ddd`).
 ```
 src/Symfony/Commands/
 +-- Base/
-|   +-- Database/ShowEntitySql.php, ListEntities.php
+|   +-- Database/ShowEntitySql.php, ListEntities.php, RunReadOnlyQuery.php (app:db:read)
 |   +-- DoctrineModels/CreateDoctrineModels.php
 |   +-- Messages/ProcessCLIMessage.php
 +-- Common/
@@ -436,7 +436,7 @@ The three built-in read-only introspection commands: the first two read **struct
 |---------|-----------|---------|
 | `app:entity:show-sql [entity]` | `entity` (optional): short name (`Account`) or FQN; omit ⇒ every entity | Prints the generated `CREATE TABLE` + index / foreign-key DDL for the entity, derived from its attributes. **Read-only — executes nothing.** The fastest way to see the *exact* schema an entity maps to: default per-column indexes, FK indexes, spatial/vector/fulltext indexes, and trait columns (`id`, `created`/`updated`). |
 | `app:entity:list [filter]` | `filter` (optional): case-insensitive substring over name / table / FQN | Lists every DB-mapped entity with its SQL table name and FQN. Use it to discover entity names/tables before `show-sql`. STI subclasses are shown as folding into their parent table. |
-| `app:db:read "<statement>" [--scope=DEFAULT\|LEGACY_DB] [--limit=200] [--format=json\|table]` | `statement` (required): ONE read-only SQL statement | Reads database **content** (rows) — the counterpart to the two structure commands above. Runs ONE read-only statement (`SELECT` / `WITH` / `SHOW` / `EXPLAIN` / `DESCRIBE`) against a Doctrine connection and prints the rows (JSON on stdout by default; `--format=table` for a console table). Writes, a second `;`-statement, and `INTO OUTFILE`/`DUMPFILE` are rejected before a connection opens; a `LIMIT` is appended to row-returning statements that carry none. **The keyword guard is NOT a security boundary** — point the connection's DB user at SELECT-only rights. |
+| `app:db:read "<statement>" [--scope=DEFAULT\|LEGACY_DB] [--limit=200] [--format=json\|table]` | `statement` (required): ONE read-only SQL statement | Reads database **content** (rows) — the counterpart to the two structure commands above. Runs ONE read-only statement (`SELECT` / `WITH` / `SHOW` / `EXPLAIN` / `DESCRIBE` / `DESC`) against a Doctrine connection and prints the rows (JSON on stdout by default; `--format=table` for a console table). Writes, a second `;`-statement, and `INTO OUTFILE`/`DUMPFILE` are rejected before a connection opens; a `LIMIT` is appended to row-returning statements that carry none. **The keyword guard is NOT a security boundary** — point the connection's DB user at SELECT-only rights. |
 
 ```bash
 # What SQL does the Account entity generate?

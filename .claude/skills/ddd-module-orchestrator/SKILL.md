@@ -35,16 +35,18 @@ Centralized control for studying, updating, releasing, and propagating changes a
 ### Dependency Graph (Determines Release & Update Order)
 
 ```
-Level 0 (no module deps):
-  mgamadeus/ddd                    (Core)
-  mgamadeus/ddd-common-money       (Money)
-  mgamadeus/ddd-argus              (Argus)
+Level 0 (root -- nothing depends on the framework below it):
+  mgamadeus/ddd                    (Core)   [EVERY module requires mgamadeus/ddd ^2.10]
 
-Level 1 (depends on Level 0):
+Level 1 (depends only on ddd):
+  mgamadeus/ddd-common-money       (Money)  -> ddd
+  mgamadeus/ddd-argus              (Argus)  -> ddd
+
+Level 2 (depends on ddd + Level 1):
   mgamadeus/ddd-common-political   -> ddd, ddd-argus
   mgamadeus/ddd-ai                 -> ddd, ddd-argus, ddd-common-money
 
-Level 2 (depends on Level 0+1):
+Level 3 (depends on ddd + Level 1/2):
   mgamadeus/ddd-common-geo         -> ddd, ddd-common-political
   mgamadeus/ddd-common-translations -> ddd, ddd-ai, ddd-common-money, ddd-common-political
 ```
@@ -102,7 +104,7 @@ but a *new minimum* (`^1.0`→`^1.1.1`) always does.
 
 ### Consuming Applications
 
-Any application using DDD modules needs `composer update --ignore-platform-reqs` after module releases. Check the application's `composer.json` for `mgamadeus/*` dependencies.
+Any application using DDD modules needs a `composer update` after module releases. Consuming apps set `config.platform.php`, so a plain `composer update -W` is correct — no `--ignore-platform-reqs` (see the platform note below). Check the application's `composer.json` for `mgamadeus/*` dependencies.
 
 The known consuming apps and their workspace paths:
 
@@ -139,19 +141,25 @@ Therefore, the canonical update form **differs between modules and apps**:
 
 ```bash
 # Framework MODULES (Core, AI, Argus, Geo, Money, Political, Translations) — no gen hook,
-# --no-scripts is safe and faster:
-composer update mgamadeus/ddd --ignore-platform-reqs --no-scripts -W
+# --no-scripts is safe and faster. Module repos do NOT set config.platform, so if the local
+# machine is missing an extension a module needs, add a TARGETED --ignore-platform-req=ext-<name>
+# (never the broad --ignore-platform-reqs, never ignore php):
+composer update mgamadeus/ddd --no-scripts -W
 
-# Consuming APPS (Tavlo, Radbonus, RC) — let the scripts run, NEVER --no-scripts:
-composer update mgamadeus/ddd --ignore-platform-reqs
+# Consuming APPS (Tavlo, Radbonus, RC) — let the scripts run, NEVER --no-scripts.
+# Apps set config.platform.php, which already pins resolution — no platform flag needed:
+composer update mgamadeus/ddd -W
 ```
 
 If a throwaway resolver-only check genuinely needs `--no-scripts` on an app, run the generator
 yourself immediately after: `php bin/console app:generate-doctrine-models-for-entities`.
 
-RC additionally needs `--ignore-platform-req=php` (its `require.php` is strict `8.3.*` with no
-`config.platform.php` override) — combine the targeted ignores rather than the broad form when
-you must preserve the lockfile's platform constraints; but still without `--no-scripts`.
+A plain `composer update` (no platform flag) is correct in every consuming app, RC included: they
+all set `config.platform.php`, which pins resolution to the deployment PHP. Do NOT add the broad
+`--ignore-platform-reqs` — it overrides that pin and can pull newer-PHP-only packages into the lock
+(this is how five PHP-8.4-only packages once landed in RC's committed 8.3 lock). If the local box is
+missing an extension, ignore only that one (`--ignore-platform-req=ext-<name>`), never `php`. See the
+`ddd-composer-update-version` skill §"Updating Consuming Apps". Still without `--no-scripts`.
 
 ---
 
@@ -163,7 +171,7 @@ Before modifying any module, read these files in order:
 2. **`AGENTS.md`** -- architecture, entity overview, patterns, conventions
 3. **`.claude/skills/*/SKILL.md`** -- detailed domain knowledge
 4. **`README.md`** -- public documentation
-5. **`src/Modules/*/Module.php`** -- DDDModule entry point (source path, config path, public namespaces)
+5. **`src/Modules/<Name>/<Name>Module.php`** -- DDDModule entry point (e.g. `src/Modules/Money/MoneyModule.php`, `src/Modules/Argus/ArgusModule.php`; source path, config path, public namespaces)
 6. **Key entity files** -- read `src/Domain/` entities to understand the domain model
 7. **Key service files** -- read services for business logic patterns
 
@@ -199,7 +207,7 @@ Use the `ddd-composer-update-version` skill for the full process.
 
 ### 4. Propagate to Dependent Modules
 
-**Wait ~10 seconds** after the tag push for Packagist to register the new version, then run `composer update --ignore-platform-reqs` in all dependent modules (see reverse dependency table above).
+**Wait ~10 seconds** after the tag push for Packagist to register the new version, then run `composer update` in all dependent modules (see reverse dependency table above). Module repos set no `config.platform`, so add a **targeted** `--ignore-platform-req=ext-<name>` only if the local box is missing an extension — never the broad `--ignore-platform-reqs`, never ignore `php`.
 
 If `composer.lock` changed, commit and push it.
 
@@ -223,7 +231,7 @@ When releasing a new DDD Core version, ALL modules need updating.
 
 For each MODULE at each level (modules have no gen hook, so `--no-scripts` is safe and faster):
 ```bash
-cd "$MODULE_PATH" && composer update --ignore-platform-reqs --no-scripts -W
+cd "$MODULE_PATH" && composer update --no-scripts -W   # add --ignore-platform-req=ext-<name> only if a local ext is missing
 if [ -n "$(git diff composer.lock)" ]; then
   git add composer.lock
   git commit -m "Update composer dependencies
@@ -235,7 +243,7 @@ fi
 
 For each consuming APP at level 5 (let the `post-update-cmd` model generator run — **no `--no-scripts`**):
 ```bash
-cd "$APP_PATH" && composer update mgamadeus/ddd --ignore-platform-reqs   # RC: add --ignore-platform-req=php
+cd "$APP_PATH" && composer update mgamadeus/ddd -W   # apps pin config.platform.php; no platform flag
 # post-update-cmd auto-runs: cache:clear + app:generate-doctrine-models-for-entities
 ```
 
@@ -254,7 +262,7 @@ When updating AGENTS.md, skills, or README across multiple modules:
 
 ## Key Conventions
 
-- **`--ignore-platform-reqs`** is required for `composer update` because modules may require PHP extensions not available on the current machine
+- **Platform flags:** consuming apps set `config.platform.php` → run a plain `composer update -W`, **no** `--ignore-platform-reqs` (the broad form overrides the pin and can poison the lock). Framework **module** repos set no platform pin → if the local machine lacks an extension a module needs, add a **targeted** `--ignore-platform-req=ext-<name>` only, never `php`, never the broad form. See `ddd-composer-update-version`.
 - **`--no-scripts` on framework modules only, NEVER on consuming apps.** Modules have no composer lifecycle hooks; apps wire `app:generate-doctrine-models-for-entities` into `post-update-cmd`, and skipping it leaves vendor `DB*Model` files on upstream (prefix-less, override-less) table names → runtime `SQLSTATE[42S02]` 500. See [Consuming Applications](#consuming-applications).
 - **Wait ~10 seconds** between pushing a tag and running `composer update` in dependents -- Packagist needs time to register the new version (in practice often longer; if `composer update` reports the old version, clear the cache with `composer clear-cache` and retry, or poll `https://repo.packagist.org/p2/<vendor>/<pkg>.json`)
 - **Always commit `composer.lock`** changes in modules after dependency updates
@@ -284,7 +292,7 @@ A handoff/donation doc is a **proposal, not authoritative spec**. Workflow for e
 DDD Core (vendor/mgamadeus/ddd/)
 +-- AGENTS.md               [Framework architecture, conventions, best practices, utilities reference]
 +-- README.md                [Public documentation for humans]
-+-- .claude/skills/ddd-*     [10 framework skills]
++-- .claude/skills/ddd-*     [14 framework skills]
 
 DDD Modules (vendor/mgamadeus/ddd-{name}/)
 +-- AGENTS.md               [Module architecture, entities, services -- references DDD Core AGENTS.md]
@@ -292,7 +300,7 @@ DDD Modules (vendor/mgamadeus/ddd-{name}/)
 +-- .claude/skills/ddd-module-{name}-specialist  [Module-specific domain knowledge]
 
 Consuming Applications (.claude/skills/)
-+-- SYMLINKS to vendor/      [ddd-* and ddd-module-* skills auto-update via composer]
++-- SYMLINKS to vendor/      [ddd-* and ddd-module-* skills; `composer update` refreshes an EXISTING symlink's target, but does NOT create a symlink for a NEWLY added module skill -- add that symlink by hand (git-tracked) when a new module or skill first ships]
 +-- {app}-entity-specialist  [Thin extension: app domains, file paths, strategy docs]
 +-- {app}-endpoint-specialist [Thin extension: app API audiences, conventions]
 +-- {app}-*                  [App-specific skills: tests, frontend, business strategy]

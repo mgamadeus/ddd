@@ -24,6 +24,12 @@ Packagist watches for git tags matching `v*` (e.g., `v2.10.12`). When a tag is p
 
 ### Step 1: Verify Clean State
 
+> ⚠️ **cwd hazard — run every `git` command in this procedure from the package's OWN source checkout, never from a consuming app's `vendor/mgamadeus/<pkg>` copy.** A `vendor/` copy is **not its own git repository**: `git rev-parse --show-toplevel` there resolves to the *consuming application*, and `git status` / `git tag` / `git push` operate on the app. Following these steps verbatim from a vendor path will commit to, tag, and push the **wrong repository** (e.g. tagging the app `v4.7.0` instead of the package `v2.x`). Confirm your cwd first:
+> ```bash
+> git rev-parse --show-toplevel   # must be the package repo, NOT a consuming app
+> python3 -c "import json; print(json.load(open('composer.json'))['name'])"  # must be the package you're releasing
+> ```
+
 ```bash
 git status
 git log --oneline -3
@@ -146,30 +152,40 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>" && git pus
 
 After tagging and pushing a new version, the consuming apps need a `composer update` to pick it up.
 
-**ALWAYS pass `--ignore-platform-reqs` (the all-encompassing form, not `--ignore-platform-req=ext-*`).**
+**Default: plain `composer update`, no platform flag — the app's `config.platform.php` already pins resolution.**
 
 ```bash
-cd /path/to/consuming-app && composer update mgamadeus/ddd-... --ignore-platform-reqs
+cd /path/to/consuming-app && composer update mgamadeus/ddd-... -W
 ```
 
-### Why this matters — production vs. dev PHP version
+### Why — `config.platform.php` is the mechanism now
 
-The local dev machine may run a newer PHP than the production/deployment server. Without `--ignore-platform-reqs`, composer resolves dependencies that match the *local* `php` version and writes them into `composer.lock`. When the lock file is deployed to a server with an older PHP, `vendor/composer/platform_check.php` fatals at request time:
+Every DDD-consuming app in this ecosystem pins the deployment PHP in its `composer.json`:
 
-> Fatal error: Composer detected issues in your platform: Your Composer dependencies require a PHP version ">=8.4.0". You are running 8.3.4.
+```json
+"config": { "platform": { "php": "8.3" } }
+```
 
-The fix is to ignore *all* platform constraints during local resolution — including `php` itself, not just extensions. A partial form like `--ignore-platform-req=ext-imagick --ignore-platform-req=ext-redis` does NOT cover the PHP version and is a footgun.
+With that pin present, `composer update` resolves against **8.3** regardless of the local runtime (even a local 8.4/8.5), and writes an 8.3-safe `composer.lock`. No flag is required, and the lock stays deployable.
 
-### Correct vs. incorrect
+> ⚠️ **Do NOT reflexively add `--ignore-platform-reqs`.** The broad form overrides the `config.platform.php` pin as well, so composer becomes free to resolve packages that only run on a **newer** PHP than the target and commit them to the lock — exactly how five PHP-8.4-only packages (`doctrine/instantiator 2.1`, `symfony/mime|property-access|property-info|type-info v8.1.x`) once landed in a committed 8.3 lock. The old "ALWAYS `--ignore-platform-reqs`" rule predates the `config.platform.php` pins and has been **revised out** across the apps; it is no longer needed and is now a footgun.
+
+### When you DO need a targeted ignore
+
+Only when the resolver stops on an **extension** that is genuinely absent on the local machine **and** not already listed in `config.platform` — ignore that one extension, never `php`:
+
+```bash
+composer update mgamadeus/ddd -W --ignore-platform-req=ext-redis   # only the missing ext
+```
 
 | Command | Effect |
 |---------|--------|
-| `composer update X --ignore-platform-reqs` | ✅ Ignores PHP version + all extensions. Safe across dev/prod PHP mismatches. |
-| `composer update X --ignore-platform-req=php` | ✅ Ignores just PHP version (use if you want extensions enforced). |
-| `composer update X --ignore-platform-req=ext-imagick --ignore-platform-req=ext-amqp` | ❌ Ignores extensions but NOT PHP — locks to local PHP, breaks prod. |
-| `composer update X` (no flag) | ❌ Same problem if local PHP > prod PHP. |
+| `composer update X -W` (no flag) | ✅ Default. `config.platform.php` pins resolution to the target PHP; lock stays deployable. |
+| `composer update X -W --ignore-platform-req=ext-<name>` | ✅ Only when that extension is genuinely missing locally and not in `config.platform`. Never ignores `php`. |
+| `composer update X --ignore-platform-reqs` | ❌ Overrides the `config.platform.php` pin too — can pull newer-PHP-only packages into the lock. Avoid. |
+| `composer update X --ignore-platform-req=php` | ❌ Defeats the very pin that expresses the production target. Avoid. |
 
-If you already ran the wrong form and `composer.lock` is poisoned, simply re-run with `--ignore-platform-reqs` to regenerate the lock against the loosened constraints.
+If a lock was already poisoned by the broad form, re-run a plain `composer update` (with `config.platform.php` set) to re-resolve back onto the pinned PHP.
 
 ### Verify the new version landed
 
@@ -222,4 +238,4 @@ See the `ddd-module-orchestrator` skill for the complete module ecosystem, depen
 - Always include `Co-Authored-By` in commits
 - Default to PATCH bump unless told otherwise
 - **Never** use `--force` on tags or pushes unless explicitly asked
-- **ALWAYS** use `--ignore-platform-reqs` (full form) when running `composer update` in consuming apps — `--ignore-platform-req=ext-*` is NOT enough and will lock the project to the local PHP version, breaking deployment to servers with older PHP
+- **Prefer a plain `composer update -W`** in consuming apps — every app sets `config.platform.php`, which pins resolution to the deployment PHP. Do **not** reflexively add `--ignore-platform-reqs`: the broad form overrides that pin and can commit newer-PHP-only packages into the lock. Ignore only a genuinely-missing local **extension** (`--ignore-platform-req=ext-<name>`), never `php`. (See "Updating Consuming Apps" above.)

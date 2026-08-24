@@ -1,6 +1,6 @@
 ---
 name: ddd-serializer-specialist
-description: Work with the SerializerTrait in the mgamadeus/ddd framework — toObject, toJSON, setPropertiesFromObject, property hiding, aliases, persistence exclusion, and TOON (Token-Oriented Object Notation) compact array serialization. EVERY DDD object uses this serializer (Entity, EntitySet, ValueObject, ObjectSet, RequestDto, ResponseDto, AppMessage all extend DefaultObject which uses SerializerTrait), so this skill applies to ALL serialization across the entire framework — API output, DB persistence, request hydration, message payloads. Use when configuring entity serialization, hiding sensitive fields, renaming output properties, or emitting compact tabular formats for high-cardinality arrays.
+description: Work with the SerializerTrait in the mgamadeus/ddd framework — toObject, toJSON, setPropertiesFromObject, property hiding, aliases, persistence exclusion, and TOON (Token-Oriented Object Notation) compact array serialization. EVERY DDD object uses this serializer via SerializerTrait — Entity, EntitySet, ValueObject, ObjectSet, AppMessage extend DefaultObject (which mixes in the trait), while RequestDto (standalone) and RestResponseDto (extends Symfony JsonResponse) merely `use` the trait, not DefaultObject — so this skill applies to ALL serialization across the entire framework — API output, DB persistence, request hydration, message payloads. Use when configuring entity serialization, hiding sensitive fields, renaming output properties, or emitting compact tabular formats for high-cardinality arrays.
 metadata:
   author: mgamadeus
   version: "1.1.0"
@@ -22,8 +22,10 @@ DefaultObject (uses SerializerTrait)
   │   ├─ ObjectSet           → all collections
   │   │   └─ EntitySet       → typed entity collections
   │   └─ AppMessage          → Symfony Messenger payloads
-  ├─ RequestDto              → HTTP request bodies
-  └─ RestResponseDto / *ResponseDto → HTTP response payloads
+
+(NOTE: `RequestDto` and `RestResponseDto` do NOT extend `DefaultObject` — `RequestDto` is standalone and merely
+`use`s `SerializerTrait`, and `RestResponseDto` extends Symfony's `JsonResponse` (also `use`s the trait). There is
+no `ResponseDto` class. So the trait reaches them, but they are not in the `DefaultObject` hierarchy above.)
 ```
 
 There is **no opt-in**. Whenever the framework reads or writes any of these types -- API responses, DB persistence, lazy-load cache, Argus payloads, Messenger transport, request hydration -- it goes through `toObject()` / `setPropertiesFromObject()`.
@@ -58,7 +60,7 @@ toJSON()                            -- entry point for JSON output
 ```
 
 ```
-setPropertiesFromObject() / setPropertiesFromSerializedObject()
+setPropertiesFromObject()  // JSON hydration: setPropertiesFromObject(json_decode($json)) — no setPropertiesFromSerializedObject() exists
   -> per-property: cast to typed value
      -> primitive: assign directly
      -> nested object: instantiate via reflection, recurse
@@ -75,9 +77,9 @@ The framework distinguishes two serialization contexts:
 | Context | Triggered by | What's hidden |
 |---------|-------------|---------------|
 | **User serialization** | `toJSON()` for API responses | Properties marked `#[HideProperty]` |
-| **System serialization** | DB persistence, internal cache | Properties marked `#[HidePropertyOnSystemSerialization]` |
+| **Persistence serialization** | DB persistence (`toObject(forPersistence: true)` — the DEFAULT) | Properties marked `#[DontPersistProperty]` (and `#[DatabaseColumn(ignoreProperty: true)]`) |
 
-Pass `forPersistence: true` to `toObject()` for system context. The default is user context.
+`forPersistence` **defaults to `true`** (persistence context) and drops `#[DontPersistProperty]` fields. Pass `forPersistence: false` for user/API context — the response boundary (`RestResponseDto::getContent()`, `RestResponseDto.php:36-41`) does exactly this, which is the ONLY reason a `#[DontPersistProperty]` field reaches an API response. NOTE: `#[HidePropertyOnSystemSerialization]` is a SEPARATE mechanism consulted ONLY by PHP `__serialize()` (cache/session), NOT by `forPersistence` and NOT the DB.
 
 This dual mode is why properties can be visible in API output but excluded from DB storage (e.g., computed fields, external API data) — and vice versa (passwords are stored but never returned).
 
@@ -93,10 +95,10 @@ All in namespace `DDD\Infrastructure\Traits\Serializer\Attributes\`.
 public string $password;  // never appears in toJSON() output, but IS persisted
 ```
 
-### `#[HidePropertyOnSystemSerialization]` -- Exclude from DB
+### `#[HidePropertyOnSystemSerialization]` -- Exclude from PHP `__serialize()` (cache/session), NOT the DB
 ```php
 #[HidePropertyOnSystemSerialization]
-public ?array $computedRanking;  // visible in API, never stored
+public ?array $transient;  // dropped from __serialize() output only — to exclude from the DB use #[DontPersistProperty]
 ```
 
 ### Both combined -- internal-only
@@ -122,17 +124,19 @@ public string $nickname;
 // Output emits ALL: { "nickname": "...", "userName": "...", "name": "..." }
 ```
 
-For API consumers transitioning from old field names. Read direction also accepts any of the aliases.
+For API consumers transitioning from old field names. Aliases are emitted only in the **output** direction (`SerializerTrait.php:699-708`) — an alias key in an **input** payload is NOT read; hydration matches the real property name only.
 
 ### `#[ExposePropertyInsteadOfClass('innerProperty')]` -- Flatten nested object
 ```php
+// The attribute is Attribute::TARGET_CLASS (read OFF THE CLASS) — it goes on the class, NOT on a
+// property, and its argument is the property whose value REPLACES the whole object in output.
+#[ExposePropertyInsteadOfClass('tagItems')]
 class TagGroup
 {
-    #[ExposePropertyInsteadOfClass('items')]
-    public TagItems $tagItems;  // serializes as the items array directly, not a wrapper object
+    public TagItems $tagItems;  // the whole TagGroup serializes as this property's value directly
 }
-// Without: { "tagItems": { "items": [...] } }
-// With:    { "tagItems": [...] }
+// Without: the TagGroup object   With: the tagItems value in its place
+// (Real example: TagGroups.php → `#[ExposePropertyInsteadOfClass('elements')] class TagGroups extends ObjectSet`.)
 ```
 
 ### `#[DontPersistProperty]` -- Visible in API, not in DB
@@ -141,7 +145,7 @@ class TagGroup
 public ?int $totalRunningTimeInSeconds;  // computed at read time, never written
 ```
 
-Synonym for `#[HidePropertyOnSystemSerialization]` -- use whichever reads more naturally in context.
+NOT a synonym for `#[HidePropertyOnSystemSerialization]` — they are unrelated attributes read at different points. `#[DontPersistProperty]` is the DB-persistence exclusion (selected via `forPersistence`, `SerializerTrait.php:1179`); `#[HidePropertyOnSystemSerialization]` is consulted only by `__serialize()` (`:662`).
 
 ### `#[SerializeInToonFormat]` -- Compact tabular emission
 See **TOON Section** below.
@@ -163,18 +167,20 @@ $entity->getPropertiesToHide();             // returns current hide list
 ### Per-Class (static, lasts entire request)
 
 ```php
-Account::setStaticPropertiesToHide(true, 'password', 'apiToken');     // current class only
-Account::setStaticPropertiesToHide(false, 'password', 'apiToken');    // entire hierarchy
+Account::addStaticPropertiesToHide(true, 'password', 'apiToken');     // current class only
+Account::addStaticPropertiesToHide(false, 'password', 'apiToken');    // entire hierarchy
 Account::removeStaticPropertiesToHide(true, 'password');
 ```
 
 ### Recursive (Dotted-Path)
 
 ```php
+// Shape is array<string path, string[] propertyNames> — the KEY is the path to the container, the VALUE is
+// the LIST of property names to hide there. `'account.email' => true` is silently SKIPPED (wrong shape).
 $entity->addPropertiesToHideRecursively([
-    'account.email' => true,
-    'account.person.age' => true,
-    'tracks.elements.gpsRaw' => true,
+    'account' => ['email'],
+    'account.person' => ['age'],
+    'tracks.elements' => ['gpsRaw'],
 ]);
 ```
 
@@ -216,11 +222,11 @@ See `ddd-rights-specialist` for the full rights-driven hiding pattern.
 ```
 
 ```
-// TOON (header once, ~30 bytes per row = ~30KB — 60% smaller)
-lat,lng,dateTime
+// TOON: the header line is `[<rowCount>](col1,col2,…):` — NOT a bare comma list. A consumer parsing a
+// bare `lat,lng,…` header breaks on line 1 (SerializerTrait.php:920-937).
+[2](lat,lng,dateTime):
 50.123,8.456,2026-04-27 10:00:00
 50.124,8.457,2026-04-27 10:00:01
-...
 ```
 
 ### Two Orthogonal Configuration Axes
@@ -232,7 +238,9 @@ The TOON system has two independent dimensions of configuration:
 
 Both are independent. Activation without column spec uses default columns (union of all keys). Column spec without activation has no effect.
 
-### Activation -- Three Sources (OR-combined)
+### Activation -- Three Sources (gated by the master switch)
+
+> **Master gate:** the DECLARATIVE route (`#[SerializeInToonFormat]`) fires only when `static::$toonEnabledSerialization` is `true` — and it defaults to **`false`** (`SerializerTrait.php:62`, `:680-693`). Set it (e.g. `Track::$toonEnabledSerialization = true`) or the attribute is inert. The two imperative routes are not gated. So the three are not simply "OR-combined": the attribute route additionally requires the master switch.
 
 #### A) Declarative -- `#[SerializeInToonFormat]` attribute
 
@@ -244,10 +252,10 @@ class Track extends Entity
 }
 ```
 
-#### B) Class-wide imperative -- `setStaticPropertiesToSerializeAsToon()`
+#### B) Class-wide imperative -- `addStaticPropertiesToSerializeAsToon()`
 
 ```php
-Track::setStaticPropertiesToSerializeAsToon(true, 'locations', 'samples');
+Track::addStaticPropertiesToSerializeAsToon(true, 'locations', 'samples');
 ```
 
 #### C) Per-instance imperative -- `addPropertiesToSerializeAsToon()`
@@ -368,7 +376,7 @@ $entity = new MyEntity();
 $entity->setPropertiesFromObject($requestData);
 
 // JSON-decoded form
-$entity->setPropertiesFromSerializedObject($jsonString);
+$entity->setPropertiesFromObject(json_decode($jsonString)); // there is NO setPropertiesFromSerializedObject(); the arg is an OBJECT of the same class — a raw string fatals
 ```
 
 The framework uses property reflection to:
@@ -491,12 +499,11 @@ Output emits both keys; input accepts either.
 ### Flatten Wrapper Class
 
 ```php
+#[ExposePropertyInsteadOfClass('tagItems')]  // ON THE CLASS (TARGET_CLASS) — names the property to expose
 class TagGroup
 {
     public string $name;
-
-    #[ExposePropertyInsteadOfClass('items')]
-    public TagItems $tagItems;  // serialize as the items array, drop the wrapper
+    public TagItems $tagItems;  // the TagGroup serializes as this property's value (the wrapper is dropped)
 }
 
 // Without: { "name": "...", "tagItems": { "items": [...] } }
@@ -507,9 +514,9 @@ class TagGroup
 
 ## Performance Notes
 
-- **Cache `toObject` results** -- The framework caches by `(uniqueKey, path, hide-config-hash)`. Don't fight it.
+- **Cache `toObject` results** -- The framework caches by `spl_object_id` + the five flags (`ignoreHideAttributes`, `ignoreNullValues`, `forPersistence`, `flags`) + the hide-list keys (`SerializerTrait.php:554-558`) — NOT `(uniqueKey, path, hide-config-hash)`. Don't fight it.
 - **TOON for high-cardinality arrays** -- Net wins start around 50+ items per array.
-- **`addPropertiesToHide()` invalidates the cache** -- When hiding fields based on auth, do it once at the entity boundary (e.g. in `mapToEntity()`), not repeatedly in controllers.
+- **`addPropertiesToHide()` does NOT invalidate any cache** -- it never touches `SerializerRegistry` (`:159-164`); staleness is a non-issue because the hide list is part of the cache key. Still, hide once at the entity boundary (e.g. `mapToEntity()`), not repeatedly in controllers.
 - **Custom `toObject()` for hot paths** -- ValueObjects with 2-3 properties (GeoPoint, MoneyAmount) often override `toObject()` to skip reflection.
 - **`setPropertiesToHideRecursively()` is O(depth × breadth)** -- For deep entity graphs with many recursive hides, prefer setting hides at the level where the property lives.
 
@@ -525,10 +532,10 @@ class TagGroup
 | Old/new field both appear | `#[Aliases]` is intentional -- emits all alias keys |
 | Property persisted to DB but shouldn't be | Missing `#[HidePropertyOnSystemSerialization]` or `#[DontPersistProperty]` |
 | TOON output wrong columns | Check resolution order: instance spec -> class spec -> default. Use `getToonColumnsSpec()` to inspect |
-| TOON not activating | Verify one of: `#[SerializeInToonFormat]`, `setStaticPropertiesToSerializeAsToon`, `addPropertiesToSerializeAsToon` |
+| TOON not activating | Verify one of: `#[SerializeInToonFormat]`, `addStaticPropertiesToSerializeAsToon`, `addPropertiesToSerializeAsToon` |
 | Stale serialized output after config change | `SerializerRegistry::$toOjectCache = [];` -- the setters clear it but manual cache mutations don't |
 | `setPropertiesFromObject` ignores some fields | Check `#[Aliases]` mappings; fields without matching declared property + alias are silently dropped |
-| Nested object not deserialized correctly | Property must be typed (`public ?MyEntity $foo`); untyped properties stay as stdClass |
+| Nested object not deserialized correctly | Property must be typed (`public ?MyEntity $foo`); an **untyped** property THROWS `InternalErrorException('… has no Type definition')` on hydration (`ReflectionAllowedTypes.php:29-32`) — it does not stay as stdClass |
 
 ---
 
@@ -548,7 +555,7 @@ $entity->getPropertiesToHide();
 $entity->addPropertiesToHideRecursively(['a.b' => true]);
 
 // Hide control (class)
-MyEntity::setStaticPropertiesToHide(forCurrentClass: true, 'a', 'b');
+MyEntity::addStaticPropertiesToHide(forCurrentClass: true, 'a', 'b');
 MyEntity::removeStaticPropertiesToHide(forCurrentClass: true, 'a');
 
 // TOON activation
@@ -567,7 +574,7 @@ MyEntity::clearStaticToonColumnsSpec(forCurrentClass: true);
 
 // Input
 $entity->setPropertiesFromObject($arrayOrObject);
-$entity->setPropertiesFromSerializedObject($jsonString);
+$entity->setPropertiesFromObject(json_decode($jsonString)); // there is NO setPropertiesFromSerializedObject(); the arg is an OBJECT of the same class — a raw string fatals
 
 // Cache
 SerializerRegistry::$toOjectCache = [];

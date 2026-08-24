@@ -36,7 +36,7 @@ Entity-level access control via query-level rights restrictions in the DDD Core 
    |
    +-- Repository.find(id)
    |   +-- buildFindQueryBuilder(id)
-   |   +-- if ($applyRightsRestrictions) applyReadRightsQuery($qb)
+   |   +-- applyReadRightsQuery($qb)   // called UNCONDITIONALLY on the read path (DatabaseRepoEntity.php:257-258); the $applyRightsRestrictions gate lives only inside the override skeleton, not here
    |   +-- Execute query -> load entity
    |   +-- mapToEntity() -> optional property hiding
    |
@@ -55,7 +55,10 @@ Entity-level access control via query-level rights restrictions in the DDD Core 
 
 ---
 
-## Three Rights Methods
+## Rights Methods (there are FOUR)
+
+> Beyond the three below there is `applyCreateRightsQuery()` — it gates the INSERT branch of `upsert()` and defaults to delegating to `applyUpdateRightsQuery`; the update method runs only when the entity already has an id (`DatabaseRepoEntity.php:462-464`, `:756-758`). Override `applyCreateRightsQuery` to allow CREATE while denying UPDATE.
+
 
 Override these in `DB{EntityName}` repository classes (not on the EntitySet repo):
 
@@ -67,7 +70,8 @@ Override these in `DB{EntityName}` repository classes (not on the EntitySet repo
 
 **Return values:** `true` = restrictions applied (query modified), `false` = no restrictions.
 
-> ⚠️ **CRITICAL — the return value is load-bearing for expand.**
+> ⚠️ **CRITICAL — the bool return gates rights on EXPAND, UPDATE and DELETE (not just expand).**
+> `update()` reads it as `$updateRightsQueryBuilder = $rightsQueryApplied ? $updateRightsQueryBuilder : null;` and `delete()` as `if (static::applyDeleteRightsQuery($qb)) { $queryBuilder = $qb; }` (`DatabaseRepoEntity.php:465`, `:778-780`). So a method that adds conditions and returns `false` silently bypasses **write and delete** rights too, not only expand.
 >
 > `DBEntity::find()` / `DBEntitySet::find()` apply rights via **side effect on the QueryBuilder** and ignore the return value. So a wrong return value won't break direct finds — the bug stays hidden.
 >
@@ -481,7 +485,7 @@ If your `applyReadRightsQuery` adds WHEREs but returns `false` (e.g. via `return
 
 ### EntitySet properties (e.g. `chatMessages : ChatMessages`)
 
-Rights live on the single-entity repo (`DBChatMessage`), not on the set repo (`DBChatMessages`). When you expand a set-typed property, the framework must call `applyReadRightsQuery` on the **base entity repo**, not on the set. If you see rights silently bypassed on a set expand, suspect the resolution chain in `ExpandDefinition::getTargetPropertyRepoClass()` (it must yield the base repo, not the set repo).
+Rights live on the single-entity repo (`DBChatMessage`), not on the set repo (`DBChatMessages`). When you expand a set-typed property, the framework must call `applyReadRightsQuery` on the **base entity repo**, not on the set. If you see rights silently bypassed on a set expand, look at where `ExpandOptions` dereferences `::BASE_REPO_CLASS` (`ExpandOptions.php:415-425`) — NOT at `ExpandDefinition::getTargetPropertyRepoClass()`, which by design yields the *set* repo; the deref is the real resolution point.
 
 ### Cardinality no longer matters — unified semantic
 

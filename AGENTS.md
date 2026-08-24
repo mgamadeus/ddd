@@ -644,42 +644,49 @@ Entities `Cron` and `CronExecution` in `Domain/Common/Entities/Crons/` provide s
 
 ---
 
-## Composer Commands — HARD RULE: ALWAYS `--ignore-platform-reqs`
+## Composer Commands — the platform pin, and why `--ignore-platform-reqs` is now the WRONG default
 
-> **EVERY `composer install` / `composer update` / `composer require` invocation by an agent MUST include `--ignore-platform-reqs`. NO EXCEPTIONS.** Not "if needed", not "when extensions are missing" — ALWAYS.
+> **Consuming apps pin the deployment PHP in `composer.json` via `config.platform.php`. With that pin in place, run plain composer commands and do NOT add `--ignore-platform-reqs`.** The old "ALWAYS `--ignore-platform-reqs`" hard rule predates the `config.platform.php` pins; it has been **revised out** across the consuming apps because the pin now does the job correctly, and the broad flag actively *defeats* the pin.
 
 ```bash
-# CORRECT — every single time
-composer update mgamadeus/ddd --ignore-platform-reqs
-composer install --ignore-platform-reqs
-composer require some/package --ignore-platform-reqs
-
-# WRONG — will break production
-composer update mgamadeus/ddd
+# CORRECT in a consuming app (config.platform.php is set → resolution is pinned to the target PHP)
+composer update mgamadeus/ddd -W
 composer install
 composer require some/package
-composer update mgamadeus/ddd --ignore-platform-req=ext-imagick   # targeted ≠ acceptable; STILL leaks PHP-version mismatches
+
+# WRONG — overrides the config.platform.php pin, freeing the resolver to write
+# newer-PHP-only packages into the lock (this is exactly how five PHP-8.4-only packages
+# once landed in a committed 8.3 lock):
+composer update mgamadeus/ddd --ignore-platform-reqs
+composer update mgamadeus/ddd --ignore-platform-req=php
+
+# ACCEPTABLE only when a genuinely-absent LOCAL extension blocks resolution and it is not
+# already listed in config.platform — ignore just that extension, never php:
+composer update mgamadeus/ddd -W --ignore-platform-req=ext-redis
 ```
 
-**Why this is non-negotiable:**
+**The mechanism (`config.platform.php`):**
 
-Local dev machines run a newer PHP (commonly 8.4 via Homebrew) than the production deployment target (commonly 8.3). When Composer's resolver runs against the local PHP version, it picks transitive dependencies whose `require.php` is `>= 8.4`. Those packages get written into `composer.lock`. On production deploy, Composer's autoload generates `vendor/composer/platform_check.php` from the lockfile's effective platform requirements, and the autoload then **FATALS at runtime** with:
+Local dev machines often run a newer PHP (e.g. 8.4/8.5 via Homebrew) than the production target (8.3). Left unpinned, Composer resolves transitive deps against the local PHP and can write `require.php: >= 8.4` packages into `composer.lock`; on deploy, `vendor/composer/platform_check.php` then FATALs at runtime ("… require a PHP version ">= 8.4.0". You are running 8.3.x"). This burned production once.
 
+The fix that was adopted is **not** the blanket flag but a per-app pin:
+
+```json
+"config": { "platform": { "php": "8.3" } }
 ```
-Fatal error: Composer detected issues in your platform: Your Composer dependencies
-require a PHP version ">= 8.4.0". You are running 8.3.4.
-```
 
-This has burned production once on this codebase already. `--ignore-platform-reqs` causes Composer to skip platform-constraint evaluation entirely AND skip the platform_check.php fatal emission. The trade-off (production might silently use a package that depends on a PHP 8.4 feature) is accepted by the project owner because the alternative — different lockfile content depending on which dev's machine ran `composer update` — is worse.
+With that pin, `composer update` resolves against 8.3 **regardless of the local runtime** and writes an 8.3-safe lock — deterministically, independent of which dev ran it. Every DDD-consuming app in the ecosystem now sets it.
 
-**The targeted variant `--ignore-platform-req=ext-xxx` is NOT a substitute.** It only ignores the named platform requirement at resolution time but still writes the picked versions' constraints into the lockfile and still emits platform_check.php. The PHP-version axis must specifically be silenced, and the flag that does both jobs is the broad `--ignore-platform-reqs`.
+**Why the broad `--ignore-platform-reqs` is now a footgun:** it does not just skip missing extensions — it overrides the `config.platform.php` pin too, so the resolver is once again free to pull newer-PHP-only packages into the lock. It re-creates the exact failure the pin was added to prevent. Use a *targeted* `--ignore-platform-req=ext-<name>` only for an extension genuinely missing on the local box, and never silence `php`.
 
-**Local extensions:** missing `ext-imagick` / `ext-amqp` / `ext-redis` etc. are typical on macOS Homebrew PHP installs without those PECL extensions. The broad ignore covers them without enumerating each — one more reason to use it.
+> **Framework / module dev repos** (this `mgamadeus/ddd` repo, the `ddd-*` modules) set **no** `config.platform.php` — they are libraries and must not pin platform. When updating a module's own checkout during development, a *targeted* `--ignore-platform-req=ext-<name>` is acceptable for a missing local extension; still never the broad form, never `php`.
 
-**When the resolver needs to upgrade transitive deps along with the targeted package**, also add `-W` (`--with-all-dependencies`). The full canonical form for an agent-driven upgrade is:
+**Local extensions:** missing `ext-imagick` / `ext-amqp` / `ext-redis` etc. are typical on macOS Homebrew PHP installs without those PECL extensions. Ignore only the ones genuinely absent, each by name — `--ignore-platform-req=ext-imagick --ignore-platform-req=ext-redis` — and note that apps which list those extensions in `config.platform` (e.g. Radbonus) don't even need that. Never reach for the broad form to avoid enumerating them; enumerating is the point.
+
+**When the resolver needs to upgrade transitive deps along with the targeted package**, also add `-W` (`--with-all-dependencies`). The canonical form for an agent-driven upgrade is a plain update (the app's `config.platform.php` pins the PHP axis):
 
 ```bash
-composer update <pkg> --ignore-platform-reqs -W
+composer update <pkg> -W
 ```
 
 **NEVER pass `--no-scripts` on a consumer app.** Consumer apps wire the Doctrine model

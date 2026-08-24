@@ -26,17 +26,19 @@ The OData-inspired QueryOptions system for filtering, sorting, pagination, field
 
 QueryOptions provide OData-style data querying applied at the database level via `DBEntitySet::applyQueryOptions()`:
 
+> **No `$` prefix.** Query parameters are matched **verbatim against the request-DTO property names** (`RequestDto.php:117`, `DtoQueryOptionsTrait.php:30-65`) — the filter parameter is `filters` (plural), NOT `$filter`.
+
 | Parameter | Purpose | Example |
 |-----------|---------|---------|
-| `$filter` | Conditions (WHERE) | `?$filter=status eq 'ACTIVE'` |
-| `$expand` | Related entities (LEFT JOIN) | `?$expand=business,zones` |
-| `$orderBy` | Sorting (ORDER BY) | `?$orderBy=createdAt desc,name asc` |
-| `$select` | Field selection (partial SELECT) | `?$select=id,name,business.name` |
-| `$top` | Limit (default: 50) | `?$top=20` |
-| `$skip` | Offset | `?$skip=40` |
-| `$skiptoken` | Cursor pagination | `?$skiptoken=abc123` |
+| `filters` | Conditions (WHERE) | `?filters=status eq 'ACTIVE'` |
+| `expand` | Related entities (LEFT JOIN) | `?expand=business,zones` |
+| `orderBy` | Sorting (ORDER BY) | `?orderBy=createdAt desc,name asc` |
+| `select` | Field selection (partial SELECT) | `?select=id,name,business.name` |
+| `top` | Limit (default: 50) | `?top=20` |
+| `skip` | Offset | `?skip=40` |
+| `skiptoken` | Parsed & stored but **read nowhere** — cursor pagination is NOT implemented (`AppliedQueryOptions.php:127-131`; absent from `DBEntitySet::applyQueryOptions()`). Use `top`/`skip`. | (no effect) |
 
-**Default `$top` is 50** (defined in the `#[QueryOptions]` attribute). Override with `?$top=100` or programmatically via `->setTop(100)`.
+**Default `top` is 50** — applies whether or not `#[QueryOptions]` is present (`QueryOptions.php:28`). Override with `?top=100` or `->setTop(100)`. A `#[QueryOptions(maxTop: N)]` caps it (`setTop()` throws above `N`); `#[DtoQueryOptions(expose: ...)]` controls which options a request DTO accepts.
 
 ### Database Application Flow
 
@@ -102,7 +104,7 @@ When a request arrives with query parameters:
 4. **OrderBy** is validated against allowed properties
 5. `AppliedQueryOptions::setQueryOptionsFromRequestDto()` copies all options to the entity's default QueryOptions (with `validateAgainstDefinitions=false` since validation already happened)
 
-### Single Entity GET (with $select/$expand support)
+### Single Entity GET (with select/expand support)
 
 ```php
 use DDD\Presentation\Base\QueryOptions\{DtoQueryOptions, DtoQueryOptionsTrait};
@@ -125,7 +127,7 @@ public function get(ResourceGetRequestDto &$requestDto, ResourcesService $resour
     Resource::getDefaultQueryOptions()->setQueryOptionsFromRequestDto($requestDto);
 
     $resource = $resourcesService->find($requestDto->resourceId);
-    $resource->expand();  // Apply $expand -- triggers lazy loading per expand options
+    $resource->expand();  // Apply expand -- triggers lazy loading per expand options
 
     $responseDto = new ResourceGetResponseDto();
     $responseDto->resource = $resource;
@@ -179,25 +181,25 @@ public function list(ResourcesGetRequestDto &$requestDto, ResourcesService $reso
 | `ft` | Fulltext (natural language) | scalar | `name ft 'search terms'` |
 | `fb` | Fulltext (boolean mode) | scalar | `name fb '+required -excluded'` |
 
-### Value Rules (Strict)
+### Value Rules (recommended form — the parser is more lenient than this)
 
-- Every scalar MUST be wrapped in **single quotes**: `'value'`, `'10'`, `'2026-01-01'`, `'true'`
-- NULL MUST be written as the scalar `'NULL'`
-- Lists MUST use **brackets** with every item quoted: `['val1','val2']`
+- Single-quote scalars for safety: `'value'`, `'10'`, `'2026-01-01'`, `'true'` — but the parser also accepts **unquoted numbers** and **double-quoted** items (`FiltersOptionsParser.php:244-265`).
+- NULL: `'NULL'` works — and so does bare `null` (`:294-297`).
+- Lists: `['val1','val2']` — and the parser also accepts SQL-style **paren lists** after `in`/`ni`/`bw`, e.g. `in ('A','B')` (`:331-340`).
 - **Logical operators:** `and`, `or` (case-insensitive), `(...)` for grouping/precedence (nesting allowed)
 - Property names support **dot-notation** for expanded relations: `business.type`, `account.person.name`
 
 ### Filter Examples
 
 ```
-?$filter=isActive eq 'true'
-?$filter=business.type eq 'RESTAURANT'
-?$filter=deletedAt eq 'NULL'
-?$filter=status in ['PENDING','PROCESSING']
-?$filter=status ni ['CANCELLED','DELETED']
-?$filter=createdAt bw ['2026-01-01','2026-01-31']
-?$filter=(status eq 'PENDING' or status eq 'PROCESSING') and total gt '100'
-?$filter=(someId eq '1' and ((startDate le '2026-01-22' and endDate ge '2026-01-01') or (startDate bw ['2026-01-01','2026-01-22'])))
+?filters=isActive eq 'true'
+?filters=business.type eq 'RESTAURANT'
+?filters=deletedAt eq 'NULL'
+?filters=status in ['PENDING','PROCESSING']
+?filters=status ni ['CANCELLED','DELETED']
+?filters=createdAt bw ['2026-01-01','2026-01-31']
+?filters=(status eq 'PENDING' or status eq 'PROCESSING') and total gt '100'
+?filters=(someId eq '1' and ((startDate le '2026-01-22' and endDate ge '2026-01-01') or (startDate bw ['2026-01-01','2026-01-22'])))
 ```
 
 ---
@@ -209,7 +211,7 @@ Expand creates LEFT JOINs in the database query for lazy-loadable properties. **
 ### Basic Expand
 
 ```
-?$expand=business,zones
+?expand=business,zones
 ```
 
 ### Expand with Clauses
@@ -217,10 +219,10 @@ Expand creates LEFT JOINs in the database query for lazy-loadable properties. **
 Clauses are **semicolon-separated** inside parentheses:
 
 ```
-?$expand=business(select=id,name,type)
-?$expand=zones(filters=isActive eq 'true';orderBy=name asc;top=50)
-?$expand=zones(expand=tables(select=id,name))
-?$expand=zones(filters=isActive eq 'true';orderBy=name asc;top=50;skip=0;expand=tables(select=id,name))
+?expand=business(select=id,name,type)
+?expand=zones(filters=isActive eq 'true';orderBy=name asc;top=50)
+?expand=zones(expand=tables(select=id,name))
+?expand=zones(filters=isActive eq 'true';orderBy=name asc;top=50;skip=0;expand=tables(select=id,name))
 ```
 
 Supported clauses: `select`, `filters`, `orderBy`, `top`, `skip`, `skiptoken`, `expand` (recursive)
@@ -230,7 +232,7 @@ Supported clauses: `select`, `filters`, `orderBy`, `top`, `skip`, `skiptoken`, `
 Filters and ordering can reference expanded entity properties using dot-notation:
 
 ```
-?$expand=business&$filter=business.name ft 'kfc arad'&$orderBy=business.nameScore desc
+?expand=business&filters=business.name ft 'kfc arad'&orderBy=business.nameScore desc
 ```
 
 ### The `expand()` Method on Entities
@@ -247,8 +249,8 @@ After loading entities, call `$entity->expand()` or `$entitySet->expand()` to tr
 ## Select (Field Selection)
 
 ```
-?$select=id,name,status
-?$select=id,name,business.name
+?select=id,name,status
+?select=id,name,business.name
 ```
 
 Reduces payload by applying `partial` SELECT in Doctrine and hiding unselected properties from serialization. The `id` field is always included automatically. Supports dot-notation for expanded entity fields.
@@ -258,9 +260,9 @@ Reduces payload by applying `partial` SELECT in Doctrine and hiding unselected p
 ## OrderBy (Sorting)
 
 ```
-?$orderBy=name asc
-?$orderBy=createdAt desc,name asc
-?$orderBy=nameScore desc
+?orderBy=name asc
+?orderBy=createdAt desc,name asc
+?orderBy=nameScore desc
 ```
 
 Multiple sort columns separated by commas. Each column: `propertyName asc|desc` (direction optional, defaults to `asc`).
@@ -270,29 +272,29 @@ Multiple sort columns separated by commas. Each column: `propertyName asc|desc` 
 The `{propertyName}Score` suffix enables ordering by fulltext relevance (uses `MATCH...AGAINST` score). **Requirements:**
 
 - A corresponding fulltext filter (`ft` or `fb`) must be active on the base property
-- e.g., `?$filter=name ft 'search'&$orderBy=nameScore desc`
+- e.g., `?filters=name ft 'search'&orderBy=nameScore desc`
 
-Works on expanded relations too: `?$expand=business&$filter=business.name ft 'kfc'&$orderBy=business.nameScore desc`
+Works on expanded relations too: `?expand=business&filters=business.name ft 'kfc'&orderBy=business.nameScore desc`
 
 ---
 
 ## Pagination
 
 ```
-?$top=20              # Limit to 20 results (default: 50)
-?$skip=40             # Skip first 40 results
-?$top=20&$skip=40     # Page 3 (20 per page)
-?$skiptoken=abc123    # Cursor-based pagination
+?top=20              # Limit to 20 results (default: 50)
+?skip=40             # Skip first 40 results
+?top=20&skip=40     # Page 3 (20 per page)
+?skiptoken=abc123    # Cursor-based pagination
 ```
 
-**Default `$top` is 50** when the `#[QueryOptions]` attribute is present with no explicit override.
+**Default `top` is 50** when the `#[QueryOptions]` attribute is present with no explicit override.
 
 ---
 
 ## Combined Example
 
 ```
-?$select=id,name&$filter=isActive eq 'true'&$orderBy=name asc&$top=10&$expand=business(select=id,name)
+?select=id,name&filters=isActive eq 'true'&orderBy=name asc&top=10&expand=business(select=id,name)
 ```
 
 ---
@@ -322,16 +324,16 @@ The DB model generator creates a stored virtual search column (`virtualNameSearc
 ### API Examples
 
 ```
-?$filter=name ft 'chicken breast'             # Natural language
-?$filter=name fb '+chicken -fried'            # Boolean: require "chicken", exclude "fried"
-?$filter=name fb 'alm*'                       # Boolean: prefix match
-?$orderBy=nameScore desc                       # Relevance ordering (requires ft/fb filter)
+?filters=name ft 'chicken breast'             # Natural language
+?filters=name fb '+chicken -fried'            # Boolean: require "chicken", exclude "fried"
+?filters=name fb 'alm*'                       # Boolean: prefix match
+?orderBy=nameScore desc                       # Relevance ordering (requires ft/fb filter)
 ```
 
 ### With Expanded Relations
 
 ```
-?$expand=business&$filter=business.name ft 'kfc arad'&$orderBy=business.nameScore desc
+?expand=business&filters=business.name ft 'kfc arad'&orderBy=business.nameScore desc
 ```
 
 Database schema changes (virtual column + FULLTEXT index) are managed manually by the developer; the framework generates the ORM/model metadata.
@@ -375,10 +377,10 @@ EntityNames::setDefaultQueryOptions($originalQueryOptions);
 
 ### Adding a MANDATORY server-side filter on top of a client filter (`addFiltersConnectedByAnd`)
 
-A very common need: a request DTO carries a client `$filter` (via `DtoQueryOptions`), and the controller must additionally enforce a **server-side mandatory scope** — a tenant / owner / parent-id condition the client must not be able to escape. Use:
+A very common need: a request DTO carries a client `filters` (via `DtoQueryOptions`), and the controller must additionally enforce a **server-side mandatory scope** — a tenant / owner / parent-id condition the client must not be able to escape. Use:
 
 ```php
-// Client $filter / $top / $orderBy / $expand already applied:
+// Client filters / top / orderBy / expand already applied:
 $queryOptions = SomeEntities::getDefaultQueryOptions();
 $queryOptions->setQueryOptionsFromRequestDto($requestDto);
 
@@ -389,7 +391,7 @@ $queryOptions->addFiltersConnectedByAnd($scopeFilters);
 
 - **`AppliedQueryOptions::addFiltersConnectedByAnd(FiltersOptions $additional)`** wraps the existing filter tree AND `$additional` as two **atomic children** of a fresh top-level AND (via `FiltersOptions::buildConnected`). The client filter — **whatever its shape, including a top-level `or`** — stays parenthesized as one nested group, so the scope is always a top-level AND and **can never be OR-ed around**. If there is no existing filter, `$additional` simply becomes the filter. OR-sibling: **`addFiltersConnectedByOr`** (widens the set).
 - **DO NOT** enforce a scope with `FiltersOptions::addExpressionsFromFiltersOptions()` — it **flattens** the other tree's top-level expressions into the receiver and, on a `TYPE_OPERATION` (e.g. `or`-rooted) receiver, makes them **inherit the receiver's join operator** → the scope becomes an `or`-sibling and the guard is bypassed. `addExpressionsFromFiltersOptions` is for merging same-property expressions, not for a mandatory AND-scope.
-- **DO NOT** enforce a scope by building the cursor/scope as a separate typed param + `setFilters(serverString)` overwriting the client filter — that throws away the client's QueryOptions navigation. Keep the client on pure QueryOptions (`$filter`) and add the scope with `addFiltersConnectedByAnd`.
+- **DO NOT** enforce a scope by building the cursor/scope as a separate typed param + `setFilters(serverString)` overwriting the client filter — that throws away the client's QueryOptions navigation. Keep the client on pure QueryOptions (`filters`) and add the scope with `addFiltersConnectedByAnd`.
 - Still wrap in snapshot/restore (the static-default leak rule above): `SomeEntities::setDefaultQueryOptionsSnapshot()` … `finally { restoreDefaultQueryOptionsSnapshot(); }`.
 
 `FiltersOptions::buildConnected(string $joinOperator, FiltersOptions ...$trees): static` is the low-level factory (builds a new operation node connecting the given trees as atomic children; throws `\InvalidArgumentException` on an invalid join operator).
@@ -456,11 +458,11 @@ ChildEntities::setDefaultQueryOptions($originalQueryOptions);
 | Filters not working | Check value quoting: `'value'` not `value`. Check property is filterable (auto-detected from entity). |
 | Filter on expanded property fails | Ensure `$expand=relation` is also present |
 | `ni` operator not working | Verify value is an array: `ni ['A','B']` not `ni 'A'` |
-| Expand not loading in response | Verify `$expand` in query string AND `->expand()` called in controller after loading |
+| Expand not loading in response | Verify `expand` in query string AND `->expand()` called in controller after loading |
 | Expand returns no results | Read rights (`applyReadRightsQuery`) are applied to expanded entities -- check rights |
 | Fulltext `ft` not matching partial words | Use `fb` (boolean mode) with `*` prefix for partial matching |
 | `nameScore` ordering ignored | Requires active `ft` or `fb` filter on the same property |
-| Default top=50 truncating results | Explicitly pass `?$top=1000` or set programmatically |
+| Default top=50 truncating results | Explicitly pass `?top=1000` or set programmatically |
 | Programmatic QueryOptions leaking | Always clone + restore original QueryOptions |
 | OrderBy ignored | Check `setQueryOptionsFromRequestDto()` is called before `findAll()` |
 | Select not hiding properties | Properties are hidden from serialization, not from the query itself |
@@ -472,4 +474,4 @@ ChildEntities::setDefaultQueryOptions($originalQueryOptions);
 - **Where QueryOptions arrive over HTTP** (request DTOs with `#[DtoQueryOptions]` + `DtoQueryOptionsTrait`, the `&$requestDto` controller signature, `expand()` in the action) — see `ddd-endpoint-specialist`.
 - **Entities exposing `QueryOptionsTrait`** (auto-detected filterable/expandable properties, `#[LazyLoad]`, `#[Translatable(fullTextIndex: true)]`) — see `ddd-entity-specialist`.
 - **Programmatic QueryOptions in services** (clone/restore the static default, mandatory server-side scope filters) — see `ddd-service-specialist`.
-- **How `$select`-narrowed output is serialized** (property hiding / output-key renaming that composes with `$select`) — see `ddd-serializer-specialist`.
+- **How `select`-narrowed output is serialized** (property hiding / output-key renaming that composes with `select`) — see `ddd-serializer-specialist`.

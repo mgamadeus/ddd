@@ -26,7 +26,10 @@ All code uses the `DDD\` root namespace. Services live under `DDD\Domain\{Domain
 
 ## Service Template
 
-**Path:** `src/Domain/{DomainName}/Services/{EntityName}sService.php`
+> **Path & namespace — app vs framework.** Placeholders: **`<app>/`** = the consuming Symfony application root (in the nested layout that is `app/`, so `<app>/src/…` is `app/src/…`); **`<ddd>/`** = the framework's own tree (`<app>/vendor/mgamadeus/ddd/src/…`). When you write a service **in a consuming application** — the usual case — the path is `<app>/src/Domain/{DomainName}/Services/…` and the namespace is the app's own PSR-4 root, e.g. `namespace App\Domain\{DomainName}\Services;` (RC autoloads `App\ => src/`). The `DDD\…` namespace shown below is the **framework's** convention — use it only when adding a service to the `mgamadeus/ddd` package itself. Do NOT write a `DDD\`-namespaced class into an application.
+
+**Path (in a consuming app):** `<app>/src/Domain/{DomainName}/Services/{EntityName}sService.php` — namespace `App\Domain\{DomainName}\Services;`
+**Path (in the framework package):** `<ddd>/src/Domain/{DomainName}/Services/…` — namespace `DDD\Domain\{DomainName}\Services;` (shown below)
 
 ```php
 <?php
@@ -97,7 +100,7 @@ Distinct paths depending on where the lookup happens:
 | Inside this service, custom single-entity query | `{EntityName}::getRepoClassInstance()->find($queryBuilder)` | single entity, raw |
 | Inside this service, custom set/scalar query | `{EntityName}s::getRepoClassInstance()->find($queryBuilder)` | entity set or scalar |
 
-**`getRepoClassInstance()` is for service-internal custom QueryBuilder queries only**, never as a substitute for `getService()->find($id)` from outside. Going through the service applies `applyReadRightsQuery`, entity registry caching, lazy-loading defaults and other invariants -- skipping the service silently bypasses them.
+**`getRepoClassInstance()` is for service-internal custom QueryBuilder queries only**; prefer `getService()->find($id)` from outside. NOTE: calling the repo directly is **not** a rights bypass — `applyReadRightsQuery` (`DatabaseRepoEntity.php:258`), the entity-registry cache (`:161-173`) and the default-select (`:266-275`) all live in `DatabaseRepoEntity::find()`, which the service merely calls. The service adds only eager-expand routing and the `throwErrors` `NotFoundException`.
 
 ### `getService()` returning null — cross-namespace subclasses
 
@@ -285,7 +288,7 @@ The column-generation side (`name → virtualNameSearch`) is documented in `ddd-
 
 ## Concurrency-safe writes — atomic SQL/DQL, NEVER read-modify-write through `update()`
 
-`$entity->update()` persists through `DoctrineEntityManager::upsert()` — an `INSERT … ON DUPLICATE KEY UPDATE <col> = VALUES(<col>)` over **every *initialized* field** of the model (a property that is unset *and* has no default is the only thing skipped). So `update()` is a **last-writer-wins snapshot of the whole row**.
+`$entity->update()` persists through `DoctrineEntityManager::upsert()` — an `INSERT … ON DUPLICATE KEY UPDATE <col> = VALUES(<col>)` over **every *initialized* field** of the model (a property that is unset *and* has no default is the only thing skipped). So `update()` is a **last-writer-wins snapshot of the whole row** — with two exceptions: an `isMergableJSONColumn` column goes through `JSON_MERGE_PATCH` (merged, not replaced), and with an id **plus** a rights QueryBuilder the write is a rights-scoped `UPDATE … WHERE id AND id IN (<rights query>)`, not a plain ODKU (`DoctrineEntityManager.php:159-164`, `:108-119`).
 
 Under concurrency this is a data race: two workers each load the entity, mutate one field in memory, and `update()` → the second write **clobbers the first's other columns** (and a counter read-modify-write loses increments). For any field on a row that more than one process can mutate — a counter, a status/flag, a timestamp, an exactly-once gate — do NOT go through `update()`. Issue a **single atomic statement** in the DB:
 
@@ -559,7 +562,8 @@ public function isCodeUniqueWithinScope(
 Override `update()` to handle related operations before/after persisting:
 
 ```php
-public function update(DefaultObject &$entity, int $depth = 1): ?Entity
+public function update(DefaultObject $entity, int $depth = DatabaseRepoEntity::UPDATE_DEFAULT_RECURSIVE_DEPTH): DefaultObject
+// NOTE (real signature): NOT by-reference; returns DefaultObject (?Entity is not covariant — would fatal); default depth is 2
 {
     // Pre-processing: clean up related data
     if (isset($entity->id)) {
@@ -579,7 +583,7 @@ public function update(DefaultObject &$entity, int $depth = 1): ?Entity
 Override to cascade-delete related entities or clean up external resources:
 
 ```php
-public function delete(DefaultObject &$entity): void
+public function delete(Entity $entity): void  // real signature — NOT `DefaultObject &$entity` (the by-ref/type mismatch alone fatals)
 {
     // Clean up related MediaItems before deletion
     if ($entity->mediaItem) {

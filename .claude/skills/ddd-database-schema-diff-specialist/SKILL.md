@@ -61,7 +61,7 @@ Both sides of the diff (live introspection and target generator) converge on the
 | File | Purpose |
 |---|---|
 | `DatabaseSchemaIntrospectionService.php` | The only thing that talks to `INFORMATION_SCHEMA`. Per-request cache. Returns `?DBCanonicalTable`. |
-| `DatabaseSchemaDiffService.php` | Orchestrator. `computeDiffs()`, `applyDiff()`, `applyDiffs()`. ~1000 LOC including the phase-ordered SQL assembler. |
+| `DatabaseSchemaDiffService.php` | Orchestrator. `computeDiffs()`, `applyDiff()`, `applyDiffs()`. ~2,260 LOC (2 264 at time of writing) including the phase-ordered SQL assembler. |
 
 ### Critical: hide rich DDD types from the wire
 
@@ -79,7 +79,7 @@ Both attributes are required. `#[HideProperty]` alone leaves the type in the sch
 
 `DatabaseSchemaDiffService::computeDiffs(?array $entityClasses = null): DBTableDiffs`
 
-1. Build target: `EntityModelGeneratorService::getDatabaseModels($entityClasses)`. That generator already filters out framework-side entities whose short class name is reused by an app-side descendant (via `filterOutOverriddenEntities()` walking parents and stopping at `#[SubclassIndicator]`). Without this, both classes would emit a `DatabaseModel` with the same `sqlTableName` and the diff would double up.
+1. Build target: `EntityModelGeneratorService::getDatabaseModels($entityClasses, filterOverriddenEntities: true)`. NOTE: `filterOverriddenEntities` **defaults to `false`** — the generator only filters framework-side entities whose short class name is reused by an app-side descendant (via `filterOutOverriddenEntities()` walking parents and stopping at `#[SubclassIndicator]`) when a caller passes `true`, which `computeDiffs()` does. Without the filter, both classes would emit a `DatabaseModel` with the same `sqlTableName` and the diff would double up.
 2. Get live tables. Skip ignored ones (`DB_DIFF_IGNORED_TABLES` env, default `['doctrine_migration_versions', 'messenger_messages']`).
 3. For each target `DatabaseModel`:
    - Skip STI subclasses (`$databaseModel->parentEntityCLassWithNamespace !== null`) — their tables are owned by the STI parent.
@@ -169,7 +169,7 @@ Also applied to **fresh ADD** of VECTOR columns so search code never encounters 
 | Severity | Trigger |
 |---|---|
 | `ADDITIVE` | All children are ADDs; no destructive flags. |
-| `DESTRUCTIVE` | Any of: DROP column/index/FK/trigger/virtual-column/table, NOT NULL added to previously nullable column, VARCHAR shrunk, sqlType change, VECTOR reset. |
+| `DESTRUCTIVE` | Any of: DROP column/index/FK/trigger/virtual-column/table, NOT NULL added to previously nullable column, VARCHAR shrunk, sqlType change, VECTOR reset — and also **MODIFY** of a virtual column, a foreign key, or a trigger (each is a DROP+ADD under the hood, so it is destructive too). |
 | `MIXED` | Has both. |
 
 `columnModifyIsDestructive()` is the single source of truth for column-level destructive checks.
@@ -253,17 +253,20 @@ DatabaseSchemaDiffService::applyDiffs(DBTableDiffs $diffs, bool $disableForeignK
 
 Both return a **freshly recomputed** `DBTableDiffs` after applying so the frontend can replace its state with the response without a follow-up GET.
 
-Inside `executeTableDiff`:
-- Wraps with `SET FOREIGN_KEY_CHECKS=0/1` when `$disableForeignKeyChecks`.
+The `SET FOREIGN_KEY_CHECKS=0/1` wrap is in **`applyDiffs`** (around the whole apply loop when `$disableForeignKeyChecks`), NOT in `executeTableDiff`. Inside `executeTableDiff`:
 - Re-splits every statement through `splitMultiStatementSql` defensively.
 - Each statement goes through `executeStatement` independently. DDL is implicit-commit on MySQL — failure mid-list leaves a mixed state. Re-introspection on return surfaces what's still pending.
 
 ### Production Guard (large-table refusal)
 
-`applyDiffs()` calls `assertSafeForDirectApply()` for every diff before executing. The guard throws `BadRequestException` when:
+`applyDiffs()` calls `assertSafeForDirectApply()` for every diff before executing. The guard has **two independent throw paths** (both raise `BadRequestException`):
+
+**Path A — large-table `DROP_TABLE`.** A separate branch at the top of `assertSafeForDirectApply()` blocks a `DROP_TABLE` on a large table outright; it returns before `detectCopyForcingOperations()` is ever called (the detector only covers ALTER paths). A big-table drop is refused regardless of copy-forcing operations.
+
+**Path B — copy-forcing ALTER on a large table.** Throws when BOTH:
 
 1. The live table exceeds **either** `LARGE_TABLE_SIZE_THRESHOLD_MB` (default 100 MB, data + index from `INFORMATION_SCHEMA.TABLES`) **or** `LARGE_TABLE_ROW_THRESHOLD` (default 100,000 rows, InnoDB estimate from `INFORMATION_SCHEMA.TABLES.TABLE_ROWS`), **AND**
-2. The diff contains at least one COPY-forcing operation, detected by `detectCopyForcingOperations(DBTableDiff): string[]`:
+2. The diff contains at least one COPY-forcing operation, detected by `detectCopyForcingOperations(DBTableDiff): DBCopyForcingOperations`:
    - Column MODIFY with `sqlType` / `length` / `vectorDimensions` in `changedAttributes`
    - Column MODIFY with `requiresFullReset = true` (VECTOR re-dimensioning)
    - Virtual column MODIFY (always DROP+ADD — MySQL forbids in-place ALTER on generation expressions)
@@ -399,7 +402,7 @@ If the consuming app already has a `DatabaseModelsController` from before v2.19,
 | `isLargeTable()` signature | `(string, ?int &$size, ?int &$rows): bool` | `(string): bool` — out-params removed |
 | `detectCopyForcingOperations()` return | `string[]` | `DBCopyForcingOperations` |
 | `buildProductionGuardMessage()` 4th param | `array` | `DBCopyForcingOperations` |
-| `EntityModelGeneratorService::$databaseModels` static | `DatabaseModels` (non-nullable) | `?DatabaseModels` |
+| `EntityModelGeneratorService` model cache static | *(there is no `$databaseModels`)* | `protected static array $databaseModelsByFilterMode = []` — a per-mode cache keyed `'filtered'`/`'unfiltered'`, cleared by `invalidateCache()` |
 
 ### DTO migration — concrete diffs
 
@@ -640,8 +643,8 @@ In `App\Presentation\Api\Admin\Common\Dtos\DatabaseModels\`. **DTO discipline**:
 |---|---|
 | `DBTableDiffsGetRequestDto.php` | Empty `RequestDto` — no query params. |
 | `DBTableDiffsGetResponseDto.php` | Extends `RestResponseDto`. `public DBTableDiffs $diffs;` with `#[Parameter(in: Parameter::RESPONSE, required: true)]`. |
-| `ApplyDiffsRequestDto.php` | `public ?array $sqlTableNames = null;` (`#[Parameter(in: Parameter::BODY, required: false)]`, `string[]` — scope filter), `public bool $disableForeignKeyChecks = true;`, `public bool $bypassProductionGuard = false;`, `public ?DBExpectedDiffSignatures $expectedDiffSignatures = null;`. |
-| `ApplyDiffRequestDto.php` | `public string $sqlTableName;` (required), `public bool $disableForeignKeyChecks = true;`, `public bool $bypassProductionGuard = false;`, `public ?string $expectedDiffSignature = null;`. |
+| `ApplyDiffsRequestDto.php` | `public ?array $sqlTableNames = null;` (`#[Parameter(in: Parameter::BODY, required: false)]`, `string[]` — scope filter), `public bool $disableForeignKeyChecks = true;`, `public ?DBExpectedDiffSignatures $expectedDiffSignatures = null;`. **Do NOT add a `bypassProductionGuard` field** — the production guard is programmatic-only by design (see the guard message at `DatabaseSchemaDiffService:313`). |
+| `ApplyDiffRequestDto.php` | `public string $sqlTableName;` (required), `public bool $disableForeignKeyChecks = true;`, `public ?string $expectedDiffSignature = null;`. **No `bypassProductionGuard` field** — same reason. |
 
 > **What NOT to do.** A `?array $expectedSignatures = null` of shape `array<string, string>` would deserialize fine and "work" — and would violate AGENTS.md. The typed `DBExpectedDiffSignatures` Set ships in Core for this exact reason; consumers must use it. Same applies to a `?array $copyForcingOperations` style field on any custom response DTO — use `DBCopyForcingOperations` instead.
 
@@ -666,7 +669,7 @@ await applyDiffs({
   appPresentationApiAdminCommonDtosDatabaseModelsApplyDiffsRequestDto: {
     sqlTableNames: selectedTables, // or null for "all"
     disableForeignKeyChecks: true,
-    bypassProductionGuard: false,
+    // no bypassProductionGuard field — the guard is not exposed via HTTP by design
     expectedDiffSignatures: { elements: expectedMap },
   },
 }).unwrap();
@@ -694,7 +697,7 @@ if (diff.directApplyBlocked) {
 }
 ```
 
-Programmatic override exists for CLI / messenger callers via `bypassProductionGuard: true`. The admin HTTP path exposes the flag in `ApplyDiff{s}RequestDto` so operators can opt out from a trusted UI surface — but the **default must be `false`**, and any UI that exposes the toggle must put it behind a "I know what I'm doing" confirm.
+Programmatic override exists for CLI / messenger callers via `bypassProductionGuard: true`. **The admin HTTP path does NOT expose this flag — by design.** The framework's own guard message says so verbatim ("The admin HTTP API does NOT expose this flag by design", `DatabaseSchemaDiffService:313`), and no `ApplyDiff{s}RequestDto` carries the field (see §Step 2 / the DTO table above). The admin UI therefore cannot bypass the guard; a large-table copy-forcing change must be run from a CLI command or messenger handler.
 
 Lock-busy error: when two admins apply at once, the second receives `[DIFF_APPLY_LOCK_BUSY]` (HTTP 400). Frontend matches on this prefix and renders a "retry in a few seconds" affordance — distinct from the signature-mismatch refresh prompt.
 
@@ -954,7 +957,7 @@ Caveat: any new rich-DDD-type field needs both `#[HideProperty]` AND `#[Ignore]`
 | Diff shows every table as ALTER on a fresh DB | Either generation-expression normalisation (§D) or trigger normalisation (§F) is missing/regressed. |
 | Generated frontend hook missing after SDK regen | The OpenAPI endpoint didn't list the route. Re-run §Step 5; ensure backend deployed. |
 | `Only variables can be passed by reference` runtime error in `applyDiffs` | Somewhere a `$set->add(new X(...))` or `$set->add($this->makeX())` slipped in. `ObjectSet::add()` takes `&...$elements`; assign to a variable first. AGENTS.md "by-ref `add()` pattern" — see the framework-wide rule. |
-| `applyDiff` succeeds but the table still appears in the next diff | Re-introspection cache hit. `DatabaseSchemaIntrospectionService::invalidateCache()` AND `EntityModelGeneratorService::invalidateCache()` are both called inside `applyDiffs` since v2.19 — confirm you're on ≥ v2.19 (long-running PHP-FPM workers used to see stale entity reflection without the second invalidation). |
+| `applyDiff` succeeds but the table still appears in the next diff | Re-introspection cache hit. Since v2.19 both `DatabaseSchemaIntrospectionService::invalidateCache()` and `EntityModelGeneratorService::invalidateCache()` are called inside `applyDiffs` — **but only conditionally, when `$expectedDiffSignatures !== null`.** A CLI / messenger caller that passes `expectedDiffSignatures = null` (skipping the signature gate) therefore does NOT invalidate the model-generator cache; a long-running worker can keep seeing stale entity reflection. Pass a signature map, or invalidate manually after a null-gate apply. |
 | Frontend gets `[DIFF_SIGNATURE_MISMATCH]` on every apply | Either the frontend isn't capturing `diff.diffSignature` correctly, or it's not echoing every diff in the batch (strict cover requires 1:1 between batch and signature map). Inspect the request body — `expectedDiffSignatures.elements` should contain exactly the same `sqlTableName`s as `sqlTableNames` (or as the unfiltered diff set if `sqlTableNames === null`). |
 | Frontend gets `[DIFF_APPLY_LOCK_BUSY]` | Another admin (or a CLI command) is mid-apply. Wait 5-10 seconds and retry. Repeated busy responses indicate a stuck process holding the connection's advisory lock — the lock releases on session close. |
 | Apply button stuck disabled with no obvious reason | Check `diff.directApplyBlocked === true` + `diff.directApplyBlockReason`. The production guard blocks large-table COPY-forcing ops by default. For admin override, the request DTO carries `bypassProductionGuard: bool` — confirm the UI exposes it behind a "I know what I'm doing" confirm. |

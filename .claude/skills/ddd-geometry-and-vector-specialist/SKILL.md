@@ -31,7 +31,7 @@ Pick the type by **what the data represents**, not by what looks similar.
 | Data | Type | SRID | Storage column | Indexable? |
 |---|---|---|---|---|
 | Real-world coordinate (location, address centroid) | `GeoPoint` | 4326 | `POINT` (via brick/geo) | SPATIAL |
-| Real-world rectangle (delivery zone bbox, map viewport) | `GeoBounds` | 4326 | usually JSON; convert to POLYGON via `toBrickPolygon` if you need spatial index | optional |
+| Real-world rectangle (delivery zone bbox, map viewport) | `GeoBounds` | 4326 | usually JSON; `GeoBounds` has ONLY a constructor (no `toBrickPolygon` method) — build a `Polygon`/WKT yourself if you need a spatial index | optional |
 | Pixel / mm / normalised 2D coordinate | `Point2D` | 0 | `POINT` (our `cartesian_point` type) | SPATIAL |
 | Free-form drawing stroke / route line / fence | `Polyline` | 0 | `LINESTRING` (our `cartesian_linestring` type) | SPATIAL |
 | Filled region with optional holes | `Polygon` | 0 | `POLYGON` (our `cartesian_polygon` type) | SPATIAL |
@@ -57,7 +57,7 @@ Pick the type by **what the data represents**, not by what looks similar.
 ```
 src/Domain/Common/Entities/GeoEntities/
   GeoPoint.php         # SRID 4326, lat/lng
-  GeoBounds.php        # SRID 4326, four corners
+  GeoBounds.php        # SRID 4326, TWO corners (northeast, southwest) — not four
 src/Domain/Common/Entities/Geometry/Cartesian/
   Point2D.php          # SRID 0, (x, y)
   Polyline.php         # SRID 0, open Point2D[]
@@ -102,7 +102,7 @@ public Point2D $origin;          // → POINT column, type='cartesian_point', SP
 public ?Point2D $optionalAnchor; // nullable: column is nullable POINT
 ```
 
-The schema generator emits `#[ORM\Column(type: 'cartesian_point')]` on the DB model, registers a `SPATIAL INDEX` by default (via `SPATIAL_SQL_TYPES`), and the upsert path wraps the parameter with `ST_GeomFromText(?)`.
+The schema generator emits `#[ORM\Column(type: 'cartesian_point')]` on the DB model, registers a `SPATIAL INDEX` by default (via `SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS`, `DatabaseColumn.php:188-217`), and the upsert path wraps the parameter with `ST_GeomFromText(?)` (that upsert branch is what `SPATIAL_SQL_TYPES` drives, `:219-227` — NOT the default index).
 
 ### Polyline / Polygon / BoundingBox2D
 
@@ -131,8 +131,10 @@ public ?GeoPoint $location;      // → POINT column, type='point' (brick/geo),
 use DDD\Domain\Common\Entities\MathEntities\Vector;
 use Doctrine\ORM\Mapping as ORM;
 
-#[ORM\Column(type: 'vector', length: 1536)]
-#[DatabaseColumn(/* length: 1536 */)]
+// On the ENTITY, declare only #[DatabaseColumn(vectorDimensions: 1536)] — there is NO `length` param
+// (omitting it makes VectorType::getSQLDeclaration() throw). The generator emits the #[ORM\Column] with
+// the vector type onto the DB*Model itself; you never write #[ORM\Column] on the entity.
+#[DatabaseColumn(vectorDimensions: 1536)]
 public ?Vector $embedding;
 ```
 
@@ -308,8 +310,8 @@ Cross-link to `ddd-database-schema-diff-specialist` for the full diff system. Sp
 | Symptom | Likely cause |
 |---|---|
 | Hydrated VO is `null` despite the column having data | The Doctrine type's `convertToPHPValue` couldn't parse the WKB — either the column isn't actually our type, or brick/geo returned an unexpected shape. Add a `var_dump($value)` before the `WKBReader::read` to see what came back. |
-| `Invalid GIS data: Bad geometry text` on insert | A Polyline with < 2 vertices, a Polygon with < 3-vertex outer ring, or a BoundingBox2D with both width=0 AND height=0 — the VO emits visible-shape invalid WKT (`'LINESTRING()'`, `'POLYGON(())'`) so the error is at least findable. Validate caller-side. |
-| `MariaVector: VECTOR(N) requires a dimension` | Missing `length` on `#[ORM\Column(type: 'vector', length: 1536)]`. The DB model generator emits this from `DatabaseColumn::$vectorDimensions` — declare it on the entity attribute. |
+| `Invalid GIS data: Bad geometry text` on insert | A Polyline with < 2 vertices or a Polygon with a < 3-vertex outer ring emits the empty literal (`'LINESTRING()'` / `'POLYGON()'`). NOTE: a zero-size `BoundingBox2D` does NOT emit invalid WKT — its `__toString` always emits 5 vertices (a degenerate but valid polygon), per its own docblock. Validate caller-side. |
+| `MariaVector: VECTOR(N) requires a dimension` | Missing `vectorDimensions` on the entity's `#[DatabaseColumn(vectorDimensions: 1536)]` (NOT a `length` param, and NOT on `#[ORM\Column]` — that lives on the generated DB model). |
 | Spatial query returns 0 rows for a query that should match | Almost always an SRID mismatch — `ST_Within(geoPoint, ST_GeomFromText('POLYGON(...)', 0))` compares SRID 4326 against SRID 0 and silently returns 0. Make sure both sides agree. |
 | The schema diff keeps showing a MODIFY on a Vector column even after `apply` | Default value mismatch: the `Vector` column is `NOT NULL` with a DB-side zero-vector default (`VEC_FromText('[0,0,...]')`); if your entity declares `?Vector $foo = null` but writes never set the property, the upsert emits the same zero-vector default and the diff is in-sync. If you see persistent MODIFYs, run `composer update mgamadeus/ddd` — the function-call default normaliser landed in v2.12.x. |
 | `BoundingBox2D::fromPolygon` returns null | The input polygon isn't axis-aligned, has holes, or has the wrong vertex count. By design — fail closed. Use `Polygon` for the general case. |
@@ -329,7 +331,7 @@ For when something new lands (e.g. `Circle`, `Polyline3D`, `MultiPolygon`):
    - Mirror the existing `PointType` / `LineStringType` / `PolygonType` pattern.
    - Cache `WKBReader` as `protected static ?WKBReader $wkbReader = null` and access via `??= new WKBReader()`.
    - `convertToDatabaseValue` should delegate to `(string)$vo` — never duplicate the WKT generation.
-3. **Register** in `EntityManagerFactory::getInstance()` next to the existing four cartesian registrations.
+3. **Register** in `EntityManagerFactory::create()` next to the existing cartesian `Type::addType` calls (`:264-313`) — NOT in `getInstance()`.
 4. **Wire the schema generator** in `DatabaseColumn`:
    - Add `SQL_TYPE_*` constant if it's a new SQL type.
    - Add the VO class to `SQL_TYPE_ALLOCATION`, `DOCTRINE_COLUMN_TYPE_ALLOCATIONS`, `DOCTRINE_PHP_TYPE_ALLOCATIONS`.

@@ -252,7 +252,7 @@ If you forget `#[NotNull]` on a property that should be NOT NULL, the schema-dif
 
 - Multiple traits MUST be comma-separated on a single line: `use TraitA, TraitB;`
 - `#[LazyLoadRepo]` is required on **both** Entity and EntitySet classes
-- Implement `uniqueKey()` in every entity
+- Override `uniqueKey()` ONLY when the default is not enough — `EntityTrait::uniqueKey()` already returns `static::uniqueKeyStatic($this->id)` (with a `DefaultObjectTrait` fallback), so nothing fails if you omit it; override it when identity is not the id (e.g. a natural composite key)
 - `EntitiesBaseService` does **NOT** exist -- always use `EntitiesService`
 
 ### Entity Properties Feed the API Schema — `@var T[]`, NOT `array<T>`
@@ -292,13 +292,15 @@ $account = Accounts::getService()->find($accountId);
 ```
 
 - Use the **entity** class (singular: `PushNotification`) for `find($id)` returning one entity.
-- Use the **entity-set** class (plural: `Accounts`) when you intend `find($queryBuilder)` returning a set, **or** when the framework registers the lookup helper on the set class -- both forms are valid `getService()->find($id)` callsites in this codebase.
+- `Entity::getService()` and `EntitySet::getService()` return the **same** service; its `find()` takes an **id** and returns ONE entity. To load a *set*, use `findAll()` or the set repo — NOT `getService()->find()` on the plural class. (`EntityTrait.php:293-301`; `EntitySet.php:128-148`.)
 - Going through `getService()` applies rights restrictions (`applyReadRightsQuery`), entity registry caching, and any service-level invariants.
 
 ```php
-// WRONG -- bypasses the service layer's rights / lazy-load / cache wiring
-$pushNotification = PushNotifications::getRepoClassInstance()->find($id); // also: this is the EntitySet repo, whose find() expects a QueryBuilder
-$account = Accounts::getRepoClassInstance()->find($id);
+// Prefer the singular class + getService(). NOTE: direct repo access is NOT a rights bypass —
+// DatabaseRepoEntity::find() itself applies applyReadRightsQuery (:258) and uses the entity registry
+// cache (:156-172). The reason to use the singular class is that the EntitySet repo's find() takes a
+// QueryBuilder, not an id:
+$account = Accounts::getRepoClassInstance()->find($id); // EntitySet repo find() expects a QueryBuilder, not an id
 ```
 
 Direct repo access (`getEntityRepoClassInstance()` / `getEntitySetRepoClassInstance()`) belongs **inside service methods** running custom QueryBuilder queries -- see the ddd-service-specialist skill for that pattern. Caller code never needs it.
@@ -474,8 +476,8 @@ use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
  */
 class DB{EntityName} extends DBEntity
 {
-    public const BASE_ENTITY_CLASS = {EntityName}::class;
-    public const BASE_ORM_MODEL = DB{EntityName}Model::class;
+    public const string BASE_ENTITY_CLASS = {EntityName}::class;
+    public const string BASE_ORM_MODEL = DB{EntityName}Model::class;
 }
 ```
 
@@ -539,7 +541,7 @@ class DB{EntityName}s extends DBEntitySet
 
 // Serialization & Security
 #[HideProperty]                       // Exclude from JSON/API responses
-#[HidePropertyOnSystemSerialization]  // Exclude from DB persistence
+#[HidePropertyOnSystemSerialization]  // Exclude from PHP __serialize() output — NOT from DB (see note below)
 ```
 
 **`#[HideProperty]` vs `#[HidePropertyOnSystemSerialization]`:**
@@ -547,8 +549,10 @@ class DB{EntityName}s extends DBEntitySet
 | Attribute | API Output | DB Storage | Use Case |
 |-----------|-----------|------------|----------|
 | `#[HideProperty]` | Hidden | Saved | Passwords, API keys |
-| `#[HidePropertyOnSystemSerialization]` | Visible | Not saved | External API data, computed values |
-| Both combined | Hidden | Not saved | Internal-only notes |
+| `#[HidePropertyOnSystemSerialization]` | Visible | **saved** (see note) | Values to drop from PHP `__serialize()` (cache/session) |
+| Both combined | Hidden | saved | Internal-only, non-cacheable |
+
+> **Correction:** `#[HidePropertyOnSystemSerialization]` is consulted ONLY by `__serialize()` (`SerializerTrait.php:1178-1188`) — the PHP native serialization used for cache/session, **not** DB persistence. To exclude a property from the DB, use `#[DontPersistProperty]` or `#[DatabaseColumn(ignoreProperty: true)]`. The "DB Storage" column above is about those attributes, not this one.
 
 **Additional serializer attributes** (from `DDD\Infrastructure\Traits\Serializer\Attributes\`):
 
@@ -576,11 +580,13 @@ class Location extends Entity {
 Map a property value to different entity subclasses (discriminator pattern):
 
 ```php
-use DDD\Domain\Base\Entities\Attributes\SubclassIndicator;
+use DDD\Domain\Base\Repo\DB\Database\SubclassIndicator;
 
-#[SubclassIndicator(indicators: ['POST' => Post::class, 'EVENT' => Event::class])]
 class ContentItem extends Entity
 {
+    // SubclassIndicator is TARGET_PROPERTY (read off the discriminator PROPERTY, DatabaseModel.php:202-213) —
+    // it goes on the property, NOT on the class, and lives in DDD\Domain\Base\Repo\DB\Database, not …\Entities\Attributes.
+    #[SubclassIndicator(indicators: ['POST' => Post::class, 'EVENT' => Event::class])]
     public string $type;  // Discriminator property
     // Shared properties...
 }
@@ -589,7 +595,7 @@ class Post extends ContentItem { /* Post-specific properties */ }
 class Event extends ContentItem { /* Event-specific properties */ }
 ```
 
-The framework auto-generates the Doctrine `DiscriminatorMap` and creates joined DB schema with parent/child columns. When loading, the correct subclass is instantiated based on the discriminator value.
+The framework auto-generates the Doctrine `DiscriminatorMap`; the generated `DB*Model` carries `#[ORM\InheritanceType('SINGLE_TABLE')]` (`DatabaseModel.php:740`) — all subclasses share ONE table (single-table inheritance), NOT a joined parent/child schema. When loading, the correct subclass is instantiated based on the discriminator value.
 
 ### Database Triggers (`#[DatabaseTrigger]`)
 
@@ -598,14 +604,17 @@ Integrate SQL triggers with entity lifecycle:
 ```php
 use DDD\Domain\Base\Repo\DB\Database\DatabaseTrigger;
 
+// NOTE: the constructor parameter is `exectutionOrder` (sic — a typo in the framework, DatabaseTrigger.php:53),
+// both parameters are REQUIRED, and the constants are EXECUTE_BEFORE / EXECUTE_AFTER and
+// OPERATION_INSERT / OPERATION_UPDATE / OPERATION_DELETE — NOT `BEFORE` / `INSERT`.
 #[DatabaseTrigger(
-    executionOrder: DatabaseTrigger::BEFORE,
-    executeOnOperations: [DatabaseTrigger::INSERT, DatabaseTrigger::UPDATE]
+    exectutionOrder: DatabaseTrigger::EXECUTE_BEFORE,
+    executeOnOperations: [DatabaseTrigger::OPERATION_INSERT, DatabaseTrigger::OPERATION_UPDATE]
 )]
 class MyEntity extends Entity { }
 ```
 
-SQL is auto-loaded from `Domain/Repo/DB/{Entity}/BeforeInsertTrigger.sql` (or matching combination).
+SQL is auto-loaded from the entity's OWN repo directory (its `Entities/…` path segment rewritten to `Repo/DB/`), from a file named `{EntityName}` + order + operations + `Trigger.sql` — e.g. `TrackBeforeInsertTrigger.sql` — not a `{Entity}/` subfolder, and the entity-name prefix is not optional.
 
 **`#[RolesRequiredForUpdate]`** restricts write operations to specific roles:
 ```php
@@ -674,7 +683,7 @@ public string $rarelyFiltered;   // column is created, but gets NO index
   public string $name;            // single-column UNIQUE
   ```
 - **Class-level** is the ONLY place `indexColumns` is honored — use it for composite / multi-column indexes (see below). Repeatable on both property and class.
-- A **single-column `UNIQUE` index on a `{name}Id` FK flips the relation `ManyToOne` → `OneToOne`** — this is how you declare a 1:1 owning side:
+- A **single-column `UNIQUE` index on a `{name}Id` FK can make the relation `OneToOne` instead of `ManyToOne`** — UNIQUE is NECESSARY but NOT sufficient: the *target* entity must ALSO declare a single-Entity `#[LazyLoad]` back-reference to this one with no own `{name}Id` (`DatabaseModel.php:977-995`, `:922-967`). This is how you declare a 1:1 owning side:
   ```php
   #[DatabaseIndex(indexType: DatabaseIndex::TYPE_UNIQUE)]
   public ?int $profileId = null;  // → OneToOne
@@ -1026,7 +1035,7 @@ orderBy=nameScore desc
 
 ### Translatable Storage & Configuration
 
-**Storage format:** JSON with key `{lang}::{style}`
+**Storage format:** JSON with key `languageCode:countryCode:writingStyle` (the `{lang}::{style}` short form is only the empty-country case)
 ```json
 {"de::FORMAL": "Name DE", "en::FORMAL": "Name EN"}
 ```
@@ -1064,7 +1073,8 @@ use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistoryTrait;
 class Product extends Entity
 {
     use ChangeHistoryTrait;
-    // Provides: created (DateTime), updated (DateTime)
+    // Adds ONE property: `?ChangeHistory $changeHistory` (with ->createdTime / ->modifiedTime).
+    // `created` / `updated` are the generated DB COLUMN names — `$entity->created` does NOT exist.
 }
 ```
 
@@ -1152,8 +1162,10 @@ Entities validate automatically on `update()` based on constraint attributes:
 ```php
 try {
     $entity->update();
-} catch (\DDD\Infrastructure\Exceptions\ValidationException $e) {
-    // Handle validation error
+} catch (\DDD\Infrastructure\Exceptions\BadRequestException $e) {
+    // update() throws BadRequestException (NOT a ValidationException — no such class) with the
+    // validation messages on $e->validationErrors.
+    $errors = $e->validationErrors ?? null;
 }
 ```
 
@@ -1169,7 +1181,7 @@ try {
 
 > `#[Length]`, `#[NotNull]`, `#[NotBlank]`, `#[Email]`, `#[Positive]`, `#[Regex]` etc. come from `Symfony\Component\Validator\Constraints\`. They are recognised by the schema generator (Length drives `varCharLength`, NotNull drives `allowsNull`) and apply at validation time. See "Symfony constraints" section below.
 
-**DDD Common validators** (from `DDD\Domain\Common\Validators\`):
+**DDD Common validators** (each one folder deeper under `DDD\Domain\Common\Validators\`, e.g. `…\Validators\PunctuationLimit\PunctuationLimitConstraint`):
 
 | Constraint | Purpose |
 |-----------|---------|

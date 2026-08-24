@@ -141,6 +141,14 @@ if ($message->processOnWorkspaceIfNecessary()) {
 
 **Order:** set auth -> workspace guard -> run.
 
+> ⚠️ **Known upstream defect (verify before relying on this guard).** In
+> `src/Domain/Base/Entities/MessageHandlers/AppMessage.php` the first guard in
+> `processOnWorkspaceIfNecessary()` (`:205-215`) appears **inverted** relative to its own docblock
+> (`:199-202`): it returns `false` when the workspace dir **is** set, and `dispatch()` (`:70`) always
+> sets it — so with current code the method can never return `true` and this early-return never fires.
+> Either the guard is inverted (cross-workspace routing has never run) or the docblock is stale. This
+> needs a code-side decision upstream; until it is resolved, do not assume the guard actually reroutes.
+
 ### 6. Logging Pattern
 
 - Use `$this->getLogger()` for all logging -- **never** `DDDService::instance()->getLogger()` directly in handlers
@@ -286,7 +294,7 @@ class FooBarHandler extends AppMessageHandler
 
 ### Step 4: Wire Messenger Transport + Routing
 
-Update `config/symfony/default/packages/messenger.yaml`:
+Update `<app>/config/symfony/default/packages/messenger.yaml` (this is the consuming **app's** config, relative to the app root — not a vendor path):
 
 ```yaml
 framework:

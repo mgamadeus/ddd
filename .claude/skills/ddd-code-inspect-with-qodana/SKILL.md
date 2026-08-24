@@ -57,6 +57,8 @@ On first run, Qodana downloads a PhpStorm distribution:
 qodana scan --ide QDPHP
 ```
 
+> **CLI note.** `--ide` is **deprecated** as of Qodana CLI 2025.3.x (`qodana scan --help`: *"Flag --ide has been deprecated, use --linter … and --within-docker=false"*). This skill's native, Docker-free path does not need it: Steps 1–2 below obtain the distribution via `QODANA_DIST` and never pass `--ide`. Use the bootstrap above only on an older CLI; on a current CLI just run the `QODANA_DIST=… qodana scan` form directly.
+
 ## IntelliJ MCP Integration (Per-File Inspections)
 
 The JetBrains MCP server allows running IntelliJ inspections on individual files directly from the IDE.
@@ -111,7 +113,9 @@ QODANA_DIST="$PHPSTORM_DIST/Contents" qodana scan \
   --only-directory src
 ```
 
-Always check if `.idea/inspectionProfiles/Project_Default.xml` exists first and use it if available.
+Check whether `.idea/inspectionProfiles/Project_Default.xml` exists **and is a real profile** before using it — do not blindly `--profile-path` it. In some repos this file is a tiny legacy stub (e.g. a ~475-byte 2020 file whose entire body *disables* a couple of inspections); pointing Qodana at that selects a near-empty profile and the scan reports almost nothing. If the file is a stub (or missing), prefer `qodana.yaml` (below) or fall back to the default profile. A per-project `qodana.yaml` at the repo/app root is the modern home for profile, scope and excludes — check for it first and let Qodana pick it up automatically; `--profile-path` is only for an explicitly maintained `.idea` profile.
+
+For a **nested app inside a monorepo**, pass `-i`/`--project-dir` pointing at the app root (e.g. `-i app/`). Without it, a root-level scan indexes the entire monorepo instead of the app.
 
 ### Step 3: Parse results
 
@@ -212,7 +216,8 @@ $traceReflector = new ReflectionProperty(Exception::class, 'trace');
 | `token was declined` | Use **project** token, not organization token |
 | `IDE to run is not found` | Set `QODANA_DIST` to cached PhpStorm path |
 | `Cannot connect to Docker daemon` | Use `QODANA_DIST`, not `--linter` |
-| 0 problems but IntelliJ finds many | Pass `--profile-path` with project profile |
+| 0 problems but IntelliJ finds many | Verify the profile is real, not a disabling stub — pass `--profile-path` with a genuine project profile, or use `qodana.yaml`. A near-empty scan usually means a stub `Project_Default.xml` |
+| Scan indexes the whole monorepo | Pass `-i`/`--project-dir <app-root>` so only the nested app is scanned |
 | MCP tools not available | Restart Claude Code after MCP setup |
 
 ## Cross-Reference
