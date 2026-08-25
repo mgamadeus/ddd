@@ -1,6 +1,6 @@
 ---
 name: ddd-message-handler-specialist
-description: Create Symfony Messenger message + handler pairs for async background processing in the mgamadeus/ddd framework. Covers message classes, handler classes, auth context propagation, workspace routing, logging, messenger.yaml transport/routing config, and supervisor consumers.
+description: Create Symfony Messenger message + handler pairs for async background processing in the mgamadeus/ddd framework. Covers AppMessage message classes, ultra-slim AppMessageHandler handlers, the service-side bool async dispatch-or-run-inline pattern, auth context propagation, workspace routing (with a known upstream defect in processOnWorkspaceIfNecessary), logging conventions, admin privilege escalation for cross-tenant jobs, messenger.yaml transport/routing config, supervisor consumer blocks, worker recycling via --limit/--time-limit/--memory-limit to flush leaked static state, and the --no-debug stale-compiled-container trap (workers keep the old transport DSN after config changes). Use when adding an async background job or a bool async service option, wiring a transport plus supervisor consumer, sizing worker limits, debugging workers that crash-loop, fail to consume, or run stale config, or chasing non-deterministic bugs from static state leaking between messages.
 metadata:
   author: mgamadeus
   version: "1.0.0"
@@ -17,6 +17,8 @@ Async background processing via Symfony Messenger within the DDD Core framework 
 - Adding a `bool $async` option to a service method and implementing dispatching
 - Ensuring background work executes under the same account permissions as the triggering request
 - Implementing heavy jobs with time/memory limits and consistent logging
+- Sizing supervisor consumers (`numprocs`, `--limit`, `--time-limit`, `--memory-limit`) or diagnosing static-state leaks between messages in long-running workers (see Step 5.1)
+- Debugging supervisor workers that crash-loop, silently fail to consume, or still use the old transport DSN after a config change — the `--no-debug` stale-container trap (see Step 5.2)
 
 ## Framework Base Classes
 

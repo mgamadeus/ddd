@@ -1,6 +1,6 @@
 ---
 name: ddd-strategy-shark-tank
-description: Iterative adversarial optimization of a strategy or business plan through a SHARK TANK of maximally diverse frontier models (Claude Opus/Fable via the Agent tool, OpenAI via the codex CLI, Google via the gemini CLI — roster auto-discovered on the machine). Sharks issue investment verdicts (IN/OUT, amount, equity demanded → implied valuation) round after round; between rounds an equally diverse FOUNDER FRONT (same model breadth) absorbs the feedback and works out the next plan iteration, merged by the lead founder; the loop terminates on pre-committed SUCCESS criteria (sharks in with significant capital at low equity) or ABORT criteria (converged kill reasons that revisions cannot fix). Use when the user says "shark tank this", "pitch this plan to investors", "optimize this strategy iteratively/adversarially", "would anyone invest in this", "iterate this business plan until it holds", "stress-test and IMPROVE this concept in rounds". Do NOT use for a single-pass adversarial review of one artifact (use a devils-advocate-style review skill if the project has one) or for code review.
+description: Iterative adversarial optimization of a strategy or business plan through a SHARK TANK of maximally diverse frontier models (Claude via the Agent tool, OpenAI via the codex CLI, Google via the gemini CLI — roster auto-discovered by CLI probe, never assumed). The ask and thresholds are frozen in round 0 (anti-gaming); blinded sharks issue priced verdicts each round (IN/OUT, amount, equity, implied valuation tracked across rounds) and verify fixes against an objection ledger; a diverse FOUNDER FRONT revises the plan between rounds; the loop ends on pre-committed SUCCESS (sharks in at low equity, valuation non-declining) or ABORT criteria (same kill reason converging two rounds, declining valuation, round limit). Use when the user says shark tank this, pitch this plan to investors, optimize this strategy adversarially, would anyone invest in this, iterate this business plan until it holds, or stress-test and IMPROVE this concept. NOT for single-pass review of one artifact or code review.
 ---
 
 # Strategy Shark Tank — iterative multi-model adversarial plan optimization
@@ -12,8 +12,9 @@ abort criteria fire. The pricing mechanic is the core: a shark saying "interesti
 committing fictional capital at a stated equity share produces an **implied valuation** — a scalar that
 makes plan quality measurable and comparable across rounds.
 
-The whole protocol is model-agnostic and project-agnostic; it needs only a plan document and at least
-two different model vendors reachable from the machine.
+The whole protocol is model-agnostic and project-agnostic; it needs only a plan document and, ideally,
+at least two different model vendors reachable from the machine (single-vendor fallback: see
+Prerequisites).
 
 ## Prerequisites
 
@@ -70,7 +71,8 @@ frozen for the whole run:
 - The fictional instrument: every shark is offered to invest up to a standard amount (default:
   **€1,000,000**) into this product line / venture.
 - Success thresholds (defaults, adjustable ONLY in round 0): SUCCESS needs **≥2/3 of sharks IN**, with
-  **median equity demand ≤ 15%**, and median implied valuation non-declining vs the prior round.
+  **median equity demand ≤ 15%**, median implied valuation non-declining vs the prior round, and zero
+  OPEN converged kill reasons (full check: Step 6).
 - Abort thresholds: see Step 6.
 
 The founder may NOT change the ask, the instrument, or the thresholds mid-run — moving the goalposts
@@ -166,7 +168,7 @@ works out the next plan iteration:
    tally: each founder's proposals, the merge decisions, the resulting plan deltas). The lead may
    overrule the front only with a written reason — silent overrules are the mush-vector in the other
    direction.
-3. **The discipline that makes the loop honest** (unchanged): every CONVERGED objection ends as
+3. **The discipline that makes the loop honest**: every CONVERGED objection ends as
    `ADDRESSED-BY-CHANGE §x` (a real plan diff) or `ADDRESSED-BY-EVIDENCE` (data, a committed gate, a
    measurement) — never re-wording. A single-shark objection MAY be `REBUTTED: <argument>`; a rebutted
    objection that re-converges next round escalates to MUST-address. The change log lists concrete plan

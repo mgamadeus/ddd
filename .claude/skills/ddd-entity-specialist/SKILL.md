@@ -1,6 +1,6 @@
 ---
 name: ddd-entity-specialist
-description: Create and design DDD entities, entity sets, value objects, DB repositories, lazy loading, relationships, and entity attributes in the mgamadeus/ddd framework — including multi-language / Translatable properties, the ChangeHistory trait (audit trail), junction/pivot (many-to-many) entities, and database indexes / virtual columns. Use when creating, modifying, or reasoning about domain entities and their persistence layer, adding translatable fields, wiring change-history auditing, or defining indexes/virtual columns.
+description: Create and design DDD entities, entity sets, value objects, DB repositories, lazy loading, relationships, and entity attributes in the mgamadeus/ddd framework. Covers folder layout (first-class vs child entities, repo mirror), property naming, critical rules (never redeclare id, NotNull drives NOT NULL, @var T[] feeds the API schema, framework Date/DateTime only, protected not private), loading via getService()->find(), the isset lazy-load footgun, Translatable properties, the ChangeHistory audit trait, junction entities, indexes and virtual columns, single-table inheritance via SubclassIndicator, SQL triggers via DatabaseTrigger, ReuseParentEntitySet for app subclasses, displayOrder ordering, validation (Choice, UniqueProperty), and a method reference. Use when creating or modifying entities and their persistence, placing or naming entity files, adding translatable fields or auditing, defining indexes, virtual columns, or triggers, fixing a null getService(), or debugging a lazy relation that never loads.
 metadata:
   author: mgamadeus
   version: "1.0.0"
@@ -252,7 +252,8 @@ If you forget `#[NotNull]` on a property that should be NOT NULL, the schema-dif
 
 - Multiple traits MUST be comma-separated on a single line: `use TraitA, TraitB;`
 - `#[LazyLoadRepo]` is required on **both** Entity and EntitySet classes
-- Override `uniqueKey()` ONLY when the default is not enough — `EntityTrait::uniqueKey()` already returns `static::uniqueKeyStatic($this->id)` (with a `DefaultObjectTrait` fallback), so nothing fails if you omit it; override it when identity is not the id (e.g. a natural composite key)
+- `isset()`, `empty()`, `??` and `??=` on a `#[LazyLoad]` property NEVER trigger the load — `$x = $entity->relation ?? null;` always returns the default. Read the property directly first. Full mechanism: "What triggers a lazy load" in the Lazy Loading section below.
+- Override `uniqueKey()` ONLY when the default is not enough — `EntityTrait::uniqueKey()` already returns `static::uniqueKeyStatic($this->id)` (with a `DefaultObjectTrait` fallback), so nothing fails if you omit it; override it when identity is not the id (e.g. a natural composite key). The templates' `$this->id ?? spl_object_id($this)` override is one such case: it gives not-yet-persisted entities (id still null) a distinct key so they don't collide inside an EntitySet.
 - `EntitiesBaseService` does **NOT** exist -- always use `EntitiesService`
 
 ### Entity Properties Feed the API Schema — `@var T[]`, NOT `array<T>`
@@ -552,7 +553,7 @@ class DB{EntityName}s extends DBEntitySet
 | `#[HidePropertyOnSystemSerialization]` | Visible | **saved** (see note) | Values to drop from PHP `__serialize()` (cache/session) |
 | Both combined | Hidden | saved | Internal-only, non-cacheable |
 
-> **Correction:** `#[HidePropertyOnSystemSerialization]` is consulted ONLY by `__serialize()` (`SerializerTrait.php:1178-1188`) — the PHP native serialization used for cache/session, **not** DB persistence. To exclude a property from the DB, use `#[DontPersistProperty]` or `#[DatabaseColumn(ignoreProperty: true)]`. The "DB Storage" column above is about those attributes, not this one.
+> **Scope note:** `#[HidePropertyOnSystemSerialization]` is consulted ONLY by `__serialize()` (`SerializerTrait.php:1178-1188`) — the PHP native serialization used for cache/session, **not** DB persistence; that is why its "DB Storage" cell says saved. To exclude a property from the DB, use `#[DontPersistProperty]` or `#[DatabaseColumn(ignoreProperty: true)]` instead.
 
 **Additional serializer attributes** (from `DDD\Infrastructure\Traits\Serializer\Attributes\`):
 

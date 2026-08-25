@@ -1,6 +1,6 @@
 ---
 name: ddd-database-schema-diff-specialist
-description: Understand and operate the DDD live-vs-target database schema diff system, and stand up an admin interface for it in a consuming application. Use when computing diffs between entity-derived schema and the live database, applying drift fixes, debugging false positives, or wiring the diff endpoints + admin screen into a new project.
+description: Understand and operate the DDD live-vs-target database schema diff system: compute diffs between entity-derived schema and live INFORMATION_SCHEMA, apply drift fixes per table or in bulk, and build the admin interface in a consuming app. Covers the diff value objects, the 13-phase SQL assembler, the false-positive normalisation catalog (string NULL defaults, BOOLEAN vs TINYINT, generation expressions, trigger bodies), VECTOR reset semantics, severity, the which-side-is-wrong pre-apply checklist, the large-table production guard (bypass is CLI/messenger-only, never HTTP), the diff-signature gate and apply lock, the v2.19-to-v2.20 migration checklist, the admin-screen build guide, pt-online-schema-change FK-rename coexistence, and troubleshooting (openApi 500, DIFF_SIGNATURE_MISMATCH, DIFF_APPLY_LOCK_BUSY, stale caches). Use when computing or applying schema diffs, debugging false-positive MODIFYs, deciding entity-vs-DB, migrating to v2.20, wiring the diff admin screen, or reasoning about pt-osc.
 metadata:
   author: mgamadeus
   version: "2.0.0"
@@ -52,7 +52,7 @@ Both sides of the diff (live introspection and target generator) converge on the
 | `DBSqlStatement(s).php` | Typed Set of phase-ordered executable statements. `uniqueKey` is `spl_object_id`-based (identity, not content) because identical statements may legitimately repeat across phases and content-keyed dedup would corrupt insertion order. |
 | `DBCopyForcingOperation(s).php` | Typed Set of production-guard risk descriptions. Same `spl_object_id` rationale as `DBSqlStatement`. |
 | `DBExpectedDiffSignature(s).php` | Typed Set of `(sqlTableName, signature)` pairs captured by the frontend at view time and echoed back on apply. `uniqueKey` content-keyed on `sqlTableName` (table-name uniqueness IS the dedup intent). |
-| `DBTableSizeStats.php` | Typed `(sizeMb, rowCount)` snapshot returned by `getTableSizeStats()`. Owns the `isLarge(int $sizeThreshold, int $rowThreshold): bool` predicate.
+| `DBTableSizeStats.php` | Typed `(sizeMb, rowCount)` snapshot returned by `getTableSizeStats()`. Owns the `isLarge(int $sizeThreshold, int $rowThreshold): bool` predicate. |
 
 > **AGENTS.md rule recap.** No `public array $foo` on any of these VOs. Array-shaped public surface is permitted only for flat `string[]` / `int[]` lists (e.g. `DBColumnDiff::$changedAttributes`, `DBCanonicalIndex::$indexColumns`) — never for struct shapes or object-valued maps. See AGENTS.md *Arrays Are Not a Substitute for ValueObjects / ObjectSets*.
 
@@ -247,8 +247,8 @@ If any of (1), (2), or (3) surfaces evidence that the looser shape is required, 
 ## Apply Path
 
 ```php
-DatabaseSchemaDiffService::applyDiff(DBTableDiff $diff, bool $disableForeignKeyChecks = true, bool $bypassProductionGuard = false): DBTableDiffs
-DatabaseSchemaDiffService::applyDiffs(DBTableDiffs $diffs, bool $disableForeignKeyChecks = true, bool $bypassProductionGuard = false): DBTableDiffs
+DatabaseSchemaDiffService::applyDiff(DBTableDiff $diff, bool $disableForeignKeyChecks = true, bool $bypassProductionGuard = false, ?string $expectedDiffSignature = null): DBTableDiffs
+DatabaseSchemaDiffService::applyDiffs(DBTableDiffs $diffs, bool $disableForeignKeyChecks = true, bool $bypassProductionGuard = false, ?DBExpectedDiffSignatures $expectedDiffSignatures = null): DBTableDiffs
 ```
 
 Both return a **freshly recomputed** `DBTableDiffs` after applying so the frontend can replace its state with the response without a follow-up GET.
@@ -284,7 +284,7 @@ Bypass is **only** via the `$bypassProductionGuard = true` parameter on `applyDi
 | `tableRowCount` | `?int` | InnoDB-estimated row count. `null` for `CREATE_TABLE`. |
 | `directApplyBlocked` | `bool` | When `true`, the UI must disable Apply and surface the reason. |
 | `directApplyBlockReason` | `?string` | Pre-formatted message (multi-paragraph) with stats, risky operations, and the pt-osc redirect. |
-| `copyForcingOperations` | `string[]` | Structured list of risky operations (one item per blocking operation), suitable for bullet-list rendering. |
+| `copyForcingOperations` | `?DBCopyForcingOperations` | Typed Set of risky operations (one element per blocking operation, `description` field), suitable for bullet-list rendering. |
 
 The decorator and the throw share the same `buildProductionGuardMessage()` helper — both paths surface identical wording.
 
@@ -292,7 +292,7 @@ Threshold rationale: matches the `rb-db-online-schema-update-specialist` skill's
 
 ### UX requirements for blocked diffs
 
-The block must be **proactively visible** before the operator clicks anything — not surfaced only as an error on submit. Three principles:
+The block must be **proactively visible** before the operator clicks anything — not surfaced only as an error on submit. Four principles:
 
 **1. Never render a disabled-looking Apply button as the "blocked" affordance.** A grey or yellow "Blocked" button that still looks like a button is the worst-of-both-worlds UX: it screams "click me" while doing nothing. Either:
 
@@ -411,19 +411,13 @@ If the consuming app already has a `DatabaseModelsController` from before v2.19,
 ```diff
  public ?array $sqlTableNames = null;
  public bool $disableForeignKeyChecks = true;
-+public bool $bypassProductionGuard = false;
 -public ?array $expectedDiffSignaturesBySqlTableName = null;
 +public ?DBExpectedDiffSignatures $expectedDiffSignatures = null;
 ```
 
-`ApplyDiffRequestDto`:
+`ApplyDiffRequestDto` needs no field changes — `$expectedDiffSignature` was already `?string` pre-v2.19.
 
-```diff
- public string $sqlTableName;
- public bool $disableForeignKeyChecks = true;
-+public bool $bypassProductionGuard = false;
- public ?string $expectedDiffSignature = null;
-```
+**Do NOT add a `bypassProductionGuard` field to either DTO** during migration — the production guard is deliberately not exposed via HTTP (see §Step 2 and §Step 2b below). If a pre-existing controller/DTO pair carries such a field from an earlier iteration, remove it.
 
 Add the missing `use DDD\Domain\Base\Repo\DB\Database\Diff\DBExpectedDiffSignatures;`. The Set deserialises automatically from `{"elements":[{"sqlTableName":"x","signature":"y"}]}` — no controller-side conversion needed.
 
@@ -437,7 +431,7 @@ Add the missing `use DDD\Domain\Base\Repo\DB\Database\Diff\DBExpectedDiffSignatu
 +    $refreshed = $databaseSchemaDiffService->applyDiffs(
 +        $diffs,
 +        $requestDto->disableForeignKeyChecks,
-+        $requestDto->bypassProductionGuard,
++        false, // bypassProductionGuard — never exposed via HTTP; CLI/messenger only
 +        $requestDto->expectedDiffSignatures
 +    );
      // …
@@ -451,7 +445,7 @@ Add the missing `use DDD\Domain\Base\Repo\DB\Database\Diff\DBExpectedDiffSignatu
 +    $refreshed = $databaseSchemaDiffService->applyDiff(
 +        $diff,
 +        $requestDto->disableForeignKeyChecks,
-+        $requestDto->bypassProductionGuard,
++        false, // bypassProductionGuard — never exposed via HTTP; CLI/messenger only
 +        $requestDto->expectedDiffSignature
 +    );
      // …
@@ -497,8 +491,8 @@ Frontend code that read `diff.sqlStatements.join('\n')` must become `diff.sqlSta
 These ship in v2.19+ and the frontend should consume them; pre-existing UIs work without changes but lose the guards:
 
 - `diff.diffSignature: string` — capture per-table at view time, echo back on apply in `expectedDiffSignatures.elements[]`. See *Wiring the signature gate*.
-- `diff.directApplyBlocked: bool` — disable the per-row Apply button when true.
-- `diff.directApplyBlockReason: string` — show on hover / inline when blocked.
+- `diff.directApplyBlocked: bool` — hide the per-row Apply button when true (see *UX requirements for blocked diffs* — do not merely disable it).
+- `diff.directApplyBlockReason: string` — render inline in the blocked-diff banner (not tooltip-only).
 - `diff.copyForcingOperations: { elements: [{description}] } | null` — structured risk bullets.
 - `diff.tableSizeMb`, `diff.tableRowCount` — operator metadata for the diff card.
 
@@ -511,7 +505,7 @@ After `composer update mgamadeus/ddd` to ≥ v2.20.0 + `npm run gen:SDK`:
 - `apps/web/src/models/DDD/Domain/Base/Repo/DB/Database/Diff/DbCopyForcingOperations.ts` — new generated interface.
 - `apps/web/src/models/DDD/Domain/Base/Repo/DB/Database/Diff/DbCollationChange.ts` — new generated interface.
 - `apps/web/src/models/.../DbExpectedDiffSignatures.ts` + `DbExpectedDiffSignature.ts` — needed for the apply mutation body.
-- `apps/web/src/api/adminApi.ts` — the long body-key names on `applyDiff{s}` change to include `bypassProductionGuard` and `expectedDiffSignatures`. Confirm via `grep -n appPresentationApiAdminCommonDtosDatabaseModelsApplyDiff apps/web/src/api/adminApi.ts`.
+- `apps/web/src/api/adminApi.ts` — the long body-key names on `applyDiff{s}` change to include `expectedDiffSignatures` (no `bypassProductionGuard` — that flag is not exposed via HTTP). Confirm via `grep -n appPresentationApiAdminCommonDtosDatabaseModelsApplyDiff apps/web/src/api/adminApi.ts`.
 
 ### Consumer-side typed wrappers (recommended, optional)
 
@@ -597,13 +591,13 @@ public function applyDiffs(
         $diffs = $filtered;
     }
 
-    // Signature gate + production-guard pass-through. Both are opt-in: omit either to fall back
-    // to legacy behaviour. The HTTP frontend always sends $expectedDiffSignatures populated;
-    // CLI / messenger callers leave it null.
+    // Signature gate pass-through. The HTTP frontend always sends $expectedDiffSignatures
+    // populated; CLI / messenger callers leave it null. bypassProductionGuard is hard-coded
+    // false — the guard is not bypassable via HTTP by design (no DTO field exists for it).
     $refreshed = $databaseSchemaDiffService->applyDiffs(
         $diffs,
         $requestDto->disableForeignKeyChecks,
-        $requestDto->bypassProductionGuard,
+        false,
         $requestDto->expectedDiffSignatures
     );
 
@@ -626,7 +620,7 @@ public function applyDiff(
     $refreshed = $databaseSchemaDiffService->applyDiff(
         $diff,
         $requestDto->disableForeignKeyChecks,
-        $requestDto->bypassProductionGuard,
+        false, // bypassProductionGuard — not exposed via HTTP by design
         $requestDto->expectedDiffSignature
     );
     $responseDto = new DBTableDiffsGetResponseDto();
@@ -681,20 +675,22 @@ CLI / messenger callers leave `expectedDiffSignatures = null` to skip the gate �
 
 The production guard refuses direct apply of COPY-forcing operations on large tables (>100 MB or >100K rows). The signal is computed on every diff and surfaced as three fields:
 
-- `directApplyBlocked: bool` — disable the Apply button.
-- `directApplyBlockReason: string` — show as a tooltip / inline message.
+- `directApplyBlocked: bool` — remove/hide the Apply button (never a CSS-disabled button, never tooltip-only — see *UX requirements for blocked diffs* above).
+- `directApplyBlockReason: string` — render inline in the red warning banner.
 - `copyForcingOperations: ?DBCopyForcingOperations` — render each `element.description` as a bullet for structured display.
 
-Frontend pattern:
+Frontend pattern (button absent when blocked, banner explains — per the UX requirements section):
 
 ```tsx
-if (diff.directApplyBlocked) {
-  return (
-    <Tooltip content={diff.directApplyBlockReason}>
-      <Button disabled>Apply (blocked)</Button>
-    </Tooltip>
-  );
-}
+{!diff.directApplyBlocked && (
+  <Button onClick={handleApply}>Apply</Button>
+)}
+{diff.directApplyBlocked && (
+  <BlockedBanner
+    reason={diff.directApplyBlockReason}
+    operations={diff.copyForcingOperations?.elements.map(e => e.description) ?? []}
+  />
+)}
 ```
 
 Programmatic override exists for CLI / messenger callers via `bypassProductionGuard: true`. **The admin HTTP path does NOT expose this flag — by design.** The framework's own guard message says so verbatim ("The admin HTTP API does NOT expose this flag by design", `DatabaseSchemaDiffService:313`), and no `ApplyDiff{s}RequestDto` carries the field (see §Step 2 / the DTO table above). The admin UI therefore cannot bypass the guard; a large-table copy-forcing change must be run from a CLI command or messenger handler.
@@ -960,7 +956,7 @@ Caveat: any new rich-DDD-type field needs both `#[HideProperty]` AND `#[Ignore]`
 | `applyDiff` succeeds but the table still appears in the next diff | Re-introspection cache hit. Since v2.19 both `DatabaseSchemaIntrospectionService::invalidateCache()` and `EntityModelGeneratorService::invalidateCache()` are called inside `applyDiffs` — **but only conditionally, when `$expectedDiffSignatures !== null`.** A CLI / messenger caller that passes `expectedDiffSignatures = null` (skipping the signature gate) therefore does NOT invalidate the model-generator cache; a long-running worker can keep seeing stale entity reflection. Pass a signature map, or invalidate manually after a null-gate apply. |
 | Frontend gets `[DIFF_SIGNATURE_MISMATCH]` on every apply | Either the frontend isn't capturing `diff.diffSignature` correctly, or it's not echoing every diff in the batch (strict cover requires 1:1 between batch and signature map). Inspect the request body — `expectedDiffSignatures.elements` should contain exactly the same `sqlTableName`s as `sqlTableNames` (or as the unfiltered diff set if `sqlTableNames === null`). |
 | Frontend gets `[DIFF_APPLY_LOCK_BUSY]` | Another admin (or a CLI command) is mid-apply. Wait 5-10 seconds and retry. Repeated busy responses indicate a stuck process holding the connection's advisory lock — the lock releases on session close. |
-| Apply button stuck disabled with no obvious reason | Check `diff.directApplyBlocked === true` + `diff.directApplyBlockReason`. The production guard blocks large-table COPY-forcing ops by default. For admin override, the request DTO carries `bypassProductionGuard: bool` — confirm the UI exposes it behind a "I know what I'm doing" confirm. |
+| Apply button stuck disabled / missing with no obvious reason | Check `diff.directApplyBlocked === true` + `diff.directApplyBlockReason`. The production guard blocks large-table COPY-forcing ops by default. There is NO HTTP override — `bypassProductionGuard` is deliberately absent from the request DTOs. Run the change from a CLI command or messenger handler (which can pass `bypassProductionGuard: true`), or use pt-online-schema-change. |
 | Multi-statement SQL crash from `executeStatement()` | A statement made it past `splitMultiStatementSql`. Check for embedded `;` inside string literals (rare but possible in trigger bodies). |
 | Phantom DROPs after applying a CREATE_TABLE diff | The targeted refresh after `applyDiffs` uses `computeDiffsForTables($sqlTableNames)`, scoped to the table names just touched. A phantom DROP means an unrelated live table appeared in the result — confirm `applyDiffs` is on ≥ v2.18 (the round-2 audit fix). |
 

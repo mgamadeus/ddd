@@ -1,6 +1,6 @@
 ---
 name: ddd-geometry-and-vector-specialist
-description: Pick, declare, query, and migrate geometry and vector value objects in the mgamadeus/ddd framework. Use when working with GeoPoint, GeoBounds, Vector, or the Cartesian geometry family (Point2D, Polyline, Polygon, BoundingBox2D) — choosing the right type, mapping to the right native DB column, writing spatial / vector queries, or reasoning about schema-diff impact.
+description: Pick, declare, query, and migrate geometry and vector value objects in the mgamadeus/ddd framework — GeoPoint, GeoBounds, Vector, and the Cartesian family (Point2D, Polyline, Polygon, BoundingBox2D). Covers the type-selection matrix, Doctrine type registration, field declaration (vectorDimensions on DatabaseColumn), SPATIAL index rules (POINT auto-indexed, LINESTRING/POLYGON opt-in, requires NotNull), the DQL function catalog (ST_GeomFromText, ST_Within, ST_Distance_Sphere, VEC_FROM_TEXT, COSINE_DISTANCE, ~50 more), worked examples (point-in-polygon, nearest-N geo, top-K vector ANN), WKT/WKB wire format, schema-diff impact, a failure-mode triage table (zero rows from SRID mismatch, Bad geometry text, non-converging Vector diffs), index-usage notes, and a new-geometry-type recipe. Use when adding a point, polygon, bounding-box, or embedding column, choosing between geometry types, writing spatial or vector/ANN queries, debugging zero-row spatial queries or non-converging diffs, or wiring a new geometry type.
 metadata:
   author: mgamadeus
   version: "1.0.0"
@@ -138,7 +138,7 @@ use Doctrine\ORM\Mapping as ORM;
 public ?Vector $embedding;
 ```
 
-The `length` (= dimension) is **required** — MariaDB needs `VECTOR(N)` with an explicit N. The generator emits `length: N` on `#[ORM\Column]`. Forgetting it makes `VectorType::getSQLDeclaration()` throw.
+The dimension is **required** — MariaDB needs `VECTOR(N)` with an explicit N. Declare it via `vectorDimensions` on the entity's `#[DatabaseColumn]` (there is no `length` param there); the generator translates it into `length: N` on the emitted `#[ORM\Column]` of the DB model. Forgetting `vectorDimensions` makes `VectorType::getSQLDeclaration()` throw.
 
 ### Indexing — POINT is auto-indexed, LINESTRING/POLYGON opt-in
 

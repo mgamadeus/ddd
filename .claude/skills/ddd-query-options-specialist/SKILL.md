@@ -1,6 +1,6 @@
 ---
 name: ddd-query-options-specialist
-description: Work with the OData-style QueryOptions system in the mgamadeus/ddd framework -- filtering, sorting, pagination, field selection, entity expansion, and fulltext search over Translatable properties. Use when implementing or debugging QueryOptions in controllers, DTOs, services, or entities, or when building a fulltext/translatable search.
+description: Work with the OData-inspired QueryOptions system in the mgamadeus/ddd framework — database-level filtering, sorting, pagination, field selection, entity expansion, and fulltext search over Translatable properties. Wire syntax is plain filters=/expand=/orderBy=/select=/top=/skip= (plural filters, no dollar prefix; skiptoken not implemented; default top 50). Covers entity setup (QueryOptionsTrait on BOTH Entity and EntitySet), controller usage via request DTOs, the filter grammar (eq/ne/gt/ge/lt/le/in/ni/bw, ft/fb fulltext, and/or grouping, dot-notation), expand with nested clauses and automatic read-rights on joins, propertyScore relevance, programmatic usage with snapshot/restore, mandatory scope filters via addFiltersConnectedByAnd, and troubleshooting. Use when implementing or debugging QueryOptions, when a filters/expand/orderBy/select param is rejected or ignored, when results cap at 50, when enforcing an inescapable scope filter, or when building fulltext search.
 metadata:
   author: mgamadeus
   version: "1.1.0"
@@ -86,6 +86,7 @@ class Products extends EntitySet
 
 - `getDefaultQueryOptions(): AppliedQueryOptions` -- static, returns cached default for the class (builds from `#[QueryOptions]` attribute or creates empty)
 - `setDefaultQueryOptions(AppliedQueryOptions $queryOptions)` -- static, overwrites default (use for programmatic filtering)
+- `setDefaultQueryOptionsSnapshot()` / `restoreDefaultQueryOptionsSnapshot()` -- static, push/pop the current default onto a per-class snapshot stack (`QueryOptionsTrait.php:103-149`); the built-in, nestable alternative to manual clone + restore. Restore is a no-op on an empty stack, so it is safe in `finally`.
 - `getQueryOptions(): ?AppliedQueryOptions` -- instance, returns current query options or clones default
 - `setQueryOptions(AppliedQueryOptions &$queryOptions)` -- instance
 - `expand()` -- instance, expands lazy-loaded properties based on expand options (recursive)
@@ -225,7 +226,7 @@ Clauses are **semicolon-separated** inside parentheses:
 ?expand=zones(filters=isActive eq 'true';orderBy=name asc;top=50;skip=0;expand=tables(select=id,name))
 ```
 
-Supported clauses: `select`, `filters`, `orderBy`, `top`, `skip`, `skiptoken`, `expand` (recursive)
+Supported clauses: `select`, `filters`, `orderBy`, `top`, `skip`, `expand` (recursive); `skiptoken` is parsed but has no effect
 
 ### Expand on Related Entity Properties
 
@@ -284,10 +285,11 @@ Works on expanded relations too: `?expand=business&filters=business.name ft 'kfc
 ?top=20              # Limit to 20 results (default: 50)
 ?skip=40             # Skip first 40 results
 ?top=20&skip=40     # Page 3 (20 per page)
-?skiptoken=abc123    # Cursor-based pagination
 ```
 
-**Default `top` is 50** when the `#[QueryOptions]` attribute is present with no explicit override.
+`skiptoken` is parsed but has **no effect** — cursor pagination is not implemented (see the parameter table above). Use `top`/`skip`.
+
+**Default `top` is 50** — applies whether or not `#[QueryOptions]` is present (see above).
 
 ---
 
@@ -375,6 +377,8 @@ EntityNames::setDefaultQueryOptions($originalQueryOptions);
 
 **Always clone and restore** the original QueryOptions. Other code (lazy loading, controllers) relies on defaults being unmodified.
 
+Equivalent built-in (preferred, nestable): `EntityNames::setDefaultQueryOptionsSnapshot();` before mutating, then `finally { EntityNames::restoreDefaultQueryOptionsSnapshot(); }` — same effect as the manual clone/restore above.
+
 ### Adding a MANDATORY server-side filter on top of a client filter (`addFiltersConnectedByAnd`)
 
 A very common need: a request DTO carries a client `filters` (via `DtoQueryOptions`), and the controller must additionally enforce a **server-side mandatory scope** — a tenant / owner / parent-id condition the client must not be able to escape. Use:
@@ -456,7 +460,7 @@ ChildEntities::setDefaultQueryOptions($originalQueryOptions);
 |---------|-------|
 | "base entity has no QueryOptions attribute set on class" | Add `use QueryOptionsTrait;` to BOTH Entity and EntitySet |
 | Filters not working | Check value quoting: `'value'` not `value`. Check property is filterable (auto-detected from entity). |
-| Filter on expanded property fails | Ensure `$expand=relation` is also present |
+| Filter on expanded property fails | Ensure `expand=relation` is also present |
 | `ni` operator not working | Verify value is an array: `ni ['A','B']` not `ni 'A'` |
 | Expand not loading in response | Verify `expand` in query string AND `->expand()` called in controller after loading |
 | Expand returns no results | Read rights (`applyReadRightsQuery`) are applied to expanded entities -- check rights |

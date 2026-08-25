@@ -1,6 +1,6 @@
 ---
 name: ddd-endpoint-specialist
-description: Create REST API controllers, DTOs, route attributes, error handling, and OpenAPI documentation in the mgamadeus/ddd framework. Also explains autodocumentation — how DTOs/entities are reflected into the OpenAPI schema, the MCP tool schema, and the TypeScript SDK, the `@var T[]` bracket-docblock rules, and how to fix INVALID_ARGUMENT / HTTP 500 schema-generation errors. Use when creating or modifying API endpoints, request/response DTOs, controller logic, or debugging how a class becomes the generated API/MCP/TS schema.
+description: Create REST API controllers, DTOs, route attributes, error handling, and OpenAPI documentation in the mgamadeus/ddd framework — CRUD templates for the Admin/Client/Public/Batch audiences, request DTOs (path/query/body params, QueryOptions via DtoQueryOptions, file uploads via FileSetsDtoTrait), specialized response DTOs (Excel, PDF, ZIP, image, file download, HTML, redirect), GET caching via the RequestCache attribute with noCache bypass, request logging via LogRequest, multi-DTO merging, and Summary/Tag naming rules. Also explains autodocumentation: how DTOs/entities become the OpenAPI schema, MCP tool schema, and TypeScript SDK, the @var T[] docblock rule (never array<T>), the inert schema attributes (Enum, Length, ClassName), SharedRequestParameter, and fixing INVALID_ARGUMENT / HTTP 500 schema errors. Use when creating or modifying endpoints, DTOs, or controllers, returning file downloads, caching or logging a route, or debugging generated API/MCP/TS schemas.
 metadata:
   author: mgamadeus
   version: "1.0.0"
@@ -18,6 +18,8 @@ Controllers, DTOs, routing, error handling, and OpenAPI documentation within the
 - Configuring route attributes and OpenAPI documentation
 - Implementing CRUD endpoint patterns
 - Understanding error handling and controller conventions
+- Returning non-JSON responses (Excel, PDF, ZIP, image, file download, HTML, redirect)
+- Debugging autodocumentation — how a class becomes the OpenAPI / MCP tool / TypeScript SDK schema
 
 ## Namespace
 
@@ -231,7 +233,7 @@ public function create(
 }
 ```
 
-### Update (PUT -- upsert pattern)
+### Update (`#[Update]` = PATCH + POST -- upsert pattern)
 
 ```php
 #[Update]

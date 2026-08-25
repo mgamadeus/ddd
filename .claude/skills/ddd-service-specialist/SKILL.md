@@ -1,6 +1,6 @@
 ---
 name: ddd-service-specialist
-description: Create and design DDD services, implement business logic, QueryBuilder patterns, rights protection, and entity access control in the mgamadeus/ddd framework — including vector / semantic search, fulltext search over Translatable properties, concurrency-safe atomic writes (never read-modify-write through update()), and partial-entity writes (updatePartialIgnoringRights for VO/JSON/vector columns). Use when creating services, writing custom queries, implementing rights restrictions, doing semantic/vector search, or writing concurrency-safe or partial updates.
+description: Create DDD services, business logic, QueryBuilder patterns, and rights protection in the mgamadeus/ddd framework — including vector/semantic search, fulltext search over Translatable properties, concurrency-safe atomic writes, and partial writes via updatePartialIgnoringRights. Covers service instantiation (container resolution, never new, never cache), caller-side vs in-service find() paths, the null-getService() cross-namespace fix (ReuseParentEntitySet), the createQueryBuilder(true) root-alias rule, conventions (entity owns non-repo logic, pass objects not IDs, App vs DDD namespace placement), the PHPDoc @throws convention, advanced patterns (update/delete overrides, junction links, seeding, async dispatch), and infrastructure utilities (Config, Cache, Encrypt, IssuesLogService). Use when creating services, writing custom queries, implementing rights, doing vector or fulltext search, writing concurrency-safe or partial updates, or debugging a null getService() or a No-alias-was-set error.
 metadata:
   author: mgamadeus
   version: "1.0.0"
@@ -20,7 +20,7 @@ Services, business logic, QueryBuilder patterns, and rights protection within th
 
 ## Namespace
 
-All code uses the `DDD\` root namespace. Services live under `DDD\Domain\{Domain}\Services\` or `DDD\Infrastructure\Services\`.
+Framework code uses the `DDD\` root namespace — services live under `DDD\Domain\{Domain}\Services\` or `DDD\Infrastructure\Services\`. In a **consuming application** (the usual case) services use the app's own PSR-4 root instead, e.g. `App\Domain\{Domain}\Services\` — see the path & namespace note under *Service Template* below.
 
 ---
 
@@ -455,19 +455,6 @@ public function isNameUnique(string $name, ?int $excludeId = null): bool
         $qb->andWhere("{$a}.id != :excludeId")->setParameter('excludeId', $excludeId);
     }
     return (int) $qb->getQuery()->getSingleScalarResult() === 0;
-}
-```
-
-### Computed Values
-
-```php
-public function getNextDisplayOrder(int $parentId): int
-{
-    $repoClass = $this->getEntitySetRepoClassInstance();
-    $qb = $repoClass::createQueryBuilder(true);
-    $a = $repoClass::getBaseModelAlias();
-    $qb->select("MAX({$a}.displayOrder)")->where("{$a}.parentId = :pid")->setParameter('pid', $parentId);
-    return ($qb->getQuery()->getSingleScalarResult() ?? -1) + 1;
 }
 ```
 

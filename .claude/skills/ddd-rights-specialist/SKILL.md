@@ -1,6 +1,6 @@
 ---
 name: ddd-rights-specialist
-description: Implement entity-level access control in the mgamadeus/ddd framework -- applyReadRightsQuery, applyUpdateRightsQuery, applyDeleteRightsQuery, mapToEntity property hiding, RolesRequiredForUpdate, and rights restriction snapshots. Use when implementing or debugging entity access control in DB repositories.
+description: Implement entity-level access control in the mgamadeus/ddd framework — the FOUR rights methods (applyReadRightsQuery, applyUpdateRightsQuery, applyDeleteRightsQuery, applyCreateRightsQuery for the INSERT branch of upsert), six patterns with a selection guide (direct column filter, leftJoin with the _rights alias, subqueries, stricter update rights, delete delegation, mapToEntity post-load property hiding), the request-to-response rights pipeline, RolesRequiredForUpdate gating, the expand-system interaction where the bool return gates rights merging on EXPAND, UPDATE and DELETE (returning false after adding conditions silently bypasses rights on expand joins and writes), and disabling rights via deactivateEntityRightsRestrictions snapshot/restore. Use when implementing or debugging access control in DB repositories, choosing a rights pattern, hiding fields after load, bypassing rights in CLI commands or message handlers, or debugging entity-not-found errors or unrestricted expand results.
 metadata:
   author: mgamadeus
   version: "1.0.0"
@@ -42,7 +42,9 @@ Entity-level access control via query-level rights restrictions in the DDD Core 
    |
    +-- Repository.update(entity)
    |   +-- canUpdateOrDeleteBasedOnRoles() -> early return if fails
-   |   +-- if ($applyRightsRestrictions) applyUpdateRightsQuery($qb)
+   |   +-- if ($applyRightsRestrictions):
+   |   |     entity has id  -> applyUpdateRightsQuery($qb)
+   |   |     no id (INSERT) -> applyCreateRightsQuery($qb)  // defaults to applyUpdateRightsQuery
    |   +-- Execute upsert with rights-restricted WHERE
    |
    +-- Repository.delete(entity)
@@ -57,7 +59,7 @@ Entity-level access control via query-level rights restrictions in the DDD Core 
 
 ## Rights Methods (there are FOUR)
 
-> Beyond the three below there is `applyCreateRightsQuery()` — it gates the INSERT branch of `upsert()` and defaults to delegating to `applyUpdateRightsQuery`; the update method runs only when the entity already has an id (`DatabaseRepoEntity.php:462-464`, `:756-758`). Override `applyCreateRightsQuery` to allow CREATE while denying UPDATE.
+> The fourth, `applyCreateRightsQuery()`, gates the INSERT branch of `upsert()` and defaults to delegating to `applyUpdateRightsQuery`; the update method runs only when the entity already has an id (`DatabaseRepoEntity.php:462-464`, `:756-758`). Override `applyCreateRightsQuery` to allow CREATE while denying UPDATE.
 
 
 Override these in `DB{EntityName}` repository classes (not on the EntitySet repo):
@@ -65,8 +67,9 @@ Override these in `DB{EntityName}` repository classes (not on the EntitySet repo
 | Method | Default | Called During | Purpose |
 |--------|---------|--------------|---------|
 | `applyReadRightsQuery(&$qb): bool` | `false` (no restrictions) | `find()`, `findAll()`, `count()`, expand joins | Filter which records are visible |
-| `applyUpdateRightsQuery(&$qb): bool` | Delegates to `applyReadRightsQuery()` | `update()` | Filter which records can be updated |
+| `applyUpdateRightsQuery(&$qb): bool` | Delegates to `applyReadRightsQuery()` | `update()` when entity has an id | Filter which records can be updated |
 | `applyDeleteRightsQuery(&$qb): bool` | Delegates to `applyUpdateRightsQuery()` | `delete()` | Filter which records can be deleted |
+| `applyCreateRightsQuery(&$qb): bool` | Delegates to `applyUpdateRightsQuery()` | INSERT branch of `upsert()` (entity has no id) | Gate which records can be created |
 
 **Return values:** `true` = restrictions applied (query modified), `false` = no restrictions.
 
@@ -79,7 +82,7 @@ Override these in `DB{EntityName}` repository classes (not on the EntitySet repo
 >
 > **Rule:** if you added conditions to the QueryBuilder, you MUST `return true`. If you fall through to `return parent::applyReadRightsQuery($queryBuilder)` (the framework default returns `false`), the expand merger discards your conditions and the entity becomes invisibly readable on any nested `?$expand=...` join. This was the cause of a real silent rights bypass — see *Anti-Pattern* below.
 
-**All gated by** `$applyRightsRestrictions` (static bool, default `true`). When `false`, all rights checks are bypassed.
+**Gating by `$applyRightsRestrictions`** (static bool, default `true`): the write/delete paths gate the rights-method calls at the call site, but the read path calls `applyReadRightsQuery` **unconditionally** — there the flag only takes effect via the first-line `if (!self::$applyRightsRestrictions) return false;` check inside your override (see Standard Skeleton). Net effect when the flag is `false`: all rights checks are bypassed, provided your overrides include that first-line gate.
 
 ---
 
@@ -461,7 +464,7 @@ DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
 | Entity is 2+ hops from filtering target | Subquery (single or nested) | DBGoal -> Challenge, DBReward -> Goal -> Challenge |
 | Multiple access paths (OR logic) | Dual-path subquery | DBSponsor (via Partner OR via Challenge reward) |
 | Complex membership chain | Multi-level leftJoin chain | Support system (Message -> Ticket -> Contact -> Accounts) |
-| Write stricter than read | Override `applyUpdateRightsQuery`, call parent read first | DBAccount |
+| Write stricter than read | Override `applyUpdateRightsQuery`, apply read rights once via `static::applyReadRightsQuery` (never `parent::`) | DBAccount |
 | Hide fields, not filter rows | Override `mapToEntity`, call `addPropertiesToHide()` | DBAccount (email, password, device info) |
 | Entire entity class restricted | `#[RolesRequiredForUpdate]` attribute | DBWorld (ADMIN only) |
 | CLI/system needs bypass | `deactivateEntityRightsRestrictions()` + restore | Auth context setup, imports |

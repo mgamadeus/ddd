@@ -1,9 +1,9 @@
 ---
 name: ddd-code-inspect-with-qodana
-description: Run JetBrains Qodana PHP static analysis, parse SARIF results, and fix or suppress findings — plus per-file inspection via the JetBrains/IntelliJ MCP (get_file_problems) without a full Qodana scan. Use when asked to run inspections, check code quality, fix static analysis warnings, or get the inspection problems for a single file from the IDE.
+description: Run JetBrains Qodana PHP static analysis natively (Docker-free via QODANA_DIST), parse SARIF results with a ready-made Python script, and fix or suppress findings via per-inspection classification (fix vs @noinspection vs skip; never edit generated DB*Model.php) — plus single-file inspection through the JetBrains MCP (get_file_problems, build_project, reformat_file) without a full scan. Covers one-time setup (CLI install, Qodana Cloud project token — not organization token — as QODANA_TOKEN), profile selection (stub .idea profile pitfall vs qodana.yaml), nested-app monorepo scans via --project-dir, and troubleshooting (token declined, IDE not found, Docker errors, 0-problem scans). Use when running inspections, checking code quality, fixing static-analysis warnings, setting up Qodana, debugging a scan that finds nothing or fails to start, or getting inspection problems for a single file from the IDE.
 metadata:
   author: mgamadeus
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Qodana Inspect
@@ -15,6 +15,7 @@ Runs JetBrains Qodana PHP inspections, parses results, and applies fixes.
 - User asks to run inspections, code quality checks, or static analysis
 - After large refactoring sessions to verify no regressions
 - Before creating a PR to check for issues
+- Getting inspection problems for a single file via the JetBrains MCP (no full scan needed)
 
 ## Setup (One-Time)
 
@@ -49,7 +50,7 @@ source ~/.zshenv
 
 **Do not** store the token in `.env`, CLAUDE.md, memory files, or skill files.
 
-### 4. Bootstrap the PhpStorm Distribution
+### 4. Bootstrap the PhpStorm Distribution (older Qodana CLI only)
 
 On first run, Qodana downloads a PhpStorm distribution:
 

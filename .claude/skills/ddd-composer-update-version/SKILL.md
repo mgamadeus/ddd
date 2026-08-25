@@ -1,6 +1,6 @@
 ---
 name: ddd-composer-update-version
-description: Bump composer.json version, commit, push, and create a git tag that triggers Packagist update, then update consuming apps — including the platform-flag policy (apps pin config.platform.php, so a plain `composer update -W` is correct and the broad `--ignore-platform-reqs` is a footgun that can poison the lock). Use when releasing a new version of any DDD package (core or module), running composer update in a consuming app, or deciding which platform-req flags to pass.
+description: Bump composer.json version, commit, push, and tag to trigger Packagist, then update consuming apps. Covers the platform-flag policy (apps pin config.platform.php, so plain composer update -W is correct; the broad --ignore-platform-reqs is a footgun that can poison the lock), the vendor-copy cwd hazard (git inside vendor/mgamadeus operates on the APP repo — never release from there), a one-liner patch release, the 7-module dependency-order release list, the dependency-floor cascade rule (downstream fix propagation = raise each dependent's require floor to the exact fixed version and re-release, not just composer update), and troubleshooting when a new version does not land (composer prohibits, composer clear-cache). Use when releasing any DDD package (core or module), running composer update in a consuming app, choosing platform-req flags, propagating a bugfix through the module chain, or diagnosing why a freshly tagged version is not picked up.
 metadata:
   author: mgamadeus
   version: "1.0.0"
@@ -15,6 +15,8 @@ Bump the version in `composer.json`, commit, push, and tag to trigger a Packagis
 - Releasing a new version of a DDD package after code changes
 - After committing feature/fix changes, to bump version and tag
 - When asked to "release", "bump version", "tag", or "publish"
+- Running `composer update` in a consuming app after a release, or deciding which platform-req flags to pass (see "Updating Consuming Apps" — default is a plain `composer update -W`, no platform flag)
+- Propagating a bugfix through dependent modules (see "Propagating a fix downstream" — requires floor bumps + re-releases, not just `composer update`)
 
 ## How Packagist Auto-Update Works
 
@@ -89,10 +91,12 @@ git add composer.json
 git commit -m "$(cat <<'EOF'
 Bump version to X.Y.Z
 
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
 ```
+
+If your environment specifies an exact `Co-Authored-By` trailer (e.g. in the system prompt), use that verbatim instead of the generic line above.
 
 If other files were changed alongside the version bump (e.g., AGENTS.md, skills, README), include them in the same commit with a descriptive message:
 
@@ -106,7 +110,7 @@ Add documentation and bump version to X.Y.Z
 - Update README with comprehensive examples
 - Bump version to X.Y.Z
 
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -145,7 +149,7 @@ with open('composer.json', 'w') as f: json.dump(d, f, indent=4, ensure_ascii=Fal
 print(d['version'])
 ") && git add composer.json && git commit -m "Bump version to $NEW_VERSION
 
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>" && git push && git tag "v$NEW_VERSION" && git push origin "v$NEW_VERSION" && echo "Released v$NEW_VERSION"
+Co-Authored-By: Claude <noreply@anthropic.com>" && git push && git tag "v$NEW_VERSION" && git push origin "v$NEW_VERSION" && echo "Released v$NEW_VERSION"
 ```
 
 ## Updating Consuming Apps After a Release
@@ -196,7 +200,7 @@ composer show mgamadeus/ddd-... | grep '^versions'
 If the version did not advance, the most common causes are:
 1. A transitive dependency constraint blocks the new version — diagnose with `composer prohibits mgamadeus/ddd-... <new-version>`.
 2. Stale Packagist cache — clear with `composer clear-cache` and retry.
-3. The tag was pushed but Packagist hasn't picked it up yet (usually <1 min).
+3. The tag was pushed but Packagist hasn't picked it up yet (usually within a few minutes).
 
 ## Multi-Module Release
 

@@ -1,9 +1,9 @@
 ---
 name: ddd-module-orchestrator
-description: Centralized orchestration of all DDD modules from the Core project. Study, update, release, and propagate changes across the entire module ecosystem. Use when making cross-module changes, releasing versions, updating documentation, or propagating dependency upgrades.
+description: Centralized orchestration of all DDD modules from the Core project — study, update, release, and propagate changes across the module ecosystem. Contains the dependency graph with release order, the reverse-dependency table, the dependency-floor cascade rule (raise each dependent's require floor to the exact fixed version and re-release transitively), the consuming-app registry (Tavlo, Radbonus, RC), the no-scripts policy (fine in module repos, NEVER in consuming apps — post-update-cmd regenerates DB*Model files), the platform-flag policy (apps pin config.platform.php so plain composer update -W; module repos targeted ext ignores only), the package-vs-repo name mapping, the layered documentation architecture (AGENTS.md hierarchy, vendor-skill symlinks), and handoff-doc ingestion. Use when making cross-module changes, deciding release order, raising dependency floors, running composer update in modules or apps, updating docs across repos, wiring vendor skill symlinks, or ingesting a handoff doc.
 metadata:
   author: mgamadeus
-  version: "2.0.0"
+  version: "2.1.0"
 ---
 
 # DDD Module Orchestrator
@@ -63,10 +63,11 @@ Level 3 (depends on ddd + Level 1/2):
 | **ddd-common-geo** | (none -- leaf module) |
 | **ddd-common-translations** | (none -- leaf module) |
 
-> **GitHub repo names ≠ package names for two packages:** `mgamadeus/ddd-common-translations` lives in the repo
-> `mgamadeus/ddd-translations`, and `mgamadeus/ddd` (Core) lives in `mgamadeus/ddd`. When pushing via HTTPS, resolve
-> the real repo with `git remote get-url origin` (or the Packagist `source.url`) — do not assume the repo matches the
-> package name.
+> **GitHub repo names ≠ package names for the four `ddd-common-*` packages** — the repo drops the `common-` segment:
+> `ddd-common-money` → repo `mgamadeus/ddd-money`, `ddd-common-political` → `mgamadeus/ddd-political`,
+> `ddd-common-geo` → `mgamadeus/ddd-geo`, `ddd-common-translations` → `mgamadeus/ddd-translations`.
+> (`ddd`, `ddd-ai`, `ddd-argus` match their repo names.) When pushing, resolve the real repo with
+> `git remote get-url origin` (or the Packagist `source.url`) — do not assume the repo matches the package name.
 
 ### Dependency-Floor Cascade (propagating a fix DOWNSTREAM, not just locally)
 
@@ -196,7 +197,7 @@ git add <changed-files>
 git commit -m "$(cat <<'EOF'
 Description of changes
 
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -236,12 +237,12 @@ if [ -n "$(git diff composer.lock)" ]; then
   git add composer.lock
   git commit -m "Update composer dependencies
 
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
+Co-Authored-By: Claude <noreply@anthropic.com>"
   git push
 fi
 ```
 
-For each consuming APP at level 5 (let the `post-update-cmd` model generator run — **no `--no-scripts`**):
+For each consuming APP at step 5 (steps above are process order, not the graph's Levels 0-3; let the `post-update-cmd` model generator run — **no `--no-scripts`**):
 ```bash
 cd "$APP_PATH" && composer update mgamadeus/ddd -W   # apps pin config.platform.php; no platform flag
 # post-update-cmd auto-runs: cache:clear + app:generate-doctrine-models-for-entities
@@ -269,7 +270,7 @@ When updating AGENTS.md, skills, or README across multiple modules:
 - **Never force-push tags** unless explicitly asked
 - **Tag format:** `v` prefix required (e.g., `v2.10.12`) -- Packagist matches `v*` pattern
 - **Version in `composer.json`** must match tag (without `v` prefix)
-- **Co-Authored-By** header required on all commits
+- **Co-Authored-By** header required on all commits — use the exact trailer your harness specifies for the current model (the templates above show the generic form)
 
 ### Ingesting an upstream handoff doc
 

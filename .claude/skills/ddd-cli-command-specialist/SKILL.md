@@ -1,6 +1,6 @@
 ---
 name: ddd-cli-command-specialist
-description: Create Symfony console commands in the mgamadeus/ddd framework, AND use the framework's built-in CLI commands — including app:db:read, the read-only SQL query command for inspecting stored rows from the terminal (no SQL client, no raw PDO one-liner), plus app:entity:show-sql and app:entity:list. Covers command structure, arguments/options, admin auth context setup, service access, output formatting, batch processing patterns, memory/time limits, and signal handling. Use when writing a console command OR when you need to look at database content / entity DDL from the CLI.
+description: Create Symfony console commands in the mgamadeus/ddd framework AND use its built-in CLI commands: app:db:read (read-only SQL to inspect stored rows from the terminal — no SQL client, no raw PDO one-liners), app:entity:show-sql (generated CREATE TABLE/index/FK DDL), app:entity:list, app:generate-doctrine-models-for-entities, app:process-cli-message, app:crons:execute and app:crons:list. Covers command structure, arguments/options, admin auth context setup, service access, output formatting (SymfonyStyle, tables, progress bars), batch processing, memory/time limits, signal handling, and fraction-based distributed execution. Use when writing a console command, inspecting database content or entity DDL from the CLI, regenerating Doctrine models, processing a CLI message, or running/listing cron jobs.
 metadata:
   author: mgamadeus
   version: "1.0.0"
@@ -17,6 +17,7 @@ Symfony console commands within the DDD Core framework (`mgamadeus/ddd`).
 - Implementing batch operations (imports, recalculations, migrations)
 - Creating scheduled/cron-triggered jobs
 - Understanding command structure and output patterns
+- Running the framework's built-in commands — `app:db:read` (read-only SQL over stored rows), `app:entity:show-sql` / `app:entity:list` (entity DDL and discovery), doctrine-model generation, CLI message processing, crons — see [Framework-Provided Commands](#framework-provided-commands) below
 
 ## Namespace & Location
 
