@@ -1,6 +1,6 @@
 ---
 name: ddd-endpoint-specialist
-description: Create REST API controllers, DTOs, route attributes, error handling, and OpenAPI documentation in the mgamadeus/ddd framework. Use when creating or modifying API endpoints, request/response DTOs, or controller logic.
+description: Create REST API controllers, DTOs, route attributes, error handling, and OpenAPI documentation in the mgamadeus/ddd framework. Also explains autodocumentation — how DTOs/entities are reflected into the OpenAPI schema, the MCP tool schema, and the TypeScript SDK, the `@var T[]` bracket-docblock rules, and how to fix INVALID_ARGUMENT / HTTP 500 schema-generation errors. Use when creating or modifying API endpoints, request/response DTOs, controller logic, or debugging how a class becomes the generated API/MCP/TS schema.
 metadata:
   author: mgamadeus
   version: "1.0.0"

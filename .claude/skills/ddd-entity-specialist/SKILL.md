@@ -1,6 +1,6 @@
 ---
 name: ddd-entity-specialist
-description: Create and design DDD entities, entity sets, value objects, DB repositories, lazy loading, relationships, and entity attributes in the mgamadeus/ddd framework. Use when creating, modifying, or reasoning about domain entities and their persistence layer.
+description: Create and design DDD entities, entity sets, value objects, DB repositories, lazy loading, relationships, and entity attributes in the mgamadeus/ddd framework — including multi-language / Translatable properties, the ChangeHistory trait (audit trail), junction/pivot (many-to-many) entities, and database indexes / virtual columns. Use when creating, modifying, or reasoning about domain entities and their persistence layer, adding translatable fields, wiring change-history auditing, or defining indexes/virtual columns.
 metadata:
   author: mgamadeus
   version: "1.0.0"

@@ -1,6 +1,6 @@
 ---
 name: ddd-code-inspect-with-qodana
-description: Run JetBrains Qodana PHP static analysis, parse SARIF results, and fix or suppress findings. Use when asked to run inspections, check code quality, or fix static analysis warnings.
+description: Run JetBrains Qodana PHP static analysis, parse SARIF results, and fix or suppress findings — plus per-file inspection via the JetBrains/IntelliJ MCP (get_file_problems) without a full Qodana scan. Use when asked to run inspections, check code quality, fix static analysis warnings, or get the inspection problems for a single file from the IDE.
 metadata:
   author: mgamadeus
   version: "1.0.0"

@@ -1,6 +1,6 @@
 ---
 name: ddd-query-options-specialist
-description: Work with the OData-style QueryOptions system in the mgamadeus/ddd framework -- filtering, sorting, pagination, field selection, and entity expansion. Use when implementing or debugging QueryOptions in controllers, DTOs, services, or entities.
+description: Work with the OData-style QueryOptions system in the mgamadeus/ddd framework -- filtering, sorting, pagination, field selection, entity expansion, and fulltext search over Translatable properties. Use when implementing or debugging QueryOptions in controllers, DTOs, services, or entities, or when building a fulltext/translatable search.
 metadata:
   author: mgamadeus
   version: "1.1.0"

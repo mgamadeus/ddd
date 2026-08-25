@@ -1,6 +1,6 @@
 ---
 name: ddd-service-specialist
-description: Create and design DDD services, implement business logic, QueryBuilder patterns, rights protection, and entity access control in the mgamadeus/ddd framework. Use when creating services, writing custom queries, or implementing rights restrictions.
+description: Create and design DDD services, implement business logic, QueryBuilder patterns, rights protection, and entity access control in the mgamadeus/ddd framework — including vector / semantic search, fulltext search over Translatable properties, concurrency-safe atomic writes (never read-modify-write through update()), and partial-entity writes (updatePartialIgnoringRights for VO/JSON/vector columns). Use when creating services, writing custom queries, implementing rights restrictions, doing semantic/vector search, or writing concurrency-safe or partial updates.
 metadata:
   author: mgamadeus
   version: "1.0.0"

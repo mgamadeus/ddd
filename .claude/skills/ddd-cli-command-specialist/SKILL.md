@@ -1,6 +1,6 @@
 ---
 name: ddd-cli-command-specialist
-description: Create Symfony console commands in the mgamadeus/ddd framework. Covers command structure, arguments/options, admin auth context setup, service access, output formatting, batch processing patterns, memory/time limits, and signal handling.
+description: Create Symfony console commands in the mgamadeus/ddd framework, AND use the framework's built-in CLI commands — including app:db:read, the read-only SQL query command for inspecting stored rows from the terminal (no SQL client, no raw PDO one-liner), plus app:entity:show-sql and app:entity:list. Covers command structure, arguments/options, admin auth context setup, service access, output formatting, batch processing patterns, memory/time limits, and signal handling. Use when writing a console command OR when you need to look at database content / entity DDL from the CLI.
 metadata:
   author: mgamadeus
   version: "1.0.0"

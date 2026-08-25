@@ -1,6 +1,6 @@
 ---
 name: ddd-composer-update-version
-description: Bump composer.json version, commit, push, and create a git tag that triggers Packagist update. Use when releasing a new version of any DDD package (core or module).
+description: Bump composer.json version, commit, push, and create a git tag that triggers Packagist update, then update consuming apps — including the platform-flag policy (apps pin config.platform.php, so a plain `composer update -W` is correct and the broad `--ignore-platform-reqs` is a footgun that can poison the lock). Use when releasing a new version of any DDD package (core or module), running composer update in a consuming app, or deciding which platform-req flags to pass.
 metadata:
   author: mgamadeus
   version: "1.0.0"
