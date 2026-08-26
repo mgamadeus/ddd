@@ -47,4 +47,38 @@ class CacheScopeInvalidations extends EntitySet
         return null;
     }
 
+    /**
+     * Returns the invalidation matching the given scopes/owner tuple whose invalidateUntil still lies in the
+     * future, or null. Count-based invalidations (numberOfTimesToInvalidateCache set, invalidateUntil unset) are
+     * ignored. Scans all loaded elements instead of the uniqueKey lookup that
+     * getCacheScopeInvalidationbyParameters() uses, so a time-limited row is found regardless of load order.
+     * @param array $cacheScopes
+     * @param int|null $accountId
+     * @param int|null $projectId
+     * @param int|null $locationId
+     * @return CacheScopeInvalidation|null
+     */
+    public function getInvalidationWithUnexpiredInvalidateUntilByParameters(
+        array $cacheScopes,
+        ?int $accountId = null,
+        ?int $projectId = null,
+        ?int $locationId = null,
+    ): ?CacheScopeInvalidation {
+        foreach ($this->getElements() as $cacheScopeInvalidation) {
+            if (!$cacheScopeInvalidation->hasUnexpiredInvalidateUntil()) {
+                continue;
+            }
+            if (!in_array($cacheScopeInvalidation->cacheScope, $cacheScopes, true)) {
+                continue;
+            }
+            if (($cacheScopeInvalidation->accountId ?? null) === $accountId
+                && ($cacheScopeInvalidation->projectId ?? null) === $projectId
+                && ($cacheScopeInvalidation->locationId ?? null) === $locationId
+            ) {
+                return $cacheScopeInvalidation;
+            }
+        }
+        return null;
+    }
+
 }

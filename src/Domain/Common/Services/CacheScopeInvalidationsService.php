@@ -37,6 +37,18 @@ class CacheScopeInvalidationsService extends EntitiesService
     protected static array $cacheScopeInvalidationsForLocations = [];
 
     /**
+     * Clears the per-process invalidation snapshots. Long-running workers MUST call this at each unit-of-work
+     * boundary (e.g. before every tool call / message), otherwise a snapshot taken before an earlier write hides
+     * that write's invalidation and reads keep serving the stale cache for the process lifetime.
+     */
+    public static function resetSnapshotStatics(): void
+    {
+        self::$cacheScopeInvalidationsForAccounts = [];
+        self::$cacheScopeInvalidationsForProjects = [];
+        self::$cacheScopeInvalidationsForLocations = [];
+    }
+
+    /**
      * Determines if given Lazyload initiating Entity implements one of
      * - LocationDependentEntityInterface
      * - ProjectDependentEntityInterface
@@ -110,7 +122,52 @@ class CacheScopeInvalidationsService extends EntitiesService
     }
 
     /**
-     * Returns all CacheScopeInvalidations for account / project / location
+     * NON-CONSUMPTIVE companion to {@see self::canUseCachingForScopes()}: decides the cache bypass purely from
+     * time-limited invalidations (rows with an unexpired invalidateUntil) and NEVER calls applyInvalidation().
+     * Count-based invalidations (numberOfTimesToInvalidateCache) are deliberately IGNORED here — honoring one
+     * without consuming it would bypass the cache on every read until the row is consumed elsewhere, and consuming
+     * it here would race with call-site consults of the same one-shot row. Because nothing is consumed and nothing
+     * expensive is triggered beyond the bypass itself, this method is safe to call from hot read paths (e.g. the
+     * extended registry cache) without the once-per-logical-read restriction that applies to
+     * canUseCachingForScopes(). Shares the per-process invalidation snapshots, so it adds no query when a snapshot
+     * for the same owner already exists.
+     * @param array $cacheScopes
+     * @param int|null $accountId
+     * @param int|null $projectId
+     * @param int|null $locationId
+     * @return bool
+     * @throws BadRequestException
+     * @throws InternalErrorException
+     * @throws InvalidArgumentException
+     * @throws ReflectionException
+     */
+    public static function canUseCachingForScopesWithoutConsumingInvalidations(
+        array $cacheScopes,
+        ?int $accountId = null,
+        ?int $projectId = null,
+        ?int $locationId = null,
+    ): bool {
+        // The framework's invalidation entity carries only the ACCOUNT dimension — project/location params are
+        // part of the shared signature so consuming applications that extend the entity with those dimensions
+        // (and substitute this service via DI) can honor them; here they are ignored.
+        if ($accountId) {
+            if (!isset(static::$cacheScopeInvalidationsForAccounts[$accountId])) {
+                static::$cacheScopeInvalidationsForAccounts[$accountId] = static::getCacheScopeInvalidations(
+                    accountId: $accountId
+                );
+            }
+            if (static::$cacheScopeInvalidationsForAccounts[$accountId]->getInvalidationWithUnexpiredInvalidateUntilByParameters(
+                cacheScopes: $cacheScopes,
+                accountId: $accountId
+            )) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Returns all CacheScopeInvalidations for account
      * @param int|null $accountId
      * @return CacheScopeInvalidations
      * @throws BadRequestException

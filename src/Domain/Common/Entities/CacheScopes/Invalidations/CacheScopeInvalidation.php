@@ -88,6 +88,16 @@ class CacheScopeInvalidation extends Entity
     }
 
     /**
+     * @return bool True while this invalidation's invalidateUntil lies in the future. This is the time-limited form
+     * of invalidation, which stays active for its whole window and is not consumed per read — applyInvalidation()
+     * only decrements the count-based numberOfTimesToInvalidateCache form.
+     */
+    public function hasUnexpiredInvalidateUntil(): bool
+    {
+        return isset($this->invalidateUntil) && $this->invalidateUntil->getTimestamp() > time();
+    }
+
+    /**
      * Applies a CacheScopeInvalidation and reduces numberOfTimesToInvalidateCache if set
      * @return $this|null
      * @throws BadRequestException
