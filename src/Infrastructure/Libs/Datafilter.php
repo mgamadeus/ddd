@@ -38,7 +38,7 @@ class Datafilter
     public static $special_charsOLD = 'ÄäÖöÜüß€ÀÂÄÈÉÊËÎÏÔŒÙÛÜŸàâäèéêëîïôœùûüÿÁÉÍÓÚÑÜáéíóúñüÀÈÉÌÒÓÙàèéìòóùăîâşţĂÎÂŞŢșțΑαΒβΓγΔδΕεΖζΗηΘθΙιΚκΛλΜμΝνΞξΟοΠπΡρΣσΣσςΤτΥυΦφΧχΨψΩωĄąĘęĆćŁłŃńŚśŹźŻżÓóόώ';
 
     // ok, NO need to list all unicode LETTERS. use this.
-    public static $special_chars = '\p{L}\p{N}';
+    public static $special_chars = '\p{L}\p{M}\p{N}';
 
     // delimiter characters to exclude from breakwords function.
     public static $exclude_chars = '';
