@@ -194,14 +194,20 @@ trait EntityTrait
      * high-concurrency PARTIAL update that writes no other column and, unlike {@see update()}, does NOT reload/detach
      * this instance. Use for competing single-column writes (run-state claim/heartbeat, async-computed
      * summary/embedding/verdict) where a full-row update would clobber a concurrently-written column. No-op if this
-     * entity has no id. Delegates to {@see \DDD\Domain\Base\Repo\DB\DBEntity::updatePartialIgnoringRights()}.
+     * entity has no id. Delegates to the DB-flavour repo ({@see \DDD\Domain\Base\Repo\DB\DBEntity::updatePartialIgnoringRights()})
+     * or, when the entity has no DB-flavour repo, to its DEFAULT repo if that repo exposes the method
+     * (e.g. an application's LegacyDB flavour).
      *
      * @param string ...$propertyNames Entity property names whose columns are the ONLY ones written.
      */
     public function updatePartialIgnoringRights(string ...$propertyNames): static
     {
-        $repoClassInstance = static::getRepoClassInstance(LazyLoadRepo::DB);
-        if ($repoClassInstance instanceof DBEntity) {
+        // Fall back to the entity's DEFAULT repo when no DB-flavour repo exists: an entity whose primary repo
+        // is another database flavour (e.g. a LegacyDB entity) otherwise silently NO-OPS here although its
+        // repo implements the partial write — the caller believes the field persisted while the row never
+        // changed. Capability-based dispatch: any repo exposing updatePartialIgnoringRights is eligible.
+        $repoClassInstance = static::getRepoClassInstance(LazyLoadRepo::DB) ?? static::getRepoClassInstance();
+        if ($repoClassInstance !== null && method_exists($repoClassInstance, 'updatePartialIgnoringRights')) {
             $repoClassInstance->updatePartialIgnoringRights($this, ...$propertyNames);
         }
         return $this;
