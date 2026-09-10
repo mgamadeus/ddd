@@ -1,6 +1,6 @@
 ---
 name: ddd-query-options-specialist
-description: Work with the OData-inspired QueryOptions system in the mgamadeus/ddd framework — database-level filtering, sorting, pagination, field selection, entity expansion, and fulltext search over Translatable properties. Wire syntax is plain filters=/expand=/orderBy=/select=/top=/skip= (plural filters, no dollar prefix; skiptoken not implemented; default top 50). Covers entity setup (QueryOptionsTrait on BOTH Entity and EntitySet), controller usage via request DTOs, the filter grammar (eq/ne/gt/ge/lt/le/in/ni/bw, ft/fb fulltext, and/or grouping, dot-notation), expand with nested clauses and automatic read-rights on joins, propertyScore relevance, programmatic usage with snapshot/restore, mandatory scope filters via addFiltersConnectedByAnd, and troubleshooting. Use when implementing or debugging QueryOptions, when a filters/expand/orderBy/select param is rejected or ignored, when results cap at 50, when enforcing an inescapable scope filter, or when building fulltext search.
+description: Work with the OData-inspired QueryOptions system in the mgamadeus/ddd framework — database-level filtering, sorting, pagination, field selection, expansion, and fulltext search over Translatable properties. Wire syntax is plain filters=/expand=/orderBy=/select=/top=/skip= (plural filters, no dollar prefix; default top 50). Covers entity setup (QueryOptionsTrait on BOTH Entity and EntitySet), controller DTOs, the filter grammar (eq/ne/gt/ge/lt/le/in/ni/bw, ft/fb fulltext, and/or grouping, dot-notation), expand with nested clauses and read-rights on joins, propertyScore relevance, programmatic snapshot/restore, mandatory scope filters via addFiltersConnectedByAnd, and the Argus rule (an argus repo class shares ONE defaults slot with its parent domain class). Use when implementing or debugging QueryOptions, when a query param is ignored or rejected, when results cap at 50, when enforcing an inescapable scope filter, when defaults set on an Argus repo class have no effect, or when building fulltext search.
 metadata:
   author: mgamadeus
   version: "1.1.0"
@@ -90,6 +90,18 @@ class Products extends EntitySet
 - `getQueryOptions(): ?AppliedQueryOptions` -- instance, returns current query options or clones default
 - `setQueryOptions(AppliedQueryOptions &$queryOptions)` -- instance
 - `expand()` -- instance, expands lazy-loaded properties based on expand options (recursive)
+
+> **Argus repo classes key their defaults on the PARENT domain class.** `getDefaultQueryOptions()`,
+> `setDefaultQueryOptions()` and the snapshot pair all resolve a class carrying `isArgusEntity` to its parent
+> (`resolveDefaultQueryOptionsClassKey()`), so `ArgusFoo` and `Foo` share **one** defaults slot. Two consequences:
+> setting defaults "for the Argus repo" changes the domain class's defaults for **every** consumer in the process —
+> always scope such a mutation with `setDefaultQueryOptionsSnapshot()` / `restoreDefaultQueryOptionsSnapshot()` in
+> `try`/`finally`; and reading back through either class sees the same object.
+>
+> Historical note (fixed in v2.59.2): `setDefaultQueryOptions()` used to key on the raw `static::class`, so a set on
+> an Argus repo class wrote into a slot no reader resolved — a silent no-op. The common idiom only appeared to work
+> because callers mutated the get-returned (parent-keyed) object in place. On an older release, do not rely on
+> `ArgusFoo::setDefaultQueryOptions(...)`; mutate the object returned by `getDefaultQueryOptions()` instead.
 
 ---
 

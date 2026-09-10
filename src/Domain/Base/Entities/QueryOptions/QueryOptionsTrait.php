@@ -93,9 +93,24 @@ trait QueryOptionsTrait
         return $queryOptions;
     }
 
+    /**
+     * Sets the default QueryOptions instance for class.
+     *
+     * Key resolution MUST mirror {@see self::getDefaultQueryOptions()} and the snapshot stack (argus entities key on
+     * their PARENT class): with a raw static::class key, a set on an argus repo class wrote into a slot NO reader
+     * ever resolves — a silent no-op that only "worked" when callers happened to mutate the get-returned,
+     * parent-keyed object in place, and a stale-alias trap besides.
+     *
+     * NOTE the consequence, which is intended: an argus repo class and its domain class share ONE defaults slot, so
+     * setting defaults "for the argus repo" changes the domain class's defaults for every consumer in the process.
+     * Scope such mutations with {@see self::setDefaultQueryOptionsSnapshot()} /
+     * {@see self::restoreDefaultQueryOptionsSnapshot()} in try/finally.
+     *
+     * @throws ReflectionException
+     */
     public static function setDefaultQueryOptions(AppliedQueryOptions $queryOptions)
     {
-        $className = static::class;
+        $className = static::resolveDefaultQueryOptionsClassKey();
         self::$defaultQueryOptions[$className] = $queryOptions;
     }
 
