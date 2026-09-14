@@ -1,6 +1,6 @@
 ---
 name: ddd-rights-specialist
-description: Implement entity-level access control in the mgamadeus/ddd framework — the FOUR rights methods (applyReadRightsQuery, applyUpdateRightsQuery, applyDeleteRightsQuery, applyCreateRightsQuery for the INSERT branch of upsert), six patterns with a selection guide (direct column filter, leftJoin with the _rights alias, subqueries, stricter update rights, delete delegation, mapToEntity post-load property hiding), the request-to-response rights pipeline, RolesRequiredForUpdate gating, the expand-system interaction where the bool return gates rights merging on EXPAND, UPDATE and DELETE (returning false after adding conditions silently bypasses rights on expand joins and writes), and disabling rights via deactivateEntityRightsRestrictions snapshot/restore. Use when implementing or debugging access control in DB repositories, choosing a rights pattern, hiding fields after load, bypassing rights in CLI commands or message handlers, or debugging entity-not-found errors or unrestricted expand results.
+description: Implement entity-level access control in the mgamadeus/ddd framework — the FOUR rights methods (applyReadRightsQuery, applyUpdateRightsQuery, applyDeleteRightsQuery, applyCreateRightsQuery for the INSERT branch of upsert), six patterns with a selection guide (direct column filter, leftJoin with the _rights alias, subqueries, stricter update rights, delete delegation, mapToEntity post-load property hiding), the request-to-response rights pipeline, RolesRequiredForUpdate gating, the expand-system interaction where the bool return gates rights merging on EXPAND, UPDATE and DELETE (returning false after adding conditions silently bypasses rights on expand joins and writes), and disabling rights via deactivateEntityRightsRestrictions nestable snapshot/restore. Use when implementing or debugging access control in DB repositories, choosing a rights pattern, hiding fields after load, bypassing rights in CLI commands or message handlers, or debugging entity-not-found errors or unrestricted expand results.
 metadata:
   author: mgamadeus
   version: "1.0.0"
@@ -440,17 +440,21 @@ Checked by `canUpdateOrDeleteBasedOnRoles()` in `DatabaseRepoEntity`. If the acc
 For operations that need to bypass rights (CLI commands, message handlers, auth context setup):
 
 ```php
-// Snapshot + disable
-DDDService::instance()->deactivateEntityRightsRestrictions();
-
-// Execute privileged operations
-$account = Account::byId($id);  // Bypasses read rights
-
-// Restore
-DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
+DDDService::instance()->deactivateEntityRightsRestrictions();   // push current state + disable
+try {
+    $account = Account::byId($id);  // bypasses read rights
+} finally {
+    DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();  // pop + restore
+}
 ```
 
-**Always use snapshot/restore.** Never set `$applyRightsRestrictions = false` directly without snapshotting first.
+**Always pair, always in `try`/`finally`.** Never set `$applyRightsRestrictions = false` directly without snapshotting first.
+
+**Pairs nest (since v2.59.4).** The snapshot is a stack: a service that disables rights inside a handler that already disabled them restores the state the handler left, and the handler's restore then brings back the original state. Before v2.59.4 it was a single slot — the inner deactivate overwrote the outer snapshot, so rights stayed OFF for the rest of the process (every later message in a long-lived consumer ran unrestricted).
+
+- **Exactly one restore per deactivate.** A second restore for the same deactivate pops the *enclosing* snapshot and re-enables rights while the outer scope still expects them off. Early-return branches are fine as long as each executed path restores once.
+- **A deactivate without a restore** leaves its frame on the stack. Harmless in a one-shot CLI command; in a long-lived worker it keeps rights off for later messages and grows the stack — always restore.
+- **Apps must not override these three methods** with their own single-slot copy (e.g. in an app `AppService`): `DDDService::instance()` resolves to the app service, so the override silently bypasses the stack. Remove such overrides — `DatabaseRepoEntity::$applyRightsRestrictions` is one static shared by every repo subclass, so toggling it once already covers all repo flavours.
 
 ---
 

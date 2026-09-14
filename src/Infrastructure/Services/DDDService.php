@@ -44,6 +44,14 @@ class DDDService
 
     protected static $entityRightsRestrictionSnapshotSet = false;
 
+    /**
+     * @var bool[] Entity rights restriction states pushed by createEntityRightsRestrictionsStateSnapshot() /
+     * deactivateEntityRightsRestrictions() and popped by restoreEntityRightsRestrictionsStateSnapshot(), so nested
+     * pairs each restore their own previous state. $entityRightsRestrictionSnapshotSet and
+     * $entityRightsRestrictionStates mirror the top of this stack for subclasses that still read them.
+     */
+    protected static array $entityRightsRestrictionsStateStack = [];
+
     protected static ?string $frameworkDir = null;
 
     protected static $cacheStates = [
@@ -345,30 +353,45 @@ class DDDService
     }
 
     /**
-     * @return void Creates snapshot of current Entity rights restriction states
+     * Pushes the current Entity rights restriction state onto the snapshot stack.
+     * Every push must be matched by exactly one {@see self::restoreEntityRightsRestrictionsStateSnapshot()},
+     * typically in a `finally` block; a push without a matching restore stays on the stack.
+     * @return void
      */
     public function createEntityRightsRestrictionsStateSnapshot(): void
     {
+        $currentState = DBEntity::getApplyRightsRestrictions();
+        self::$entityRightsRestrictionsStateStack[] = $currentState;
         self::$entityRightsRestrictionStates = [
-            DBEntity::class => DBEntity::getApplyRightsRestrictions()
+            DBEntity::class => $currentState
         ];
         self::$entityRightsRestrictionSnapshotSet = true;
     }
 
     /**
-     * @return void Restores snapshot of current Entity rights restriction states
+     * Pops the most recent snapshot and restores that Entity rights restriction state. No-op on an empty stack, so it
+     * is safe in a `finally` block. A restore only undoes its own matching create/deactivate: restoring twice for one
+     * deactivate pops the ENCLOSING snapshot and re-activates restrictions before the outer scope has finished.
+     * @return void
      */
     public function restoreEntityRightsRestrictionsStateSnapshot(): void
     {
-        if (!self::$entityRightsRestrictionSnapshotSet) {
+        if (!self::$entityRightsRestrictionsStateStack) {
             return;
         }
-        DBEntity::setApplyRightsRestrictions(self::$entityRightsRestrictionStates[DBEntity::class]);
-        self::$entityRightsRestrictionSnapshotSet = false;
+        DBEntity::setApplyRightsRestrictions(array_pop(self::$entityRightsRestrictionsStateStack));
+        self::$entityRightsRestrictionSnapshotSet = self::$entityRightsRestrictionsStateStack !== [];
+        if (self::$entityRightsRestrictionSnapshotSet) {
+            self::$entityRightsRestrictionStates = [
+                DBEntity::class => self::$entityRightsRestrictionsStateStack[array_key_last(self::$entityRightsRestrictionsStateStack)]
+            ];
+        }
     }
 
     /**
-     * @return void Deactivates all application related caches
+     * Snapshots the current Entity rights restriction state and deactivates restrictions. Pair every call with
+     * {@see self::restoreEntityRightsRestrictionsStateSnapshot()} in a `finally`; pairs may be nested.
+     * @return void
      */
     public function deactivateEntityRightsRestrictions(): void
     {
