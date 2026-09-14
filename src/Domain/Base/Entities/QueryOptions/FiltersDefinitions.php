@@ -19,6 +19,7 @@ use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionNamedType;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
+use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
 use PHPUnit\TextUI\ReflectionException;
 use ReflectionAttribute;
 use ReflectionUnionType;
@@ -193,6 +194,13 @@ class FiltersDefinitions extends ObjectSet
                 continue;
             }
             if (isset($elementsToSkip[$reflectionProperty->getName()])) {
+                continue;
+            }
+            // #[HideProperty] means callers may not see the value, so it must not be reachable through filters or
+            // orderBy either (orderBy and expand definitions derive from these): `password eq 'a*'` (LIKE prefix),
+            // lt/gt/bw comparisons or the sort order narrow the result set without the value ever appearing in a
+            // response, letting a caller extract a hidden secret step by step.
+            if ($reflectionProperty->getAttributeInstance(HideProperty::class)) {
                 continue;
             }
             if ($type->isBuiltin() || (is_a($type->getName(), DateTime::class, true))) {

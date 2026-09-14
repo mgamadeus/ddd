@@ -1,6 +1,6 @@
 ---
 name: ddd-skill-creator
-description: Create, audit, and fix Claude Code skills (SKILL.md files) so they actually get discovered — the description is the ONLY routing signal a session sees, so every capability must surface there with literal "Use when" triggers. Covers the should-this-be-a-skill gate, naming and placement, the description formula with hard limits (1,024 chars max; no unquoted hash character — YAML silently truncates there), body structure and the 500-line budget, progressive disclosure via references/ and scripts/, frontmatter fields, behavioral fresh-session trigger tests, and a capability-vs-description gap audit for existing skills (grep with symlink dereferencing — app skill dirs are vendor symlinks). Use when creating a new skill, writing or fixing a skill description, auditing a skill that never triggers, checking a listing for truncated descriptions, or deciding whether something should be a skill at all.
+description: Create, audit, and fix Claude Code skills (SKILL.md files) so they actually get discovered — the description is the ONLY routing signal a session sees, so every capability must surface there with literal "Use when" triggers. Covers the should-this-be-a-skill gate, naming and placement, the description formula with hard limits (1,024 chars max; no unquoted hash character — YAML silently truncates there; double-quote it when it contains a colon followed by a space), body structure and the 500-line budget, progressive disclosure via references/ and scripts/, frontmatter fields, behavioral fresh-session trigger tests, and a capability-vs-description gap audit for existing skills (grep with symlink dereferencing — app skill dirs are vendor symlinks). Use when creating a new skill, writing or fixing a skill description, auditing a skill that never triggers, checking a listing for truncated descriptions, or deciding whether something should be a skill at all.
 metadata:
   author: mgamadeus
   version: "1.0.0"
@@ -57,6 +57,7 @@ Use when <3–8 literal trigger phrases, phrased as the user/agent would think t
 | ≤ **1,024 chars** | Official validation limit; longer descriptions also burn shared listing budget and get truncated |
 | Listing truncates description(+when_to_use) at **1,536 chars** | Put the key use case first |
 | **NEVER an unquoted `` #`` (space-hash)** in the description | YAML treats ` #` as a comment start — everything after is SILENTLY DROPPED. This ecosystem shipped 4 descriptions truncated to 300–450 chars because they contained PHP attribute syntax with hash-bracket. Write `NotNull`, `the RequestCache attribute` — never the literal hash-bracket form |
+| **Quote the description if it contains a colon followed by a space** | A plain YAML scalar may not contain colon-space. Strict parsers (consuming apps' asset validators, Codex skill discovery) reject the WHOLE frontmatter with "mapping values are not allowed here", while Claude Code's lenient loader still shows the skill — so nothing warns you. Three Core descriptions shipped broken this way. Wrap the value in double quotes (escape any `"` and `\`) |
 | Third person only | "Creates/Covers/Use when" — never "I can…" / "You can…" (injected into the system prompt; POV mismatch hurts routing) |
 | No XML tags, non-empty | Validation |
 | One paragraph, no markdown | The listing renders it flat |
@@ -65,15 +66,18 @@ Use when <3–8 literal trigger phrases, phrased as the user/agent would think t
 
 **Anti-patterns:** vague ("Helps with documents"), build-perspective-only (the app:db:read failure), first person, over-1,024 prose walls, describing the body's structure instead of its capabilities.
 
-**Validate mechanically before shipping** — do not eyeball:
+**Validate mechanically before shipping** — with a real YAML parser, not by eye:
 
 ```bash
-python3 -c "
-import re,sys
-d=re.search(r'^description:[ \t]*(.+)$',open(sys.argv[1]).read(),re.M).group(1)
-assert len(d)<=1024, f'{len(d)} chars > 1024'
-assert not re.search(r'\s#',d), 'space-hash = YAML comment, silent truncation'
-print('OK', len(d))" .claude/skills/<name>/SKILL.md
+python3 - .claude/skills/<name>/SKILL.md <<'PY'
+import re, sys, yaml
+fm = re.match(r'^---\n(.*?)\n---\n', open(sys.argv[1]).read(), re.S).group(1)
+raw = re.search(r'^description:[ \t]*(.*)$', fm, re.M).group(1)
+d = yaml.safe_load(fm)['description']   # strict parse: fails on unquoted colon-space
+assert raw.startswith(('"', "'")) or not re.search(r'\s#', raw), 'space-hash = YAML comment, silent truncation'
+assert len(d) <= 1024, f'{len(d)} chars > 1024'
+print('OK', len(d))
+PY
 ```
 
 ## Step 3 — Body structure
@@ -118,6 +122,7 @@ Spec-portable fields (survive packaging/upload): `name`, `description`, `license
 
 - Routing-relevant info only in the body (the app:db:read failure)
 - ` #`/attribute syntax in an unquoted YAML description (silent truncation)
+- Unquoted colon-space in the description (strict YAML parsers reject the whole frontmatter)
 - Description >1,024 chars (validation + listing-budget eviction)
 - Build-perspective-only description for a skill that also operates something
 - First person, vague verbs, no "Use when" triggers
@@ -130,7 +135,7 @@ Spec-portable fields (survive packaging/upload): `name`, `description`, `license
 | Limit | Value |
 |---|---|
 | name | ≤64 chars, kebab-case, = directory name |
-| description | ≤1,024 chars, third person, no unquoted hash |
+| description | ≤1,024 chars, third person, no unquoted hash, double-quoted if it contains colon-space |
 | listing truncation | 1,536 chars (description + when_to_use) |
 | SKILL.md body | ≤500 lines |
 | reference nesting | 1 level, TOC if >100 lines |
