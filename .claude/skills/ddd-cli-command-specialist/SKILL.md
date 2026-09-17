@@ -1,6 +1,6 @@
 ---
 name: ddd-cli-command-specialist
-description: "Create Symfony console commands in the mgamadeus/ddd framework AND use its built-in CLI commands: app:db:read (read-only SQL to inspect stored rows from the terminal — no SQL client, no raw PDO one-liners), app:entity:show-sql (generated CREATE TABLE/index/FK DDL), app:entity:list, app:generate-doctrine-models-for-entities, app:process-cli-message, app:crons:execute and app:crons:list. Covers command structure, arguments/options, admin auth context setup, service access, output formatting (SymfonyStyle, tables, progress bars), batch processing, memory/time limits, signal handling, and fraction-based distributed execution. Use when writing a console command, inspecting database content or entity DDL from the CLI, regenerating Doctrine models, processing a CLI message, or running/listing cron jobs."
+description: "Create Symfony console commands in the mgamadeus/ddd framework AND use its built-in CLI commands: app:db:read (read-only SQL to inspect stored rows from the terminal — no SQL client, no raw PDO one-liners), app:entity:show-sql (generated CREATE TABLE/index/FK DDL), app:entity:list, app:generate-doctrine-models-for-entities, app:process-cli-message, app:crons:list, app:crons:execute, app:crons:upsert (register or change a cron row, validated, with --dryRun) and app:crons:executions (what ran, what failed, captured output). Covers command structure, arguments/options, admin auth context setup, service access, output formatting (SymfonyStyle, tables, progress bars), batch processing, memory/time limits, signal handling, and fraction-based distributed execution. Use when writing a console command, inspecting database content or entity DDL from the CLI, regenerating Doctrine models, processing a CLI message, registering or changing a cron job, or checking whether a cron ran or why it failed."
 metadata:
   author: mgamadeus
   version: "1.0.0"
@@ -17,7 +17,7 @@ Symfony console commands within the DDD Core framework (`mgamadeus/ddd`).
 - Implementing batch operations (imports, recalculations, migrations)
 - Creating scheduled/cron-triggered jobs
 - Understanding command structure and output patterns
-- Running the framework's built-in commands — `app:db:read` (read-only SQL over stored rows), `app:entity:show-sql` / `app:entity:list` (entity DDL and discovery), doctrine-model generation, CLI message processing, crons — see [Framework-Provided Commands](#framework-provided-commands) below
+- Running the framework's built-in commands — `app:db:read` (read-only SQL over stored rows), `app:entity:show-sql` / `app:entity:list` (entity DDL and discovery), doctrine-model generation, CLI message processing, cron registration (`app:crons:upsert`) and cron run history (`app:crons:executions`) — see [Framework-Provided Commands](#framework-provided-commands) below
 
 ## Namespace & Location
 
@@ -462,8 +462,10 @@ php bin/console app:db:read "SHOW COLUMNS FROM user_subscriptions" --format=tabl
 |---------|-----------|---------|
 | `app:generate-doctrine-models-for-entities` | — | Generates `DB*Model.php` Doctrine model classes from entity attributes (wired into the apps' composer `post-update-cmd`) |
 | `app:process-cli-message <message> [--useTempFile]` | `message` (required), `--useTempFile` (flag) | Decodes an `AppMessage` and invokes its handler (cross-workspace / CLI message handling) |
-| `app:crons:execute` | — | Executes all cron jobs that are due |
+| `app:crons:execute` | — | The tick: runs every Cron row whose `nextExecutionScheduledAt` has passed, each in a child process via `Cron::execute()`, and records a `CronExecution`. Rows live in the `Cron` / `CronExecution` entities. |
 | `app:crons:list` | — | Lists all registered cron jobs with status |
+| `app:crons:upsert --name="<unique name>" [--description=… --schedule="*/5 * * * *" --command="app:x:y --flag" --active=1\|0] [--dryRun]` | `--name` (required) | Creates or updates ONE Cron, addressed by its unique name: absent → created (`--description`, `--schedule`, `--command` required), present → only the options passed change. The **entity** validates (expression grammar, the command must exist in THIS console, description ≥ 16 chars) and the violations are printed before anything is written; `--dryRun` shows the resulting row and writes nothing. A new or re-scheduled Cron gets `nextExecutionScheduledAt` computed from the expression, so the next tick picks it up at its next slot. **Register with `--active=0` when the tick host does not have the command's code yet, then flip it on with `--active=1` after the deploy.** |
+| `app:crons:executions [--cron=<name\|id>] [--limit=20] [--state=SUCCESSFUL\|FAILED] [--output]` | — | What the scheduler actually DID: recent executions newest first, with start, duration, state and the first output line; `--output` prints each full captured output, which is where a failing command's real error text is. Read-only. Executions are cleaned up after 14 days, so an empty result can also mean "ran longer ago than that". |
 
 ---
 

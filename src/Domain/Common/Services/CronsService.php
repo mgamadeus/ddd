@@ -45,6 +45,25 @@ class CronsService extends EntitiesService
         return $dbCrons->find();
     }
 
+    /**
+     * Finds the Cron with the given unique name — the handle every operator-facing surface (CLI, admin UI) addresses a
+     * Cron by; null when no Cron carries that name.
+     *
+     * @throws BadRequestException
+     * @throws InternalErrorException
+     * @throws InvalidArgumentException
+     * @throws ReflectionException
+     */
+    public function findByName(string $name): ?Cron
+    {
+        $dbCrons = new DBCrons();
+        $queryBuilder = $dbCrons::createQueryBuilder();
+        $baseModelAlias = $dbCrons::getBaseModelAlias();
+        $queryBuilder->andWhere("$baseModelAlias.name = :name");
+        $queryBuilder->setParameter('name', $name);
+        $queryBuilder->setMaxResults(1);
+        return $dbCrons->find($queryBuilder)->first();
+    }
 
     /**
      * @return void Deletes CronExecutions older than 14 days and deletes executions that are marked as running after 4 hours

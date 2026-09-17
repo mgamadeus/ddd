@@ -40,6 +40,34 @@ class CronExecutionsService extends EntitiesService
     }
 
     /**
+     * The most recent CronExecutions, newest first — optionally for ONE Cron and/or ONE execution state
+     * ({@see CronExecution::EXECUTION_STATE_SUCCESSFUL} / {@see CronExecution::EXECUTION_STATE_FAILED}). The read
+     * behind "did my cron run, and how did it go" (the `app:crons:executions` command, an admin executions view).
+     *
+     * @throws BadRequestException
+     * @throws InternalErrorException
+     * @throws InvalidArgumentException
+     * @throws ReflectionException
+     */
+    public function findRecentExecutions(?Cron $cron = null, int $limit = 20, ?string $executionState = null): CronExecutions
+    {
+        $dbCronExecutions = new DBCronExecutions();
+        $queryBuilder = $dbCronExecutions::createQueryBuilder();
+        $alias = $dbCronExecutions::getBaseModelAlias();
+        if ($cron instanceof Cron) {
+            $queryBuilder->andWhere("$alias.cronId = :cronId");
+            $queryBuilder->setParameter('cronId', $cron->id);
+        }
+        if ($executionState !== null && $executionState !== '') {
+            $queryBuilder->andWhere("$alias.executionState = :executionState");
+            $queryBuilder->setParameter('executionState', $executionState);
+        }
+        $queryBuilder->orderBy("$alias.executionStartedAt", 'DESC');
+        $queryBuilder->setMaxResults(max(1, $limit));
+        return $dbCronExecutions->find($queryBuilder);
+    }
+
+    /**
      * Returns last execution for Cron
      * @param Cron $cron
      * @return CronExecution|null
