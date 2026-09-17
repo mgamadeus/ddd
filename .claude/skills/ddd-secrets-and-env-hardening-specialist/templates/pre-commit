@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Pre-commit guard: never let a literal secret or a private env file into git.
+#
+# Enable once per clone:   git config core.hooksPath .githooks
+# (Bypass with --no-verify only if you can explain why in the commit message.)
+
+set -euo pipefail
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHECKER="$HOOK_DIR/check-env-secrets.py"
+status=0
+
+# Files that must NEVER be committed, whatever they contain.
+FORBIDDEN_RE='(^|/)\.env\.local$|(^|/)\.env\.[^/]*\.local$|(^|/)\.env_backup|(^|/)\.env\.bak|(^|/)\.env_bak|(^|/)\.env\.local\.php$'
+
+while IFS= read -r path; do
+  [ -z "$path" ] && continue
+  base="$(basename "$path")"
+
+  if [[ "$path" =~ $FORBIDDEN_RE ]]; then
+    echo "BLOCKED: '$path' is a private env file and must never be committed (it is gitignored — you force-added it)."
+    status=1
+    continue
+  fi
+
+  # .envrc must never load .env into the shell (that is how secrets end up in every child process).
+  if [[ "$base" == .envrc ]] && git show ":$path" | grep -Eq '^[[:space:]]*(dotenv|source_env|source_up)'; then
+    echo "BLOCKED: '$path' uses dotenv/source_env — direnv must only export non-secret pointers (OP_VAULT, OP_ACCOUNT)."
+    status=1
+    continue
+  fi
+
+  # Any staged file named .env / .env.* / *.env gets the content check (index version, not working tree).
+  if [[ "$base" == .env || "$base" == .env.* || "$base" == *.env ]]; then
+    if ! git show ":$path" | python3 "$CHECKER" --name "$path"; then
+      status=1
+    fi
+  fi
+done < <(git diff --cached --name-only --diff-filter=ACMR)
+
+if [ "$status" -ne 0 ]; then
+  echo
+  echo "Commit refused by .githooks/pre-commit."
+  exit 1
+fi
+exit 0

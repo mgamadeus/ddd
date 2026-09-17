@@ -1,0 +1,7 @@
+# direnv: non-secret pointers only.
+#
+# Never put `dotenv` here. It exported the whole .env into every shell opened in this
+# repo and into every child process (npm install, IDE, scripts). Secrets are resolved
+# per process by bin/php (op run) and never enter the shell.
+export OP_VAULT={{VAULT}}                  # e.g. AUT-MYAPP
+export OP_ACCOUNT={{OP_ACCOUNT}}           # e.g. myorg.1password.com

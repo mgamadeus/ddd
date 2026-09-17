@@ -1,0 +1,17 @@
+#!/bin/sh
+# php with the project env resolved from 1Password at run time — no plaintext secrets on disk.
+#
+#   .env        committed, secrets as op://$OP_VAULT/... references
+#   .env.local  per developer, gitignored, non-secret overrides (APP_ENV=dev, ...)
+#
+# Usage:  bin/php bin/console <command>     bin/php vendor/bin/phpunit     bin/php -r '...'
+# PhpStorm: Settings > PHP > CLI Interpreter > add this file as the interpreter path.
+#
+# Needs: 1Password app with "Integrate with 1Password CLI" enabled, read access to $OP_VAULT.
+# Secrets exist only in the env of the php process started here; the shell never sees them.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export OP_VAULT="${OP_VAULT:-{{VAULT}}}"                      # e.g. AUT-MYAPP
+export OP_ACCOUNT="${OP_ACCOUNT:-{{OP_ACCOUNT}}}"            # e.g. myorg.1password.com
+ENVFILES="--env-file=$ROOT/.env"
+[ -f "$ROOT/.env.local" ] && ENVFILES="$ENVFILES --env-file=$ROOT/.env.local"
+exec op run $ENVFILES -- php "$@"

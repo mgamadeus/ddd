@@ -1,0 +1,31 @@
+# Compose service for the PHP container (excerpt). Only php-fpm runs as a child of `op run`;
+# everything else (docker exec, crons, supervisord) must go through op-env-resolve.sh (BASH_ENV).
+services:
+  php:
+    image: {{APP}}_php:8.3_op
+    entrypoint: ["/usr/local/bin/connect-entrypoint.sh"]
+    command: ["php-fpm", "-F"]
+    environment:
+      OP_CONNECT_HOST: http://connect-api:8080      # local 1Password Connect container
+      OP_ENV_FILE: {{APP_DIR}}/.env                 # the committed reference file (op:// values)
+      OP_CONFIG_DIR: /tmp/op
+      OP_VAULT: {{VAULT}}                           # e.g. AUT-MYAPP — resolves op://$OP_VAULT/... in .env
+      APP_ENV: prod                                 # real env beats every .env* file: prod can never boot dev
+      APP_DEBUG: "0"                                # "0", never "false" ((bool)"false" is true in PHP)
+      BASH_ENV: /usr/local/bin/op-env-resolve.sh    # every `docker exec … bash -c` resolves the env
+    secrets:
+      - op_connect_token
+
+  connect-api:
+    image: 1password/connect-api:1.8.2
+    volumes: [ "./1password-credentials.json:/home/opuser/.op/1password-credentials.json:ro", "op-data:/home/opuser/.op/data" ]
+  connect-sync:
+    image: 1password/connect-sync:1.8.2
+    volumes: [ "./1password-credentials.json:/home/opuser/.op/1password-credentials.json:ro", "op-data:/home/opuser/.op/data" ]
+
+secrets:
+  op_connect_token:
+    file: ./secrets/op_connect_token            # 0640 root:www-data inside the container if crons run as www-data
+
+volumes:
+  op-data: {}

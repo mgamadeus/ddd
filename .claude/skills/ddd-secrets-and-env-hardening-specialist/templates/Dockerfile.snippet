@@ -1,0 +1,11 @@
+# Add to the PHP image (all variants: plain, xdebug, blackfire). Base: php:8.3-fpm-bullseye.
+COPY --from=1password/op:2.32.1 /usr/local/bin/op /usr/local/bin/op
+COPY connect-entrypoint.sh connect-app-exec.sh op-env-resolve.sh /usr/local/bin/
+RUN chmod 755 /usr/local/bin/connect-entrypoint.sh /usr/local/bin/connect-app-exec.sh \
+    && chmod 644 /usr/local/bin/op-env-resolve.sh \
+    && printf '\n# 1Password: resolve op:// env for interactive shells (docker exec -it … bash)\n[ -f /usr/local/bin/op-env-resolve.sh ] && . /usr/local/bin/op-env-resolve.sh\n' >> /etc/bash.bashrc \
+    && op --version
+# Production php.ini — the official image ships NONE (display_errors=1, expose_php=On by default):
+RUN cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
+    && printf 'variables_order = "EGPCS"\nexpose_php = Off\ndisable_functions = phpinfo\n' > "$PHP_INI_DIR/conf.d/zz-hardening.ini"
+# variables_order MUST contain E: Config::getEnv reads $_ENV; php.ini-production sets GPCS and would empty it.
