@@ -117,7 +117,9 @@ Manual work inside a container: `docker exec -it <container> bash` → the hook 
 
 ## Workflow C — developer laptop
 
-`references/local-development.md`. Per developer once: 1Password app + CLI integration, vault access,
+`references/local-development.md` (§2 has the exact steps to connect the CLI to the 1Password app: brew, the
+"Integrate with 1Password CLI" switch, `OP_ACCOUNT` for multi-account setups, verification commands, failure signatures).
+Per developer once: 1Password app + CLI integration, vault access,
 `git config core.hooksPath .githooks`, `npm config set ignore-scripts true`, direnv. Per project:
 `bin/php bin/console …`, `bin/php vendor/bin/phpunit`, PhpStorm interpreter = `bin/php`.
 Delete `var/cache/*/profiler` once. Prefer a dev vault with dev credentials (same item/field names,

@@ -25,8 +25,19 @@ switched in `.envrc`) caps the damage of a compromised laptop at dev secrets; re
 
 ## 2 One-time per developer
 
-1. 1Password app + CLI (`brew install 1password-cli`). In the app: Settings → Developer →
-   **Integrate with 1Password CLI**. Read access to the app's vault.
+1. **Connect the CLI to 1Password** — no `op signin`, no service account, no token on the laptop:
+   - `brew install 1password-cli` (the `op` binary; the container uses the same binary with Connect instead).
+   - 1Password app → Settings → Developer → **Integrate with 1Password CLI** (macOS also: enable Touch ID
+     for the app). The app then answers every `op` call; the first call per terminal session asks for Touch ID.
+   - `op account list` shows the accounts known to the app. With more than one account, `op` needs
+     `--account <org>.1password.com` or `OP_ACCOUNT` — that is why `.envrc` exports `OP_ACCOUNT`.
+   - Verify access: `op vault list --account <org>.1password.com` lists the app's vault;
+     `op item get env_secrets-<app>_backend --vault AUT-<APP> --format json | grep -c '"label"'` counts the fields.
+   - Several apps under one account share `OP_ACCOUNT` and differ only in `OP_VAULT` (e.g. `AUT-MYAPP`,
+     `AUT-OTHERAPP`) — one `.envrc` per repo, same account line, different vault line.
+   - Failure signatures: `1Password CLI couldn't connect to the 1Password desktop app` → app not running or
+     integration off; `account is not signed in` → app locked (`op run` itself may still work once unlocked);
+     `multiple accounts found` → set `OP_ACCOUNT`.
 2. `git config core.hooksPath .githooks` in every repo (pre-commit secret guard).
 3. `npm config set ignore-scripts true` (§6).
 4. direnv hooked into the shell (`eval "$(direnv hook zsh)"`), then `direnv allow` in the repo.
