@@ -12,6 +12,7 @@ use DDD\Domain\Base\Entities\QueryOptions\SelectOptions;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
+use DDD\Infrastructure\Traits\Serializer\SerializerRegistry;
 use DDD\Presentation\Base\OpenApi\Attributes\Parameter;
 use DDD\Presentation\Base\OpenApi\Attributes\SharedRequestParameter;
 use DDD\Presentation\Base\OpenApi\Exceptions\TypeDefinitionMissingOrWrong;
@@ -109,6 +110,14 @@ trait DtoQueryOptionsTrait
             if ($queryOptions && $queryOptions->getFiltersDefinitions()) {
                 $expandOptions = $this->expand ?? null;
                 $this->filters->validateAgainstDefinitions($queryOptions->getFiltersDefinitions(), $expandOptions);
+                // Definitions and parsed filters coexist for the first time here (FiltersOptions::fromString() sees
+                // only the string). Only the zone-aware path normalizes; a REST request never has an input zone.
+                if (SerializerRegistry::$inputTimezone !== null) {
+                    $this->filters->normalizeMomentLiterals(
+                        $queryOptions->getFiltersDefinitions(),
+                        SerializerRegistry::$inputTimezone
+                    );
+                }
             }
         }
         if (isset($this->orderBy)) {

@@ -1,9 +1,9 @@
 ---
 name: ddd-query-options-specialist
-description: Work with the OData-inspired QueryOptions system in the mgamadeus/ddd framework — database-level filtering, sorting, pagination, field selection, expansion, and fulltext search over Translatable properties. Wire syntax is plain filters=/expand=/orderBy=/select=/top=/skip= (plural filters, no dollar prefix; default top 50). Covers entity setup (QueryOptionsTrait on BOTH Entity and EntitySet), controller DTOs, the filter grammar (eq/ne/gt/ge/lt/le/in/ni/bw, ft/fb fulltext, and/or grouping, dot-notation), expand with nested clauses and read-rights on joins, propertyScore relevance, programmatic snapshot/restore, mandatory scope filters via addFiltersConnectedByAnd, the Argus shared-defaults rule, and why HideProperty fields are never filterable. Use when implementing or debugging QueryOptions, when a query param is ignored or rejected, when results cap at 50, when enforcing an inescapable scope filter, when Argus defaults have no effect, or when building fulltext search.
+description: Work with the OData-inspired QueryOptions system in mgamadeus/ddd — database-level filtering, sorting, pagination, select, expand and fulltext search over Translatable properties. Wire syntax filters=/expand=/orderBy=/select=/top=/skip= (plural filters, no dollar prefix; default top 50). Covers entity setup (QueryOptionsTrait on BOTH Entity and EntitySet), controller DTOs, the filter grammar (eq/ne/gt/ge/lt/le/in/ni/bw, ft/fb fulltext, and/or grouping, dot-notation), expand with nested clauses and join read-rights, propertyScore relevance, programmatic snapshot/restore, mandatory scope filters via addFiltersConnectedByAnd, the Argus shared-defaults rule, why HideProperty fields are never filterable, and temporal filters (FiltersDefinition::$temporalKind, normalizeMomentLiterals) for zone-aware callers. Use when a query param is ignored, when results cap at 50, when enforcing an inescapable scope filter, when Argus defaults have no effect, or when date-time filters compare against the wrong zone.
 metadata:
   author: mgamadeus
-  version: "1.1.0"
+  version: "1.2.0"
   framework: mgamadeus/ddd
 ---
 
@@ -449,6 +449,46 @@ ChildEntities::setDefaultQueryOptions($originalQueryOptions);
 
 ---
 
+## Temporal Filters and Model-Facing Time Zones
+
+A filter literal is a wall-clock reading. When the caller is an LLM tool writing its business's local time, `createdAt ge '2026-03-01 09:00:00'` must be compared against the same instant the row was stored at — otherwise the comparison is silently off by the zone offset.
+
+`FiltersDefinition::$temporalKind` says whether a filter is an instant, a calendar day, or neither. It is set **automatically from the reflected property type** when definitions come from a reference class:
+
+| Property type | `temporalKind` | Literals |
+|---------------|----------------|----------|
+| `DateTime` (and subclasses other than `Date`) | `TEMPORAL_KIND_MOMENT` | converted from the caller's zone |
+| `Date` | `TEMPORAL_KIND_DAY` | never converted — a day has no time to shift |
+| anything else | `null` | never converted |
+
+To declare it by hand, use the **associative** definition form (a LIST is still a list of allowed VALUES — metadata cannot travel in a positional slot):
+
+```php
+new FiltersDefinitions(
+    'name',                                             // plain: any value
+    ['status', 'active', 'inactive'],                   // list: allowed values (unchanged)
+    ['propertyName' => 'createdAt', 'temporalKind' => FiltersDefinition::TEMPORAL_KIND_MOMENT],
+    ['propertyName' => 'priority', 'options' => ['low', 'high']],
+);
+```
+
+### `normalizeMomentLiterals()` / `toCanonicalExpression()`
+
+`DtoQueryOptionsTrait` calls `normalizeMomentLiterals()` right after `validateAgainstDefinitions()` — the first point where the definitions and the parsed tree coexist — and **only when `SerializerRegistry::$inputTimezone` is set**, which a REST request never has:
+
+```php
+$filters->normalizeMomentLiterals($queryOptions->getFiltersDefinitions(), $inputTimezone);
+```
+
+- Walks the whole tree, including nested `and`/`or` groups.
+- Rewrites every MOMENT literal, scalars and each element of an `in` / `ni` / `bw` array alike.
+- `null` literals, numbers, DAY filters and non-temporal filters are left exactly as they are.
+- An explicit offset in the literal wins over the zone; a literal that is not a date-time at all, or a local time that does not exist in the zone, raises a `BadRequestException` — staying silent would keep exactly the wrong-zone comparison the conversion exists to remove.
+
+`toCanonicalExpression()` serializes a parsed (or normalized, or code-built) tree back into the filter grammar: operation nodes are fully parenthesized (the parser has no precedence rules, so explicit grouping is the only way a mixed `and`/`or` tree survives), arrays are written as JSON, strings are single-quoted with their unescaped quotes escaped. `fromString(toCanonicalExpression(fromString($x)))` yields an equal tree.
+
+---
+
 ## Key Classes Reference
 
 | Class | Location | Purpose |
@@ -459,6 +499,7 @@ ChildEntities::setDefaultQueryOptions($originalQueryOptions);
 | `FiltersOptions` | `src/Domain/Base/Entities/QueryOptions/FiltersOptions.php` | Tree-like filter expression structure |
 | `FiltersOptionsParser` | `src/Domain/Base/Entities/QueryOptions/FiltersOptionsParser.php` | Parses filter strings into FiltersOptions trees |
 | `FiltersDefinitions` | `src/Domain/Base/Entities/QueryOptions/FiltersDefinitions.php` | Auto-detects filterable properties per entity |
+| `FiltersDefinition` | `src/Domain/Base/Entities/QueryOptions/FiltersDefinition.php` | One filterable property: allowed options and `$temporalKind` |
 | `OrderByOptions` | `src/Domain/Base/Entities/QueryOptions/OrderByOptions.php` | Collection of OrderByOption with score support |
 | `SelectOptions` | `src/Domain/Base/Entities/QueryOptions/SelectOptions.php` | Partial select with property hiding |
 | `ExpandOptions` | `src/Domain/Base/Entities/QueryOptions/ExpandOptions.php` | Expand specs with LEFT JOIN generation |

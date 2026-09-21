@@ -21,8 +21,21 @@ class FiltersDefinition extends ValueObject
     /** @var string The property name the filter will be applied to */
     public ?string $propertyName;
 
+    /** @var string A filter on an instant: its literals are wall-clock readings that need a zone to become a moment */
+    public const string TEMPORAL_KIND_MOMENT = 'MOMENT';
+
+    /** @var string A filter on a calendar day: its literals carry no time and are never zone-converted */
+    public const string TEMPORAL_KIND_DAY = 'DAY';
+
     /** @var string|int Options for the property values to be filtered for (optional) */
     public ?array $options;
+
+    /**
+     * @var string|null MOMENT for a DateTime-typed or DateTime-meaning filter, DAY for a Date one, null = not
+     * temporal. Set automatically from the reflected property type, or explicitly through the associative
+     * definition form in {@see FiltersDefinitions::__construct()}.
+     */
+    public ?string $temporalKind = null;
 
     /**
      * @var ExpandDefinition|null if this filter is based on an expand property, this is the corresponding ExpandDefinition attached

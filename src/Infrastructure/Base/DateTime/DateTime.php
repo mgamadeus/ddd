@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Base\DateTime;
 
+use DateTimeImmutable;
+use DateTimeZone;
+use DDD\Infrastructure\Exceptions\NonexistentLocalTimeException;
+
 /**
  * default DateTime class for Framework, serializes by default to ATOM format
  * Autodocumenter is aware of this class and interprets it correctly
@@ -27,6 +31,9 @@ class DateTime extends \DateTime
     public const string DATE_RFC3339_ZULU = 'Y-m-d\TH:i:s\Z';
 
     public const string DATE_RFC3339_MILLISECONDS_OFFSET = 'Y-m-d\TH:i:s.vP';
+
+    /** @var array The formats a model may write a moment in; offset-bearing forms first so an explicit offset is honoured */
+    public const array MODEL_INPUT_FORMATS = ['Y-m-d H:i:sP', 'Y-m-d\TH:i:sP', 'Y-m-d H:i:s', 'Y-m-d H:i', 'Y-m-d\TH:i:s'];
 
     public const string UNIX = 'U';
 
@@ -98,6 +105,71 @@ class DateTime extends \DateTime
         }
 
         return false;
+    }
+
+    /**
+     * Parses a wall-clock reading in $timezone into an instant. A format carrying an offset makes PHP ignore
+     * $timezone, so an explicit offset wins ('Z' and '+00:00' are equivalent spellings). '!' resets unparsed fields,
+     * so omitted seconds are zero. A parse warning or error means "no match".
+     *
+     * For offset-free formats the input must be CANONICAL: the same string parsed in UTC has to print back
+     * byte-for-byte, so '2026-9-14 1:34' is no match and returns false rather than a guessed moment.
+     *
+     * A canonical local time that does not exist in $timezone (the spring-forward gap) is refused instead of being
+     * shifted: PHP moves 02:30 to 03:30 silently, so the zone-parsed digits are compared against the literal ones.
+     *
+     * @param string $stringFormattedDate
+     * @param DateTimeZone $timezone The zone the reading is written in
+     * @param array $dateTimeFormats
+     * @return static|false false when no format matched
+     * @throws NonexistentLocalTimeException When the local time falls into a spring-forward gap
+     */
+    public static function fromStringInZone(
+        string $stringFormattedDate,
+        DateTimeZone $timezone,
+        array $dateTimeFormats = self::MODEL_INPUT_FORMATS
+    ): static|false {
+        foreach ($dateTimeFormats as $dateTimeFormat) {
+            $parsedInZone = DateTimeImmutable::createFromFormat('!' . $dateTimeFormat, $stringFormattedDate, $timezone);
+            $parseReport = DateTimeImmutable::getLastErrors();
+            if (
+                $parsedInZone === false
+                || ($parseReport !== false && ($parseReport['warning_count'] > 0 || $parseReport['error_count'] > 0))
+            ) {
+                continue;
+            }
+            if (!str_contains($dateTimeFormat, 'P')) {
+                $literalDigits = DateTimeImmutable::createFromFormat(
+                    '!' . $dateTimeFormat,
+                    $stringFormattedDate,
+                    new DateTimeZone('UTC')
+                );
+                if ($literalDigits === false || $literalDigits->format($dateTimeFormat) !== $stringFormattedDate) {
+                    // non-canonical syntax: not a match for this format
+                    continue;
+                }
+                if ($literalDigits->format('Y-m-d H:i:s') !== $parsedInZone->format('Y-m-d H:i:s')) {
+                    throw new NonexistentLocalTimeException(
+                        $stringFormattedDate,
+                        $timezone,
+                        $parsedInZone->format('Y-m-d H:i')
+                    );
+                }
+            }
+            return static::fromTimestamp($parsedInZone->getTimestamp());
+        }
+        return false;
+    }
+
+    /**
+     * Renders the instant for a model: the moment in $timezone with its offset. Clones, so the instance carries on
+     * unmutated.
+     * @param DateTimeZone $timezone
+     * @return string
+     */
+    public function formatForModel(DateTimeZone $timezone): string
+    {
+        return (clone $this)->setTimezone($timezone)->format('Y-m-d H:i:sP');
     }
 
     public function jsonSerialize(): string

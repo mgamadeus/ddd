@@ -1,9 +1,9 @@
 ---
 name: ddd-serializer-specialist
-description: Work with the SerializerTrait in the mgamadeus/ddd framework — the single serialization layer behind ALL API output, DB persistence, request hydration, and message payloads; every DefaultObject descendant inherits it, RequestDto and RestResponseDto use the trait directly. Covers toObject/toJSON with the forPersistence dual mode (defaults TRUE; DontPersistProperty vs HideProperty vs HidePropertyOnSystemSerialization), setPropertiesFromObject hydration (aliases are output-only), attribute and runtime hiding including recursive dotted-path hides, renaming via OverwritePropertyName and Aliases, ExposePropertyInsteadOfClass flattening, per-class toObject overrides, SerializerRegistry cache semantics, and TOON compact tabular serialization with its master gate — plus troubleshooting and a cheat sheet. Use when configuring serialization, hiding sensitive fields, renaming output, excluding fields from persistence, debugging missing/stale/wrong-named output, or emitting compact tabular formats.
+description: Work with the SerializerTrait in mgamadeus/ddd — the one serialization layer behind ALL API output, DB persistence, request hydration and message payloads (every DefaultObject, RequestDto and RestResponseDto uses it). Covers toObject/toJSON and the forPersistence dual mode (DontPersistProperty vs HideProperty vs HidePropertyOnSystemSerialization), setPropertiesFromObject hydration (aliases are output-only), attribute and runtime hiding incl. dotted-path hides, renaming via OverwritePropertyName and Aliases, ExposePropertyInsteadOfClass flattening, per-class toObject overrides, SerializerRegistry cache semantics, TOON tabular serialization, and model-facing time zones (MODEL_FACING_DATETIME, withInputTimezone/withModelFacingTimezone, DateTime::fromStringInZone/formatForModel). Use when configuring serialization, hiding fields, renaming output, excluding fields from persistence, debugging missing or wrong-named output, emitting tabular formats, or converting date-times at an LLM/MCP tool boundary.
 metadata:
   author: mgamadeus
-  version: "1.2.0"
+  version: "1.3.0"
   framework: mgamadeus/ddd
 ---
 
@@ -406,6 +406,63 @@ SerializerRegistry::$toOjectCache = [];
 The setter methods in SerializerTrait do this automatically when they invalidate state:
 - `setToonColumnsSpec()` clears the cache
 - `clearToonColumnsSpec()` clears the cache
+
+---
+
+## Model-Facing Time Zones (`MODEL_FACING_DATETIME`, `$inputTimezone`, `$modelFacingTimezone`)
+
+An LLM tool call is the one caller that reads and writes wall-clock time in somebody's local zone instead of the storage zone. Two request-scoped registry values open that conversion — and **nothing changes while both are null**, which is every REST, persistence, cache and Argus path.
+
+```php
+use DDD\Infrastructure\Traits\Serializer\Serializer;
+use DDD\Infrastructure\Traits\Serializer\SerializerRegistry;
+
+$zone = new DateTimeZone('America/New_York');
+
+// INPUT: a DateTime property written as "2026-09-14 14:30:00" is read as 14:30 in New York
+$arguments = SerializerRegistry::withInputTimezone($zone, fn () => $dto->setPropertiesFromObject($payload));
+
+// OUTPUT: DateTime properties render as local time WITH their offset
+$result = SerializerRegistry::withModelFacingTimezone(
+    $zone,
+    fn () => $entity->toObject(forPersistence: false, flags: Serializer::MODEL_FACING_DATETIME)
+);
+// → "2026-09-14 10:30:00-04:00"
+```
+
+Both helpers save and restore the previous value in a `finally`, so nesting restores the OUTER zone, not null, and an exception inside the region cannot leak a zone into the rest of the request.
+
+**Output needs BOTH the flag and the zone**, plus the right type:
+
+| Condition | Result |
+|-----------|--------|
+| no flag, no zone | unchanged (today's behaviour) |
+| zone set, no flag | unchanged — persistence (`forPersistence: true`, no flags), cache serialization and REST output can never enter the branch |
+| flag set, no zone | unchanged |
+| flag + zone, `DateTime` property | local time with offset, e.g. `2026-09-14 10:30:00-04:00` |
+| flag + zone, `Date` property | unchanged — a calendar day has no offset to render |
+
+`formatForModel()` clones: the instance itself is never mutated.
+
+**Input is keyed on `DateTime::class` exactly.** `SerializerRegistry::hydrateFromString()` routes only that one type through the zone-aware parser; `Date` (with its own `fromString()` and shared-instance cache) and every subclass stay on the unchanged path.
+
+### `DateTime::fromStringInZone()` — what it accepts and what it refuses
+
+```php
+DateTime::fromStringInZone('2026-09-14 14:30:00', $zone);   // wall clock in $zone
+DateTime::fromStringInZone('2026-09-14 14:30', $zone);      // seconds optional → :00, never "now"
+DateTime::fromStringInZone('2026-09-14 14:30:00+02:00', $zone); // explicit offset WINS over $zone
+DateTime::fromStringInZone('2026-09-14T14:30:00Z', $zone);  // Z == +00:00
+DateTime::fromStringInZone('2026-9-14 1:34', $zone);        // false — canonical input only
+DateTime::fromStringInZone('2026-03-08 02:30:00', $newYork);// throws NonexistentLocalTimeException
+```
+
+- **Canonical only.** The digits must print back byte-for-byte, so a sloppy `2026-9-14 1:34` is *no match* (returns `false`) rather than a silent guess.
+- **A nonexistent local time is refused.** PHP shifts `02:30` to `03:30` on a spring-forward day; the parser compares the zone-parsed digits with the literal ones and throws `NonexistentLocalTimeException` (a `BadRequestException`) naming the next existing local time.
+- **An ambiguous local time** (the repeated hour in autumn) resolves to the FIRST instance; when the model echoes back a value it rendered, the offset it carries disambiguates it exactly.
+- `MODEL_INPUT_FORMATS` lists the accepted shapes, offset-bearing forms first. Pass your own array as the third argument to narrow them.
+
+When a `DateTime` property cannot be parsed **and** an input zone is set, hydration throws a `BadRequestException` naming the expected shape instead of dropping the value — the model gets told how to write it. With `throwErrors: false` the existing suppression still applies.
 
 ---
 

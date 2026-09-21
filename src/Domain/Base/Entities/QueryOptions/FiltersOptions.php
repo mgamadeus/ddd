@@ -9,6 +9,7 @@ use DDD\Domain\Base\Entities\Translatable\Translatable;
 use DDD\Domain\Base\Repo\DB\DBEntity;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
+use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\MethodNotAllowedException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
@@ -16,6 +17,7 @@ use DDD\Infrastructure\Validation\Constraints\Choice;
 use Doctrine\ORM\Query\Expr;
 use Doctrine\ORM\Query\Expr\Join;
 use JsonException;
+use DateTimeZone;
 use ReflectionException;
 
 /**
@@ -648,6 +650,117 @@ MD;
             }
         }
         return true;
+    }
+
+    /**
+     * Rewrites every MOMENT literal in this tree from a wall-clock reading in $timezone into the storage
+     * representation the database column holds, so `createdAt ge '2026-03-01 09:00:00'` written by a model in
+     * Berlin compares against the same instant the row was stored at.
+     *
+     * Only literals under a filter whose definition says {@see FiltersDefinition::TEMPORAL_KIND_MOMENT} are touched:
+     * a DAY filter (a Date column) has no time to shift, and a non-temporal one is left alone. null literals and
+     * numbers stay as they are — neither is a wall-clock reading.
+     *
+     * @throws BadRequestException if a MOMENT literal is not a date-time at all; staying silent would keep exactly
+     * the wrong-zone comparison this conversion exists to remove
+     */
+    public function normalizeMomentLiterals(FiltersDefinitions $filtersDefinitions, DateTimeZone $timezone): void
+    {
+        if (($this->type ?? null) == self::TYPE_OPERATION) {
+            foreach ($this->getElements() as $element) {
+                $element->normalizeMomentLiterals($filtersDefinitions, $timezone);
+            }
+            return;
+        }
+        if (($this->type ?? null) != self::TYPE_EXPRESSION || !isset($this->property) || !isset($this->value)) {
+            return;
+        }
+        $filterDefinition = $filtersDefinitions->getFilterDefinitionForPropertyName($this->property);
+        if (!$filterDefinition || ($filterDefinition->temporalKind ?? null) !== FiltersDefinition::TEMPORAL_KIND_MOMENT) {
+            return;
+        }
+        if (is_array($this->value)) {
+            // in / ni / bw carry a list; every element is its own reading
+            $normalizedValues = [];
+            foreach ($this->value as $singleValue) {
+                $normalizedValues[] = $this->normalizeMomentLiteral($singleValue, $timezone);
+            }
+            $this->value = $normalizedValues;
+            return;
+        }
+        $this->value = $this->normalizeMomentLiteral($this->value, $timezone);
+    }
+
+    /**
+     * @throws BadRequestException
+     */
+    protected function normalizeMomentLiteral(mixed $value, DateTimeZone $timezone): mixed
+    {
+        if (!is_string($value) || $value === '') {
+            return $value;
+        }
+        $moment = DateTime::fromStringInZone($value, $timezone);
+        if ($moment === false) {
+            throw new BadRequestException(
+                sprintf(
+                    '%s: "%s" is not a date-time — write it as YYYY-MM-DD HH:MM:SS in the business\'s local time.',
+                    $this->property,
+                    $value
+                )
+            );
+        }
+        return $moment->format(DateTime::SIMPLE);
+    }
+
+    /**
+     * Serializes the parsed tree back into the filter grammar, so a tree that was normalized (or built in code) can
+     * travel on as a string again. Operation nodes are fully parenthesized — the parser has no precedence rules, so
+     * explicit grouping is the only way a mixed and/or tree survives a round trip.
+     */
+    public function toCanonicalExpression(): string
+    {
+        if (($this->type ?? null) == self::TYPE_OPERATION) {
+            $childExpressions = [];
+            foreach ($this->getElements() as $element) {
+                $childExpression = $element->toCanonicalExpression();
+                if ($childExpression !== '') {
+                    $childExpressions[] = $childExpression;
+                }
+            }
+            if (!$childExpressions) {
+                return '';
+            }
+            if (count($childExpressions) == 1) {
+                return $childExpressions[0];
+            }
+            return '(' . implode(' ' . $this->joinOperator . ' ', $childExpressions) . ')';
+        }
+        if (!isset($this->property) || !isset($this->operator)) {
+            return '';
+        }
+        return $this->property . ' ' . $this->operator . ' ' . self::toCanonicalLiteral($this->value ?? null);
+    }
+
+    /**
+     * Writes one literal the way {@see FiltersOptionsParser} reads it back: an array as JSON (the parser turns single
+     * into double quotes and json_decodes), a string in single quotes with only its unescaped quotes escaped — the
+     * parser hands a string literal through verbatim, so doubling existing backslashes would change the value.
+     */
+    protected static function toCanonicalLiteral(mixed $value): string
+    {
+        if ($value === null) {
+            return 'null';
+        }
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+        if (is_int($value) || is_float($value)) {
+            return (string)$value;
+        }
+        if (is_array($value)) {
+            return json_encode(array_values($value), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        }
+        return "'" . preg_replace('/(?<!\\\\)\'/', "\\\\'", (string)$value) . "'";
     }
 
     public function uniqueKey(): string

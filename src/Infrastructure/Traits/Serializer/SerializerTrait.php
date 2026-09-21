@@ -8,6 +8,8 @@ use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\ObjectSet;
 use DDD\Domain\Base\Entities\StaticRegistry;
+use DDD\Infrastructure\Base\DateTime\Date;
+use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\Arr;
@@ -783,6 +785,17 @@ trait SerializerTrait
             //simple type e.g. string
             return $propertyValue;
         } elseif ($propertyValueIsObject && method_exists($propertyValue, 'jsonSerialize')) {
+            // Model-facing rendering needs BOTH the flag and a presentation zone, so persistence
+            // (forPersistence: true, no flags), cache serialization and REST output can never enter this branch even
+            // while a zone is set. Date is excluded on purpose: a calendar day has no offset to render.
+            if (
+                ($flags & Serializer::MODEL_FACING_DATETIME)
+                && SerializerRegistry::$modelFacingTimezone !== null
+                && $propertyValue instanceof DateTime
+                && !($propertyValue instanceof Date)
+            ) {
+                return $propertyValue->formatForModel(SerializerRegistry::$modelFacingTimezone);
+            }
             if (method_exists($propertyValue, 'toObject')) {
                 // we are in an object that uses the Serializer Trait
                 if ($returnUniqueKeyInsteadOfContent && method_exists($propertyValue, 'uniqueKey')) {
@@ -1679,7 +1692,7 @@ trait SerializerTrait
                     if (method_exists($typeToInstance, 'fromString')) {
                         if (!$throwErrors) {
                             try {
-                                $loadedInstance = $typeToInstance::fromString($value);
+                                $loadedInstance = SerializerRegistry::hydrateFromString($typeToInstance, $value);
                                 if ($loadedInstance) {
                                     $this->$propertyName = $loadedInstance;
                                 }
@@ -1687,7 +1700,21 @@ trait SerializerTrait
                             } catch (Exception) {
                             }
                         } else {
-                            $loadedInstance = $typeToInstance::fromString($value);
+                            $loadedInstance = SerializerRegistry::hydrateFromString($typeToInstance, $value);
+                            if (
+                                $loadedInstance === false
+                                && $typeToInstance === DateTime::class
+                                && SerializerRegistry::$inputTimezone !== null
+                            ) {
+                                // only on the zone-aware path: tell the writer the shape instead of dropping the value
+                                throw new BadRequestException(
+                                    sprintf(
+                                        '%s: "%s" is not a date-time — write it as YYYY-MM-DD HH:MM:SS in the business\'s local time.',
+                                        $propertyName,
+                                        $value
+                                    )
+                                );
+                            }
                             if ($loadedInstance) {
                                 $this->$propertyName = $loadedInstance;
                             }

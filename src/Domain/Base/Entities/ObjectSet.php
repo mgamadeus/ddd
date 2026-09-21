@@ -7,6 +7,7 @@ namespace DDD\Domain\Base\Entities;
 use ArrayAccess;
 use Countable;
 use DDD\Domain\Base\Entities\Interfaces\IsEmptyInterface;
+use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ReflectionArrayType;
@@ -308,11 +309,24 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
                     if (is_string($value) && method_exists($typeToInstance, 'fromString')) {
                         if (!$throwErrors) {
                             try {
-                                $item = $typeToInstance::fromString($value);
+                                $item = SerializerRegistry::hydrateFromString($typeToInstance, $value);
                             } catch (Exception) {
                             }
                         } else {
-                            $item = $typeToInstance::fromString($value);
+                            $item = SerializerRegistry::hydrateFromString($typeToInstance, $value);
+                            if (
+                                $item === false
+                                && $typeToInstance === DateTime::class
+                                && SerializerRegistry::$inputTimezone !== null
+                            ) {
+                                throw new BadRequestException(
+                                    sprintf(
+                                        '%s: "%s" is not a date-time — write it as YYYY-MM-DD HH:MM:SS in the business\'s local time.',
+                                        static::class,
+                                        $value
+                                    )
+                                );
+                            }
                         }
                     } else {
                         $item = new $typeToInstance();

@@ -15,6 +15,7 @@ use DDD\Domain\Base\Entities\ObjectSet;
 use DDD\Domain\Base\Entities\Translatable\Translatable;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseVirtualColumn;
+use DDD\Infrastructure\Base\DateTime\Date;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionNamedType;
@@ -54,6 +55,13 @@ class FiltersDefinitions extends ObjectSet
     public bool $filtersSetFromReferenceClass = false;
 
     /**
+     * @var array temporalKind by (prefixed) property name, collected while reflecting a reference class and consumed
+     * by {@see self::getFiltersDefinitionsForReferenceClass()} right after; the reflection helper's return shape
+     * stays untouched because callers rely on it
+     */
+    protected static array $temporalKindsForCurrentReflection = [];
+
+    /**
      * Allowed filters either as string representing allowed property name or
      * array representing on it's first index the property name and following allwed options to be used as value
      * @param string|array ...$allowedPropertyNames
@@ -61,6 +69,17 @@ class FiltersDefinitions extends ObjectSet
     public function __construct(string|array ...$allowedPropertyNames)
     {
         foreach ($allowedPropertyNames as $allowedPropertyName) {
+            // An ASSOCIATIVE array is the metadata form: every element of a LIST is an allowed VALUE, so metadata
+            // can not travel in a positional slot.
+            if (is_array($allowedPropertyName) && !array_is_list($allowedPropertyName)) {
+                $filtersDefinition = new FiltersDefinition(
+                    $allowedPropertyName['propertyName'],
+                    $allowedPropertyName['options'] ?? null
+                );
+                $filtersDefinition->temporalKind = $allowedPropertyName['temporalKind'] ?? null;
+                $this->add($filtersDefinition);
+                continue;
+            }
             if (is_array($allowedPropertyName)) {
                 $allowedPropertyName = new FiltersDefinition(
                     $allowedPropertyName[0], array_slice($allowedPropertyName, 1)
@@ -92,12 +111,16 @@ class FiltersDefinitions extends ObjectSet
         $reflectionClass = ReflectionClass::instance($referenceClassName);
         if ($repoClass) {
             $filtersDefinitions->referenceClassName = $referenceClassName;
+            self::$temporalKindsForCurrentReflection = [];
             $filtersProperties = self::getFilterPropertiesForClass($referenceClassName);
+            $temporalKinds = self::$temporalKindsForCurrentReflection;
+            self::$temporalKindsForCurrentReflection = [];
             if ($filtersProperties) {
                 foreach ($filtersProperties as $filterPropertyName => $options) {
                     $filterDefinition = new FiltersDefinition(
                         $filterPropertyName, is_array($options) ? $options : null
                     );
+                    $filterDefinition->temporalKind = $temporalKinds[$filterPropertyName] ?? null;
                     $filtersDefinitions->add($filterDefinition);
                 }
             }
@@ -235,6 +258,12 @@ class FiltersDefinitions extends ObjectSet
                     continue;
                 }
                 $allowedFilterProperties[$propertyPrefix . $reflectionProperty->getName()] = $allowedPropertyValue;
+                if (!$type->isBuiltin() && is_a($type->getName(), DateTime::class, true)) {
+                    // a calendar day never carries a time, so it is never zone-converted
+                    self::$temporalKindsForCurrentReflection[$propertyName] = is_a($type->getName(), Date::class, true)
+                        ? FiltersDefinition::TEMPORAL_KIND_DAY
+                        : FiltersDefinition::TEMPORAL_KIND_MOMENT;
+                }
             }
             $subObjectFilters = [];
             // for properties, we do not include ObjectSets in filter options

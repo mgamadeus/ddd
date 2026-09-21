@@ -17,6 +17,12 @@ class Serializer
     public const int SERIALIZE_ELEMENTS_AS_ARRAY_IN_OBJECT_SETS = 1 << 0; // 1
 
     /**
+     * toObject(): render DateTime (never Date) properties in SerializerRegistry::$modelFacingTimezone with their
+     * offset. Needs the flag AND a non-null zone, so persistence and REST output can never enter that branch.
+     */
+    public const int MODEL_FACING_DATETIME = 1 << 1; // 2
+
+    /**
      * Check if a specific flag is set
      */
     public static function hasFlag(int $flags, int $flag): bool
