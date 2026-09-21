@@ -5,7 +5,12 @@ Contents: 1 Process model · 2 Container wiring · 3 The shell hook · 4 docker 
 ## 1 Process model — who has the secrets
 
 `op run` resolves the `op://` references of `$OP_ENV_FILE` once, at start, into the env of ONE child
-process and its descendants. Nothing else in the container has them:
+process and its descendants. The entrypoint first filters the `op://` lines of `$OP_ENV_FILE` into
+`/run/op/app.env.references` and hands op run ONLY that file — op run exports every key it is given as a real
+env var, and real env outranks every `.env*` file inside PHP; passing the whole `.env` would let the committed
+prod flags override `.env.local` in dev workspaces (it did, until 2026-09-21). `APP_ENV`, `APP_DEBUG`, URLs and
+all other config reach PHP through Symfony's Dotenv cascade, never through op run. Nothing else in the
+container has the secrets:
 
 | Process | Has resolved env? | Because |
 |---|---|---|
@@ -29,10 +34,15 @@ proves every reference resolves with `op run … -- /bin/true`, then `exec op ru
 `connect-sync`) fed by a `1password-credentials.json` for a **Connect server** with READ access to
 exactly one vault per app. The token is the Connect token, stored as a compose secret file.
 
+Persistence: the image COPY (Dockerfile.snippet) is the long-term source, and the compose service additionally bind-mounts
+the same three files read-only from the compose dir (`./Dockerfiles/…`, `./conf/bash/bash.bashrc`) — see the compose
+template — so a `docker-compose up -d` recreate never drops the entrypoint or the hook while the image lags behind.
+
 ## 3 The shell hook — `op-env-resolve.sh`
 
-Sourced (not executed). Idempotent via `OP_ENV_RESOLVED=1`. Reads the token file, runs
-`op run --no-masking --env-file="$OP_ENV_FILE" -- sh -c 'export -p'`, filters out
+Sourced (not executed). Idempotent via `OP_ENV_RESOLVED=1`. Reads the token file, filters the `op://` lines of
+`$OP_ENV_FILE` into a temp file (secrets only — `APP_ENV` & Co stay with Dotenv), runs
+`op run --no-masking --env-file=<temp> -- sh -c 'export -p'`, filters out
 `PWD OLDPWD SHLVL _ HOME PATH TERM HOSTNAME OP_CONNECT_TOKEN`, `eval`s the rest. Prints only a
 count; never a value. Non-fatal: if Connect is down the shell opens with a WARNING on stderr.
 Interactive shells additionally `cd` to the app dir. As `www-data` it switches `OP_CONFIG_DIR` to

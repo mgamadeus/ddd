@@ -2,14 +2,21 @@
 # everything else (docker exec, crons, supervisord) must go through op-env-resolve.sh (BASH_ENV).
 services:
   php:
-    image: {{APP}}_php:8.3_op
+    image: "{{APP}}_php:8.3_op"
     entrypoint: ["/usr/local/bin/connect-entrypoint.sh"]
     command: ["php-fpm", "-F"]
+    volumes:
+      - "{{APP_DIR_HOST}}:{{APP_DIR}}"
+      # 1Password runtime, mounted read-only from the compose dir so a recreate keeps them even before the image is rebuilt
+      # (the Dockerfile COPY of the same files remains the long-term source; keep both in sync)
+      - ./Dockerfiles/connect-entrypoint.sh:/usr/local/bin/connect-entrypoint.sh:ro
+      - ./Dockerfiles/op-env-resolve.sh:/usr/local/bin/op-env-resolve.sh:ro
+      - ./conf/bash/bash.bashrc:/etc/bash.bashrc:ro    # the image's /etc/bash.bashrc + the two hook lines
     environment:
       OP_CONNECT_HOST: http://connect-api:8080      # local 1Password Connect container
-      OP_ENV_FILE: {{APP_DIR}}/.env                 # the committed reference file (op:// values)
+      OP_ENV_FILE: "{{APP_DIR}}/.env"                 # the committed reference file (op:// values)
       OP_CONFIG_DIR: /tmp/op
-      OP_VAULT: {{VAULT}}                           # e.g. AUT-MYAPP — resolves op://$OP_VAULT/... in .env
+      OP_VAULT: "{{VAULT}}"                           # e.g. AUT-MYAPP — resolves op://$OP_VAULT/... in .env
       APP_ENV: prod                                 # real env beats every .env* file: prod can never boot dev
       APP_DEBUG: "0"                                # "0", never "false" ((bool)"false" is true in PHP)
       BASH_ENV: /usr/local/bin/op-env-resolve.sh    # every `docker exec … bash -c` resolves the env

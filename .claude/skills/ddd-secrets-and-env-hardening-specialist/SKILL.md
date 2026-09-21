@@ -1,9 +1,9 @@
 ---
 name: ddd-secrets-and-env-hardening-specialist
-description: "Run a mgamadeus/ddd app with NO plaintext secrets anywhere: the committed .env holds op:// 1Password references resolved at run time by op run (Connect server in the container, the developer login locally). Covers .env / .env.local / .envrc layering, project migration (op_envify.py, op_import_env_secrets.py, rotate_env_secrets.py, pre-commit guard check-env-secrets.py), container runtime (connect-entrypoint.sh, op-env-resolve.sh shell hook, BASH_ENV for docker exec, crons, CI deploy steps, supervisord workers), local dev (bin/php wrapper, PhpStorm, direnv pointers, npm ignore-scripts), hardening (web_profiler collect false, nginx 403 on /_profiler, only index.php to php-fpm, php.ini-production, variables_order E, VPN-gated dev vhosts), rotation order and cleanup. Use when: Access denied for user op://, workers crash-loop after deploy, cron or docker exec has no env, 1Password Connect setup, rotating leaked keys, removing .env files from dev machines, profiler leaked $_ENV, npm postinstall scans for .env."
+description: "Run a mgamadeus/ddd app with NO plaintext secrets anywhere: the committed .env holds op:// 1Password references resolved at run time by op run, which is fed the op:// lines ONLY (never the whole .env — real env outranks .env.local and would force prod mode). Covers .env / .env.local / .envrc layering, migration (op_envify, op_import_env_secrets, rotate_env_secrets, pre-commit check-env-secrets), container runtime (connect-entrypoint.sh, op-env-resolve.sh hook, BASH_ENV for docker exec, crons, CI, supervisord), local dev (bin/php wrapper, PhpStorm, direnv, npm ignore-scripts), hardening (web_profiler collect false, nginx 403 on /_profiler, only index.php to php-fpm, variables_order E, VPN-gated dev vhosts), rotation and cleanup. Use when: Access denied for user op://, a dev workspace boots in prod mode, workers crash-loop after deploy, cron or docker exec has no env, Connect setup, rotating leaked keys, profiler leaked $_ENV, npm postinstall scans for .env."
 metadata:
   author: mgamadeus
-  version: "1.0.0"
+  version: "1.1.0"
   framework: mgamadeus/ddd
 ---
 
@@ -36,8 +36,9 @@ Bundled: `scripts/` (run them), `templates/` (copy, fill `{{PLACEHOLDERS}}`), `r
 .env.local (ignored)  APP_ENV=dev, APP_DEBUG=1, dev URLs, DEV-ONLY ad-hoc values    ← rsync'd to dev workspaces, never to prod
 .envrc (committed)    export OP_VAULT=AUT-<APP>  export OP_ACCOUNT=<org>.1password.com   ← pointers only, never `dotenv`
         │
-        ▼  op run --env-file=.env [--env-file=.env.local] -- <process>
-   resolved values exist ONLY in that process's env (php-fpm / one console command) and its children
+        ▼  op run --env-file=<ONLY the op:// lines of .env, filtered into a temp file> -- <process>
+   resolved SECRETS exist ONLY in that process's env (php-fpm / one console command) and its children;
+   APP_ENV, APP_DEBUG, URLs never pass through op run — Symfony's Dotenv cascade owns them
 ```
 
 Symfony cascade: `.env < .env.local < .env.$APP_ENV < .env.$APP_ENV.local < real env`. The real env
@@ -50,29 +51,33 @@ and `APP_DEBUG=0` as real env: no file can ever boot prod in debug.
    rotation is `.env_backup` (gitignored, deleted when done). The pre-commit guard enforces it.
 2. **`op://` references need `$OP_VAULT` in the PROCESS env.** From compose `environment:` in the
    container, from `.envrc` (direnv) locally. A value in `.env.local` does not reach `op run`.
-3. **Only children of `op run` have secrets.** php-fpm via the entrypoint; everything else must go
+3. **`op run` gets the `op://` lines only, never the whole `.env`.** op run exports every key of the file it is
+   given as a REAL env var, and real env outranks every `.env*` file inside PHP — feed it the whole `.env` and the
+   committed `APP_ENV=prod`/`APP_DEBUG=0` silently override `.env.local` in every dev workspace (this happened).
+   Entrypoint, shell hook and `bin/php` all filter `=.*op://` lines into a temp references file first.
+4. **Only children of `op run` have secrets.** php-fpm via the entrypoint; everything else must go
    through the shell hook: interactive `docker exec … bash` (bashrc), `bash -c` with
    `-e BASH_ENV=/usr/local/bin/op-env-resolve.sh` (crons, deploy steps), `/etc/init.d/supervisor start`
    from such a bash. **`service supervisor start` can never work** — `service(8)` uses `env -i`.
-4. **`APP_DEBUG=0`, never `false`.** `(bool)"false"` is `true` in PHP.
-5. **`variables_order` must contain `E`** in the container. `Config::getEnv()` reads `$_ENV`;
+5. **`APP_DEBUG=0`, never `false`.** `(bool)"false"` is `true` in PHP.
+6. **`variables_order` must contain `E`** in the container. `Config::getEnv()` reads `$_ENV`;
    `php.ini-production` sets `GPCS` and silently empties it.
-6. **Profiler collects nothing by default** — `web_profiler.yaml` dev block:
+7. **Profiler collects nothing by default** — `web_profiler.yaml` dev block:
    `profiler: { collect: false, collect_parameter: 'profile' }`. Stored profiles contain `$_SERVER`, i.e.
    the full env, on disk. `/_profiler` and `/_wdt` return 403 from nginx on every vhost; dev vhosts are VPN-only.
-7. **Only `index.php` reaches php-fpm.** `location ~ \.php$` executes any file in `public/` for anyone
+8. **Only `index.php` reaches php-fpm.** `location ~ \.php$` executes any file in `public/` for anyone
    (a build helper there ran `opcache_reset` + `cache:clear` on prod for whoever asked).
-8. **`.envrc` holds pointers only.** `dotenv` in `.envrc` exports the whole `.env` into every shell and
+9. **`.envrc` holds pointers only.** `dotenv` in `.envrc` exports the whole `.env` into every shell and
    every child process, including `npm install`. The pre-commit guard blocks it.
-9. **`npm config set ignore-scripts true`** on every dev machine and CI. Enable a package's install
+10. **`npm config set ignore-scripts true`** on every dev machine and CI. Enable a package's install
    script deliberately with `npm rebuild <pkg>`.
-10. **DB usernames are secrets** (half of the credential pair): `op://` references, checker rule `^DB_.*_USER$`.
-11. **JWT_HASH_KEY == AUTH_JWT_HASH_KEY**, always rotated as a pair. `AUTH_PASSWORD_HASH_KEY` is a live
+11. **DB usernames are secrets** (half of the credential pair): `op://` references, checker rule `^DB_.*_USER$`.
+12. **JWT_HASH_KEY == AUTH_JWT_HASH_KEY**, always rotated as a pair. `AUTH_PASSWORD_HASH_KEY` is a live
     pepper when the app uses `hash_hmac` for passwords — check before rotating (`references/rotation-and-cleanup.md`).
-12. **Never print a secret value** — in scripts, in tool output, in handoffs. Print lengths, counts, "resolved/placeholder".
-13. **Rotation is additive first, destructive last**: new key → deploy → verify → delete old. Exceptions
+13. **Never print a secret value** — in scripts, in tool output, in handoffs. Print lengths, counts, "resolved/placeholder".
+14. **Rotation is additive first, destructive last**: new key → deploy → verify → delete old. Exceptions
     (non-additive providers such as Strava client secrets) go in one change with the deploy.
-14. Scripts refuse to run without an explicit `--env`/`--file`: the tempting default is the placeholder `.env`.
+15. Scripts refuse to run without an explicit `--env`/`--file`: the tempting default is the placeholder `.env`.
 
 ## Workflow A — migrate a project to 1Password references
 
@@ -142,16 +147,17 @@ file-based leak, and the remote dev workspace with the shell hook needs nothing 
 
 | Symptom | See |
 |---|---|
-| `Access denied for user 'op://VAULT/item/KEY'@…` | Critical rule 3; `references/server-runtime.md` §1, §9 |
+| `Access denied for user 'op://VAULT/item/KEY'@…` | Critical rule 4; `references/server-runtime.md` §1, §9 |
 | supervisor workers `RUNNING` but `uptime 0:00:00`, thousands of `exited … exit status 1` | `references/server-runtime.md` §5 |
 | `op … can't safely access "/tmp/op"` as www-data | hook sets `OP_CONFIG_DIR=/tmp/op-uid-<uid>`; update the hook |
 | `invalid secret reference 'op:///…': vault can't be empty` | `OP_VAULT` missing from the process env (Critical rule 2) |
 | `1Password CLI couldn't connect to the desktop app` / `account is not signed in` (laptop) | unlock the app, enable CLI integration, `OP_ACCOUNT` set |
 | `[ERROR] multiple accounts found` | `--account <org>.1password.com` or `OP_ACCOUNT` |
-| resolved everywhere but `Config::getEnv()` returns null | `variables_order` lacks `E` (rule 5) |
+| resolved everywhere but `Config::getEnv()` returns null | `variables_order` lacks `E` (rule 6) |
 | values shown as `<concealed by 1Password>` | op run masking; expected |
+| dev workspace runs in prod mode (prod log written, no X-Debug-Token) although `.env.local` says dev | op run was fed the whole `.env` → real env `APP_ENV=prod` outranks `.env.local` (rule 3); use the secrets-only entrypoint / hook / bin-php |
 | hook worked, then placeholders after a recreate | hook not in the image — `templates/Dockerfile.snippet` |
-| pre-commit says `BLOCKED … DB username must be an op:// reference` | policy: DB users are secrets (rule 10) |
+| pre-commit says `BLOCKED … DB username must be an op:// reference` | policy: DB users are secrets (rule 11) |
 
 ## Cross-Reference
 

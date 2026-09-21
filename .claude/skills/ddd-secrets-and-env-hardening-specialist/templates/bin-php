@@ -1,17 +1,22 @@
 #!/bin/sh
-# php with the project env resolved from 1Password at run time — no plaintext secrets on disk.
+# php with the project's SECRETS resolved from 1Password at run time — no plaintext secrets on disk.
 #
-#   .env        committed, secrets as op://$OP_VAULT/... references
-#   .env.local  per developer, gitignored, non-secret overrides (APP_ENV=dev, ...)
+#   .env        committed; secrets as op://$OP_VAULT/... references, everything else plain config
+#   .env.local  per developer, gitignored; APP_ENV=dev, APP_DEBUG=1, dev URLs, dev-only ad-hoc values
+#
+# op run gets ONLY the op:// lines of .env (filtered into a temp file), so only the secrets become
+# real env vars. APP_ENV & Co stay with Symfony's Dotenv cascade (.env < .env.local < ... < real env);
+# feeding op run the whole .env would let the committed prod flags override .env.local.
 #
 # Usage:  bin/php bin/console <command>     bin/php vendor/bin/phpunit     bin/php -r '...'
 # PhpStorm: Settings > PHP > CLI Interpreter > add this file as the interpreter path.
-#
 # Needs: 1Password app with "Integrate with 1Password CLI" enabled, read access to $OP_VAULT.
-# Secrets exist only in the env of the php process started here; the shell never sees them.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export OP_VAULT="${OP_VAULT:-{{VAULT}}}"                      # e.g. AUT-MYAPP
 export OP_ACCOUNT="${OP_ACCOUNT:-{{OP_ACCOUNT}}}"            # e.g. myorg.1password.com
-ENVFILES="--env-file=$ROOT/.env"
-[ -f "$ROOT/.env.local" ] && ENVFILES="$ENVFILES --env-file=$ROOT/.env.local"
-exec op run $ENVFILES -- php "$@"
+REFS="$(mktemp "${TMPDIR:-/tmp}/op-refs.XXXXXX")"
+grep -E '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=.*op://' "$ROOT/.env" > "$REFS"
+op run --env-file="$REFS" -- php "$@"
+rc=$?
+rm -f "$REFS"
+exit $rc

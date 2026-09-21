@@ -13,6 +13,21 @@ if [ ! -r "$references_file" ] || [ ! -s "$references_file" ]; then
     echo 'FAIL: Secret reference template is missing, empty or unreadable.' >&2
     exit 1
 fi
+# op run must inject SECRETS ONLY. It exports every key of the file it is given as a real env var,
+# and real env outranks every .env* file inside PHP — feeding it the whole .env would let the
+# committed prod flags (APP_ENV, APP_DEBUG, URLs) override .env.local in dev workspaces.
+# So: filter the op:// reference lines out of the app .env into a private references file.
+# Everything else stays with Symfony Dotenv (.env < .env.local < ... < real env).
+refs_dir=/run/op; mkdir -p "$refs_dir"; chmod 755 "$refs_dir"
+refs_only="$refs_dir/app.env.references"
+grep -E '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=.*op://' "$references_file" > "$refs_only" || true
+chmod 644 "$refs_only"
+if [ ! -s "$refs_only" ]; then
+    echo "FAIL: no op:// references found in $references_file." >&2
+    exit 1
+fi
+echo "INFO: $(wc -l < "$refs_only") op:// reference(s) from $references_file -> $refs_only (secrets only)" >&2
+
 OP_CONNECT_TOKEN=$(cat "$token_file")
 if [ -z "$OP_CONNECT_TOKEN" ]; then
     echo 'FAIL: Connect token is empty.' >&2
@@ -38,7 +53,7 @@ done
 attempt=1
 while :; do
     if timeout --signal=TERM --kill-after=5s 15s \
-        op run --env-file="$references_file" -- /bin/true >/dev/null 2>&1; then
+        op run --env-file="$refs_only" -- /bin/true >/dev/null 2>&1; then
         break
     else
         probe_status=$?
@@ -61,4 +76,4 @@ if [ "$#" -eq 0 ]; then
 fi
 # Keep masking enabled. Never apply the pilot's 90-second lifetime limit to PHP.
 # Resolve again for the actual child; this final call must also succeed.
-exec op run --env-file="$references_file" -- /usr/local/bin/connect-app-exec.sh "$@"
+exec op run --env-file="$refs_only" -- /usr/local/bin/connect-app-exec.sh "$@"

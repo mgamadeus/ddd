@@ -12,10 +12,13 @@ values in the shell, nothing an `npm install` postinstall scanner can collect.
 .env         committed   KEY=op://$OP_VAULT/<item>/KEY  (+ all non-secret config, APP_ENV=prod, APP_DEBUG=0)
 .env.local   gitignored  APP_ENV=dev, APP_DEBUG=1, dev URLs, ad-hoc DEV-ONLY values of unreleased features
 .envrc       committed   export OP_VAULT=…  export OP_ACCOUNT=…   (direnv; pointers only, NEVER `dotenv`)
-bin/php      committed   exec op run --env-file=.env --env-file=.env.local -- php "$@"
+bin/php      committed   op run --env-file=<only the op:// lines of .env, temp file> -- php "$@"
 ```
 
-`op run` accepts several `--env-file`; later files override earlier ones, mirroring Symfony's cascade.
+`bin/php` feeds op run ONLY the `op://` lines of `.env` (filtered into a temp file). op run exports every key it
+is given as a real env var, and real env outranks every `.env*` file inside PHP — with the whole `.env` the
+committed `APP_ENV=prod`/`APP_DEBUG=0` would beat `.env.local`. `.env.local` never goes through op run at all:
+Symfony's Dotenv reads it. (op run does accept several `--env-file`, later overriding earlier — not needed here.)
 `$OP_VAULT` inside a reference is expanded from the **process env only** — a value in `.env.local`
 does not reach it (verified: `invalid secret reference 'op:///…': vault can't be empty`). Hence `.envrc`.
 

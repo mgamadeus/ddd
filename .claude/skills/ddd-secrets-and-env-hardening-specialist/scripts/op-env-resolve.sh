@@ -12,17 +12,19 @@ if [ -z "${OP_ENV_RESOLVED:-}" ] && [ -n "${OP_ENV_FILE:-}" ] && command -v op >
     if [ ! -w "${OP_CONFIG_DIR:-/nonexistent}" ] || [ ! -O "${OP_CONFIG_DIR:-/nonexistent}" ]; then
       export OP_CONFIG_DIR="/tmp/op-uid-$(id -u)"
     fi
-    _op_exports="$(OP_CONNECT_TOKEN="$(cat "$_op_token_file")" op run --no-masking --env-file="$OP_ENV_FILE" -- sh -c "export -p" 2>/dev/null \
+    # secrets only: feed op run just the op:// lines, never the whole .env (APP_ENV etc. stay with Dotenv)
+    _op_refs="$(mktemp)"; grep -E '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=.*op://' "$OP_ENV_FILE" > "$_op_refs"
+    _op_exports="$(OP_CONNECT_TOKEN="$(cat "$_op_token_file")" op run --no-masking --env-file="$_op_refs" -- sh -c "export -p" 2>/dev/null \
       | grep "^export " \
       | grep -Ev "^export (PWD|OLDPWD|SHLVL|_|HOME|PATH|TERM|HOSTNAME|OP_CONNECT_TOKEN)=")"
     if [ -n "$_op_exports" ]; then
       eval "$_op_exports"
       export OP_ENV_RESOLVED=1
-      case "$-" in *i*) echo "[1Password] env resolved: $(printf "%s\n" "$_op_exports" | grep -c "^export ") vars from $OP_ENV_FILE";; esac
+      case "$-" in *i*) echo "[1Password] secrets resolved: $(printf "%s\n" "$_op_exports" | grep -c "^export ") vars from the op:// lines of $OP_ENV_FILE";; esac
     else
       echo "[1Password] WARNING: could not resolve $OP_ENV_FILE (Connect unreachable? config dir?) - php would see op:// placeholders" >&2
     fi
-    unset _op_exports
+    rm -f "$_op_refs"; unset _op_exports _op_refs
   fi
   unset _op_token_file
 fi
