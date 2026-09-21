@@ -281,9 +281,16 @@ class FiltersDefinitions extends ObjectSet
                     $modifiedColumn = $changeHistoryAttributeInstance?->getModifiedColumn();
                     if ($createdColumn) {
                         $allowedFilterProperties[$propertyPrefix . $createdColumn] = true;
+                        // ChangeHistory writes DateTime values (createdTime / modifiedTime), so these columns are
+                        // MOMENT filters like any other reflected DateTime property — they are added here by hand
+                        // rather than through the property loop, so the temporal kind has to be recorded here too.
+                        self::$temporalKindsForCurrentReflection[$propertyPrefix . $createdColumn] =
+                            FiltersDefinition::TEMPORAL_KIND_MOMENT;
                     }
                     if ($modifiedColumn) {
                         $allowedFilterProperties[$propertyPrefix . $modifiedColumn] = true;
+                        self::$temporalKindsForCurrentReflection[$propertyPrefix . $modifiedColumn] =
+                            FiltersDefinition::TEMPORAL_KIND_MOMENT;
                     }
                 }
                 // A ValueObject is JSON-inlined in its parent row and select-controlled, NOT a navigable relation: its

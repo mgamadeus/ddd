@@ -7,6 +7,7 @@ use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\Arr;
+use DDD\Infrastructure\Traits\Serializer\SerializerRegistry;
 use ReflectionException;
 
 trait ValueObjectTrait
@@ -45,6 +46,14 @@ trait ValueObjectTrait
      */
     public function mapFromRepository(mixed $repoObject): void
     {
+        // Same reason as DBEntity::mapToEntity(): a persisted date-time must never be read through an input zone.
+        if (SerializerRegistry::$inputTimezone !== null) {
+            throw new InternalErrorException(
+                static::class . ': value object hydration from the repository while SerializerRegistry::$inputTimezone'
+                . ' is set (' . SerializerRegistry::$inputTimezone->getName() . '): stored date-times would be'
+                . ' re-read as local wall-clock time. Load entities outside the withInputTimezone() region.'
+            );
+        }
         // NULL-safe: an absent repo value (e.g. a NULL JSON column hydrating an optional VO property) maps to
         // NOTHING — before this guard $repoObjectProcessed stayed undefined and setPropertiesFromObject(null)
         // fataled with a TypeError on every row whose optional JSON column is NULL.

@@ -3,7 +3,7 @@ name: ddd-query-options-specialist
 description: Work with the OData-inspired QueryOptions system in mgamadeus/ddd — database-level filtering, sorting, pagination, select, expand and fulltext search over Translatable properties. Wire syntax filters=/expand=/orderBy=/select=/top=/skip= (plural filters, no dollar prefix; default top 50). Covers entity setup (QueryOptionsTrait on BOTH Entity and EntitySet), controller DTOs, the filter grammar (eq/ne/gt/ge/lt/le/in/ni/bw, ft/fb fulltext, and/or grouping, dot-notation), expand with nested clauses and join read-rights, propertyScore relevance, programmatic snapshot/restore, mandatory scope filters via addFiltersConnectedByAnd, the Argus shared-defaults rule, why HideProperty fields are never filterable, and temporal filters (FiltersDefinition::$temporalKind, normalizeMomentLiterals) for zone-aware callers. Use when a query param is ignored, when results cap at 50, when enforcing an inescapable scope filter, when Argus defaults have no effect, or when date-time filters compare against the wrong zone.
 metadata:
   author: mgamadeus
-  version: "1.2.0"
+  version: "1.2.1"
   framework: mgamadeus/ddd
 ---
 
@@ -460,6 +460,10 @@ A filter literal is a wall-clock reading. When the caller is an LLM tool writing
 | `DateTime` (and subclasses other than `Date`) | `TEMPORAL_KIND_MOMENT` | converted from the caller's zone |
 | `Date` | `TEMPORAL_KIND_DAY` | never converted — a day has no time to shift |
 | anything else | `null` | never converted |
+
+The ChangeHistory columns (`created` / `updated`, or whatever `#[ChangeHistory]` renames them to) are added to the
+filter properties by hand rather than through the property loop, and they get `MOMENT` there too — so every entity
+with ChangeHistory can be filtered by a past window in the caller's zone without declaring anything.
 
 To declare it by hand, use the **associative** definition form (a LIST is still a list of allowed VALUES — metadata cannot travel in a positional slot):
 

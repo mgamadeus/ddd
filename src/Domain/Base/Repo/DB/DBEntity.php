@@ -29,6 +29,7 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Exceptions\UnauthorizedException;
 use DDD\Infrastructure\Libs\Encrypt;
 use DDD\Infrastructure\Reflection\ReflectionClass;
+use DDD\Infrastructure\Traits\Serializer\SerializerRegistry;
 use Psr\Cache\InvalidArgumentException;
 use ReflectionAttribute;
 use ReflectionException;
@@ -85,6 +86,18 @@ class DBEntity extends DatabaseRepoEntity
         bool $useEntityRegistryCache = true,
         array $initiatorClasses = []
     ): ?DefaultObject {
+        // A stored date-time carries no offset, so hydrating it while an input zone is open would re-read it as
+        // wall-clock time in THAT zone: the instant shifts by the offset, and a value inside a spring-forward gap
+        // throws out of hydration. The zone belongs around model-supplied arguments only, never around a repository
+        // read — fail loudly instead of returning a silently shifted entity.
+        if (SerializerRegistry::$inputTimezone !== null) {
+            throw new InternalErrorException(
+                'Entity hydration while SerializerRegistry::$inputTimezone is set (' .
+                SerializerRegistry::$inputTimezone->getName() .
+                '): stored date-times would be re-read as local wall-clock time. Load entities outside the ' .
+                'withInputTimezone() region.'
+            );
+        }
         // on the highest level, we first clear ormInstanceToEntityAllocation
         if (empty($initiatorClasses)) {
             self::$ormInstanceToEntityAllocation = [];

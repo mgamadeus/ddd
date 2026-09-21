@@ -3,7 +3,7 @@ name: ddd-serializer-specialist
 description: Work with the SerializerTrait in mgamadeus/ddd — the one serialization layer behind ALL API output, DB persistence, request hydration and message payloads (every DefaultObject, RequestDto and RestResponseDto uses it). Covers toObject/toJSON and the forPersistence dual mode (DontPersistProperty vs HideProperty vs HidePropertyOnSystemSerialization), setPropertiesFromObject hydration (aliases are output-only), attribute and runtime hiding incl. dotted-path hides, renaming via OverwritePropertyName and Aliases, ExposePropertyInsteadOfClass flattening, per-class toObject overrides, SerializerRegistry cache semantics, TOON tabular serialization, and model-facing time zones (MODEL_FACING_DATETIME, withInputTimezone/withModelFacingTimezone, DateTime::fromStringInZone/formatForModel). Use when configuring serialization, hiding fields, renaming output, excluding fields from persistence, debugging missing or wrong-named output, emitting tabular formats, or converting date-times at an LLM/MCP tool boundary.
 metadata:
   author: mgamadeus
-  version: "1.3.0"
+  version: "1.3.1"
   framework: mgamadeus/ddd
 ---
 
@@ -443,6 +443,13 @@ Both helpers save and restore the previous value in a `finally`, so nesting rest
 | flag + zone, `Date` property | unchanged — a calendar day has no offset to render |
 
 `formatForModel()` clones: the instance itself is never mutated.
+
+**A repository read must never happen inside the region.** `DBEntity::mapToEntity()` and
+`ValueObjectTrait::mapFromRepository()` throw an `InternalErrorException` naming the zone when
+`SerializerRegistry::$inputTimezone` is set: a persisted date-time carries no offset, so hydrating it through an input
+zone would shift the instant by the offset (and a stored value inside a spring-forward gap would throw out of
+hydration). Wrap model-supplied ARGUMENTS in `withInputTimezone()`, never an entity load. (The geometry value objects
+override `mapFromRepository()` and parse their own primitives, so they never reach the generic hydration this guards.)
 
 **Input is keyed on `DateTime::class` exactly.** `SerializerRegistry::hydrateFromString()` routes only that one type through the zone-aware parser; `Date` (with its own `fromString()` and shared-instance cache) and every subclass stay on the unchanged path.
 
