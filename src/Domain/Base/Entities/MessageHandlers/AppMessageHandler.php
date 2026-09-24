@@ -4,6 +4,9 @@ declare (strict_types=1);
 
 namespace DDD\Domain\Base\Entities\MessageHandlers;
 
+use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityRegistry;
+use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
+use DDD\Domain\Base\Repo\Virtual\VirtualEntityRegistry;
 use DDD\Infrastructure\Services\AuthService;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\IssuesLogService;
@@ -16,6 +19,16 @@ use Throwable;
 
 abstract class AppMessageHandler
 {
+    /**
+     * A CONSUMED worker job starts on fresh state by default, like a web request: Doctrine unit of work cleared,
+     * database connections renewed (fresh session and snapshot), static entity registries emptied — see
+     * {@see self::resetWorkerStateForNewJob()}, invoked by {@see \DDD\Symfony\Messenger\Middleware\FreshWorkerStateMiddleware}
+     * before the message reaches the handler. A handler that deliberately processes messages on WARM state (a batch
+     * handler that accumulates across messages, a handler whose warm registry is the point) overrides this constant
+     * with false; the middleware then leaves the process state untouched for that handler's messages.
+     */
+    public const bool RESET_WORKER_STATE_BEFORE_JOB = true;
+
     /** @var LoggerInterface|null */
     protected ?LoggerInterface $messengerLogger = null;
 
@@ -32,6 +45,39 @@ abstract class AppMessageHandler
     ) {
         $this->issuesLogService = $issuesLogService ?? DDDService::instance()->getService(IssuesLogService::class);
         $this->messengerLogger = $messengerLogger;
+    }
+
+    /**
+     * Resets the process to the state a fresh PHP process would have before a job runs: Doctrine unit-of-work caches
+     * cleared, every database connection without an active transaction closed (lazy reconnect = new session, new
+     * snapshot, no inherited session state) and the static entity registries (Doctrine + virtual) emptied. A
+     * long-lived worker otherwise serves a later job from what an earlier job left behind — a session whose
+     * REPEATABLE READ snapshot predates the previous job's writes, and registries holding the earlier entities.
+     * ONE implementation for every handler: the {@see \DDD\Symfony\Messenger\Middleware\FreshWorkerStateMiddleware}
+     * calls it before any consumed message (unless {@see self::RESET_WORKER_STATE_BEFORE_JOB} is false on the
+     * handler); a handler that runs sub-jobs in-process may call it itself between them.
+     */
+    public static function resetWorkerStateForNewJob(): void
+    {
+        EntityManagerFactory::clearAllInstanceCaches();
+        static::renewDatabaseConnection();
+        DoctrineEntityRegistry::clear();
+        VirtualEntityRegistry::clear();
+    }
+
+    /**
+     * Renews the database connections alone ({@see EntityManagerFactory::renewAllConnections()}): never inside an
+     * active transaction, fail-soft — a renewal problem never fails the caller, the next statement reconnects anyway.
+     * Agent loops call it before every tool call, because a read-then-write tool computes its baseline on the
+     * session it finds.
+     */
+    public static function renewDatabaseConnection(): void
+    {
+        try {
+            EntityManagerFactory::renewAllConnections();
+        } catch (Throwable) {
+            // fail-soft, see the docblock
+        }
     }
 
     /**

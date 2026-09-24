@@ -41,6 +41,18 @@ class DoctrineEntityRegistry
     protected static array $deferredCacheGroups = [];
 
     /**
+     * Empties the process-static registry ONCE (entities and deferred cache groups) — the state a fresh PHP process
+     * would have. Unlike {@see self::$clearCache}, which DISABLES the registry while it is set, the registry keeps
+     * working afterwards. Called by {@see \DDD\Domain\Base\Entities\MessageHandlers\AppMessageHandler::resetWorkerStateForNewJob()}
+     * so a long-lived worker does not hand a later job the entities an earlier job loaded.
+     */
+    public static function clear(): void
+    {
+        self::$entityRegistry = [];
+        self::$deferredCacheGroups = [];
+    }
+
+    /**
      * Adds entity to registry by using it's id or a queryBuilder hash as type as key
      * If extended registry cache is defined to be used, stores the entity as well in extended entity registry cache
      * @param DefaultObject|null $entity

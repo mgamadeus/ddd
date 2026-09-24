@@ -1,9 +1,9 @@
 ---
 name: ddd-message-handler-specialist
-description: Create Symfony Messenger message + handler pairs for async background processing in the mgamadeus/ddd framework. Covers AppMessage message classes, ultra-slim AppMessageHandler handlers, the service-side bool async dispatch-or-run-inline pattern, auth context propagation, workspace routing (with a known upstream defect in processOnWorkspaceIfNecessary), logging conventions, admin privilege escalation for cross-tenant jobs, messenger.yaml transport/routing config, supervisor consumer blocks, worker recycling via --limit/--time-limit/--memory-limit to flush leaked static state, and the --no-debug stale-compiled-container trap (workers keep the old transport DSN after config changes). Use when adding an async background job or a bool async service option, wiring a transport plus supervisor consumer, sizing worker limits, debugging workers that crash-loop, fail to consume, or run stale config, or chasing non-deterministic bugs from static state leaking between messages.
+description: Create Symfony Messenger message + handler pairs for async background processing in the mgamadeus/ddd framework. Covers AppMessage message classes, ultra-slim AppMessageHandler handlers, the service-side bool async dispatch-or-run-inline pattern, auth context propagation, workspace routing (with a known upstream defect in processOnWorkspaceIfNecessary), logging conventions, admin privilege escalation for cross-tenant jobs, messenger.yaml transport/routing config, supervisor consumer blocks, worker recycling via --limit/--time-limit/--memory-limit to flush leaked static state, and the --no-debug stale-compiled-container trap (workers keep the old transport DSN after config changes). Use when adding an async background job or a bool async service option, wiring a transport plus supervisor consumer, sizing worker limits, debugging workers that crash-loop, fail to consume, or run stale config, chasing static state leaking between messages or a stale read in a worker (fresh worker state per job, opt-out constant).
 metadata:
   author: mgamadeus
-  version: "1.0.0"
+  version: "1.1.0"
   framework: mgamadeus/ddd
 ---
 
@@ -39,10 +39,30 @@ Async background processing via Symfony Messenger within the DDD Core framework 
 - `logShortException(LoggerInterface, string, Throwable)` -- structured error log with top 3 stack trace frames
 - `logIssue(Throwable, AppMessage, ?string)` -- comprehensive exception logging with message payload
 - `extractMessagePayload(AppMessage)` -- extracts scalar properties for JSON logging
+- `RESET_WORKER_STATE_BEFORE_JOB` (const, default `true`) -- a consumed job starts on fresh process state; override with `false` on a handler that deliberately keeps warm state across messages
+- `resetWorkerStateForNewJob()` (static) -- the ONE fresh-state implementation: Doctrine unit of work cleared, every DB connection without an active transaction closed (lazy reconnect = fresh session/snapshot), `DoctrineEntityRegistry::clear()` + `VirtualEntityRegistry::clear()`; run by the core `FreshWorkerStateMiddleware` before every message with a `ReceivedStamp`
+- `renewDatabaseConnection()` (static) -- the connection part alone (`EntityManagerFactory::renewAllConnections()`), fail-soft; agent loops call it before every tool call
 
 ---
 
 ## Conventions
+
+### 0. Every consumed job starts FRESH — never clear caches per handler
+
+A long-lived worker otherwise serves job N+1 from job N's leftovers: a DB session whose REPEATABLE READ snapshot predates
+the previous job's writes, the Doctrine unit of work, the process-static entity registries. The framework therefore
+prepends `DDD\Symfony\Messenger\Middleware\FreshWorkerStateMiddleware` to EVERY bus (`FreshWorkerStateMiddlewarePass`,
+registered by `DDDKernel::build()` ahead of Symfony's MessengerPass) — no app config, no handler code. It runs
+`AppMessageHandler::resetWorkerStateForNewJob()` for messages carrying a `ReceivedStamp`; synchronous dispatches inside
+a request keep the request's state.
+
+- Do NOT add cache clearing, connection resets or registry wipes to a handler — it is already done, once, for all.
+- Opt out per handler: `public const bool RESET_WORKER_STATE_BEFORE_JOB = false;` (a batch handler that accumulates
+  across messages). The middleware skips the reset when ANY handler of the message says so.
+- Opt out per app: parameter `ddd.messenger.fresh_worker_state: false` (the pass then registers nothing).
+- A stale baseline read in a worker is a SESSION problem, never a reason for a per-write transaction: a transaction
+  joins the already open one and keeps its snapshot. Renew the connection instead (`renewDatabaseConnection()`).
+- Do not rely on registry-cached entities across messages; reload by id at the start of the job.
 
 ### 1. Prefer IDs in Message Payload
 

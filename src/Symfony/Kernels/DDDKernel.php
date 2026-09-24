@@ -2,10 +2,12 @@
 
 namespace DDD\Symfony\Kernels;
 
+use DDD\Symfony\CompilerPasses\FreshWorkerStateMiddlewarePass;
 use DDD\Symfony\CompilerPasses\ModuleCompilerPass;
 use DDD\Symfony\CompilerPasses\QuotaDefaultBindingsCompilerPass;
 use DDD\Symfony\CompilerPasses\ServiceClassCollectorPass;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
+use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
@@ -162,5 +164,9 @@ class DDDKernel extends Kernel
         // (the QuotaSubscriber is auto-registered and depends on QuotaConsumerInterface / QuotaAccountResolverInterface).
         // Only fills gaps — an app's own binding always wins.
         $container->addCompilerPass(new QuotaDefaultBindingsCompilerPass());
+        // Every consumed Messenger job starts on fresh process state (connections renewed, unit of work and entity
+        // registries empty). Must run BEFORE Symfony's MessengerPass (priority 0 in the same phase), which consumes
+        // the per-bus middleware parameter this pass prepends to.
+        $container->addCompilerPass(new FreshWorkerStateMiddlewarePass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, 8);
     }
 }

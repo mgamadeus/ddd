@@ -139,6 +139,25 @@ class EntityManagerFactory
         gc_collect_cycles();
     }
 
+    /**
+     * Closes the database connection of every entity manager instance (all scopes) that has NO active transaction,
+     * so the next statement on it opens a fresh session — a new REPEATABLE READ snapshot, no session state inherited
+     * from earlier work. The DBAL connection reconnects lazily; nothing else has to be recreated. A connection inside
+     * a transaction is left alone: closing it would silently roll the transaction back.
+     *
+     * Used by {@see \DDD\Domain\Base\Entities\MessageHandlers\AppMessageHandler::renewDatabaseConnection()}: before a
+     * consumed worker job and, in agent loops, before a tool call that reads a baseline it then writes against.
+     */
+    public static function renewAllConnections(): void
+    {
+        foreach (self::$instances as $instance) {
+            $connection = $instance->getConnection();
+            if (!$connection->isTransactionActive()) {
+                $connection->close();
+            }
+        }
+    }
+
     protected static function getDBConfigForScope(string $scope = self::SCOPE_DEFAULT): array
     {
         $config = [
