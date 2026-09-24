@@ -313,6 +313,11 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
                             } catch (Exception) {
                             }
                         } else {
+                            if ($typeToInstance === DateTime::class && trim($value) === '') {
+                                // "" is "not provided" — skip the element instead of rejecting the whole set
+                                // (same tolerance as the property path in SerializerTrait).
+                                continue;
+                            }
                             $item = SerializerRegistry::hydrateFromString($typeToInstance, $value);
                             if (
                                 $item === false

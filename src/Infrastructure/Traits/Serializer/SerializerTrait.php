@@ -1700,6 +1700,12 @@ trait SerializerTrait
                             } catch (Exception) {
                             }
                         } else {
+                            if ($typeToInstance === DateTime::class && trim((string)$value) === '') {
+                                // An EMPTY string is "not provided", never a malformed date-time: agent models
+                                // reliably fill every optional field with "" (createdTime, validUntil), and a
+                                // rejection here failed whole writes for a value that carries nothing.
+                                return;
+                            }
                             $loadedInstance = SerializerRegistry::hydrateFromString($typeToInstance, $value);
                             if (
                                 $loadedInstance === false

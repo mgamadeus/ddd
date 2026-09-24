@@ -3,7 +3,7 @@ name: ddd-serializer-specialist
 description: Work with the SerializerTrait in mgamadeus/ddd — the one serialization layer behind ALL API output, DB persistence, request hydration and message payloads (every DefaultObject, RequestDto and RestResponseDto uses it). Covers toObject/toJSON and the forPersistence dual mode (DontPersistProperty vs HideProperty vs HidePropertyOnSystemSerialization), setPropertiesFromObject hydration (aliases are output-only), attribute and runtime hiding incl. dotted-path hides, renaming via OverwritePropertyName and Aliases, ExposePropertyInsteadOfClass flattening, per-class toObject overrides, SerializerRegistry cache semantics, TOON tabular serialization, and model-facing time zones (MODEL_FACING_DATETIME, withInputTimezone/withModelFacingTimezone, DateTime::fromStringInZone/formatForModel). Use when configuring serialization, hiding fields, renaming output, excluding fields from persistence, debugging missing or wrong-named output, emitting tabular formats, or converting date-times at an LLM/MCP tool boundary.
 metadata:
   author: mgamadeus
-  version: "1.3.1"
+  version: "1.3.2"
   framework: mgamadeus/ddd
 ---
 
@@ -470,6 +470,12 @@ DateTime::fromStringInZone('2026-03-08 02:30:00', $newYork);// throws Nonexisten
 - `MODEL_INPUT_FORMATS` lists the accepted shapes, offset-bearing forms first. Pass your own array as the third argument to narrow them.
 
 When a `DateTime` property cannot be parsed **and** an input zone is set, hydration throws a `BadRequestException` naming the expected shape instead of dropping the value — the model gets told how to write it. With `throwErrors: false` the existing suppression still applies.
+
+**An EMPTY string is "not provided", never a malformed date-time.** `""` (and whitespace-only) on a `DateTime`
+property leaves the property untouched instead of raising the corrective — agent models reliably fill every optional
+field with `""` rather than omitting it, and rejecting that failed whole writes for a value carrying nothing. Off the
+zone-aware path nothing changes: `DateTime::fromString('')` already returns `false`, which was never assigned either.
+Non-empty malformed values keep the corrective.
 
 ---
 
