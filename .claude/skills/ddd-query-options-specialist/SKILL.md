@@ -3,7 +3,7 @@ name: ddd-query-options-specialist
 description: Work with the OData-inspired QueryOptions system in mgamadeus/ddd — database-level filtering, sorting, pagination, select, expand and fulltext search over Translatable properties. Wire syntax filters=/expand=/orderBy=/select=/top=/skip= (plural filters, no dollar prefix; default top 50). Covers entity setup (QueryOptionsTrait on BOTH Entity and EntitySet), controller DTOs, the filter grammar (eq/ne/gt/ge/lt/le/in/ni/bw, ft/fb fulltext, and/or grouping, dot-notation), expand with nested clauses and join read-rights, propertyScore relevance, programmatic snapshot/restore, mandatory scope filters via addFiltersConnectedByAnd, the Argus shared-defaults rule, why HideProperty fields are never filterable, and temporal filters (FiltersDefinition::$temporalKind, normalizeMomentLiterals) for zone-aware callers. Use when a query param is ignored, when results cap at 50, when enforcing an inescapable scope filter, when Argus defaults have no effect, or when date-time filters compare against the wrong zone.
 metadata:
   author: mgamadeus
-  version: "1.2.1"
+  version: "1.2.2"
   framework: mgamadeus/ddd
 ---
 
@@ -510,6 +510,25 @@ $filters->normalizeMomentLiterals($queryOptions->getFiltersDefinitions(), $input
 | `ExpandDefinitions` | `src/Domain/Base/Entities/QueryOptions/ExpandDefinitions.php` | Auto-detects expandable properties (from #[LazyLoad]) |
 | `DtoQueryOptions` | `src/Presentation/Base/QueryOptions/DtoQueryOptions.php` | Attribute linking DTO to base entity |
 | `DtoQueryOptionsTrait` | `src/Presentation/Base/QueryOptions/DtoQueryOptionsTrait.php` | Bridges HTTP query params to domain QueryOptions |
+| `QueryOptionsPropertyMapping` | `src/Domain/Base/Entities/QueryOptions/QueryOptionsPropertyMapping.php` | What a repo's mapping function returns: the mapped property name and value |
+
+### Mapping functions (legacy or renamed columns)
+
+`applyFiltersToDoctrineQueryBuilder()` / `applyOrderByToDoctrineQueryBuilder()` take an optional mapping function that
+a repo uses to translate a domain property into its column — typically a legacy schema. It is handed the property
+name and the FILTER VALUE and returns a `QueryOptionsPropertyMapping`, whose value replaces the original
+unconditionally. So the mapping must accept **everything the parser produces**, not just strings:
+
+| Filter | `$value` the mapping receives |
+|--------|-------------------------------|
+| `name eq 'x'` | `string` |
+| `id eq 42`, `score eq 1.5` | `float` — the parser casts EVERY number, `42` included |
+| `status in ['a','b']`, `id bw [1,9]`, `ni` | `array` of scalars |
+| `name eq null` | `null` |
+
+Type a mapping helper `string|int|float|array|null` and handle the array case (map each element). A narrower
+`?string` fatals with a TypeError on every list and every numeric filter — not a filter that returns nothing, a
+500.
 
 ---
 
