@@ -3,7 +3,7 @@ name: ddd-endpoint-specialist
 description: "Create REST API controllers, DTOs, route attributes, error handling, and OpenAPI documentation in the mgamadeus/ddd framework — CRUD templates for the Admin/Client/Public/Batch audiences, request DTOs (path/query/body params, QueryOptions via DtoQueryOptions, file uploads via FileSetsDtoTrait), specialized response DTOs (Excel, PDF, ZIP, image, file download, HTML, redirect), GET caching via the RequestCache attribute with noCache bypass, request logging via LogRequest, multi-DTO merging, and Summary/Tag naming rules. Also explains autodocumentation: how DTOs/entities become the OpenAPI schema, MCP tool schema, and TypeScript SDK, the @var T[] docblock rule (never array<T>), the inert schema attributes (Enum, Length, ClassName), SharedRequestParameter, and fixing INVALID_ARGUMENT / HTTP 500 schema errors. Use when creating or modifying endpoints, DTOs, or controllers, returning file downloads, caching or logging a route, or debugging generated API/MCP/TS schemas."
 metadata:
   author: mgamadeus
-  version: "1.0.0"
+  version: "1.1.0"
   framework: mgamadeus/ddd
 ---
 
@@ -429,8 +429,18 @@ The property **description** is the `@var` docblock text *after* the type token 
 | `#[Length(min, max)]` | *intended* `minLength` / `maxLength`, but currently **inert** (see note) |
 | `#[ClassName]` | *intended* `objectType` single-value `enum` + required, but currently **inert** (see note) |
 | `#[Ignore]` | property omitted from the schema entirely |
-| `#[Parameter(in: PATH/QUERY/BODY/RESPONSE/FILES)]` | which surface the property documents; a request-DTO body schema skips PATH/QUERY props (RESPONSE documents all) |
+| `#[Parameter(in: PATH/QUERY/BODY/RESPONSE/FILES)]` | which surface the property documents; a request-DTO body schema skips PATH/QUERY props (RESPONSE documents all). Since v2.64.1 a property declared `in: RESPONSE` is documented in EVERY scope — see the component-scope note below |
 | `#[OverwritePropertyName('x')]` | renames the output key (see `ddd-serializer-specialist`) |
+
+> **One schema component per class, and its scope is whoever registered it FIRST.** `Components::addSchemaForClass()`
+> keys the component by class name alone and returns early if it already exists; a class reached as a NESTED property
+> is registered with the default `BODY` scope (`SchemaProperty.php:361, :451`), while the response path registers with
+> `RESPONSE`. Whichever runs first decides the component's scope for the whole document. That is why, up to v2.64.0, a
+> `#[Parameter(in: Parameter::RESPONSE)]` property could vanish from the documentation entirely — annotating a field as
+> a response field made it disappear, the opposite of the intent, and the generated TS SDK lost it with no error.
+> v2.64.1 exempts `in: RESPONSE` properties from the scope filter so the outcome no longer depends on registration
+> order. The one-component-per-class design itself is unchanged: a class used in both directions still yields ONE
+> schema, so do not expect per-scope shapes from it.
 
 > **Known `SchemaProperty` defect:** the `#[Length]`, `#[ClassName]` and `object`-rejection blocks are gated on `$this->type` (`SchemaProperty.php:219-264`), which is still `null` at that point — it is only assigned at `:279`, AFTER the guards. So those three do nothing today. The proper fix is to move the `:279` type assignment above the guards (a code change, flagged for the framework owner); until then, do not rely on `#[Length]`/`#[ClassName]` to shape the schema.
 

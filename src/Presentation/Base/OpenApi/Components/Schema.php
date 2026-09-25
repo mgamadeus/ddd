@@ -75,7 +75,17 @@ class Schema
                 ) {
                     /** @var Parameter $parameterAttributeInstance */
                     $parameterAttributeInstance = $attribute->newInstance();
-                    if ($parameterAttributeInstance->in != $this->scope && $this->scope != Parameter::RESPONSE) {
+                    // A property declared as a RESPONSE field is documented in EVERY scope of this class' schema.
+                    // Components are keyed by class name alone ({@see Components::addSchemaForClass()}, first
+                    // registration wins) and a class reached as a nested property is registered with the default
+                    // BODY scope, so without this a `#[Parameter(in: Parameter::RESPONSE)]` property vanished from
+                    // the documentation altogether whenever anything but the response path registered the class
+                    // first — annotating a response field made it disappear, the exact opposite of the intent.
+                    if (
+                        $parameterAttributeInstance->in != $this->scope
+                        && $this->scope != Parameter::RESPONSE
+                        && $parameterAttributeInstance->in != Parameter::RESPONSE
+                    ) {
                         $skipProperty = true;
                         break;
                     }
