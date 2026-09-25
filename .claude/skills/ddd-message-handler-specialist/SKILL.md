@@ -1,9 +1,9 @@
 ---
 name: ddd-message-handler-specialist
-description: Create Symfony Messenger message + handler pairs for async background processing in the mgamadeus/ddd framework. Covers AppMessage message classes, ultra-slim AppMessageHandler handlers, the service-side bool async dispatch-or-run-inline pattern, auth context propagation, workspace routing (with a known upstream defect in processOnWorkspaceIfNecessary), logging conventions, admin privilege escalation for cross-tenant jobs, messenger.yaml transport/routing config, supervisor consumer blocks, worker recycling via --limit/--time-limit/--memory-limit to flush leaked static state, and the --no-debug stale-compiled-container trap (workers keep the old transport DSN after config changes). Use when adding an async background job or a bool async service option, wiring a transport plus supervisor consumer, sizing worker limits, debugging workers that crash-loop, fail to consume, or run stale config, chasing static state leaking between messages or a stale read in a worker (fresh worker state per job, opt-out constant).
+description: Create Symfony Messenger message + handler pairs for async background processing in the mgamadeus/ddd framework. Covers AppMessage message classes, ultra-slim AppMessageHandler handlers, the service-side bool async dispatch-or-run-inline pattern, auth context propagation, cross-workspace rerouting (processOnWorkspaceIfNecessary, ddd.messenger.workspace_reroute), logging conventions, admin privilege escalation for cross-tenant jobs, messenger.yaml transport/routing config, supervisor consumer blocks, worker recycling via --limit/--time-limit/--memory-limit, and the --no-debug stale-compiled-container trap. Use when adding an async background job or a bool async service option, wiring a transport plus supervisor consumer, sizing worker limits, debugging workers that crash-loop, fail to consume or run stale config, chasing static state leaking between messages or a stale read in a worker (fresh worker state per job, opt-out constant), or when a job runs against the wrong workspace's database.
 metadata:
   author: mgamadeus
-  version: "1.1.0"
+  version: "1.2.0"
   framework: mgamadeus/ddd
 ---
 
@@ -163,13 +163,31 @@ if ($message->processOnWorkspaceIfNecessary()) {
 
 **Order:** set auth -> workspace guard -> run.
 
-> ⚠️ **Known upstream defect (verify before relying on this guard).** In
-> `src/Domain/Base/Entities/MessageHandlers/AppMessage.php` the first guard in
-> `processOnWorkspaceIfNecessary()` (`:205-215`) appears **inverted** relative to its own docblock
-> (`:199-202`): it returns `false` when the workspace dir **is** set, and `dispatch()` (`:70`) always
-> sets it — so with current code the method can never return `true` and this early-return never fires.
-> Either the guard is inverted (cross-workspace routing has never run) or the docblock is stale. This
-> needs a code-side decision upstream; until it is resolved, do not assume the guard actually reroutes.
+`dispatch()` records the workspace the message was dispatched from. A consumer running in a DIFFERENT workspace
+re-executes the message through that workspace's console (`app:process-cli-message`), so the right code runs against
+the right database — which is what keeps several workspaces sharing one broker (or one vhost) apart.
+
+The message is processed LOCALLY (the guard returns `false`) when:
+
+| Situation | Why |
+|---|---|
+| no dispatch workspace recorded | a message built outside `dispatch()`, e.g. a CLI-encoded one |
+| the recorded dir IS the current workspace | compared through `realpath()` on both sides — `kernel.project_dir` is symlink-resolved, the stored string may not be, and a plain string mismatch would reroute EVERY message through a child process |
+| the recorded dir no longer exists | a stale release dir after a deploy switch, or a foreign host — logged at warning level; the message was serialised by the same codebase family, so local processing is the safe default |
+| `ddd.messenger.workspace_reroute: false` | the installation opted out (a single-codebase production install has nothing to reroute between); absent parameter = enabled |
+
+**No loop guard is needed, and none should be added:** inside the rerouted console process the current root dir IS
+the recorded one, so the handler's own call returns `false` there and it does the work.
+
+**A failing child now fails the message.** The rerouted console runs as a `Symfony\Component\Process\Process` with
+no timeout; a non-zero exit throws `InternalErrorException` with the exit code and the child's stderr, so Messenger's
+retry / failure-transport semantics apply. (Before v2.64.0 it ran through `shell_exec()`, which discarded the exit
+status — a failure in the rerouted process was invisible and the message was acked as handled.)
+
+> **Dev-workspace caveat.** `processOnWorkspace()` runs the target console with `--no-debug`. On a dev workspace
+> whose workers run WITHOUT `--no-debug` (so the kernel recompiles after each code sync), the `--no-debug` child may
+> execute a stale compiled container until the next debug boot — the same trap as Step 5.2, one process further out.
+> If a rerouted job behaves like old code, boot that workspace's console once without `--no-debug`.
 
 ### 6. Logging Pattern
 
