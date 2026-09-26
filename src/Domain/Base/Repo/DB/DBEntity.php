@@ -30,11 +30,13 @@ use DDD\Infrastructure\Exceptions\UnauthorizedException;
 use DDD\Infrastructure\Libs\Encrypt;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Traits\Serializer\SerializerRegistry;
+use Doctrine\ORM\EntityManagerInterface;
 use Psr\Cache\InvalidArgumentException;
 use ReflectionAttribute;
 use ReflectionException;
 use ReflectionNamedType;
 use ReflectionUnionType;
+use Throwable;
 
 class DBEntity extends DatabaseRepoEntity
 {
@@ -519,7 +521,46 @@ class DBEntity extends DatabaseRepoEntity
         }
         $this->ormInstance = new (static::getBaseModelNameForEntityInstance($entity))();
         $this->mapToRepository($entity, $propertyNames);
-        return EntityManagerFactory::getInstance()->upsert($this->ormInstance, null, $propertyNames);
+        $entityManager = EntityManagerFactory::getInstance();
+        $rowId = $entityManager->upsert($this->ormInstance, null, $propertyNames);
+        // The raw upsert bypasses the UnitOfWork: a model of this row that an EARLIER query hydrated stays MANAGED
+        // with its pre-write field values, and every later hydration of the same row in this process (a set query, a
+        // find(), even one with HINT_REFRESH) hands the stale managed instance back — so a status written a moment
+        // ago reads as the old status until the process ends. Detaching that ONE instance makes the next hydration
+        // read the DB. The caller's live entity is untouched, which is the whole point of the partial write (the
+        // full update() path solves this with an EntityManager::clear() that the partial write must not do).
+        $this->detachManagedOrmInstanceOfRow($entityManager, $this->ormInstance::class, $entity->id);
+        return $rowId;
+    }
+
+    /**
+     * Drops the UnitOfWork's managed instance of ONE row after a write that bypassed it, so the next hydration of
+     * that row reads the DB instead of the stale identity-map copy. No-op when the row is not managed.
+     *
+     * The identity map is keyed by the ROOT entity class of the hierarchy, not by the concrete model: for a
+     * single-table-inheritance model ({@see \DDD\Domain\Base\Repo\DB\Database\SubclassIndicator}, which
+     * generates `#[ORM\InheritanceType('SINGLE_TABLE')]`) a lookup with the subclass name silently finds nothing
+     * and the stale instance survives — so the class metadata resolves the root first.
+     *
+     * @param EntityManagerInterface $entityManager
+     * @param string $ormModelClass The concrete Doctrine model class of the written row
+     * @param int|string $id
+     * @return void
+     */
+    protected function detachManagedOrmInstanceOfRow(
+        EntityManagerInterface $entityManager,
+        string $ormModelClass,
+        int|string $id
+    ): void {
+        try {
+            $rootOrmModelClass = $entityManager->getClassMetadata($ormModelClass)->rootEntityName ?: $ormModelClass;
+            $managedOrmInstance = $entityManager->getUnitOfWork()->tryGetById(['id' => $id], $rootOrmModelClass);
+            if (is_object($managedOrmInstance)) {
+                $entityManager->detach($managedOrmInstance);
+            }
+        } catch (Throwable) {
+            // fail-soft: a metadata lookup that cannot resolve the class must never break the write that happened
+        }
     }
 
     public function mapCreatedAndUpdatedTime(DefaultObject &$entity): void

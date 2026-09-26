@@ -3,7 +3,7 @@ name: ddd-service-specialist
 description: Create DDD services, business logic, QueryBuilder patterns, and rights protection in the mgamadeus/ddd framework — including vector/semantic search, fulltext search over Translatable properties, concurrency-safe atomic writes, and partial writes via updatePartialIgnoringRights. Covers service instantiation (container resolution, never new, never cache), caller-side vs in-service find() paths, the null-getService() cross-namespace fix (ReuseParentEntitySet), the createQueryBuilder(true) root-alias rule, conventions (entity owns non-repo logic, pass objects not IDs, App vs DDD namespace placement), the PHPDoc @throws convention, advanced patterns (update/delete overrides, junction links, seeding, async dispatch), and infrastructure utilities (Config, Cache, Encrypt, IssuesLogService). Use when creating services, writing custom queries, implementing rights, doing vector or fulltext search, writing concurrency-safe or partial updates, or debugging a null getService() or a No-alias-was-set error.
 metadata:
   author: mgamadeus
-  version: "1.0.0"
+  version: "1.1.0"
   framework: mgamadeus/ddd
 ---
 
@@ -359,6 +359,26 @@ $message->updatePartialIgnoringRights('toolCall', 'status');           // JSON V
 | a whole NEW row, or an aggregate only one process owns at a time | `$entity->update()` |
 | a scalar/flag/counter under concurrency, often compare-and-set | atomic raw SQL / DQL (prior section) |
 | one/few VO/JSON/vector/datetime columns of an EXISTING row, under concurrency, without detaching the live entity | `$entity->updatePartialIgnoringRights(...)` |
+
+### Reading back in the same process (fixed in v2.64.2)
+
+The partial write goes through a raw `upsert()` that bypasses Doctrine's UnitOfWork. A model of that row hydrated by
+an EARLIER query therefore stayed MANAGED with its pre-write values, and every later hydration of the same row in the
+same process — a set query, a `find()`, even one with `Query::HINT_REFRESH` — got the stale managed instance back.
+Symptom: you write `status = PAUSED`, the DB has `PAUSED` on any connection, and your own process keeps reading
+`ACTIVE` until it ends.
+
+Since v2.64.2 the write detaches exactly that one managed instance (the identity map is keyed by the ROOT class of an
+STI hierarchy, which the framework resolves for you), so the next hydration reads the DB. Your live entity is
+untouched — that is still the point of the partial write.
+
+Two layers sit above it, and they behave differently:
+
+| Layer | After a partial write |
+|---|---|
+| Doctrine identity map | fixed — the written row's managed instance is detached |
+| `DoctrineEntityRegistry` per-id entry | holds the instance the caller mutated, so it is already right |
+| `DoctrineEntityRegistry` cached SET entry | still holds pre-write clones — load the set with `useEntityRegistrCache: false` when you must read fresh right after the write |
 
 **NEVER** hand-roll a "bare entity" partial write (`newInstanceWithoutConstructor()` + set one column + `update(0)`): `newInstanceWithoutConstructor` applies inline defaults so the "bare" model isn't bare → `update()` maps every initialized column and clobbers; and the read-after-write reload detaches your live entity. That anti-pattern is exactly what `updatePartialIgnoringRights()` replaces.
 
