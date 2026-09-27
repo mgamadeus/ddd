@@ -31,6 +31,18 @@ class FiltersDefinition extends ValueObject
     public ?array $options;
 
     /**
+     * @var bool Whether the fulltext operators (ft / fb) can work on this property, i.e. the column is covered by a
+     * SINGLE-column FULLTEXT index — a property-level #[DatabaseIndex(indexType: DatabaseIndex::TYPE_FULLTEXT)], a
+     * class-level one listing exactly this column, or the virtual search column of
+     * #[Translatable(fullTextIndex: true)]. Without one the database answers error 1191 ("Can't find FULLTEXT index
+     * matching the column list"), so the documentation advertises the operators only where they work. Derived from
+     * the ATTRIBUTES: this framework does not manage the schema, so an index that exists in the database without a
+     * declaration reads as false here — which is why rejecting on it is opt-in
+     * ({@see FiltersOptions::FULLTEXT_STRICT_PARAMETER}) and not the default.
+     */
+    public bool $supportsFulltext = false;
+
+    /**
      * @var string|null MOMENT for a DateTime-typed or DateTime-meaning filter, DAY for a Date one, null = not
      * temporal. Set automatically from the reflected property type, or explicitly through the associative
      * definition form in {@see FiltersDefinitions::__construct()}.

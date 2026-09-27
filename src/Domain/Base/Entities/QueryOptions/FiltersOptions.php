@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Entities\QueryOptions;
 
+use DDD\DDDBundle;
 use DDD\Domain\Base\Entities\ObjectSet;
 use DDD\Domain\Base\Entities\Translatable\Translatable;
 use DDD\Domain\Base\Repo\DB\DBEntity;
@@ -19,6 +20,7 @@ use Doctrine\ORM\Query\Expr\Join;
 use JsonException;
 use DateTimeZone;
 use ReflectionException;
+use Throwable;
 
 /**
  * @property FiltersOptions[] $elements;
@@ -111,6 +113,16 @@ class FiltersOptions extends ObjectSet
 
     /** @var string[] Fulltext operators (MATCH AGAINST) */
     public const array FULLTEXT_OPERATORS = [self::OPERATOR_FULLTEXT, self::OPERATOR_FULLTEXT_BOOLEAN];
+
+    /**
+     * @var string Container parameter (default OFF): when true, a fulltext operator on a property whose definition
+     * does not declare {@see FiltersDefinition::$supportsFulltext} is refused during validation with a
+     * BadRequestException instead of reaching the database, which answers error 1191 ("Can't find FULLTEXT index
+     * matching the column list"). OFF by default on purpose: this framework does not manage the schema, so an
+     * index created by hand without a #[DatabaseIndex] declaration would make the check refuse a filter that
+     * actually works. Turn it on in an app whose indexes are fully declared.
+     */
+    public const string FULLTEXT_STRICT_PARAMETER = 'ddd.queryoptions.strict_fulltext_operators';
 
     /**
      * Registry to bridge FILTERS -> ORDER BY score (e.g. orderBy=nameScore).
@@ -615,6 +627,17 @@ MD;
             );
         }
         $this->filtersDefinition = $filterDefinition;
+        if (
+            in_array($this->operator, self::FULLTEXT_OPERATORS, true)
+            && !$filterDefinition->supportsFulltext
+            && self::fulltextOperatorValidationIsStrict()
+        ) {
+            throw new BadRequestException(
+                "The fulltext operator '$this->operator' is not available for property name '$this->property': its"
+                . ' column carries no FULLTEXT index. Use one of the comparison operators instead, or a property'
+                . ' documented as fulltext-searchable.'
+            );
+        }
         if ($expandDefinition = $filterDefinition->getExpandDefinition()) {
             $expandOption = $expandOptions->getExpandOptionByPropertyName($expandDefinition->propertyName);
             if ($expandDefinition && !$expandOption) {
@@ -761,6 +784,24 @@ MD;
             return json_encode(array_values($value), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         }
         return "'" . preg_replace('/(?<!\\\\)\'/', "\\\\'", (string)$value) . "'";
+    }
+
+    /**
+     * @return bool Whether an undeclared fulltext property is refused during validation
+     * ({@see self::FULLTEXT_STRICT_PARAMETER}); false when the container carries no such parameter, which is every
+     * app that never opts in
+     */
+    protected static function fulltextOperatorValidationIsStrict(): bool
+    {
+        try {
+            $container = DDDBundle::getContainer();
+            if (!$container->hasParameter(self::FULLTEXT_STRICT_PARAMETER)) {
+                return false;
+            }
+            return (bool)$container->getParameter(self::FULLTEXT_STRICT_PARAMETER);
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     public function uniqueKey(): string

@@ -149,14 +149,22 @@ class DoctrineQueryBuilder extends QueryBuilder
     }
 
     /**
-     * Applies result mapping to a result and returns the mapped result
+     * Applies result mapping to a result and returns the mapped result.
+     *
+     * $refresh must be set here and nowhere else: QueryBuilder::getQuery() builds a NEW Query instance on every
+     * call, so a hint set on the caller's instance never reaches the hydrator that runs below.
+     *
      * @param Result $result
+     * @param bool $refresh Re-hydrate managed entities from this result instead of returning the identity map's copy
      * @return mixed
      * @throws ORMException
      */
-    public function getMappedResult(Result $result): mixed
+    public function getMappedResult(Result $result, bool $refresh = false): mixed
     {
         $query = $this->getQuery();
+        if ($refresh) {
+            $query->setHint(Query::HINT_REFRESH, true);
+        }
         $query->setHydrationMode(DoctrineQuery::HYDRATE_OBJECT);
         $rsm = $query->parse()->getResultSetMapping();
         return $this->getEntityManager()->newHydrator($query->getHydrationMode())->hydrateAll(
@@ -222,7 +230,7 @@ class DoctrineQueryBuilder extends QueryBuilder
             // map otherwise returns the already-managed entity — with its STALE field/embedded-VO values from an earlier
             // load in the same long-running process (e.g. a worker that loaded an entity in turn 1 and reloads it later)
             // — instead of re-reading the fresh DB row. Mirrors the single-entity DatabaseRepoEntity::find() path. (The
-            // joins+limit branch below executes RAW SQL via the DBAL connection and maps fresh rows, so it is unaffected.)
+            // joins+limit branch below needs the same hint for a different reason — see there.)
             if ($refresh) {
                 $query->disableResultCache()->useQueryCache(false)->setHint(Query::HINT_REFRESH, true);
             }
@@ -413,8 +421,13 @@ class DoctrineQueryBuilder extends QueryBuilder
         $connection = $this->getEntityManager()->getConnection();
         $result = $connection->executeQuery($combinedSQL, $orderedParameters, $types);
 
+        // The raw SQL above only FETCHES rows; getMappedResult() hydrates them through Doctrine's ObjectHydrator,
+        // which consults the identity map and hands back an already-managed instance with its STALE fields unless
+        // the hint says otherwise. So a set reload with useEntityRegistrCache=false returned pre-write models on
+        // exactly this branch (joins + limit), while the simple branch above was fixed — e.g. a tool call read back
+        // as PENDING in the same process after its row had been written to COMPLETED.
         // Map the result to ORM entities
-        $mappedResult = $this->getMappedResult($result);
+        $mappedResult = $this->getMappedResult($result, $refresh);
         return $mappedResult;
     }
 

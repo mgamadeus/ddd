@@ -181,6 +181,12 @@ class PathParameterSchema
                             foreach ($queryOptions?->getFiltersDefinitions()?->getElements() as $allowedField) {
                                 $constantDescription = $constantDescriptions[$allowedField->propertyName] ?? '';
                                 $parameter->description .= "\n- `$allowedField->propertyName`" . ($constantDescription ? ': ' . $constantDescription : '');
+                                // Advertise the fulltext operators only where they work: without a FULLTEXT index on
+                                // the column the database answers error 1191, and a caller (an agent above all) has
+                                // no other way to tell which properties accept `ft` / `fb`.
+                                if ($allowedField->supportsFulltext) {
+                                    $parameter->description .= ' - fulltext-searchable (`ft`, `fb`)';
+                                }
                                 if ($allowedField->options) {
                                     $parameter->description .= ' - one of [';
                                     $i = 0;

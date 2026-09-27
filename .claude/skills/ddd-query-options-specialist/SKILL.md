@@ -3,7 +3,7 @@ name: ddd-query-options-specialist
 description: Work with the OData-inspired QueryOptions system in mgamadeus/ddd — database-level filtering, sorting, pagination, select, expand and fulltext search over Translatable properties. Wire syntax filters=/expand=/orderBy=/select=/top=/skip= (plural filters, no dollar prefix; default top 50). Covers entity setup (QueryOptionsTrait on BOTH Entity and EntitySet), controller DTOs, the filter grammar (eq/ne/gt/ge/lt/le/in/ni/bw, ft/fb fulltext, and/or grouping, dot-notation), expand with nested clauses and join read-rights, propertyScore relevance, programmatic snapshot/restore, mandatory scope filters via addFiltersConnectedByAnd, the Argus shared-defaults rule, why HideProperty fields are never filterable, and temporal filters (FiltersDefinition::$temporalKind, normalizeMomentLiterals) for zone-aware callers. Use when a query param is ignored, when results cap at 50, when enforcing an inescapable scope filter, when Argus defaults have no effect, or when date-time filters compare against the wrong zone.
 metadata:
   author: mgamadeus
-  version: "1.2.2"
+  version: "1.3.0"
   framework: mgamadeus/ddd
 ---
 
@@ -490,6 +490,39 @@ $filters->normalizeMomentLiterals($queryOptions->getFiltersDefinitions(), $input
 - An explicit offset in the literal wins over the zone; a literal that is not a date-time at all, or a local time that does not exist in the zone, raises a `BadRequestException` — staying silent would keep exactly the wrong-zone comparison the conversion exists to remove.
 
 `toCanonicalExpression()` serializes a parsed (or normalized, or code-built) tree back into the filter grammar: operation nodes are fully parenthesized (the parser has no precedence rules, so explicit grouping is the only way a mixed `and`/`or` tree survives), arrays are written as JSON, strings are single-quoted with their unescaped quotes escaped. `fromString(toCanonicalExpression(fromString($x)))` yields an equal tree.
+
+---
+
+## Fulltext operators and the FULLTEXT index
+
+`ft` / `fb` compile to `MATCH(column) AGAINST (…)`, and MySQL serves that only from a FULLTEXT index on **exactly
+that column list**. Without one the database answers `SQLSTATE[HY000] 1191 Can't find FULLTEXT index matching the
+column list` — and a COMPOSITE index over `(a, b)` does **not** serve `a ft '…'` either.
+
+`FiltersDefinition::$supportsFulltext` records where the operators actually work, derived from the declared
+attributes while the definitions are reflected:
+
+| Declaration | `supportsFulltext` |
+|---|---|
+| `#[DatabaseIndex(indexType: DatabaseIndex::TYPE_FULLTEXT)]` on the property | true |
+| class-level `#[DatabaseIndex(indexType: …TYPE_FULLTEXT, indexColumns: ['thatColumn'])]` | true |
+| class-level fulltext index over several columns | false — it cannot serve a single-column MATCH |
+| `#[Translatable(fullTextIndex: true)]` | true for the property AND its generated `virtual<Name>Search` column |
+| a plain `#[DatabaseIndex]`, or nothing | false |
+
+Two consequences:
+
+- **The documentation advertises it.** A filter property that supports the operators is rendered as
+  `- \`content\` - fulltext-searchable (\`ft\`, \`fb\`)` in the `filters` parameter description, so a caller — an
+  agent above all — can tell which properties accept them instead of discovering 1191 at runtime.
+- **Refusing is opt-in.** With the container parameter `ddd.queryoptions.strict_fulltext_operators: true`,
+  validation throws a `BadRequestException` for a fulltext operator on a property that declares no index. It is OFF
+  by default *because this framework does not manage the schema*: an index created by hand without a
+  `#[DatabaseIndex]` declaration is invisible to the reflection, and strict mode would refuse a filter that works.
+  Turn it on in an app whose indexes are fully declared in the entities.
+
+Declaring it by hand (an Argus-backed or otherwise non-reflected definition) uses the associative form:
+`['propertyName' => 'content', 'supportsFulltext' => true]`.
 
 ---
 

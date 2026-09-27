@@ -14,6 +14,7 @@ use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Entities\ObjectSet;
 use DDD\Domain\Base\Entities\Translatable\Translatable;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseIndex;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseVirtualColumn;
 use DDD\Infrastructure\Base\DateTime\Date;
 use DDD\Infrastructure\Base\DateTime\DateTime;
@@ -62,6 +63,12 @@ class FiltersDefinitions extends ObjectSet
     protected static array $temporalKindsForCurrentReflection = [];
 
     /**
+     * @var array Property names (prefixed, as registered) whose column carries a single-column FULLTEXT index,
+     * collected alongside {@see self::$temporalKindsForCurrentReflection} and consumed in the same place
+     */
+    protected static array $fulltextCapablePropertiesForCurrentReflection = [];
+
+    /**
      * Allowed filters either as string representing allowed property name or
      * array representing on it's first index the property name and following allwed options to be used as value
      * @param string|array ...$allowedPropertyNames
@@ -77,6 +84,7 @@ class FiltersDefinitions extends ObjectSet
                     $allowedPropertyName['options'] ?? null
                 );
                 $filtersDefinition->temporalKind = $allowedPropertyName['temporalKind'] ?? null;
+                $filtersDefinition->supportsFulltext = (bool)($allowedPropertyName['supportsFulltext'] ?? false);
                 $this->add($filtersDefinition);
                 continue;
             }
@@ -112,15 +120,19 @@ class FiltersDefinitions extends ObjectSet
         if ($repoClass) {
             $filtersDefinitions->referenceClassName = $referenceClassName;
             self::$temporalKindsForCurrentReflection = [];
+            self::$fulltextCapablePropertiesForCurrentReflection = [];
             $filtersProperties = self::getFilterPropertiesForClass($referenceClassName);
             $temporalKinds = self::$temporalKindsForCurrentReflection;
+            $fulltextCapableProperties = self::$fulltextCapablePropertiesForCurrentReflection;
             self::$temporalKindsForCurrentReflection = [];
+            self::$fulltextCapablePropertiesForCurrentReflection = [];
             if ($filtersProperties) {
                 foreach ($filtersProperties as $filterPropertyName => $options) {
                     $filterDefinition = new FiltersDefinition(
                         $filterPropertyName, is_array($options) ? $options : null
                     );
                     $filterDefinition->temporalKind = $temporalKinds[$filterPropertyName] ?? null;
+                    $filterDefinition->supportsFulltext = $fulltextCapableProperties[$filterPropertyName] ?? false;
                     $filtersDefinitions->add($filterDefinition);
                 }
             }
@@ -249,9 +261,14 @@ class FiltersDefinitions extends ObjectSet
                 /** @var Translatable|null $translatableAttribute */
                 $translatableAttribute = $reflectionProperty->getAttributeInstance(Translatable::class);
                 if ($translatableAttribute && $translatableAttribute->fullTextIndex) {
-                    $allowedFilterProperties[$propertyPrefix . Translatable::getFullTextSearchVirtualColumnName(
+                    $fullTextSearchColumnName = $propertyPrefix . Translatable::getFullTextSearchVirtualColumnName(
                         $reflectionProperty->getName()
-                    )] = $allowedPropertyValue;
+                    );
+                    $allowedFilterProperties[$fullTextSearchColumnName] = $allowedPropertyValue;
+                    // both names work with ft/fb: the generated column itself, and the property, which
+                    // FiltersOptions rewrites onto that column
+                    self::$fulltextCapablePropertiesForCurrentReflection[$fullTextSearchColumnName] = true;
+                    self::$fulltextCapablePropertiesForCurrentReflection[$propertyName] = true;
                 }
 
                 if ($databaseColumnAttribute && $databaseColumnAttribute->ignoreProperty) {
@@ -263,6 +280,9 @@ class FiltersDefinitions extends ObjectSet
                     self::$temporalKindsForCurrentReflection[$propertyName] = is_a($type->getName(), Date::class, true)
                         ? FiltersDefinition::TEMPORAL_KIND_DAY
                         : FiltersDefinition::TEMPORAL_KIND_MOMENT;
+                }
+                if (self::propertyHasSingleColumnFulltextIndex($reflectionClass, $reflectionProperty)) {
+                    self::$fulltextCapablePropertiesForCurrentReflection[$propertyName] = true;
                 }
             }
             $subObjectFilters = [];
@@ -316,6 +336,51 @@ class FiltersDefinitions extends ObjectSet
             }
         }
         return $allowedFilterProperties;
+    }
+
+    /**
+     * True when the property's column is covered by a SINGLE-column FULLTEXT index — the only shape the fulltext
+     * operators can use: MySQL matches `MATCH(col) AGAINST (…)` against an index on exactly that column list and
+     * answers error 1191 otherwise, so a COMPOSITE fulltext index over (a, b) does NOT serve `a ft '…'` and is
+     * deliberately not counted here.
+     *
+     * Reads the declared attributes only (property-level `#[DatabaseIndex]` on this property, or a class-level one
+     * whose indexColumns are exactly this column). The framework does not manage the schema, so an index created by
+     * hand without a declaration is invisible — see {@see FiltersDefinition::$supportsFulltext}.
+     *
+     * @param ReflectionClass $reflectionClass
+     * @param ReflectionProperty $reflectionProperty
+     * @return bool
+     */
+    protected static function propertyHasSingleColumnFulltextIndex(
+        ReflectionClass $reflectionClass,
+        ReflectionProperty $reflectionProperty
+    ): bool {
+        foreach ($reflectionProperty->getAttributes(DatabaseIndex::class, ReflectionAttribute::IS_INSTANCEOF) as $indexAttribute) {
+            /** @var DatabaseIndex $indexAttributeInstance */
+            $indexAttributeInstance = $indexAttribute->newInstance();
+            // a property-level index without an explicit column list means "this column"
+            if (
+                $indexAttributeInstance->indexType === DatabaseIndex::TYPE_FULLTEXT
+                && (
+                    $indexAttributeInstance->indexColumns === []
+                    || $indexAttributeInstance->indexColumns === [$reflectionProperty->getName()]
+                )
+            ) {
+                return true;
+            }
+        }
+        foreach ($reflectionClass->getAttributes(DatabaseIndex::class, ReflectionAttribute::IS_INSTANCEOF) as $indexAttribute) {
+            /** @var DatabaseIndex $indexAttributeInstance */
+            $indexAttributeInstance = $indexAttribute->newInstance();
+            if (
+                $indexAttributeInstance->indexType === DatabaseIndex::TYPE_FULLTEXT
+                && $indexAttributeInstance->indexColumns === [$reflectionProperty->getName()]
+            ) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public function getFilterDefinitionForPropertyName(string $propertyName): ?FiltersDefinition
