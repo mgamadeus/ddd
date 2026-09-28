@@ -3,7 +3,7 @@ name: ddd-message-handler-specialist
 description: Create Symfony Messenger message + handler pairs for async background processing in the mgamadeus/ddd framework. Covers AppMessage message classes, ultra-slim AppMessageHandler handlers, the service-side bool async dispatch-or-run-inline pattern, auth context propagation, cross-workspace rerouting (processOnWorkspaceIfNecessary, ddd.messenger.workspace_reroute), logging conventions, admin privilege escalation for cross-tenant jobs, messenger.yaml transport/routing config, supervisor consumer blocks, worker recycling via --limit/--time-limit/--memory-limit, and the --no-debug stale-compiled-container trap. Use when adding an async background job or a bool async service option, wiring a transport plus supervisor consumer, sizing worker limits, debugging workers that crash-loop, fail to consume or run stale config, chasing static state leaking between messages or a stale read in a worker (fresh worker state per job, opt-out constant), or when a job runs against the wrong workspace's database.
 metadata:
   author: mgamadeus
-  version: "1.2.1"
+  version: "1.3.0"
   framework: mgamadeus/ddd
 ---
 
@@ -178,6 +178,15 @@ The message is processed LOCALLY (the guard returns `false`) when:
 
 **No loop guard is needed, and none should be added:** inside the rerouted console process the current root dir IS
 the recorded one, so the handler's own call returns `false` there and it does the work.
+
+**The handover runs through the BUS, so your middleware runs on it too.** `app:process-cli-message` dispatches the
+rerouted message on `messenger.default_bus` as an envelope carrying a `ReceivedStamp` — Symfony's
+`SendMessageMiddleware` never re-queues such an envelope and `HandleMessageMiddleware` runs the handler inline, the
+same path a worker takes after `messenger:consume`. Up to v2.65.1 the command called `new $handlerClass()` directly
+and skipped every middleware, so anything a handler relies on middleware for (a usage/cost envelope, fresh worker
+state) was simply absent on the handover path and the work failed there. One consequence to know: the handler is
+resolved by the bus now, so a message whose handler is not registered with Messenger fails with
+`NoHandlerForMessageException` and a FAILURE exit instead of being constructed by hand.
 
 **A message class may require constructor arguments, and hydration never runs the constructor.** The normal shape
 of a typed message is `__construct(int $aiConversationId)`. All three hydration sites — the Messenger envelope

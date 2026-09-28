@@ -126,13 +126,24 @@ class AppMessage extends ValueObject implements SerializerInterface
     }
 
     /**
-     * Decodes a message from a command line encoded string
+     * Decodes a message from a command line encoded string. Returns null for anything that is not one — a truncated
+     * or corrupted CLI argument is a realistic failure of the cross-workspace handover, and the caller
+     * ({@see \DDD\Symfony\Commands\Base\Messages\ProcessCLIMessage}) turns null into a clean FAILURE exit.
+     *
      * @param string $commandLineEncodedMessage
      * @return AppMessage|null
      */
     public static function decodeFromCommandline(string $commandLineEncodedMessage): ?AppMessage
     {
-        $decompressed = gzuncompress(base64_decode($commandLineEncodedMessage));
+        // gzuncompress() RAISES on malformed input ("data error") instead of just returning false wherever an error
+        // handler converts warnings — Symfony's debug handler in a dev workspace does exactly that, and so does a
+        // test runner. Without this guard a corrupt argument escaped as an uncaught ErrorException instead of the
+        // "Failed to decode message" the command is written to print.
+        try {
+            $decompressed = @gzuncompress(base64_decode($commandLineEncodedMessage));
+        } catch (Throwable) {
+            return null;
+        }
 
         if ($decompressed === false) {
             // Handle decompression error

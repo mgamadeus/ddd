@@ -17,8 +17,14 @@ class TestContainer extends Container
 {
     protected array $testInstances = [];
 
+    /** @var array<string, object> Services a test substitutes by id — e.g. a recording messenger bus */
+    public static array $overrides = [];
+
     public function get(string $id, int $invalidBehavior = self::EXCEPTION_ON_INVALID_REFERENCE): ?object
     {
+        if (isset(self::$overrides[$id])) {
+            return self::$overrides[$id];
+        }
         if ($id === 'kernel') {
             // DDDService::getConsoleDir() asks the kernel for its prefix; a stub keeps console-path code testable
             // without booting one.
