@@ -3,7 +3,7 @@ name: ddd-message-handler-specialist
 description: Create Symfony Messenger message + handler pairs for async background processing in the mgamadeus/ddd framework. Covers AppMessage message classes, ultra-slim AppMessageHandler handlers, the service-side bool async dispatch-or-run-inline pattern, auth context propagation, cross-workspace rerouting (processOnWorkspaceIfNecessary, ddd.messenger.workspace_reroute), logging conventions, admin privilege escalation for cross-tenant jobs, messenger.yaml transport/routing config, supervisor consumer blocks, worker recycling via --limit/--time-limit/--memory-limit, and the --no-debug stale-compiled-container trap. Use when adding an async background job or a bool async service option, wiring a transport plus supervisor consumer, sizing worker limits, debugging workers that crash-loop, fail to consume or run stale config, chasing static state leaking between messages or a stale read in a worker (fresh worker state per job, opt-out constant), or when a job runs against the wrong workspace's database.
 metadata:
   author: mgamadeus
-  version: "1.3.0"
+  version: "1.3.1"
   framework: mgamadeus/ddd
 ---
 
@@ -178,6 +178,13 @@ The message is processed LOCALLY (the guard returns `false`) when:
 
 **No loop guard is needed, and none should be added:** inside the rerouted console process the current root dir IS
 the recorded one, so the handler's own call returns `false` there and it does the work.
+
+**If your handler names a transport, the handover stamp must name the same one.** `#[AsMessageHandler(fromTransport: 'x')]`
+means Messenger's `HandlersLocator` only offers that handler for an envelope received from transport `x`
+(`shouldHandle()` compares the two). The command therefore derives the stamp's transport name from the handler's own
+attribute; a handler without `fromTransport` is found under any name and keeps the plain label. v2.65.2 stamped a
+fixed label and every rerouted message whose handler names a transport died with "No handler for message" — fixed in
+v2.65.4. If you set `from_transport` through a DI tag instead of the attribute, the derivation cannot see it.
 
 **The handover runs through the BUS, so your middleware runs on it too.** `app:process-cli-message` dispatches the
 rerouted message on `messenger.default_bus` as an envelope carrying a `ReceivedStamp` — Symfony's

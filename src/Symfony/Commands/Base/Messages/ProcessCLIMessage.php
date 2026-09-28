@@ -7,6 +7,9 @@ namespace DDD\Symfony\Commands\Base\Messages;
 use DDD\Domain\Base\Entities\MessageHandlers\AppMessage;
 use DDD\Domain\Base\Entities\MessageHandlers\AppMessageHandler;
 use DDD\Infrastructure\Services\DDDService;
+use ReflectionClass;
+use ReflectionException;
+use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
@@ -30,6 +33,34 @@ class ProcessCLIMessage extends Command
      * transport: nothing is queued here, the envelope is handled in this process.
      */
     public const string RECEIVED_FROM_TRANSPORT_NAME = 'app:process-cli-message';
+
+    /**
+     * The transport name the ReceivedStamp must carry for $handlerClass to be found.
+     *
+     * A handler registered with `#[AsMessageHandler(fromTransport: 'x')]` handles ONLY envelopes received from
+     * transport `x`: Messenger's HandlersLocator::shouldHandle() compares the stamp's transport name with the
+     * handler's `from_transport` option and skips the handler on a mismatch. Stamping a generic label therefore
+     * ends in "No handler for message" — which is what v2.65.2 did to every rerouted turn whose handler names a
+     * transport, and applications name one throughout. The handler's own attribute is the answer; a handler
+     * without `fromTransport` is found under any name, so the plain label stays for it.
+     *
+     * Limitation worth knowing: this reads the ATTRIBUTE. A handler whose `from_transport` is set through a DI tag
+     * in services configuration instead is not visible here and would still need the label to match.
+     *
+     * @param class-string $handlerClass
+     * @return string
+     * @throws ReflectionException
+     */
+    public static function receivedFromTransportNameFor(string $handlerClass): string
+    {
+        foreach ((new ReflectionClass($handlerClass))->getAttributes(AsMessageHandler::class) as $attribute) {
+            $fromTransport = $attribute->newInstance()->fromTransport;
+            if (is_string($fromTransport) && $fromTransport !== '') {
+                return $fromTransport;
+            }
+        }
+        return self::RECEIVED_FROM_TRANSPORT_NAME;
+    }
 
     protected function configure()
     {
@@ -76,7 +107,7 @@ class ProcessCLIMessage extends Command
         /** @var MessageBusInterface $messageBus */
         $messageBus = DDDService::instance()->getService('messenger.default_bus');
         try {
-            $messageBus->dispatch(new Envelope($message, [new ReceivedStamp(self::RECEIVED_FROM_TRANSPORT_NAME)]));
+            $messageBus->dispatch(new Envelope($message, [new ReceivedStamp(self::receivedFromTransportNameFor($handlerClass))]));
         } catch (Throwable $throwable) {
             // The rerouting parent reads this exit code and fails its own message, so the transport's retry
             // re-delivers it; the text names the handler that failed and why.
