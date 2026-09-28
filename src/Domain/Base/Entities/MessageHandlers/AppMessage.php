@@ -10,6 +10,8 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\AuthService;
 use LogicException;
+use ReflectionClass;
+use ReflectionException;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Process\Process;
 use Throwable;
@@ -37,6 +39,30 @@ class AppMessage extends ValueObject implements SerializerInterface
     /** @var string The workspace on which the AppMessage has been dispatched from */
     public ?string $dispatchedFromWorkspaceDir;
 
+    /**
+     * Re-creates a serialized message of class $className for hydration through setPropertiesFromObject() — WITHOUT
+     * running its constructor.
+     *
+     * A message class may require constructor arguments (`new AIConversationResumeMessage(int $aiConversationId)`);
+     * the serialized form carries every property, so the constructor has nothing left to contribute and
+     * `new $className()` only throws "Too few arguments to __construct()". Before this, every cross-workspace
+     * reroute of such a message died on the TARGET workspace's console, was retried once and dropped, and the work
+     * it carried stayed undone until something external revived the conversation.
+     *
+     * AppMessage itself declares no constructor, so nothing the base class relies on is skipped, and inline property
+     * defaults still apply — they are not constructor work.
+     *
+     * @param class-string<AppMessage> $className
+     * @return AppMessage
+     * @throws ReflectionException
+     */
+    protected static function instantiateForHydration(string $className): AppMessage
+    {
+        /** @var AppMessage $appMessage */
+        $appMessage = (new ReflectionClass($className))->newInstanceWithoutConstructor();
+        return $appMessage;
+    }
+
     public function encode(Envelope $envelope): array
     {
         $message = $envelope->getMessage();
@@ -57,8 +83,7 @@ class AppMessage extends ValueObject implements SerializerInterface
         $className = $encodedEnvelope['headers']['type'] ?? null;
 
         if ($className && is_subclass_of($className, AppMessage::class)) {
-            /** @var AppMessage $message */
-            $message = new $className();
+            $message = static::instantiateForHydration($className);
             $decodedObject = json_decode($encodedEnvelope['body']);
             $message->setPropertiesFromObject($decodedObject);
             return new Envelope($message);
@@ -128,7 +153,7 @@ class AppMessage extends ValueObject implements SerializerInterface
             return null;
         }
 
-        $appMessage = new $className();
+        $appMessage = static::instantiateForHydration($className);
         $appMessage->setPropertiesFromObject($jsonDecodedAppMessage);
 
         return $appMessage;
@@ -173,7 +198,7 @@ class AppMessage extends ValueObject implements SerializerInterface
             return null;
         }
 
-        $appMessage = new $className();
+        $appMessage = static::instantiateForHydration($className);
         $appMessage->setPropertiesFromObject($jsonDecodedAppMessage);
 
         return $appMessage;

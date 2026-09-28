@@ -3,7 +3,7 @@ name: ddd-message-handler-specialist
 description: Create Symfony Messenger message + handler pairs for async background processing in the mgamadeus/ddd framework. Covers AppMessage message classes, ultra-slim AppMessageHandler handlers, the service-side bool async dispatch-or-run-inline pattern, auth context propagation, cross-workspace rerouting (processOnWorkspaceIfNecessary, ddd.messenger.workspace_reroute), logging conventions, admin privilege escalation for cross-tenant jobs, messenger.yaml transport/routing config, supervisor consumer blocks, worker recycling via --limit/--time-limit/--memory-limit, and the --no-debug stale-compiled-container trap. Use when adding an async background job or a bool async service option, wiring a transport plus supervisor consumer, sizing worker limits, debugging workers that crash-loop, fail to consume or run stale config, chasing static state leaking between messages or a stale read in a worker (fresh worker state per job, opt-out constant), or when a job runs against the wrong workspace's database.
 metadata:
   author: mgamadeus
-  version: "1.2.0"
+  version: "1.2.1"
   framework: mgamadeus/ddd
 ---
 
@@ -178,6 +178,15 @@ The message is processed LOCALLY (the guard returns `false`) when:
 
 **No loop guard is needed, and none should be added:** inside the rerouted console process the current root dir IS
 the recorded one, so the handler's own call returns `false` there and it does the work.
+
+**A message class may require constructor arguments, and hydration never runs the constructor.** The normal shape
+of a typed message is `__construct(int $aiConversationId)`. All three hydration sites — the Messenger envelope
+(`decode()`), the CLI argument (`decodeFromCommandline()`) and the temp-file transport of `processOnWorkspace()`
+(`loadFromTempDir()`) — re-create the instance with `newInstanceWithoutConstructor()` and fill every property from
+the serialized form. Up to v2.65.0 they used `new $className()`, so exactly those messages died on the TARGET
+workspace's console with `Too few arguments to __construct(), 0 passed in …/AppMessage.php`, were retried once and
+dropped. Inline property defaults still apply; they are not constructor work. Do not add a hydration path that
+constructs a message any other way.
 
 **A failing child now fails the message.** The rerouted console runs as a `Symfony\Component\Process\Process` with
 no timeout; a non-zero exit throws `InternalErrorException` with the exit code and the child's stderr, so Messenger's
