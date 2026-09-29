@@ -6,6 +6,7 @@ namespace DDD\Symfony\DependencyInjection\EnvVarProcessors;
 
 use Closure;
 use DDD\Infrastructure\Services\DDDService;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\DependencyInjection\EnvVarProcessorInterface;
 
 /**
@@ -43,10 +44,17 @@ class WorkspaceVhostEnvVarProcessor implements EnvVarProcessorInterface
      */
     public const string PATH_SEGMENT_PARAMETER = 'ddd.workspaces_path_segment';
 
+    /**
+     * The #[Autowire] attributes are LOAD-BEARING, not decoration. Applications auto-register the framework's own
+     * sources (`resource: vendor/mgamadeus/ddd/src/*` with autowire: true), and such a definition REPLACES the one
+     * {@see \DDD\DDDBundle::build()} registers. Without the attributes the container then cannot compile at all —
+     * "Cannot autowire service …WorkspaceVhostEnvVarProcessor: argument $projectDir is type-hinted string". With
+     * them, either definition resolves, so an app needs no exclude and no knowledge of this class.
+     */
     public function __construct(
-        protected string $projectDir,
-        protected bool $enabled = true,
-        protected ?string $workspacesPathSegment = null
+        #[Autowire('%kernel.project_dir%')] protected string $projectDir,
+        #[Autowire('%' . self::ENABLED_PARAMETER . '%')] protected bool $enabled = true,
+        #[Autowire('%' . self::PATH_SEGMENT_PARAMETER . '%')] protected ?string $workspacesPathSegment = null
     ) {
     }
 

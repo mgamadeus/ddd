@@ -3,7 +3,7 @@ name: ddd-message-handler-specialist
 description: Create Symfony Messenger message + handler pairs for async background processing in the mgamadeus/ddd framework. Covers AppMessage message classes, ultra-slim AppMessageHandler handlers, the service-side bool async dispatch-or-run-inline pattern, auth context propagation, the workspace-origin guard (a message another checkout dispatched is REFUSED, never rerouted; one broker vhost per workspace), the per-process APP_CACHE_DIR / APP_LOG_DIR overrides for worker pools sharing a checkout with FPM, logging conventions, admin privilege escalation, messenger.yaml transport/routing, supervisor consumer blocks, worker recycling, and the --no-debug stale-compiled-container trap. Use when adding an async background job, wiring a transport plus supervisor consumer, sizing worker limits, debugging workers that crash-loop, fail to consume or run stale config, chasing state leaking between messages, or when a job runs against the wrong checkout's database.
 metadata:
   author: mgamadeus
-  version: "1.4.0"
+  version: "1.4.1"
   framework: mgamadeus/ddd
 ---
 
@@ -153,6 +153,14 @@ $this->setAuthAccountFromMessage($message);
 This ensures the message is processed with the rights of the account that dispatched it.
 
 ### 5. Workspace Origin — refused, never rerouted
+
+> **Framework services must survive being auto-registered.** Applications register the framework's own sources
+> (`resource: '%kernel.project_dir%/vendor/mgamadeus/ddd/src/*'` with `autowire: true`), and such a definition
+> REPLACES one the bundle registered explicitly. A framework service whose constructor takes a scalar therefore needs
+> `#[Autowire]` attributes on those arguments, or the consuming app's container stops compiling entirely —
+> "Cannot autowire service …: argument $projectDir is type-hinted string". That is what happened to
+> `WorkspaceVhostEnvVarProcessor` in v2.66.0 and why v2.66.1 exists. When you add a framework service with scalar
+> constructor arguments, annotate them; do not rely on the bundle's definition winning.
 
 Handlers carry NO workspace logic. Several checkouts of one app (dev workspaces, test builds) share a machine, a
 database and a message broker; each checkout has its OWN broker vhost (the app derives it from its code path — in RC
