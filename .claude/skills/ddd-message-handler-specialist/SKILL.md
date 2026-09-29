@@ -1,9 +1,9 @@
 ---
 name: ddd-message-handler-specialist
-description: Create Symfony Messenger message + handler pairs for async background processing in the mgamadeus/ddd framework. Covers AppMessage message classes, ultra-slim AppMessageHandler handlers, the service-side bool async dispatch-or-run-inline pattern, auth context propagation, cross-workspace rerouting (processOnWorkspaceIfNecessary, ddd.messenger.workspace_reroute), logging conventions, admin privilege escalation for cross-tenant jobs, messenger.yaml transport/routing config, supervisor consumer blocks, worker recycling via --limit/--time-limit/--memory-limit, and the --no-debug stale-compiled-container trap. Use when adding an async background job or a bool async service option, wiring a transport plus supervisor consumer, sizing worker limits, debugging workers that crash-loop, fail to consume or run stale config, chasing static state leaking between messages or a stale read in a worker (fresh worker state per job, opt-out constant), or when a job runs against the wrong workspace's database.
+description: Create Symfony Messenger message + handler pairs for async background processing in the mgamadeus/ddd framework. Covers AppMessage message classes, ultra-slim AppMessageHandler handlers, the service-side bool async dispatch-or-run-inline pattern, auth context propagation, the workspace-origin guard (a message another checkout dispatched is REFUSED, never rerouted; one broker vhost per workspace), the per-process APP_CACHE_DIR / APP_LOG_DIR overrides for worker pools sharing a checkout with FPM, logging conventions, admin privilege escalation, messenger.yaml transport/routing, supervisor consumer blocks, worker recycling, and the --no-debug stale-compiled-container trap. Use when adding an async background job, wiring a transport plus supervisor consumer, sizing worker limits, debugging workers that crash-loop, fail to consume or run stale config, chasing state leaking between messages, or when a job runs against the wrong checkout's database.
 metadata:
   author: mgamadeus
-  version: "1.3.1"
+  version: "1.4.0"
   framework: mgamadeus/ddd
 ---
 
@@ -16,6 +16,7 @@ Async background processing via Symfony Messenger within the DDD Core framework 
 - Adding a new async background task processed by Symfony Messenger
 - Adding a `bool $async` option to a service method and implementing dispatching
 - Ensuring background work executes under the same account permissions as the triggering request
+- Running worker pools from a checkout FPM also serves: `APP_CACHE_DIR` / `APP_LOG_DIR` give the workers their own compiled container (`DDDKernel::getCacheDir()`), so a sync that makes FPM rebuild never deletes a running worker's container
 - Implementing heavy jobs with time/memory limits and consistent logging
 - Sizing supervisor consumers (`numprocs`, `--limit`, `--time-limit`, `--memory-limit`) or diagnosing static-state leaks between messages in long-running workers (see Step 5.1)
 - Debugging supervisor workers that crash-loop, silently fail to consume, or still use the old transport DSN after a config change — the `--no-debug` stale-container trap (see Step 5.2)
@@ -31,7 +32,7 @@ Async background processing via Symfony Messenger within the DDD Core framework 
 - `dispatch()` -- dispatches to Symfony Messenger bus, auto-captures `accountId` and `dispatchedFromWorkspaceDir`
 - `encodeForCommandline()` / `decodeFromCommandline()` -- CLI transport (gzip + base64)
 - `persistToTempDir()` / `loadFromTempDir()` -- temp file transport
-- `processOnWorkspace()` / `processOnWorkspaceIfNecessary()` -- cross-workspace processing
+- `dispatchedFromWorkspaceDir` / `dispatchedFromEnvironment` -- where a message came from (stamped by `dispatch()`; read by the workspace-origin guard)
 
 **AppMessageHandler provides:**
 - `getLogger()` -- returns injected `messengerLogger` or falls back to `DDDService::instance()->getLogger()`
@@ -151,68 +152,35 @@ $this->setAuthAccountFromMessage($message);
 
 This ensures the message is processed with the rights of the account that dispatched it.
 
-### 5. Workspace Routing Guard
+### 5. Workspace Origin — refused, never rerouted
 
-Handlers must check workspace routing before processing:
+Handlers carry NO workspace logic. Several checkouts of one app (dev workspaces, test builds) share a machine, a
+database and a message broker; each checkout has its OWN broker vhost (the app derives it from its code path — in RC
+`%env(workspace_vhost:…)%` in messenger.yaml), so a worker only ever consumes what its own checkout dispatched.
 
-```php
-if ($message->processOnWorkspaceIfNecessary()) {
-    return;
-}
-```
+`dispatch()` stamps `dispatchedFromWorkspaceDir` and `dispatchedFromEnvironment` (the workspace NAME from
+`DDDService::getWorkspaceName()`, null outside a workspace). The framework's `WorkspaceOriginGuardMiddleware`
+(registered on every bus by `FreshWorkerStateMiddlewarePass`, right behind the fresh-state middleware) compares the
+stamp with the consuming process's own name on every RECEIVED envelope and throws
+`UnrecoverableMessageHandlingException` on a mismatch: no retry, the message lands in the failure transport, the log
+names both workspaces. A message without the stamp passes.
 
-**Order:** set auth -> workspace guard -> run.
-
-`dispatch()` records the workspace the message was dispatched from. A consumer running in a DIFFERENT workspace
-re-executes the message through that workspace's console (`app:process-cli-message`), so the right code runs against
-the right database — which is what keeps several workspaces sharing one broker (or one vhost) apart.
-
-The message is processed LOCALLY (the guard returns `false`) when:
-
-| Situation | Why |
+| Situation | Outcome |
 |---|---|
-| no dispatch workspace recorded | a message built outside `dispatch()`, e.g. a CLI-encoded one |
-| the recorded dir IS the current workspace | compared through `realpath()` on both sides — `kernel.project_dir` is symlink-resolved, the stored string may not be, and a plain string mismatch would reroute EVERY message through a child process |
-| the recorded dir no longer exists | a stale release dir after a deploy switch, or a foreign host — logged at warning level; the message was serialised by the same codebase family, so local processing is the safe default |
-| `ddd.messenger.workspace_reroute: false` | the installation opted out (a single-codebase production install has nothing to reroute between); absent parameter = enabled |
+| stamp equals the consumer's workspace name | processed |
+| no stamp (built outside `dispatch()`, or from a release before the stamp) | processed |
+| stamp names another workspace, or the consumer is production/local and the stamp names a workspace | REFUSED — the two share a queue they should not share; fix the vhost, replay with `messenger:failed:retry` |
+| `ddd.messenger.workspace_origin_guard: false` | the guard is not registered (an installation with one checkout per machine) |
 
-**No loop guard is needed, and none should be added:** inside the rerouted console process the current root dir IS
-the recorded one, so the handler's own call returns `false` there and it does the work.
+Why refuse instead of re-executing in the right workspace (what `processOnWorkspaceIfNecessary()` did up to v2.65.x):
+the reroute ran the whole job in a synchronous child console process, held the consuming worker for the job's
+duration, died with every restart of that worker, and ran the child with `--no-debug` on a possibly stale container.
+With a vhost per workspace a mismatch is a configuration error, and an error must be visible, not routed around.
 
-**If your handler names a transport, the handover stamp must name the same one.** `#[AsMessageHandler(fromTransport: 'x')]`
-means Messenger's `HandlersLocator` only offers that handler for an envelope received from transport `x`
-(`shouldHandle()` compares the two). The command therefore derives the stamp's transport name from the handler's own
-attribute; a handler without `fromTransport` is found under any name and keeps the plain label. v2.65.2 stamped a
-fixed label and every rerouted message whose handler names a transport died with "No handler for message" — fixed in
-v2.65.4. If you set `from_transport` through a DI tag instead of the attribute, the derivation cannot see it.
-
-**The handover runs through the BUS, so your middleware runs on it too.** `app:process-cli-message` dispatches the
-rerouted message on `messenger.default_bus` as an envelope carrying a `ReceivedStamp` — Symfony's
-`SendMessageMiddleware` never re-queues such an envelope and `HandleMessageMiddleware` runs the handler inline, the
-same path a worker takes after `messenger:consume`. Up to v2.65.1 the command called `new $handlerClass()` directly
-and skipped every middleware, so anything a handler relies on middleware for (a usage/cost envelope, fresh worker
-state) was simply absent on the handover path and the work failed there. One consequence to know: the handler is
-resolved by the bus now, so a message whose handler is not registered with Messenger fails with
-`NoHandlerForMessageException` and a FAILURE exit instead of being constructed by hand.
-
-**A message class may require constructor arguments, and hydration never runs the constructor.** The normal shape
-of a typed message is `__construct(int $aiConversationId)`. All three hydration sites — the Messenger envelope
-(`decode()`), the CLI argument (`decodeFromCommandline()`) and the temp-file transport of `processOnWorkspace()`
-(`loadFromTempDir()`) — re-create the instance with `newInstanceWithoutConstructor()` and fill every property from
-the serialized form. Up to v2.65.0 they used `new $className()`, so exactly those messages died on the TARGET
-workspace's console with `Too few arguments to __construct(), 0 passed in …/AppMessage.php`, were retried once and
-dropped. Inline property defaults still apply; they are not constructor work. Do not add a hydration path that
-constructs a message any other way.
-
-**A failing child now fails the message.** The rerouted console runs as a `Symfony\Component\Process\Process` with
-no timeout; a non-zero exit throws `InternalErrorException` with the exit code and the child's stderr, so Messenger's
-retry / failure-transport semantics apply. (Before v2.64.0 it ran through `shell_exec()`, which discarded the exit
-status — a failure in the rerouted process was invisible and the message was acked as handled.)
-
-> **Dev-workspace caveat.** `processOnWorkspace()` runs the target console with `--no-debug`. On a dev workspace
-> whose workers run WITHOUT `--no-debug` (so the kernel recompiles after each code sync), the `--no-debug` child may
-> execute a stale compiled container until the next debug boot — the same trap as Step 5.2, one process further out.
-> If a rerouted job behaves like old code, boot that workspace's console once without `--no-debug`.
+`app:process-cli-message` stays: it replays a serialized message by hand (`persistToTempDir()` / `loadFromTempDir()`,
+`encodeForCommandline()` / `decodeFromCommandline()` are its transports) through the bus with a `ReceivedStamp` whose
+transport name is derived from the handler's `#[AsMessageHandler(fromTransport:)]`; hydration never runs the message
+constructor (`newInstanceWithoutConstructor()`). A replay in the wrong workspace is refused by the same guard.
 
 ### 6. Logging Pattern
 
@@ -321,9 +289,6 @@ class FooBarHandler extends AppMessageHandler
         ini_set('memory_limit', '1024M');
 
         $this->setAuthAccountFromMessage($message);
-        if ($message->processOnWorkspaceIfNecessary()) {
-            return;
-        }
 
         $this->getLogger()->info("Processing FooBar for {$message->fooBarId}");
 
@@ -352,7 +317,7 @@ class FooBarHandler extends AppMessageHandler
 **Rules:**
 - Extend `AppMessageHandler` (or project-specific subclass)
 - Add `#[AsMessageHandler(fromTransport: 'transport_name')]`
-- Set auth context and workspace guard first
+- Set auth context first
 - Load entity by ID inside the handler (not from message payload)
 - Call service method with `async: false`
 - Wrap in try/catch with `logShortException()`
@@ -493,7 +458,6 @@ public function doSomething(int $fooBarId, bool $async = false): void
 - [ ] Handler extends `AppMessageHandler` (or project-specific subclass)
 - [ ] Handler has `#[AsMessageHandler(fromTransport: '...')]`
 - [ ] Handler calls `$this->setAuthAccountFromMessage($message)` first
-- [ ] Handler calls `$message->processOnWorkspaceIfNecessary()` and returns early
 - [ ] Handler uses `$this->getLogger()` (never `DDDService::instance()->getLogger()`)
 - [ ] Handler uses `$this->logShortException()` in catch blocks
 - [ ] Handler calls service method with `async: false`

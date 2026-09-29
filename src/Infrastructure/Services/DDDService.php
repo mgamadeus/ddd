@@ -291,6 +291,36 @@ class DDDService
         return self::getRootDirPrivate();
     }
 
+    /** @var string The path segment that marks a WORKSPACE checkout; the segment after it is the workspace's name. */
+    public const string WORKSPACES_PATH_SEGMENT = '/dev-workspaces/';
+
+    /**
+     * The name of the workspace this process runs in — `/var/www/dev-workspaces/prj6/app` → `prj6` — or null outside
+     * a workspace (production, a developer's machine). Several checkouts of one app share a machine, a database and a
+     * message broker; everything that must be told apart per checkout (the broker vhost, the cache namespace, the
+     * origin stamp on a message) derives its name from THIS method, so no two of them can ever disagree.
+     */
+    public function getWorkspaceName(): ?string
+    {
+        return self::workspaceNameFromRootDir(self::getRootDirPrivate());
+    }
+
+    /** The pure derivation behind {@see getWorkspaceName()}. */
+    public static function workspaceNameFromRootDir(string $rootDir, ?string $workspacesPathSegment = null): ?string
+    {
+        // The segment is a PARAMETER wherever one is configured ({@see
+        // \DDD\Symfony\DependencyInjection\EnvVarProcessors\WorkspaceVhostEnvVarProcessor::PATH_SEGMENT_PARAMETER});
+        // the constant below is only its default, so a deployment that lays its checkouts out differently changes
+        // ONE value and every derivation follows.
+        $workspacesPathSegment = $workspacesPathSegment !== null && $workspacesPathSegment !== ''
+            ? $workspacesPathSegment
+            : self::WORKSPACES_PATH_SEGMENT;
+        if (preg_match('#' . preg_quote($workspacesPathSegment, '#') . '([^/]+)/#', rtrim($rootDir, '/') . '/', $matches) !== 1) {
+            return null;
+        }
+        return $matches[1];
+    }
+
     /**
      * @return string Returns the root dir of the framework
      */

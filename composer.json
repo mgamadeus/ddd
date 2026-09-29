@@ -3,7 +3,7 @@
     "description": "A DDD Entity Framework on top of symfony and doctrine",
     "minimum-stability": "stable",
     "license": "MIT",
-    "version": "2.65.4",
+    "version": "2.66.0",
     "authors": [
         {
             "name": "Marius-Eugen Gerdan",
@@ -60,7 +60,8 @@
         "brick/geo-doctrine": "^0.3.1",
         "kamermans/guzzle-oauth2-subscriber": "^1.1",
         "phpoffice/phpspreadsheet": "^4.2",
-        "ezyang/htmlpurifier": "^4.19"
+        "ezyang/htmlpurifier": "^4.19",
+        "symfony/deprecation-contracts": "^3.0"
     },
     "autoload": {
         "psr-4": {

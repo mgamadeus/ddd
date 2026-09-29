@@ -57,8 +57,9 @@ class AppMessageHydrationWithoutConstructorTest extends TestCase
 
     public function testTheTempFileTransportRoundTrips(): void
     {
-        // the path a cross-workspace reroute takes: persistToTempDir() here, loadFromTempDir() on the TARGET
-        // workspace's console — this is where a message with a required constructor argument used to die with
+        // the temp-file transport of app:process-cli-message, which since 2.66.0 is a MANUAL REPLAY rather than the
+        // automatic cross-workspace reroute: persistToTempDir() here, loadFromTempDir() in the console that replays
+        // it — this is where a message with a required constructor argument used to die with
         // "Too few arguments to __construct(), 0 passed in …/AppMessage.php"
         $message = $this->probeMessage(9534);
         $tempDirFileName = $message->persistToTempDir();
@@ -68,7 +69,7 @@ class AppMessageHydrationWithoutConstructorTest extends TestCase
         $this->assertInstanceOf(ResumeProbeMessage::class, $loaded);
         $this->assertSame(9534, $loaded->probeConversationId);
         $this->assertSame('/var/www/dev-workspaces/prj6/app', $loaded->dispatchedFromWorkspaceDir,
-            'the recorded workspace must survive — the reroute guard reads it');
+            'the recorded directory must survive — it is what tells an operator where a replayed message came from');
         $this->assertFileDoesNotExist(sys_get_temp_dir() . DIRECTORY_SEPARATOR . $tempDirFileName,
             'the temp file is consumed');
     }

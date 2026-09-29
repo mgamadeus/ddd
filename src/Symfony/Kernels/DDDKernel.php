@@ -47,13 +47,39 @@ class DDDKernel extends Kernel
         return $this->kernelPrefix;
     }
 
+    /**
+     * @var string Environment variable naming an ABSOLUTE directory that replaces the default `var/cache` root for
+     * this process. A worker pool sharing a checkout with FPM points it at its own directory, so a compiled container
+     * one side rebuilds is never deleted under the other side's running processes. The kernel prefix and the
+     * environment are appended below it exactly as under the default root.
+     */
+    public const string CACHE_DIR_ENV = 'APP_CACHE_DIR';
+
+    /** @var string Same as {@see CACHE_DIR_ENV} for the log root (`var/log`). */
+    public const string LOG_DIR_ENV = 'APP_LOG_DIR';
+
     public function getCacheDir(): string
     {
+        $cacheRoot = self::directoryFromEnv(self::CACHE_DIR_ENV) ?? $this->getProjectDir() . '/var/cache';
         if ($this->getKernelPrefix()) {
-            return $this->getProjectDir() . '/var/cache/' . $this->getKernelPrefix() . '/' . $this->environment;
+            return $cacheRoot . '/' . $this->getKernelPrefix() . '/' . $this->environment;
         } else {
-            return $this->getProjectDir() . '/var/cache/' . $this->environment;
+            return $cacheRoot . '/' . $this->environment;
         }
+    }
+
+    /**
+     * @return string|null The absolute directory the environment variable names, null when it is unset, empty or
+     * relative (a relative value would resolve against the current working directory, which differs between FPM,
+     * the console and a worker — never silently accept one).
+     */
+    protected static function directoryFromEnv(string $environmentVariable): ?string
+    {
+        $directory = $_SERVER[$environmentVariable] ?? $_ENV[$environmentVariable] ?? getenv($environmentVariable);
+        if (!is_string($directory) || $directory === '' || !str_starts_with($directory, '/')) {
+            return null;
+        }
+        return rtrim($directory, '/');
     }
 
     public function getConfigDir(): string
@@ -72,7 +98,8 @@ class DDDKernel extends Kernel
 
     public function getLogDir(): string
     {
-        return $this->getProjectDir() . '/var/log/' . ($this->getKernelPrefix() ?? 'default');
+        $logRoot = self::directoryFromEnv(self::LOG_DIR_ENV) ?? $this->getProjectDir() . '/var/log';
+        return $logRoot . '/' . ($this->getKernelPrefix() ?? 'default');
     }
 
     /**
