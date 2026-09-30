@@ -174,6 +174,20 @@ class DDDService
     }
 
     /**
+     * A new worker job starts with every cache ON and no cache-state snapshot — a job that died inside a
+     * deactivateCaches/restoreCachesSnapshot pair would otherwise leave the next jobs of the process without caches.
+     * Called by the handler base's job reset only.
+     */
+    public function resetCachesStateForNewJob(): void
+    {
+        DoctrineEntityRegistry::$clearCache = false;
+        VirtualEntityRegistry::$clearCache = false;
+        ClassFinder::$clearCache = false;
+        DDDService::$noCache = false;
+        self::$cachesSnapshotSet = false;
+    }
+
+    /**
      * @return void Activates all application related caches
      */
     public function activateCaches(): void
@@ -416,6 +430,19 @@ class DDDService
                 DBEntity::class => self::$entityRightsRestrictionsStateStack[array_key_last(self::$entityRightsRestrictionsStateStack)]
             ];
         }
+    }
+
+    /**
+     * A new worker job starts with rights restrictions ON and an EMPTY snapshot stack — a job that died inside a
+     * deactivate/restore pair would otherwise leave every later job of the process without rights, and its stale
+     * frames would be popped by restores that never pushed them. Called by the handler base's job reset only.
+     */
+    public function resetEntityRightsRestrictionsStateForNewJob(): void
+    {
+        self::$entityRightsRestrictionsStateStack = [];
+        self::$entityRightsRestrictionSnapshotSet = false;
+        self::$entityRightsRestrictionStates = [DBEntity::class => true];
+        DBEntity::setApplyRightsRestrictions(true);
     }
 
     /**

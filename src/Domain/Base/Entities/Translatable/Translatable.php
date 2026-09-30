@@ -78,6 +78,19 @@ class Translatable extends ValueObject
         return 'virtual' . ucfirst($propertyName) . 'Search';
     }
 
+    /**
+     * A new worker job starts on the configured translation defaults with no snapshot: the previous job's language,
+     * country and writing style, or a snapshot it never restored, must not render the next job's texts. Called by
+     * the handler base's job reset only.
+     */
+    public static function resetToDefaultsForNewJob(): void
+    {
+        self::$translationSettingsSnapshot = null;
+        static::setCurrentLanguageCode(static::getDefaultLanguageCode());
+        static::setCurrentWritingStyle(static::getDefaultWritingStyle());
+        static::setCurrentCountryCode(null);
+    }
+
     public static function setTranslationSettingsSnapshot(): void
     {
         if (self::$translationSettingsSnapshot !== null) {

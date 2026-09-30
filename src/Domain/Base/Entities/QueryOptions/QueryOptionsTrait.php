@@ -165,6 +165,21 @@ trait QueryOptionsTrait
     }
 
     /**
+     * A new worker job starts on the ATTRIBUTE-declared default query options of every class this trait is composed
+     * into: the previous job's mutated defaults (a geo bias, a distance filter set through
+     * {@see self::setDefaultQueryOptions()} or an expand without a snapshot) and its unrestored snapshots are
+     * dropped; {@see self::getDefaultQueryOptions()} rebuilds them from the attributes on the next read. The
+     * storage is a trait static, so every class that USES the trait holds its own copy and the reset must run on
+     * each of them (a class that merely inherits the trait shares its parent's copy). Called by the handler base's
+     * job reset only.
+     */
+    public static function resetDefaultQueryOptionsForNewJob(): void
+    {
+        self::$defaultQueryOptions = [];
+        self::$defaultQueryOptionsSnapshotStack = [];
+    }
+
+    /**
      * Resolves the class key used to index default query options (and their
      * snapshot stack). Mirrors the resolution in {@see self::getDefaultQueryOptions()}
      * — argus entities key on the parent class, regular entities on themselves —

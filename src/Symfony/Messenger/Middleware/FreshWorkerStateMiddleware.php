@@ -40,7 +40,7 @@ class FreshWorkerStateMiddleware implements MiddlewareInterface
     {
         if ($envelope->last(ReceivedStamp::class) !== null && $this->handlersWantFreshState($envelope)) {
             try {
-                $this->resetWorkerState();
+                $this->resetWorkerState($this->firstAppMessageHandlerClass($envelope));
             } catch (Throwable) {
                 // fail-soft, see the class docblock
             }
@@ -83,9 +83,37 @@ class FreshWorkerStateMiddleware implements MiddlewareInterface
         return class_exists($handlerClass) ? $handlerClass : null;
     }
 
-    /** The reset itself — ONE implementation on the base handler; the seam a unit test overrides. */
-    protected function resetWorkerState(): void
+    /**
+     * The first handler of the message that is an {@see AppMessageHandler} — the class whose
+     * {@see AppMessageHandler::resetWorkerStateForNewJob()} runs, so an application's own handler base can extend
+     * the reset with the application's process statics. Null when no handler class is resolvable.
+     *
+     * @return class-string<AppMessageHandler>|null
+     */
+    protected function firstAppMessageHandlerClass(Envelope $envelope): ?string
     {
-        AppMessageHandler::resetWorkerStateForNewJob();
+        if ($this->handlersLocator === null) {
+            return null;
+        }
+        foreach ($this->handlersLocator->getHandlers($envelope) as $handlerDescriptor) {
+            $handlerClass = $this->handlerClassFromDescriptorName($handlerDescriptor->getName());
+            if ($handlerClass !== null && is_a($handlerClass, AppMessageHandler::class, true)) {
+                return $handlerClass;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The reset itself — the message's handler class runs it (its application base may override the method with
+     * the application's own statics on top of the framework's); the base handler when no class is resolvable. The
+     * method a unit test overrides.
+     *
+     * @param class-string<AppMessageHandler>|null $handlerClass
+     */
+    protected function resetWorkerState(?string $handlerClass = null): void
+    {
+        $resetClass = $handlerClass ?? AppMessageHandler::class;
+        $resetClass::resetWorkerStateForNewJob();
     }
 }
