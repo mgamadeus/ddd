@@ -352,7 +352,7 @@ class RecalculateCommand extends Command
 }
 ```
 
-Framework-provided commands: `app:generate-doctrine-models-for-entities`, `app:process-cli-message`, `app:crons:execute`, `app:crons:list`.
+Framework-provided commands: `app:generate-doctrine-models-for-entities`, `app:process-cli-message`, `app:crons:execute`, `app:crons:list`, `app:crons:upsert`, `app:crons:activate`, `app:crons:deactivate`, `app:crons:executions`.
 
 ### Entity Attributes
 

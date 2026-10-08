@@ -124,6 +124,32 @@ class Cron extends Entity
     }
 
     /**
+     * Switches the Cron ON. A Cron that was off gets its next execution re-anchored through
+     * {@see self::getNextScheduledExecution()}: the ticker runs every active Cron whose `nextExecutionScheduledAt` has
+     * passed, so a Cron paused across its slot would otherwise fire at the very next tick instead of its next slot. A
+     * stored slot that still lies ahead is kept — the expression is unchanged, so it IS the next slot. Not persisted.
+     * @return void
+     * @throws Exception
+     */
+    public function activate(): void
+    {
+        if ($this->isActive) {
+            return;
+        }
+        $this->isActive = true;
+        $this->nextExecutionScheduledAt = $this->getNextScheduledExecution();
+    }
+
+    /**
+     * Switches the Cron OFF; schedule, command and the stored slot stay as they are. Not persisted.
+     * @return void
+     */
+    public function deactivate(): void
+    {
+        $this->isActive = false;
+    }
+
+    /**
      * Returns next DateTime when Cron shall be executed
      * @return DateTime
      * @throws Exception

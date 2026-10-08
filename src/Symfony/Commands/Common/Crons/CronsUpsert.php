@@ -99,8 +99,11 @@ class CronsUpsert extends Command
             if ($command !== null) {
                 $cron->command = trim((string)$command);
             }
-            if (is_bool($active)) {
-                $cron->isActive = $active;
+            if ($active === true) {
+                // through the entity: a paused Cron switched back on is re-anchored at its next slot
+                $cron->activate();
+            } elseif ($active === false) {
+                $cron->deactivate();
             }
 
             // The entity's own constraints decide (expression grammar, command exists in this console, description length).

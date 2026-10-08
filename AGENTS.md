@@ -632,7 +632,7 @@ $translated = __('greeting.hello', 'de', 'DE', 'FORMAL', ['%name%' => 'Max']);
 
 ### Cron Jobs
 
-Entities `Cron` and `CronExecution` in `Domain/Common/Entities/Crons/` provide scheduled task execution via Symfony console commands. Managed by `app:crons:execute` and `app:crons:list` commands.
+Entities `Cron` and `CronExecution` in `Domain/Common/Entities/Crons/` provide scheduled task execution via Symfony console commands. Managed by `app:crons:execute` (the tick), `app:crons:list`, `app:crons:upsert` (create/edit one Cron), `app:crons:activate` / `app:crons:deactivate` (switch Crons by name; activation re-anchors the next slot via `Cron::activate()`) and `app:crons:executions` (run history).
 
 ### Common Value Objects
 
