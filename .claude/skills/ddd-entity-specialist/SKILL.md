@@ -252,7 +252,7 @@ If you forget `#[NotNull]` on a property that should be NOT NULL, the schema-dif
 
 - Multiple traits MUST be comma-separated on a single line: `use TraitA, TraitB;`
 - `#[LazyLoadRepo]` is required on **both** Entity and EntitySet classes
-- `isset()`, `empty()`, `??` and `??=` on a `#[LazyLoad]` property NEVER trigger the load — `$x = $entity->relation ?? null;` always returns the default. Read the property directly first. Full mechanism: "What triggers a lazy load" in the Lazy Loading section below.
+- `isset()` and `empty()` on a `#[LazyLoad]` property NEVER trigger the load — `isset($entity->relation)` is `false` even when a related row exists. `??` and `??=` DO trigger it (`$entity->relation ?? null` loads, then falls back only if the load yields null). Use `isset()` only when you must NOT load; read the property (plain or with `??`) when loading is intended. Full mechanism: "What triggers a lazy load" in the Lazy Loading section below.
 - Override `uniqueKey()` ONLY when the default is not enough — `EntityTrait::uniqueKey()` already returns `static::uniqueKeyStatic($this->id)` (with a `DefaultObjectTrait` fallback), so nothing fails if you omit it; override it when identity is not the id (e.g. a natural composite key). The templates' `$this->id ?? spl_object_id($this)` override is one such case: it gives not-yet-persisted entities (id still null) a distinct key so they don't collide inside an EntitySet.
 - `EntitiesBaseService` does **NOT** exist -- always use `EntitiesService`
 
@@ -902,21 +902,22 @@ The corresponding service provides `getNextDisplayOrder()` (see `ddd-service-spe
 
 **Lazy loading makes most service query methods unnecessary.** Relationships load automatically on property access.
 
-### What triggers a lazy load — and what does NOT (the `isset` / `??` footgun)
+### What triggers a lazy load — and what does NOT (the `isset` / `empty` footgun)
 
-**Only a DIRECT property read triggers the load. `isset()`, `empty()`, `??` and `??=` do NOT — they silently skip it.**
+**A property read triggers the load — plain, or through `??` / `??=`. Only `isset()` and `empty()` skip it silently.**
 
-*Mechanism:* `LazyLoadTrait::prepareLazyLoad()` calls `$this->unset($propertyName)` on every `#[LazyLoad]` property, so the property is *unset* and reading it routes through the magic getter **`__get()`** — and `__get()` is the thing that actually runs the load. *Reason it's only `__get()`:* the entity layer defines **no `__isset()`**. PHP gates `isset()` / `empty()` / `??` / `??=` on `__isset()` (they **never** consult `__get()`); with the property unset and no `__isset()` present they all evaluate to "not set" **without ever calling `__get()`**, so the load never happens.
+*Mechanism:* `LazyLoadTrait::prepareLazyLoad()` calls `$this->unset($propertyName)` on every `#[LazyLoad]` property, so the property is *unset* and reading it routes through the magic getter **`__get()`** — and `__get()` is the thing that actually runs the load. The entity layer defines **no `__isset()`**. `isset()` / `empty()` on an unset property ask `__isset()`; with none present they return `false` / `true` **without ever calling `__get()`**, so the load never happens. `??` and `??=` are different: they read the property, and when no `__isset()` exists that read falls through to `__get()` — so they load like a plain read, and use the default only if the loaded value is null.
 
 | Access | calls `__get()`? | Lazy load? | Result |
 |---|---|---|---|
 | `$entity->relation` | yes | ✅ loads | the loaded entity / set |
 | `isset($entity->relation)` | no | ❌ never | `false` (even when a related row exists) |
 | `empty($entity->relation)` | no | ❌ never | `true` (it looks "empty" because it never loaded) |
-| `$entity->relation ?? $default` | no | ❌ never | **always `$default`** — never loads |
-| `$entity->relation ??= …` | no | ❌ never | assigns without ever loading |
+| `$entity->relation ?? $default` | yes | ✅ loads | the loaded value; `$default` only if the load yields null |
+| `$entity->relation ??= …` | yes | ✅ loads | the loaded value; assigns only if the load yields null |
+| `isset($entity->relation->field)` | yes | ✅ loads | nested access reads `relation` through `__get()` first |
 
-**Footgun:** `$x = $entity->relation ?? null;` reads like "load-or-default" but **never loads** — it always returns the default; likewise `if (isset($entity->relation))` / `if (empty($entity->relation))` guard on the *unset* state, not on the data. To load: read the property **directly** (`$entity->relation`), or trigger the whole expand tree (`$entity->expand()`). For "load, then fall back if empty", assign first, then test: `$rel = $entity->relation; if (!$rel) { … }`.
+**Footgun:** `if (isset($entity->relation))` / `if (empty($entity->relation))` guard on the *unset* state, not on the data — they report "not set" / "empty" even when a related row exists. Use `isset()` deliberately when you must NOT load (e.g. "was it already loaded or assigned?"). When loading is intended, read the property — `$entity->relation`, or `$entity->relation ?? $default` for "load, then fall back if empty" (both load) — or trigger the whole expand tree (`$entity->expand()`). Note: on a typed property that was never initialized and NOT unset (no `#[LazyLoad]`, no default), `??` returns the default without calling `__get()` — this only affects non-lazy properties.
 
 ### Repository Types
 
