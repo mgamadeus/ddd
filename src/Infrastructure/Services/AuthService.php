@@ -23,6 +23,19 @@ use Throwable;
 
 class AuthService
 {
+    /**
+     * @var string The claim that marks a JWT as a LOGIN credential. Applications sign many JWTs with the same key
+     *      (image/media access URLs, deep links, OAuth state); without a positive type every one of them that carries
+     *      an `accountId` would log in. Only {@see self::TOKEN_TYPE_ACCESS} is accepted by the bearer authenticators.
+     */
+    public const string CLAIM_TOKEN_TYPE = 'tokenType';
+
+    /** @var string The only token type the bearer authenticators log in — minted by the refresh exchange, nowhere else */
+    public const string TOKEN_TYPE_ACCESS = 'access';
+
+    /** @var string The marker {@see self::getRefreshTokenForAccountId()} writes; only such a token may be exchanged */
+    public const string CLAIM_REFRESH_TOKEN = 'refreshToken';
+
     protected static ?Account $account = null;
     protected static ?Account $adminAccount = null;
 
@@ -182,11 +195,7 @@ class AuthService
      */
     public function extendRefreshToken(string $refreshToken): string
     {
-        $decoded = JWTPayload::getParametersFromJWT($refreshToken);
-        if (!$decoded || !($decoded['accountId'] ?? null)) {
-            throw new UnauthorizedException('Refresh token invalid');
-        }
-        return $this->getRefreshTokenForAccountId($decoded['accountId']);
+        return $this->getRefreshTokenForAccountId($this->getAccountIdFromRefreshTokenOrThrow($refreshToken));
     }
 
     /**
@@ -201,7 +210,7 @@ class AuthService
             'AUTH_REFRESH_TOKEN_TTL'
         );
 
-        return JWTPayload::createJWTFromParameters(['accountId' => $accountId, 'refreshToken' => true], $ttl);
+        return JWTPayload::createJWTFromParameters(['accountId' => $accountId, self::CLAIM_REFRESH_TOKEN => true], $ttl);
     }
 
     /**
@@ -215,15 +224,66 @@ class AuthService
         string $refreshToken,
         bool $isShortLived = false
     ): string {
-        $decoded = JWTPayload::getParametersFromJWT($refreshToken);
-        if (!$decoded || !($decoded['accountId'] ?? null)) {
-            throw new UnauthorizedException('Refresh token invalid');
-        }
+        $accountId = $this->getAccountIdFromRefreshTokenOrThrow($refreshToken);
         $ttl = $isShortLived ? Config::getEnv('AUTH_LOGIN_TOKEN_SHORT_TTL') : Config::getEnv(
             'AUTH_LOGIN_TOKEN_TTL'
         );
 
-        return JWTPayload::createJWTFromParameters(['accountId' => $decoded['accountId']], $ttl);
+        return JWTPayload::createJWTFromParameters(
+            ['accountId' => $accountId, self::CLAIM_TOKEN_TYPE => self::TOKEN_TYPE_ACCESS],
+            $ttl
+        );
+    }
+
+    /**
+     * The account a REFRESH token was minted for. Refused (401) unless the token is a refresh token in the sense of
+     * {@see self::isRefreshTokenPayload()}: an access token, a purpose token (image URL, deep link) or an
+     * impersonation token cannot be exchanged for a fresh 30-day credential. The one decision point for every
+     * refresh exchange — an application overriding the exchange calls it (or {@see self::isRefreshTokenPayload()}
+     * on a payload it decoded itself, e.g. in an expired-token branch).
+     *
+     * @param string $refreshToken
+     * @return string|int
+     * @throws UnauthorizedException
+     */
+    protected function getAccountIdFromRefreshTokenOrThrow(string $refreshToken): string|int
+    {
+        $payload = JWTPayload::getParametersFromJWT($refreshToken);
+        if (!static::isRefreshTokenPayload($payload)) {
+            throw new UnauthorizedException('Refresh token invalid');
+        }
+        return $payload['accountId'];
+    }
+
+    /**
+     * True for the decoded payload of a token that may LOG IN: it names an account and carries
+     * `tokenType: access`. Every bearer authenticator — the framework's and an application's own (a cookie bearer
+     * authenticator, for instance) — decides with this, so the rule lives in one place.
+     *
+     * @param array|bool $payload The result of {@see JWTPayload::getParametersFromJWT()}; false for an invalid token
+     * @return bool
+     */
+    public static function isAccessTokenPayload(array|bool $payload): bool
+    {
+        return is_array($payload)
+            && !empty($payload['accountId'])
+            && ($payload[self::CLAIM_TOKEN_TYPE] ?? null) === self::TOKEN_TYPE_ACCESS;
+    }
+
+    /**
+     * True for the decoded payload of a token that may be EXCHANGED: it names an account, carries the refresh marker
+     * and has no token type. A token with any `tokenType` — an access token, or an impersonation token minted as one —
+     * is never a refresh token, whatever else it contains.
+     *
+     * @param array|bool $payload The result of {@see JWTPayload::getParametersFromJWT()}; false for an invalid token
+     * @return bool
+     */
+    public static function isRefreshTokenPayload(array|bool $payload): bool
+    {
+        return is_array($payload)
+            && !empty($payload['accountId'])
+            && ($payload[self::CLAIM_REFRESH_TOKEN] ?? null) === true
+            && !isset($payload[self::CLAIM_TOKEN_TYPE]);
     }
 
     /**

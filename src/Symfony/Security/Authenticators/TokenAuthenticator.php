@@ -6,6 +6,7 @@ namespace DDD\Symfony\Security\Authenticators;
 
 use DDD\Infrastructure\Exceptions\UnauthorizedException;
 use DDD\Infrastructure\Libs\JWTPayload;
+use DDD\Infrastructure\Services\AuthService;
 use DDD\Presentation\Base\Dtos\RestResponseDto;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpFoundation\Request;
@@ -77,9 +78,11 @@ class TokenAuthenticator extends AbstractAuthenticator
         if (str_starts_with($authorizationHeader, self::TOKEN_BEARER)) {
             $token = str_replace(self::TOKEN_BEARER . ' ', '', $authorizationHeader);
             $payload = JWTPayload::getParametersFromJWT($token);
-            // refresh tokens cannot be used for login
-            if (isset($payload['refreshToken'])) {
-                throw new UnauthorizedException('Refresh token cannot be used for login');
+            // Only an ACCESS token logs in. Every other JWT the application signs with the same key — refresh tokens,
+            // image/media access tokens in <img> URLs, deep links — carries no tokenType (or another one) and is
+            // refused here, whatever else it contains.
+            if (!AuthService::isAccessTokenPayload($payload)) {
+                throw new UnauthorizedException('Token is not an access token');
             }
             $accountId = $payload['accountId'] ?? null;
             if ($accountId) {

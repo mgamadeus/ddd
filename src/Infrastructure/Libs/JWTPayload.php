@@ -12,6 +12,14 @@ use Throwable;
 /**
  * This class encodes in JWT parameters and decodes them. It attaches an expiration timestamp that keeps the jwt valid for a slice of time,
  * e.g. during a 2 month period, e.g. january and february
+ *
+ * KEYS: {@see self::createJWTFromParameters()} signs with `JWT_HASH_KEY` / `JWT_HASH_METHOD`, while
+ * {@see self::getParametersFromJWT()} verifies with `AUTH_JWT_HASH_KEY` / `AUTH_JWT_HASH_METHOD`. The two env pairs
+ * MUST hold the same values — tokens minted here only verify because every deployment sets them equal.
+ *
+ * Every JWT minted here is signed with the same key, so a token's PURPOSE has to be stated in a claim: a login token
+ * carries `tokenType: access` ({@see \DDD\Infrastructure\Services\AuthService::TOKEN_TYPE_ACCESS}) and the bearer
+ * authenticators accept nothing else. Never add that claim to a purpose token (image URL, deep link).
  */
 class JWTPayload
 {
