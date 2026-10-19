@@ -75,13 +75,12 @@ class WorkspaceVhostEnvVarProcessorTest extends TestCase
         $this->assertSame(0, $processor->probes);
     }
 
-    public function testAMissingWorkspaceVhostReturnsTheEnvDsnUnchanged(): void
+    public function testAMissingWorkspaceVhostFallsBackToTheCommonVhost(): void
     {
-        // never a hardcoded "/": the .env DSN as written, query string included
         $processor = $this->processorFor('/var/www/dev-workspaces/prj6/app', vhostExists: false);
-        $this->assertSame(self::DSN, $this->resolve($processor));
+        $this->assertSame('amqp://user:pw@rabbit:5672/common', $this->resolve($processor));
         $this->assertSame(
-            'amqp://user:pw@rabbit:5672/%2f?heartbeat=30',
+            'amqp://user:pw@rabbit:5672/common?heartbeat=30',
             $this->resolve($processor, 'amqp://user:pw@rabbit:5672/%2f?heartbeat=30')
         );
     }
