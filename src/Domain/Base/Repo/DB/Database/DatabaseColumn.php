@@ -27,6 +27,7 @@ use DDD\Infrastructure\Reflection\ReflectionProperty;
 use ReflectionAttribute;
 use ReflectionNamedType;
 use ReflectionUnionType;
+use DDD\Infrastructure\Validation\Constraints\Choice as DDDChoice;
 use Symfony\Component\Validator\Constraints\Choice;
 use Symfony\Component\Validator\Constraints\Length;
 use Symfony\Component\Validator\Constraints\NotNull;
@@ -421,7 +422,7 @@ class DatabaseColumn extends ValueObject
                     ',',
                     array_map(function (string $el) {
                         return "'$el'";
-                    }, $choicesAttributeInstance->choices)
+                    }, DDDChoice::getChoicesResolvedFromConstraint($choicesAttributeInstance))
                 ) . ')';
         } // handle length limits
         elseif (

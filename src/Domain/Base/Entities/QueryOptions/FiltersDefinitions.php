@@ -25,6 +25,7 @@ use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
 use PHPUnit\TextUI\ReflectionException;
 use ReflectionAttribute;
 use ReflectionUnionType;
+use DDD\Infrastructure\Validation\Constraints\Choice as DDDChoice;
 use Symfony\Component\Validator\Constraints\Choice;
 
 /**
@@ -248,7 +249,7 @@ class FiltersDefinitions extends ObjectSet
                 /** @var Choice $choiceAttribute */
                 $choiceAttribute = $reflectionProperty->getAttributeInstance(Choice::class);
                 $propertyName = $propertyPrefix . $reflectionProperty->getName();
-                $allowedPropertyValue = $choiceAttribute ? $choiceAttribute->choices : true;
+                $allowedPropertyValue = $choiceAttribute ? DDDChoice::getChoicesResolvedFromConstraint($choiceAttribute) : true;
 
                 if ($databaseVirtualColumnAttribute) {
                     $allowedFilterProperties[$propertyPrefix . DatabaseVirtualColumn::getVirtualColumnName(

@@ -39,6 +39,21 @@ git log --oneline -3
 
 Ensure all changes are committed. If there are uncommitted changes, commit them first before bumping the version.
 
+**Prod-mode compile gate (Core releases that touch Symfony constraints, attributes, the kernel, bundles or DI).**
+Dev mode hides a whole class of failures: Symfony >= 7.4 instantiates constraint attributes while compiling the
+container ONLY when `kernel.debug` is off, so a constructor that reaches the container fatals in prod and nowhere
+else. Unit tests, a class-load sweep, `lint:container` in dev and a dev workspace all stay green — v2.70.0 shipped
+exactly that way and broke the first prod build. Before tagging, compile one consuming app in prod mode into a
+scratch cache, with the changed Core files placed in its vendor for the duration and restored afterwards:
+
+```bash
+APP_ENV=prod APP_DEBUG=0 APP_CACHE_DIR=/abs/scratch/prod-cache php bin/console cache:clear     # must print [OK]
+APP_ENV=prod APP_DEBUG=0 APP_CACHE_DIR=/abs/scratch/prod-cache php bin/console lint:container  # must print [OK]
+```
+
+`APP_CACHE_DIR` (absolute path, read by `DDDKernel`) keeps the app's own `var/cache` untouched. The cache dir must
+start EMPTY — a dump left by an earlier build keeps its error tags.
+
 ### Step 2: Determine Version Bump
 
 Read the current version from `composer.json`:

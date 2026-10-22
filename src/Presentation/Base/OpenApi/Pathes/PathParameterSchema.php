@@ -24,6 +24,7 @@ use ReflectionEnum;
 use ReflectionException;
 use ReflectionNamedType;
 use ReflectionUnionType;
+use DDD\Infrastructure\Validation\Constraints\Choice as DDDChoice;
 use Symfony\Component\Validator\Constraints\Choice;
 use Symfony\Component\Validator\Constraints\Length;
 
@@ -124,11 +125,11 @@ class PathParameterSchema
                     if ($attributes = $requestDtoReflectionProperty->getAttributes(Choice::class, ReflectionAttribute::IS_INSTANCEOF)) {
                         /** @var Choice $choiceAttribute */
                         $choiceAttribute = $attributes[0]->newInstance();
-                        $this->enum = $choiceAttribute->choices;
+                        $this->enum = DDDChoice::getChoicesResolvedFromConstraint($choiceAttribute);
                         $choicesAssoc = [];
                         $choicesDescripton = '';
                         $constantDescriptions = $requestDtoReflectionClass->getConstantsDescriptions();
-                        foreach ($choiceAttribute->choices as $choice) {
+                        foreach ($this->enum as $choice) {
                             $choicesAssoc[$choice] = true;
                             $constantDescription = $constantDescriptions[$choice] ?? '';
                             $choicesDescripton .= "-   `$choice`" . ($constantDescription ? ': ' . $constantDescription : '') . "\n";

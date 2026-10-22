@@ -23,6 +23,7 @@ use ReflectionEnum;
 use ReflectionException;
 use ReflectionNamedType;
 use ReflectionProperty;
+use DDD\Infrastructure\Validation\Constraints\Choice as DDDChoice;
 use Symfony\Component\Validator\Constraints\Choice;
 use Symfony\Component\Validator\Constraints\Length;
 use Symfony\Component\Validator\Constraints\NotNull;
@@ -232,11 +233,11 @@ class SchemaProperty
                 ) {
                     /** @var Choice $choiceAttribute */
                     $choiceAttribute = $attributes[0]->newInstance();
-                    $this->enum = $choiceAttribute->choices;
+                    $this->enum = DDDChoice::getChoicesResolvedFromConstraint($choiceAttribute);
                     $choicesAssoc = [];
                     $choicesDescripton = '';
                     $constantDescriptions = $schemaReflectionClass->getConstantsDescriptions();
-                    foreach ($choiceAttribute->choices as $choice) {
+                    foreach ($this->enum as $choice) {
                         $choicesAssoc[$choice] = true;
                         $constantDescription = $constantDescriptions[$choice] ?? '';
                         $choicesDescripton .= "-   `$choice`" . ($constantDescription ? ': ' . $constantDescription : '') . "\n";
