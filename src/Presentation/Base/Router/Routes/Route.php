@@ -9,14 +9,9 @@ use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 
 #[Attribute(Attribute::IS_REPEATABLE | Attribute::TARGET_CLASS | Attribute::TARGET_METHOD)]
-class Route extends \Symfony\Component\Routing\Annotation\Route
+class Route extends \Symfony\Component\Routing\Attribute\Route
 {
     use SerializerTrait, BaseAttributeTrait;
-
-    protected ?string $path = null;
-    protected array $localizedPaths = [];
-    protected array $methods;
-    protected array $schemes;
 
     public function __construct(
         array|string|null $path = null,

@@ -556,7 +556,7 @@ class Kernel extends BaseKernel
             'kernel.bundles_metadata' => $bundlesMetadata,
             'kernel.charset' => $this->getCharset(),
             'kernel.container_class' => $this->getContainerClass(),
-        ];
+        ] + (null !== ($shareDir = $this->getShareDir()) ? ['kernel.share_dir' => realpath($shareDir) ?: $shareDir] : []);
     }
 
     public function getCharset(): string
