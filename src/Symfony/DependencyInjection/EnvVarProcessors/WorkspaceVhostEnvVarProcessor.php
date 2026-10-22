@@ -24,8 +24,8 @@ use Symfony\Component\Messenger\Bridge\Amqp\Transport\Connection;
  * The parameter {@see self::ENABLED_PARAMETER} is the rollback switch — false means unchanged everywhere.
  *
  * Inside a workspace the broker is probed once per process: when the workspace vhost does not exist ("530 NOT_ALLOWED
- * - vhost <name> not found"), the checkout falls back to the shared vhost {@see self::FALLBACK_VHOST}, query string
- * kept. Any other failure — broker down, bad credentials, access to an existing vhost refused — keeps the workspace
+ * - vhost <name> not found"), the DSN from `.env` is returned unchanged, so the checkout falls back to its default
+ * vhost. Any other failure — broker down, bad credentials, access to an existing vhost refused — keeps the workspace
  * DSN so the real error surfaces. The probe opens the connection through Symfony's own
  * {@see Connection::fromDsn()}, so credentials, TLS and every DSN option are exactly those the transport will use.
  *
@@ -45,9 +45,6 @@ class WorkspaceVhostEnvVarProcessor implements EnvVarProcessorInterface
      * TRUTH; {@see DDDService::WORKSPACES_PATH_SEGMENT} is only its default, so the two cannot drift apart.
      */
     public const string PATH_SEGMENT_PARAMETER = 'ddd.workspaces_path_segment';
-
-    /** @var string The vhost a workspace checkout falls back to when its own vhost does not exist on the broker */
-    public const string FALLBACK_VHOST = 'common';
 
     /** @var array<string, bool> Per-process memo of probed workspace DSNs → whether their vhost exists */
     protected static array $vhostExists = [];
@@ -85,7 +82,7 @@ class WorkspaceVhostEnvVarProcessor implements EnvVarProcessorInterface
         if ($workspaceDsn === $dsn) {
             return $dsn;
         }
-        return $this->vhostExists($workspaceDsn) ? $workspaceDsn : self::replaceVhost($dsn, self::FALLBACK_VHOST);
+        return $this->vhostExists($workspaceDsn) ? $workspaceDsn : $dsn;
     }
 
     /**
