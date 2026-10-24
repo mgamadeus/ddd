@@ -25,7 +25,7 @@ class Exception extends \Exception
 
     protected string $contentType = self::CONTENT_TYPE_JSON;
 
-    public function __construct(string $message, ExceptionDetails &$exceptionDetails = null, Throwable $previous = null)
+    public function __construct(string $message, ?ExceptionDetails &$exceptionDetails = null, ?Throwable $previous = null)
     {
         $this->exceptionDetails = $exceptionDetails;
         $this->error = $message;

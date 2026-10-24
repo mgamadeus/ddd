@@ -62,7 +62,7 @@ class ProcessCLIMessage extends Command
         return self::RECEIVED_FROM_TRANSPORT_NAME;
     }
 
-    protected function configure()
+    protected function configure(): void
     {
         $this->addArgument('message', InputArgument::REQUIRED, 'The encoded message or temp file name.');
         $this->addOption('useTempFile', null, InputOption::VALUE_NONE, 'Use temp file for transport.');

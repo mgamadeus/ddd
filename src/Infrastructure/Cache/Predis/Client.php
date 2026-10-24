@@ -467,7 +467,7 @@ class Client implements ClientInterface, IteratorAggregate
      *
      * @return Pipeline|array
      */
-    protected function createPipeline(array $options = null, $callable = null)
+    protected function createPipeline(?array $options = null, $callable = null)
     {
         if (isset($options['atomic']) && $options['atomic']) {
             $class = 'Predis\Pipeline\Atomic';
@@ -497,7 +497,7 @@ class Client implements ClientInterface, IteratorAggregate
      *
      * @return MultiExecTransaction|array
      */
-    protected function createTransaction(array $options = null, $callable = null)
+    protected function createTransaction(?array $options = null, $callable = null)
     {
         $transaction = new MultiExecTransaction($this, $options);
 
@@ -516,7 +516,7 @@ class Client implements ClientInterface, IteratorAggregate
      *
      * @return PubSubConsumer|null
      */
-    protected function createPubSub(array $options = null, $callable = null)
+    protected function createPubSub(?array $options = null, $callable = null)
     {
         $pubsub = new PubSubConsumer($this, $options);
 

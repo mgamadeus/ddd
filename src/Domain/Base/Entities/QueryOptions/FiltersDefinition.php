@@ -54,7 +54,7 @@ class FiltersDefinition extends ValueObject
      */
     protected ?ExpandDefinition $expandDefinition = null;
 
-    public function __construct(string $propertyName = null, array $options = null, ?ExpandDefinition $expandDefinition = null)
+    public function __construct(?string $propertyName = null, ?array $options = null, ?ExpandDefinition $expandDefinition = null)
     {
         $this->propertyName = $propertyName;
         $this->options = $options;

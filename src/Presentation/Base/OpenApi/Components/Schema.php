@@ -41,7 +41,7 @@ class Schema
     protected ?string $scope;
 
     public function __construct(
-        ClassWithNamespace &$schemaClass = null,
+        ?ClassWithNamespace &$schemaClass = null,
         ?string $scope = null
     )
     {

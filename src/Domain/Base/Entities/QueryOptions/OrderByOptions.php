@@ -186,7 +186,7 @@ MD;
     public function applyOrderByToDoctrineQueryBuilder(
         DoctrineQueryBuilder &$queryBuilder,
         string $baseModelClass = '',
-        callable $mappingFunction = null
+        ?callable $mappingFunction = null
     ): DoctrineQueryBuilder {
         foreach ($this->getElements() as $orderByOption) {
             // if orderBy is based on a filter property that comes from an expand property, alias has to be empty as otherwise the base alias would be

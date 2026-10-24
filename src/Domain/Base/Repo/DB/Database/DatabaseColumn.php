@@ -301,12 +301,12 @@ class DatabaseColumn extends ValueObject
     public DatabaseVirtualColumns $virtualColumnsBasedOnCurrentColumn;
 
     public function __construct(
-        string $sqlType = null,
-        bool $allowsNull = null,
-        bool $hasAutoIncrement = null,
-        bool $isUnsigned = null,
-        int $varCharLength = null,
-        int $vectorDimensions = null,
+        ?string $sqlType = null,
+        ?bool $allowsNull = null,
+        ?bool $hasAutoIncrement = null,
+        ?bool $isUnsigned = null,
+        ?int $varCharLength = null,
+        ?int $vectorDimensions = null,
         bool $encrypted = false,
         ?string $encryptionScope = null,
         ?string $onUpdateAction = null,

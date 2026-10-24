@@ -83,7 +83,7 @@ class AppliedQueryOptions extends ValueObject
     }
 
     public function __construct(
-        QueryOptions $queryOptions = null,
+        ?QueryOptions $queryOptions = null,
         ?string $referenceClass = null
     ) {
         if (isset($queryOptions->top)) {

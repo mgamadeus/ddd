@@ -126,7 +126,7 @@ MD;
     public function applySelectToDoctrineQueryBuilder(
         DoctrineQueryBuilder &$queryBuilder,
         string $baseModelClass = '',
-        callable $mappingFunction = null,
+        ?callable $mappingFunction = null,
         ?string $baseModelAlias = null,
         ?string $joinPath = null,
     ): DoctrineQueryBuilder {

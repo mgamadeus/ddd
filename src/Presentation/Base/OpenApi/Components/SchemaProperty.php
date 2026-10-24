@@ -130,7 +130,7 @@ class SchemaProperty
         ReflectionClass &$schemaReflectionClass,
         ReflectionProperty &$schemaClassReflectionProperty,
         string $scope = Parameter::BODY,
-        Schema &$schema = null,
+        ?Schema &$schema = null,
         ?int $maxRecursiveSchemaDepth = null
     ) {
         if ($maxRecursiveSchemaDepth !== null) {

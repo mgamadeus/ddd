@@ -27,7 +27,7 @@ class Choice extends SymfonyChoice
     use BaseAttributeTrait;
 
     public function __construct(
-        array|string $options = [],
+        array|string|null $options = null,
         ?array $choices = null,
         callable|string|null $callback = null,
         ?bool $multiple = null,
@@ -39,7 +39,8 @@ class Choice extends SymfonyChoice
         ?string $minMessage = null,
         ?string $maxMessage = null,
         ?array $groups = null,
-        mixed $payload = null
+        mixed $payload = null,
+        ?bool $match = null
     ) {
         parent::__construct(
             $options,
@@ -54,7 +55,8 @@ class Choice extends SymfonyChoice
             $minMessage,
             $maxMessage,
             $groups,
-            $payload
+            $payload,
+            $match
         );
     }
 

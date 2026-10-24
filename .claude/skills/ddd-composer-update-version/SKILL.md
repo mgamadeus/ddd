@@ -1,6 +1,6 @@
 ---
 name: ddd-composer-update-version
-description: Bump composer.json version, commit, push, and tag to trigger Packagist, then update consuming apps. Covers the platform-flag policy (apps pin config.platform.php, so plain composer update -W is correct; the broad --ignore-platform-reqs is a footgun that can poison the lock), the vendor-copy cwd hazard (git inside vendor/mgamadeus operates on the APP repo — never release from there), a one-liner patch release, the 7-module dependency-order release list, the dependency-floor cascade rule (downstream fix propagation = raise each dependent's require floor to the exact fixed version and re-release, not just composer update), and troubleshooting when a new version does not land (composer prohibits, composer clear-cache). Use when releasing any DDD package (core or module), running composer update in a consuming app, choosing platform-req flags, propagating a bugfix through the module chain, or diagnosing why a freshly tagged version is not picked up.
+description: "Bump composer.json version, commit, push, and tag to trigger Packagist, then update consuming apps. Covers the platform-flag policy (apps pin config.platform.php, so plain composer update -W is correct; the broad --ignore-platform-reqs is a footgun that can poison the lock), the vendor-copy cwd hazard (git inside vendor/mgamadeus operates on the APP repo — never release from there), a one-liner patch release, the 7-module dependency-order release list, the dependency-floor cascade rule (downstream fix propagation = raise each dependent's require floor to the exact fixed version and re-release, not just composer update), and troubleshooting when a new version does not land (composer prohibits, composer clear-cache). Use when moving an app to Symfony 7.4 (upgrade checklist inside), releasing any DDD package (core or module), running composer update in a consuming app, choosing platform-req flags, propagating a bugfix through the module chain, or diagnosing why a freshly tagged version is not picked up."
 metadata:
   author: mgamadeus
   version: "1.0.0"
@@ -53,6 +53,8 @@ APP_ENV=prod APP_DEBUG=0 APP_CACHE_DIR=/abs/scratch/prod-cache php bin/console l
 
 `APP_CACHE_DIR` (absolute path, read by `DDDKernel`) keeps the app's own `var/cache` untouched. The cache dir must
 start EMPTY — a dump left by an earlier build keeps its error tags.
+
+**Moving an app to Symfony 7.4 / ddd 2.70.x:** follow [references/symfony-7.4-migration.md](references/symfony-7.4-migration.md) — every trap the Radbonus and RankingCoach upgrades hit, in order.
 
 ### Step 2: Determine Version Bump
 

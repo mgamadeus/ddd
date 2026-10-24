@@ -39,7 +39,7 @@ class CustomToken extends RawToken
      * @param string $refreshToken
      * @param int $expiresAt
      */
-    public function __construct(string $accessToken = null, string $refreshToken = null, int $expiresAt = null)
+    public function __construct(?string $accessToken = null, ?string $refreshToken = null, ?int $expiresAt = null)
     {
         $this->accessToken = $accessToken;
         $this->refreshToken = $refreshToken;

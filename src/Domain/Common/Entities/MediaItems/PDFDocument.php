@@ -28,7 +28,7 @@ class PDFDocument extends Document
     /** @var GenericMediaItemContent PDF File Content */
     public GenericMediaItemContent $mediaItemContent;
 
-    public function __construct(string $fileName = null, string $title = null, string $pdfBody = null)
+    public function __construct(?string $fileName = null, ?string $title = null, ?string $pdfBody = null)
     {
         if ($pdfBody) {
             $this->mediaItemContent = new GenericMediaItemContent();

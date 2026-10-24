@@ -464,7 +464,7 @@ public function doSomething(int $fooBarId, bool $async = false): void
 - [ ] Message payload uses IDs/primitives (not entity objects)
 - [ ] Message constructor calls `parent::__construct()`
 - [ ] Handler extends `AppMessageHandler` (or project-specific subclass)
-- [ ] Handler has `#[AsMessageHandler(fromTransport: '...')]`
+- [ ] Handler has `#[AsMessageHandler(fromTransport: '...')]` naming a transport that EXISTS and that the message is routed to — on Symfony 7.4 a wrong name silently disconnects the handler (the blanket `messenger.message_handler` tag from `services.yaml` is dropped), so check `debug:messenger` shows `(when from_transport=…)`
 - [ ] Handler calls `$this->setAuthAccountFromMessage($message)` first
 - [ ] Handler uses `$this->getLogger()` (never `DDDService::instance()->getLogger()`)
 - [ ] Handler uses `$this->logShortException()` in catch blocks

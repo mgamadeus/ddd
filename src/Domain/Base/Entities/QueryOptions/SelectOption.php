@@ -39,7 +39,7 @@ class SelectOption extends ValueObject
      * @param string|null $propertyName
      * @throws BadRequestException
      */
-    public function __construct(string $propertyName = null)
+    public function __construct(?string $propertyName = null)
     {
         $this->propertyName = $propertyName;
         parent::__construct();

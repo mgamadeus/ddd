@@ -32,7 +32,7 @@ class OrderByOption extends ValueObject
      * @param string $direction
      * @throws BadRequestException
      */
-    public function __construct(string $propertyName = null, string $direction = self::ASC)
+    public function __construct(?string $propertyName = null, string $direction = self::ASC)
     {
         $this->propertyName = $propertyName;
         $direction = strtoupper($direction);

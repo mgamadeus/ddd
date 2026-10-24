@@ -504,7 +504,7 @@ class ReflectionDocComment
      * (at)property Cat|Dog[] $propertyName => will be interpreted as array of either cat or dog
      * @return string[]|null
      */
-    public function getPropertyTypes(string $propertyName = null): ?array
+    public function getPropertyTypes(?string $propertyName = null): ?array
     {
         if (!$this->docComment) {
             return null;

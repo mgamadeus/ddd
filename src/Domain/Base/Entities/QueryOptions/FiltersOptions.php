@@ -919,7 +919,7 @@ MD;
      */
     protected function getFiltersExpressionForDoctrineQueryBuilder(
         DoctrineQueryBuilder &$queryBuilder,
-        callable $mappingFunction = null,
+        ?callable $mappingFunction = null,
     ): Expr\Orx|Expr\Andx|Expr\Comparison|Expr\Func|string|null {
         if ($this->type == self::TYPE_OPERATION) {
             $operator = $this->joinOperator == self::JOIN_OPERATOR_AND ? 'andX' : 'orX';
@@ -1045,7 +1045,12 @@ MD;
             }
 
             $baseModelAliasApplied = $baseModelAlias ? $baseModelAlias . '.' : '';
-            if (is_string($this->value) && (strtoupper($this->value) == 'NULL' || $value === null)) {
+            // `eq 'NULL'` / `ne 'NULL'` — and the bare `eq null` / `ne null` the parser also accepts — compare with
+            // IS [NOT] NULL. The bare form used to be bound as a parameter, i.e. `col = NULL`, which matches no row.
+            $comparesWithBareNull = $this->value === null
+                && in_array($this->operator, [self::OPERATOR_EQUAL, self::OPERATOR_NOT_EQUAL], true);
+            if ($comparesWithBareNull
+                || (is_string($this->value) && (strtoupper($this->value) == 'NULL' || $value === null))) {
                 if ($this->operator == self::OPERATOR_EQUAL) {
                     $operator = 'isNull';
                 } elseif ($this->operator == self::OPERATOR_NOT_EQUAL) {
@@ -1130,7 +1135,7 @@ MD;
 
     public function applyFiltersToDoctrineQueryBuilder(
         DoctrineQueryBuilder &$queryBuilder,
-        callable $mappingFunction = null,
+        ?callable $mappingFunction = null,
     ): DoctrineQueryBuilder {
         /** @var DoctrineModel $baseModelClass */
         $expression = $this->getFiltersExpressionForDoctrineQueryBuilder(

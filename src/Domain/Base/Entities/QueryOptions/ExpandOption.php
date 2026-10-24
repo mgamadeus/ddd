@@ -56,7 +56,7 @@ class ExpandOption extends ValueObject
      * @param string|null $expandParameters
      * @throws BadRequestException
      */
-    public function __construct(string $propertyName = null, string $expandParameters = null)
+    public function __construct(?string $propertyName = null, ?string $expandParameters = null)
     {
         $this->propertyName = $propertyName;
         if ($expandParameters) {

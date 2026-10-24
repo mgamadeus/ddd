@@ -129,6 +129,9 @@ class Date extends DateTime
         return $return;
     }
 
+    // PHP 8.4 narrowed \DateTime::modify() to DateTime (it throws instead of returning false); the 8.3 production
+    // runtime can still return false, so the wider type stays until 8.3 is gone
+    #[\ReturnTypeWillChange]
     public function modify(string $modifier): Date|false
     {
         $this->toStringCache = null;

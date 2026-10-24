@@ -1349,7 +1349,7 @@ trait SerializerTrait
      * @param mixed $value
      * @param $throwErrors
      * @param ReflectionClass|null $reflectionClass
-     * @param bool $rootCall
+     * @param bool $sanitizeInput
      * @return void
      * @throws BadRequestException
      * @throws InternalErrorException
