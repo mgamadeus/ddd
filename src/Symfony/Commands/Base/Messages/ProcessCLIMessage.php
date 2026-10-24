@@ -12,6 +12,7 @@ use ReflectionException;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\ConsumedByWorkerStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Throwable;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -107,7 +108,12 @@ class ProcessCLIMessage extends Command
         /** @var MessageBusInterface $messageBus */
         $messageBus = DDDService::instance()->getService('messenger.default_bus');
         try {
-            $messageBus->dispatch(new Envelope($message, [new ReceivedStamp(self::receivedFromTransportNameFor($handlerClass))]));
+            // ConsumedByWorkerStamp: this process is the consumer of the message, so the worker-only middleware
+            // (FreshWorkerStateMiddleware's reset and post-job rollback) runs as it does under messenger:consume
+            $messageBus->dispatch(new Envelope($message, [
+                new ReceivedStamp(self::receivedFromTransportNameFor($handlerClass)),
+                new ConsumedByWorkerStamp(),
+            ]));
         } catch (Throwable $throwable) {
             // The rerouting parent reads this exit code and fails its own message, so the transport's retry
             // re-delivers it; the text names the handler that failed and why.

@@ -107,6 +107,22 @@ class EntityManagerFactory
 
     public const string SCOPE_LEGACY_DB = 'LEGACY_DB';
 
+    /**
+     * The entity manager of a scope, created on first use and kept healthy — but never replaced while its connection
+     * is inside a transaction: a new entity manager (or a reconnected connection) would run the caller's later writes
+     * in autocommit, outside the transaction, which then dies uncommitted.
+     *
+     * - closed entity manager (an ORM wrapInTransaction failure closes it before its rollBack): rebuilt on the SAME
+     *   connection while a transaction is active, recreated otherwise;
+     * - the unthrottled desync heal ({@see DoctrineEntityManager::healDesyncedTransactionState()}) runs first, because
+     *   it can close the connection and zero the nesting level;
+     * - inside a transaction the ping is skipped: a lost connection surfaces as an exception on the caller's next
+     *   statement. Outside one, a failed ping recreates the entity manager (any DBAL exception: ProxySQL / failover
+     *   errors arrive as plain driver exceptions), so a long CLI command survives a failover.
+     *
+     * @param string $scope Connection scope, e.g. self::SCOPE_DEFAULT
+     * @return DoctrineEntityManager
+     */
     public static function getInstance(
         string $scope = self::SCOPE_DEFAULT
     ): DoctrineEntityManager {
@@ -114,18 +130,63 @@ class EntityManagerFactory
             self::create($scope);
         }
         if (!self::$instances[$scope]->isOpen()) {
-            self::create($scope);
+            if (self::$instances[$scope]->getConnection()->isTransactionActive()) {
+                self::rebuildOnSameConnection($scope);
+            } else {
+                self::create($scope);
+            }
         }
         // Unthrottled transaction-state desync heal (DBAL nesting counter vs native PDO inTransaction) —
         // MUST run before/independent of the throttled ping below: the SELECT-1 ping succeeds on a desynced
         // connection and would never detect it. See DoctrineEntityManager::healDesyncedTransactionState().
         self::$instances[$scope]->healDesyncedTransactionState();
+        if (self::$instances[$scope]->getConnection()->isTransactionActive()) {
+            return self::$instances[$scope];
+        }
         // Check if the connection is still pingable
         if (!self::$instances[$scope]->isConnectionActive()) {
             self::create($scope);
         }
 
         return self::$instances[$scope];
+    }
+
+    /**
+     * Replaces a closed entity manager by a new one on the same connection, configuration and event manager, so the
+     * connection's open transaction stays the one the caller commits or rolls back.
+     *
+     * @param string $scope Connection scope
+     * @return void
+     */
+    protected static function rebuildOnSameConnection(string $scope): void
+    {
+        $closedEntityManager = self::$instances[$scope];
+        self::$instances[$scope] = new DoctrineEntityManager(
+            $closedEntityManager->getConnection(),
+            $closedEntityManager->getConfiguration(),
+            $closedEntityManager->getEventManager()
+        );
+    }
+
+    /**
+     * The scopes that have an entity manager in this process — never creates one.
+     *
+     * @return string[]
+     */
+    public static function getInstantiatedScopes(): array
+    {
+        return array_map('strval', array_keys(self::$instances));
+    }
+
+    /**
+     * The entity manager of a scope if this process has one, without creating, healing or pinging it.
+     *
+     * @param string $scope Connection scope
+     * @return DoctrineEntityManager|null
+     */
+    public static function getExistingInstance(string $scope): ?DoctrineEntityManager
+    {
+        return self::$instances[$scope] ?? null;
     }
 
     /**
