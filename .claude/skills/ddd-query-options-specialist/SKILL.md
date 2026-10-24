@@ -198,9 +198,10 @@ public function list(ResourcesGetRequestDto &$requestDto, ResourcesService $reso
 
 ### Value Rules (recommended form — the parser is more lenient than this)
 
-- Single-quote scalars for safety: `'value'`, `'10'`, `'2026-01-01'`, `'true'` — but the parser also accepts **unquoted numbers** and **double-quoted** items (`FiltersOptionsParser.php:244-265`).
-- NULL: `'NULL'` works — and so does bare `null` (`:294-297`).
-- Lists: `['val1','val2']` — and the parser also accepts SQL-style **paren lists** after `in`/`ni`/`bw`, e.g. `in ('A','B')` (`:331-340`).
+- Single-quote scalars for safety: `'value'`, `'10'`, `'2026-01-01'`, `'true'` — but the parser also accepts **unquoted numbers** and **double-quoted** items (`FiltersOptionsParser::parseLiteral()`).
+- NULL: `'NULL'` works — and so does bare `null`.
+- **Escapes inside a quoted literal:** `\'` for a quote and `\\` for a backslash — `name eq 'O\'Brien'`, `path eq 'C:\\'`. Any other backslash is literal (`'a\b'` is `a\b`). The same two escapes work in single-quoted list items (`in ['O\'Brien','Anna']`); double-quoted list items use JSON escaping.
+- Lists: `['val1','val2']` — and the parser also accepts SQL-style **paren lists** after `in`/`ni`/`bw`, e.g. `in ('A','B')` (`parseArrayLiteral()`).
 - **Logical operators:** `and`, `or` (case-insensitive), `(...)` for grouping/precedence (nesting allowed)
 - Property names support **dot-notation** for expanded relations: `business.type`, `account.person.name`
 
@@ -432,6 +433,16 @@ $queryOptions->addFiltersConnectedByAnd($scopeFilters);
 
 **Logical:** `and`, `or` (case-insensitive), `(...)` for grouping. All values in single quotes.
 
+**A runtime value never goes into the string by concatenation.** `"name fb '" . $searchName . "'"` breaks on the first
+apostrophe (Villeneuve-d'Ascq, O'Brien) and lets the value inject grammar. Build the expression from its parts:
+
+```php
+$filtersOptions = FiltersOptions::createExpression('name', FiltersOptions::OPERATOR_FULLTEXT_BOOLEAN, $searchName);
+$filtersOptions = FiltersOptions::createExpression('id', FiltersOptions::OPERATOR_IN, $ids);
+```
+
+It writes the value as a literal the parser reads back exactly (strings escaped, lists as JSON).
+
 ### Scoped QueryOptions for LazyLoad
 
 QueryOptions can be scoped to control lazy-loaded child collections:
@@ -491,7 +502,7 @@ $filters->normalizeMomentLiterals($queryOptions->getFiltersDefinitions(), $input
 - `null` literals, numbers, DAY filters and non-temporal filters are left exactly as they are.
 - An explicit offset in the literal wins over the zone; a literal that is not a date-time at all, or a local time that does not exist in the zone, raises a `BadRequestException` — staying silent would keep exactly the wrong-zone comparison the conversion exists to remove.
 
-`toCanonicalExpression()` serializes a parsed (or normalized, or code-built) tree back into the filter grammar: operation nodes are fully parenthesized (the parser has no precedence rules, so explicit grouping is the only way a mixed `and`/`or` tree survives), arrays are written as JSON, strings are single-quoted with their unescaped quotes escaped. `fromString(toCanonicalExpression(fromString($x)))` yields an equal tree.
+`toCanonicalExpression()` serializes a parsed (or normalized, or code-built) tree back into the filter grammar: operation nodes are fully parenthesized (the parser has no precedence rules, so explicit grouping is the only way a mixed `and`/`or` tree survives), arrays are written as JSON, strings are single-quoted with `\` and `'` escaped. `fromString(toCanonicalExpression(fromString($x)))` yields an equal tree.
 
 ---
 

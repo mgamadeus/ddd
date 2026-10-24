@@ -122,3 +122,7 @@ order; every item cost one of those apps time.
   in every overriding app class). `AppMessage::dispatch(array $stamps = [])` takes Messenger stamps. An entity named
   like a DQL reserved word (`Order`) gets `MODEL_ALIAS = 'OrderModel'`. Apps no longer need their cweagans patches
   for these — drop them (see "Consumers never patch mgamadeus/*" in the skill).
+- 2.70.7 — a quoted filter literal is unescaped: `'O\'Brien'` is `O'Brien` (it used to stay `O\'Brien` and match
+  nothing), `\\` is one backslash, any other backslash is literal. `FiltersOptions::createExpression($property,
+  $operator, $value)` builds an expression from a runtime value — use it instead of concatenating the value into a
+  filter string.

@@ -269,8 +269,9 @@ class FiltersOptionsParser
             );
         } // string literal
         elseif ($curChar == "'") {
+            // Two escapes exist inside a single-quoted literal: \' is a quote, \\ is one backslash. Any other backslash is
+            // kept as it is. The literal ends at the first quote that is not escaped — so 'C:\\' ends after C:\.
             while (true) {
-                $prevChar = $curChar;
                 $tIndex++;
                 // we skip the first one as it is a single quote '
                 $curChar = $this->input[$tIndex] ?? null;
@@ -279,7 +280,18 @@ class FiltersOptionsParser
                     throw $this->buildParseException('not ending string literal found (missing closing single quote)');
                 }
 
-                if ($curChar == "'" && $prevChar !== "\\") {
+                if ($curChar === '\\') {
+                    $nextChar = $this->input[$tIndex + 1] ?? null;
+                    if ($nextChar === "'" || $nextChar === '\\') {
+                        $literal .= $nextChar;
+                        $tIndex++;
+                        continue;
+                    }
+                    $literal .= $curChar;
+                    continue;
+                }
+
+                if ($curChar === "'") {
                     // we are done, return literal
                     $tIndex++;
                     $this->index = $tIndex;
@@ -316,49 +328,69 @@ class FiltersOptionsParser
      */
     protected function parseArrayLiteral(int $tIndex, string $openingChar, string $closingChar): array
     {
-        $literal = '';
+        $json = '';
         $openingBrackets = 0;
-        //can be ' or "
-        $stringDefiner = false;
-        // Parse the array literal character by character
-        $prevChar = '';
-        $curChar = $this->input[$tIndex] ?? null;
-        while (true) {
-            $tIndex++;
-            // we skip the first one as it is a single opening delimiter
+        // the quote character of the string being read (' or "), null outside a string
+        $stringDelimiter = null;
+        for ($charIndex = $tIndex; ; $charIndex++) {
+            $curChar = $this->input[$charIndex] ?? null;
             if ($curChar === null) {
                 throw $this->buildParseException('invalid formatted array literal found');
-            } elseif ($stringDefiner === false && ($curChar === '"' || $curChar === "'")) {
-                // a string starts
-                $stringDefiner = $curChar;
-                // in order to have valid json, we convert ' to "
-                $curChar = '"';
-            } elseif ($curChar === $stringDefiner && $prevChar !== "\\") {
-                // a string ends
-                $stringDefiner = false;
-                // in order to have valid json, we convert ' to "
-                $curChar = '"';
-            } elseif (!$stringDefiner && $curChar == $openingChar) {
-                $openingBrackets++;
-                // in order to have valid json, we convert ( to [
-                $curChar = '[';
-            } elseif (!$stringDefiner && $curChar == $closingChar) {
-                $openingBrackets--;
-                // in order to have valid json, we convert ) to ]
-                $curChar = ']';
             }
-            $literal .= $curChar;
-            if ($openingBrackets == 0) {
-                // we have the end of the array
-                $jsonDecodedLiteral = json_decode($literal);
-                if (json_last_error() !== JSON_ERROR_NONE) {
-                    throw $this->buildParseException('invalid formatted array literal found');
+            if ($stringDelimiter !== null) {
+                if ($curChar === '\\') {
+                    $nextChar = $this->input[$charIndex + 1] ?? null;
+                    if ($stringDelimiter === '"' && $nextChar !== null) {
+                        // a double-quoted string is JSON already: keep its escapes (\" \\ \n \u…) for json_decode
+                        $json .= $curChar . $nextChar;
+                        $charIndex++;
+                    } elseif ($nextChar === "'" || $nextChar === '\\') {
+                        // single-quoted: \' is a quote, \\ one backslash — the same rule as a scalar literal
+                        $json .= $nextChar === '\\' ? '\\\\' : "'";
+                        $charIndex++;
+                    } else {
+                        // any other backslash is kept as it is
+                        $json .= '\\\\';
+                    }
+                    continue;
                 }
-                $this->index = $tIndex;
-                return $jsonDecodedLiteral;
+                if ($curChar === $stringDelimiter) {
+                    $json .= '"';
+                    $stringDelimiter = null;
+                    continue;
+                }
+                // a double quote inside a single-quoted string must be escaped in JSON
+                $json .= $curChar === '"' ? '\\"' : $curChar;
+                continue;
             }
-            $prevChar = $curChar;
-            $curChar = $this->input[$tIndex] ?? null;
+            if ($curChar === '"' || $curChar === "'") {
+                // a string starts; in order to have valid json, ' becomes "
+                $stringDelimiter = $curChar;
+                $json .= '"';
+                continue;
+            }
+            if ($curChar === $openingChar) {
+                $openingBrackets++;
+                // in order to have valid json, ( becomes [
+                $json .= '[';
+                continue;
+            }
+            if ($curChar === $closingChar) {
+                $openingBrackets--;
+                // in order to have valid json, ) becomes ]
+                $json .= ']';
+                if ($openingBrackets === 0) {
+                    // we have the end of the array
+                    $jsonDecodedLiteral = json_decode($json);
+                    if (json_last_error() !== JSON_ERROR_NONE) {
+                        throw $this->buildParseException('invalid formatted array literal found');
+                    }
+                    $this->index = $charIndex + 1;
+                    return $jsonDecodedLiteral;
+                }
+                continue;
+            }
+            $json .= $curChar;
         }
     }
 

@@ -765,9 +765,23 @@ MD;
     }
 
     /**
-     * Writes one literal the way {@see FiltersOptionsParser} reads it back: an array as JSON (the parser turns single
-     * into double quotes and json_decodes), a string in single quotes with only its unescaped quotes escaped — the
-     * parser hands a string literal through verbatim, so doubling existing backslashes would change the value.
+     * One filter expression built from its parts, the value written as a literal the parser reads back exactly — so
+     * code never concatenates a value into a filter string itself (`name fb 'Villeneuve-d'Ascq'` would not parse).
+     *
+     * @param string $property The property path, e.g. 'name' or 'country.id'
+     * @param string $operator One of the OPERATOR_* constants, e.g. self::OPERATOR_FULLTEXT_BOOLEAN
+     * @param mixed $value A scalar, null or a list for in / ni / bw
+     * @return FiltersOptions
+     * @throws BadRequestException
+     */
+    public static function createExpression(string $property, string $operator, mixed $value): FiltersOptions
+    {
+        return self::fromString($property . ' ' . $operator . ' ' . self::toCanonicalLiteral($value));
+    }
+
+    /**
+     * Writes one literal the way {@see FiltersOptionsParser} reads it back: an array as JSON, a string in single quotes
+     * with its backslashes and quotes escaped (\\ and \') — the two escapes the parser resolves.
      */
     protected static function toCanonicalLiteral(mixed $value): string
     {
@@ -783,7 +797,7 @@ MD;
         if (is_array($value)) {
             return json_encode(array_values($value), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         }
-        return "'" . preg_replace('/(?<!\\\\)\'/', "\\\\'", (string)$value) . "'";
+        return "'" . str_replace(['\\', "'"], ['\\\\', "\\'"], (string)$value) . "'";
     }
 
     /**
