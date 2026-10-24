@@ -55,7 +55,7 @@ class CustomAnnotationFileLoader extends AttributeFileLoader
         try {
             $path = $this->locator->locate($resource);
         } catch (Throwable) {
-            // not locatable here: keep the previous behaviour and let load() report it
+            // not locatable here: keep the previous behavior and let load() report it
             return true;
         }
         return is_string($path) && $this->findClass($path) !== false;

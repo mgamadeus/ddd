@@ -2374,12 +2374,9 @@ class Datafilter
      */
     public static function normalizePhoneNumberNational(string $number, string $countryCode = 'de'): string
     {
-        $number = Datafilter::normalizePhoneNumber($number, $countryCode, 2);
-        if (!$number) {
-            return $number;
-        }
-        $number = '0' . substr($number, 0, 3) . ' ' . substr($number, 3);
-        return $number;
+        // NATIONAL already is the national form with the trunk prefix ("030 1234567"); the former '0' prefix and
+        // split produced "0030  1234567" (libphonenumber 8) or a TypeError (9)
+        return (string)Datafilter::normalizePhoneNumber($number, $countryCode, PhoneNumberFormat::NATIONAL);
     }
 
     /**
@@ -2391,16 +2388,21 @@ class Datafilter
      *
      * @param string $number The phone number to be normalized.
      * @param string $countryCode The ISO 3166-1 alpha-2 country code, default is 'DE'.
-     * @param int $format The format to use for the phone number normalization.
+     * @param int|PhoneNumberFormat $format The format to use for the phone number normalization. libphonenumber 9
+     *      made PhoneNumberFormat an int-backed enum (8 had int constants); both the enum case and its int value
+     *      are accepted, so callers work on either major version.
      * @param bool $returnFragments If true, returns an object with countryCode and nationalNumber, otherwise returns formatted string.
      * @return string|object The formatted phone number or an object with phone number fragments based on $returnFragments.
      */
     public static function normalizePhoneNumber(
         string $number,
         string $countryCode = 'de',
-        int $format = PhoneNumberFormat::INTERNATIONAL,
+        int|PhoneNumberFormat $format = PhoneNumberFormat::INTERNATIONAL,
         bool $returnFragments = false
     ) {
+        if (is_int($format) && enum_exists(PhoneNumberFormat::class)) {
+            $format = PhoneNumberFormat::from($format);
+        }
         $number = str_replace('&nbsp', ' ', $number);
         $phoneUtil = PhoneNumberUtil::getInstance();
         try {

@@ -157,9 +157,12 @@ class RequestDto
                 // (e.g. `attachmentFiles[]` vs separate `file1`, `file2` fields). Callers expect a flat
                 // UploadedFile[] regardless of how the client structured the multipart parts.
                 $flattened = [];
-                array_walk_recursive($request->files->all(), function ($v) use (&$flattened) {
-                    if ($v instanceof \Symfony\Component\HttpFoundation\File\UploadedFile) {
-                        $flattened[] = $v;
+                // array_walk_recursive() takes its array by reference: passing the call result directly raised the
+                // notice "Only variables should be passed by reference" on every upload (thrown in debug mode)
+                $uploadedFilesTree = $request->files->all();
+                array_walk_recursive($uploadedFilesTree, function (mixed $uploadedFile) use (&$flattened): void {
+                    if ($uploadedFile instanceof \Symfony\Component\HttpFoundation\File\UploadedFile) {
+                        $flattened[] = $uploadedFile;
                     }
                 });
                 $this->$propertyName = $flattened;

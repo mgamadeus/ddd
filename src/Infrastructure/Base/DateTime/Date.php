@@ -7,6 +7,7 @@ namespace DDD\Infrastructure\Base\DateTime;
 use DateTimeZone;
 use DDD\Domain\Base\Entities\StaticRegistry;
 use DDD\Infrastructure\Services\DDDService;
+use ReturnTypeWillChange;
 
 /**
  * default DateTime class for Framework, serializes by default to 'Y-m-d' format
@@ -131,7 +132,7 @@ class Date extends DateTime
 
     // PHP 8.4 narrowed \DateTime::modify() to DateTime (it throws instead of returning false); the 8.3 production
     // runtime can still return false, so the wider type stays until 8.3 is gone
-    #[\ReturnTypeWillChange]
+    #[ReturnTypeWillChange]
     public function modify(string $modifier): Date|false
     {
         $this->toStringCache = null;
