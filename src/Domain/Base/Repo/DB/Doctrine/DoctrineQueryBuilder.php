@@ -244,7 +244,6 @@ class DoctrineQueryBuilder extends QueryBuilder
         $this->setFirstResult(null);
 
         // Duplicate the main query to create a subquery
-        $mainQueryDQL = $this->getDQL();
         $query = $this->getQuery();
         $query->setHint(Query::HINT_FORCE_PARTIAL_LOAD, true);
         $query->setHint(Query::HINT_INCLUDE_META_COLUMNS, false);

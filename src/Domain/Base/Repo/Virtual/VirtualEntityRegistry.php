@@ -64,7 +64,6 @@ class VirtualEntityRegistry
         string $repoClass,
         string $method
     ) {
-        $entityCacheAttribute = null;
         $cacheIndex = $caller->uniqueKey() . '_' . $repoClass . '_' . $method;
 
         /** @var EntityCache $entityCacheAttribute */

@@ -113,7 +113,7 @@ trait ReflectorTrait
         try {
             $property = $this->getReflectionClass()->getProperty($key);
             return $property;
-        } catch (ReflectionException $e) {
+        } catch (ReflectionException) {
             return null;
         }
     }
@@ -133,7 +133,7 @@ trait ReflectorTrait
             $propertyName = $property->getName();
             try {
                 $instanceProperty = $instanceReflectionClass->getProperty($propertyName);
-            } catch (ReflectionException $e) {
+            } catch (ReflectionException) {
                 continue;
             }
 

@@ -150,7 +150,6 @@ class Document
             }
             /** @var Route $route */
             $ignoreController = false;
-            $reflectionMethodOrClass = null;
             $controllerClass = self::getControllerClassForRoute($route);
             $controllerMethod = self::getControllerMethodForRoute($route);
             //we skip any class that is not a controller

@@ -211,7 +211,7 @@ class EntityModelGeneratorService
         foreach ($entityClasses as $classWithNamespace) {
             $byShortName[$classWithNamespace->name][] = $classWithNamespace;
         }
-        foreach ($byShortName as $shortName => $group) {
+        foreach ($byShortName as $group) {
             if (count($group) < 2) {
                 continue;
             }

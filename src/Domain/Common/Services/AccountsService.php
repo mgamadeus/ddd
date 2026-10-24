@@ -87,7 +87,6 @@ class AccountsService extends EntitiesService
      */
     public function findByEmail(string $email): ?Account
     {
-        $entityClassInstance = self::getEntityClassInstance();
         $repoClassInstance = self::getEntityClassInstance()::getRepoClassInstance();
         $queryBuilder = $repoClassInstance::createQueryBuilder();
         $alias = $repoClassInstance::getBaseModelAlias();

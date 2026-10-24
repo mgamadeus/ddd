@@ -36,7 +36,6 @@ class FiltersOptionsParser
         $left = $this->parseTerm();
 
         while (true) {
-            $operator = null;
             if ($this->match('and')) {
                 $right = $this->parseTerm();
                 $operator = FiltersOptions::JOIN_OPERATOR_AND;

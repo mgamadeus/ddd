@@ -88,7 +88,6 @@ class CronsService extends EntitiesService
         $dbCrons = new DBCrons();
         $baseModelAlias = $dbCrons::getBaseModelAlias();
         $queryBuilder = $dbCrons::createQueryBuilder();
-        $cronExecutionsAlias = DBCronExecutions::getBaseModelAlias();
         $cronExecutionsModel = DBCronExecutions::getBaseModel();
         $queryBuilder->andWhere(
             "$baseModelAlias.id NOT IN (SELECT executions.cronId from $cronExecutionsModel executions WHERE executions.state = :stateRunning) AND $baseModelAlias.nextExecutionScheduledAt <= :currentDate AND $baseModelAlias.isActive = 1"

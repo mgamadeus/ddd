@@ -177,7 +177,6 @@ class DatabaseModel extends ValueObject
 
         // first we determine if the class is a subclass of an Entity
         // if we have a subclass, then we consider only elements from current class
-        $reflectionProperties = [];
         if ($parentEntityClassName = $entityClassName::getParentEntityClassName()) {
             $parentEntityReflectionClass = ReflectionClass::instance($parentEntityClassName);
 
@@ -230,7 +229,7 @@ class DatabaseModel extends ValueObject
 
         // if we have a SubclassIndicator, we need to consider properties from all subclasses
         if ($databaseModel->subclassIndicator && !$databaseModel->parentEntityCLassWithNamespace) {
-            foreach ($databaseModel->subclassIndicator->indicators as $proeprtyValue => $subclassName) {
+            foreach ($databaseModel->subclassIndicator->indicators as $subclassName) {
                 $subclassReflectionClass = ReflectionClass::instance($subclassName);
                 // we add all exclusive properties of subclass to reflectionproperties, as
                 $reflectionProperties = array_merge(
@@ -264,7 +263,6 @@ class DatabaseModel extends ValueObject
             );
             // create regular columns
             $databaseColumn = DatabaseColumn::createFromReflectionProperty($entityReflectionClass, $reflectionProperty);
-            $virtualColumnsForProperty = null;
             if ($databaseColumn) {
                 $databaseModel->columns->add($databaseColumn);
 
@@ -464,7 +462,6 @@ class DatabaseModel extends ValueObject
                     throw new InternalErrorException('EntitySet Class not found for ' . $foreignClassName);
                 }
                 $foreignEntitySetReflectionClass = ReflectionClass::instance($foreignEntitySetClassName);
-                $foreignEntitySetClassWithNamespace = $foreignEntitySetReflectionClass->getClassWithNamespace();
                 // we assume index column to be entityName + 'Id'
                 $internalColumn = $reflectionProperty->getName() . 'Id';
 
@@ -720,7 +717,6 @@ class DatabaseModel extends ValueObject
                 }, $addedColumns)
             ) . ";\n\n";
 
-        $indexes = [];
         foreach ($this->indexes->getElements() as $index) {
             $sql .= $index->getSql($this->sqlTableName) . ";\n";
         }
@@ -845,7 +841,7 @@ class DatabaseModel extends ValueObject
             // avoid Type mixed cannot be marked as nullable since mixed already includes null
             try {
                 $isNullable = $column->allowsNull && $column->getDoctrinePhpType() != 'mixed';
-            } catch (InternalErrorException $e) {
+            } catch (InternalErrorException) {
                 throw new InternalErrorException(
                     "Could not determine Doctrine PHP type for column $column->name in Model {$this->modelClassWithNamespace->getNameWithNamespace()} "
                 );

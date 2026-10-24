@@ -33,8 +33,6 @@ class AccountProvider implements UserProviderInterface
     {
         // api user basic auth comes json encoded from TokenAuthenticator
         // in case we have a valid json, we assume we have an api basic auth user
-        $decodedIdentifier = json_decode($identifier);
-        $account = null;
         // ApiAccount context
         DDDService::instance()->deactivateEntityRightsRestrictions();
         $account = $this->accountsService->find($identifier);

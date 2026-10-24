@@ -123,7 +123,6 @@ class FiltersDefinitions extends ObjectSet
         // we only generate filters for all property names if the class has a Lazyload repo of type DB
         /** @var Entity $referenceClassName */
         $repoClass = $referenceClassName::getRepoClass(LazyLoadRepo::DB);
-        $reflectionClass = ReflectionClass::instance($referenceClassName);
         if ($repoClass) {
             $filtersDefinitions->referenceClassName = $referenceClassName;
             self::$temporalKindsForCurrentReflection = [];
@@ -362,7 +361,7 @@ class FiltersDefinitions extends ObjectSet
                 // excluded (the "we do not include ObjectSets" rule above); Entities keep their guarded recursion below.
                 elseif (DefaultObject::isEntity($type)) {
                     // we do not add lazyloaded Entities as filters
-                    if ($lazyloadAttribute = $reflectionProperty->getAttributes(LazyLoad::class, ReflectionAttribute::IS_INSTANCEOF)[0] ?? null) {
+                    if ($reflectionProperty->getAttributes(LazyLoad::class, ReflectionAttribute::IS_INSTANCEOF)[0] ?? null) {
                         continue;
                     }
                     $subObjectFilters = self::getFilterPropertiesForClass(

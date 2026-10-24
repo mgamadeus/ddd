@@ -587,7 +587,6 @@ MD;
         if (!($filterDefinition = $filtersDefinitions->getFilterDefinitionForPropertyName($this->property))) {
             // First check if we have a nested filter, e.g. account.email eq ...
             $filterPropertyExploded = explode('.', $this->property);
-            $valid = false;
             if (count($filterPropertyExploded) > 1) {
                 $firstPropertyComponent = $filterPropertyExploded[0];
                 if ($expandOptions && $expandOption = $expandOptions->getExpandOptionByPropertyName($firstPropertyComponent)) {
@@ -670,7 +669,7 @@ MD;
                 ) . ']'
             );
         } elseif ($filterDefinition->options && is_array($this->value)) {
-            $arrayDiff = $diff = array_diff($this->value, $filterDefinition->options);
+            $arrayDiff = array_diff($this->value, $filterDefinition->options);
             if (!empty($arrayDiff)) {
                 throw new BadRequestException(
                     "The following Filters applied to property name '$this->property' are not allowed: [" . implode(

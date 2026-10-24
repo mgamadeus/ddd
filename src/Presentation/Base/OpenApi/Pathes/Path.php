@@ -112,7 +112,6 @@ class Path
         $controllerClass = $controllerReflectionClass->getName();
         $beforeMethods = $controllerClass::getBeforeAndAfterMethods(Before::class);
         foreach ($beforeMethods as $beforeMethod) {
-            $beforeMethodName = $beforeMethod->getName();
             $beforeMethodParameters = $beforeMethod->getParameters();
             foreach ($beforeMethodParameters as $beforeMethodParameter) {
                 $type = $beforeMethodParameter->getType()->getName();

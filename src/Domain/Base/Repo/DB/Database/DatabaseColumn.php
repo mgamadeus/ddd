@@ -484,7 +484,6 @@ class DatabaseColumn extends ValueObject
         if ($propertyName == 'id') {
             $databaseColum->hasIndex = false;
             $databaseColum->allowsNull = false;
-            $index = false;
         }
 
         // if DatabaseColumn attribute is present, we overwrite definitions from attribute

@@ -167,7 +167,6 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
 
         // Apply only filters and expand from QueryOptions
         self::applyQueryOptionsForCount($queryBuilder);
-        $query = $queryBuilder->getQuery()->getSQL();
         return (int) $queryBuilder->getQuery()->getSingleScalarResult();
     }
 
@@ -196,7 +195,6 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
         }
         /** @var DBEntity $baseRepoClass */
         $baseRepoClass = $this::BASE_REPO_CLASS;
-        $baseEntityClass = $baseRepoClass::BASE_ENTITY_CLASS;
         $baseEntitySetClass = $this::BASE_ENTITY_SET_CLASS;
         $baseOrmModel = $baseRepoClass::BASE_ORM_MODEL;
         $baseOrmModelAlias = $baseOrmModel::MODEL_ALIAS;
@@ -235,7 +233,6 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
         $queryBuilder = self::applyQueryOptions($queryBuilder);
 
         if ($useEntityRegistrCache) {
-            $className = (string)$this::BASE_ENTITY_SET_CLASS;
             // we check if an element exists in the registry
             $entitySetInstance = $entityRegistry->get(static::class, $queryBuilder);
             if ($entitySetInstance) {
@@ -254,7 +251,6 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
 
         /** @var EntitySet $entitySetInstance */
         $entitySetInstance = new $baseEntitySetClass();
-        $memoryUsage = memory_get_usage();
 
         $propertiesToHideBasedOnSelectOptions = SelectOptions::$propertiesToHideByJoinPath;
         foreach ($ormInstances as $ormInstance) {
@@ -284,10 +280,8 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
                 }
                 $entitySetInstance->add($entityInstance);
             }
-            $memoryUsage = memory_get_usage();
         }
 
-        $memoryUsage = memory_get_usage();
         $entityRegistry->add($entitySetInstance, static::class, $queryBuilder, true);
         // since we load many instances and call find on their repo with loaded OrmInstance we defer cache commit to the end
         $entityRegistry::commit();

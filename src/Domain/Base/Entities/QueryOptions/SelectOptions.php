@@ -197,7 +197,6 @@ MD;
             }
             // Virtual Columns are named in DB different that in Entity, and property name needs to be adjusted
             if (isset($baseModelClass::$virtualColumns[$propertyName])) {
-                $entityPropertyName = DatabaseVirtualColumn::getColumnNameForVirtualColumn($propertyName);
                 $fieldsToKeepInEntity[] = DatabaseVirtualColumn::getColumnNameForVirtualColumn($propertyName);
             }
             else {

@@ -340,7 +340,6 @@ class EntityManagerFactory
         Type::overrideType('json', UnescapedJsonType::class);
 
         // ─── Vector functions ───
-        $serverVersion = $configSettings['connectionParams']['server_version'] ?? null;
         if (!Type::hasType(VectorType::NAME)) {
             Type::addType(VectorType::NAME, VectorType::class);
         }

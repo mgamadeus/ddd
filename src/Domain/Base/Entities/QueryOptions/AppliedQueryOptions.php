@@ -406,7 +406,6 @@ class AppliedQueryOptions extends ValueObject
         if (isset($expandOption->orderByOptions)) {
             $this->setOrderBy($expandOption->orderByOptions);
         }
-        $childExpand = null;
         if (isset($expandOption->expandOptions)) {
             // As the queryOption will create joins and joinAliases recursively goint to any of it's parents,
             // We need to clone it beforehand and remove it's parent, otherwise in the conetallation that a sinlge entity

@@ -32,7 +32,7 @@ class ReflectionEnum extends \ReflectionEnum
             $reflection = new ReflectionEnum($enumClassName);
             self::$relectionEnumCache[$enumClassName] = $reflection;
             return $reflection;
-        } catch (ReflectionException $e) {
+        } catch (ReflectionException) {
             self::$relectionEnumCache[$enumClassName] = self::NO_REFLECTION;
             return null;
         }

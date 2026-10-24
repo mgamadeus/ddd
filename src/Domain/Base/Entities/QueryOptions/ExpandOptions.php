@@ -432,7 +432,6 @@ MD;
                 // an IN-subquery and attached to the expand's LEFT JOIN ON-clause —
                 // see applyConditionsFromReadRightsQueryBuilder().
                 $rightsQueryBuilder = $targetPropertyRepoClass::createQueryBuilder(true);
-                $null = null;
                 $readRightsFiltersApplied = $targetPropertyRepoClass::applyReadRightsQuery($rightsQueryBuilder);
                 $targetPropertyModelAlias = $targetPropertyRepoClass::getBaseModelAlias();
 

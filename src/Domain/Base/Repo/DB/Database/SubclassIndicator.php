@@ -55,7 +55,6 @@ class SubclassIndicator extends ValueObject
     {
         $discriminatorMap = array_map(function ($propertyValue, $entityClassName) {
             $entityReflectionClass = ReflectionClass::instance($entityClassName);
-            $entityClassWithNamespace = $entityReflectionClass->getClassWithNamespace();
             $entityClassWithNamespace = new ClassWithNamespace($entityClassName);
             $entityModelClassWithNamespace = DatabaseModel::getModelClassWithNamespaceForEntityClassWithNamespace($entityClassWithNamespace);
             return "'$propertyValue' => {$entityModelClassWithNamespace->name}::class";
@@ -74,7 +73,7 @@ class SubclassIndicator extends ValueObject
      */
     public function getDatabaseModelImportsBasedOnSubclassIndicatorsForDatabaseModel(DatabaseModel $databaseModel):DatabaseModelImports {
         $databaseModelImports = new DatabaseModelImports();
-        foreach ($this->indicators as $propertyValue => $subclassIndicatorEntityClassName) {
+        foreach ($this->indicators as $subclassIndicatorEntityClassName) {
             $subclassIndicatorEntityReflectionClass = ReflectionClass::instance(
                 $subclassIndicatorEntityClassName
             );

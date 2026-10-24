@@ -59,10 +59,10 @@ class ContactInfos extends ObjectSet
                 $scopesAvailableOnBothObjects[] = PhoneNumber::SCOPE_PHONE;
             }
             // we add mobile phone only, if either this or other has mobile phone AND if the element having mobile phone has no phone
-            if (($mobileInScope = in_array(
+            if ((in_array(
                     PhoneNumber::SCOPE_MOBILE_PHONE,
                     $scopesAvailable
-                )) || ($mobileInOtherScopes = in_array(PhoneNumber::SCOPE_MOBILE_PHONE, $otherScopesAvailable))) {
+                )) || (in_array(PhoneNumber::SCOPE_MOBILE_PHONE, $otherScopesAvailable))) {
                 // if phone is available on both, we do addd mobile phone to scopes, as only phone is to be compared
                 if (!(in_array(PhoneNumber::SCOPE_PHONE, $scopesAvailable) && in_array(
                         PhoneNumber::SCOPE_PHONE,

@@ -103,7 +103,7 @@ class DDDService
                     return $appClassName;
                 }
             }
-            catch (Exception $e){
+            catch (Exception){
 
             }
         }

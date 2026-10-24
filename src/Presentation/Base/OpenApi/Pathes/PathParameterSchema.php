@@ -75,7 +75,6 @@ class PathParameterSchema
                 'Type Definition Missing in ' . $requestDtoReflectionClass->getName() . '->$' . $requestDtoReflectionProperty->getName()
             );
         }
-        $type = $requestDtoReflectionProperty->getType();
         /** @var ReflectionNamedType[] $types */
         $types = [];
         $unionType = false;
@@ -234,9 +233,6 @@ class PathParameterSchema
                                     'Class ' . $schemaReflectionClassName . ' uses QueryOptions without having an attribute of type ' . DtoQueryOptions::class
                                 );
                             }
-                            $baseEntityReflectionClass = ReflectionClass::instance(
-                                $dtoQueryOptionsAttributeInstane->baseEntity
-                            );
 
                             $expandDefinitions = ExpandDefinitions::getExpandDefinitionsForReferenceClass(
                                 $dtoQueryOptionsAttributeInstane->baseEntity

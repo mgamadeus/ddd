@@ -184,12 +184,10 @@ abstract class Cache
     public static function convertKeyToValidCacheKey(string $key, $inverse = false): string
     {
         if (!$inverse) {
-            $replace = str_replace('\\', '_.#.#._', $key);
             $replace = str_replace(':', '_.aa.aa._', $key);
             $replace = str_replace('/', '**.-**', $replace);
             return $replace;
         } else {
-            $replace = str_replace('_.#.#._', '\\', $key);
             $replace = str_replace('_.aa.aa._', ':', $key);
             $replace = str_replace('**.-**', '/', $replace);
             return $replace;

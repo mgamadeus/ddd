@@ -97,7 +97,7 @@ class ExpandDefinitions extends ObjectSet
             $lazyLoadDefinitions = $propertyToLazyLoad['lazyLoadDefinitions'];
             // we do not want to allow expand on parent objects
             $skipProperty = false;
-            foreach ($lazyLoadDefinitions as $repoType => $lazyLoadDefinition) {
+            foreach ($lazyLoadDefinitions as $lazyLoadDefinition) {
                 if ($lazyLoadDefinition->addAsParent && !$expandOnParentElements) {
                     $skipProperty = true;
                     break;
@@ -122,7 +122,7 @@ class ExpandDefinitions extends ObjectSet
                     }
                     if ($targetPropertyReflectionClass->hasTrait(QueryOptionsTrait::class)) {
                         /** @var QueryOptions $defaultQueryOptions */
-                        $defaultQueryOptions = $targetPropertyClass::getDefaultQueryOptions($depth);
+                        $targetPropertyClass::getDefaultQueryOptions($depth);
                     }
                 }
             }

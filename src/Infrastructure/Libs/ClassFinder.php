@@ -56,7 +56,7 @@ class ClassFinder
     {
         $files = scandir($dir);
 
-        foreach ($files as $key => $value) {
+        foreach ($files as $value) {
             if (in_array($value, $excludedFiles)) {
                 continue;
             }

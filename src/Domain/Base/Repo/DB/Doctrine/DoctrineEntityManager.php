@@ -101,7 +101,6 @@ class DoctrineEntityManager extends EntityManager
         $types = [];
         $set = [];
         $update = [];
-        $hasId = $metadata->containsForeignIdentifier;
         $createdColumn = ChangeHistory::DEFAULT_CREATED_COLUMN_NAME;
         $reflectionClass = ReflectionClass::instance($doctrineModel::class);
 
@@ -135,7 +134,6 @@ class DoctrineEntityManager extends EntityManager
             $column = '`' . $column . '`';
             if ($metadata->isIdentifier($fieldName)) {
                 if ($value !== null && $value) {
-                    $hasId = true;
                 } else {
                     // we need to set this explicitely, otherwise in case of updates we cannot access the id with lastInsertId();
                     $update[] = "$column = LAST_INSERT_ID($column)";
@@ -763,7 +761,7 @@ class DoctrineEntityManager extends EntityManager
                 }
             }
             if (!$identifierUpdated) {
-                foreach ($fieldDefinitions as $fieldName => $fieldDefinition) {
+                foreach ($fieldDefinitions as $fieldDefinition) {
                     if ($fieldDefinition['isIdentifier']) {
                         $updateAssignments[] = "{$fieldDefinition['column']} = LAST_INSERT_ID({$fieldDefinition['column']})";
                     }

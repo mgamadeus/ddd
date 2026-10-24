@@ -426,13 +426,11 @@ abstract class DatabaseRepoEntity extends RepoEntity
             // in order to avoid setting some fields empty
             $translationAttributeInstance = static::getTranslationAttributeInstance();
             $entityManager = EntityManagerFactory::getInstance();
-            $reflectionClass = ReflectionClass::instance(static::class);
 
             $entityId = $entity->id ?? null;
             $hasTranslations = $translationAttributeInstance && $translationAttributeInstance->hasPropertiesToTranslate();
             $translationIsInDefaultLanguage = $translationAttributeInstance && $translationAttributeInstance::isCurrentLanguageCodeDefaultLanguage();
 
-            $modelName = static::BASE_ORM_MODEL;
             if (self::$applyRightsRestrictions) {
                 $updateRightsQueryBuilder = static::createQueryBuilder(true);
                 // INSERT (new entity, no id) is gated by CREATE rights; UPDATE (existing id) by UPDATE rights.
@@ -563,7 +561,6 @@ abstract class DatabaseRepoEntity extends RepoEntity
      */
     public static function canUpdateOrDeleteBasedOnRoles(): bool
     {
-        $rolesRequiredForUpdate = [];
         if (isset(StaticRegistry::$rolesRequiredForUpdateOnEntities[static::BASE_ENTITY_CLASS])) {
             $rolesRequiredForUpdate = StaticRegistry::$rolesRequiredForUpdateOnEntities[static::BASE_ENTITY_CLASS];
         } else {
@@ -771,7 +768,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
                     // handle translation update
                     $translationAttributeInstance = static::getTranslationAttributeInstance();
                     if ($translationAttributeInstance && !empty($translationAttributeInstance->propertiesToTranslate)) {
-                        $deleteTranslationResult = $translationAttributeInstance->deleteTranslation($entity, $this);
+                        $translationAttributeInstance->deleteTranslation($entity, $this);
                     }
 
                     $entityManager = EntityManagerFactory::getInstance();

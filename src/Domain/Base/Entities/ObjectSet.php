@@ -65,7 +65,7 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
     public function getElementsSlice(int $start, int $count): static
     {
         $objectSet = new static();
-        $elementsSlice = $slice = array_slice($this->elements, $start, $count);
+        $elementsSlice = array_slice($this->elements, $start, $count);
         $objectSet->add(...$elementsSlice);
         return $objectSet;
     }
@@ -218,11 +218,9 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
                 foreach ($arrayType->getTypes() as $type) {
                     $typeName = $type->getName();
                     if (!$type->isBuiltin()) {
-                        $allowsObject = true;
                     }
                     if ($typeName) {
                         if (isset(ReflectionClass::SCALAR_BASE_TYPES[$typeName])) {
-                            $allowsScalar = true;
                         }
                         $allowedTypes[$typeName] = $type;
                     }
@@ -231,10 +229,8 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
                 $typeName = $arrayType->getName();
                 $allowedTypes[$typeName] = $arrayType;
                 if (!$arrayType->isBuiltin()) {
-                    $allowsObject = true;
                 }
                 if (isset(ReflectionClass::SCALAR_BASE_TYPES[$typeName])) {
-                    $allowsScalar = true;
                 }
                 $allowedTypes[$typeName] = $arrayType;
             }

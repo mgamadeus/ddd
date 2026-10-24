@@ -166,7 +166,7 @@ class ExpandOption extends ValueObject
         $modelReflectionClass = ReflectionClass::instance($baseModelClass);
         try {
             $expandReflectionProperty = $modelReflectionClass->getProperty($this->propertyName);
-        } catch (ReflectionException $e) {
+        } catch (ReflectionException) {
             $expandReflectionProperty = null;
         }
         if (!$expandReflectionProperty) {

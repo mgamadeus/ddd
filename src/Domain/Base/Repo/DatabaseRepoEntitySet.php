@@ -26,7 +26,6 @@ abstract class DatabaseRepoEntitySet
     public static function getBaseModel(): string
     {
         $baseRepoClass = static::BASE_REPO_CLASS;
-        $baseEntityClass = $baseRepoClass::BASE_ENTITY_CLASS;
         return $baseRepoClass::BASE_ORM_MODEL;
     }
 
@@ -80,7 +79,6 @@ abstract class DatabaseRepoEntitySet
     public function batchUpdate(EntitySet &$entitySet, bool $useInsertIgnore = false): void
     {
         $doctrineModels = [];
-        $baseRepoClass = self::BASE_REPO_CLASS;
         foreach ($entitySet->getElements() as $entity) {
             /** @var DatabaseRepoEntity $dbEntity */
             $dbEntity = new (static::BASE_REPO_CLASS)();

@@ -92,7 +92,7 @@ class JWTPayload
                 $jwt,
                 new Key(Config::getEnv('AUTH_JWT_HASH_KEY'),Config::getEnv('AUTH_JWT_HASH_METHOD'))
             );
-        } catch (Throwable $t) {
+        } catch (Throwable) {
             return false;
         }
         $expiresAt = $decoded->expiresAt;

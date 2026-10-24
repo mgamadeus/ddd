@@ -931,7 +931,7 @@ trait SerializerTrait
         $lines = [$header];
         foreach ($rows as $row) {
             $values = [];
-            foreach ($aliasToPath as $alias => $path) {
+            foreach ($aliasToPath as $path) {
                 $values[] = $this->toonEncodeValue($row[$path] ?? null);
             }
             $lines[] = implode(',', $values);
@@ -1129,10 +1129,9 @@ trait SerializerTrait
             $logger = DDDService::instance()->getLogger();
 
             //dump raw properties
-            $rawState = [];
             try {
                 $rawState = get_object_vars($this);
-            } catch (Throwable $ignored) {
+            } catch (Throwable) {
                 $rawState = ['error' => 'get_object_vars failed'];
             }
 
@@ -1828,7 +1827,7 @@ trait SerializerTrait
                 } elseif ($typeToInstance) {
                     $this->$propertyName = new $typeToInstance();
                 }
-            } catch (Error $e) {
+            } catch (Error) {
                 throw new InternalErrorException(
                     'Property ' . static::class . '->' . $propertyName . ' is defined to be of type ' . implode(
                         '|',

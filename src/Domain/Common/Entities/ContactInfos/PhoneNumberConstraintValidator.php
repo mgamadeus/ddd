@@ -65,7 +65,7 @@ class PhoneNumberConstraintValidator extends ConstraintValidator
                 }
                 $this->context->buildViolation($constraint->message)->addViolation();
             }
-        } catch (Throwable $throwable) {
+        } catch (Throwable) {
             $this->context->buildViolation($constraint->message)->addViolation();
         }
     }

@@ -94,12 +94,12 @@ class EntitySet extends ObjectSet
         $classWithNamespace = static::getClassWithNamespace();
         $updateMethod = 'batchUpdate';
         if (method_exists($service, $updateMethod)) {
-            $updatedEntity = $service->$updateMethod($this, $useInsertIgnore);
+            $service->$updateMethod($this, $useInsertIgnore);
             return;
         }
         $updateMethod = 'batchUpdate' . $classWithNamespace->name;
         if (method_exists($service, $updateMethod)) {
-            $updatedEntity = $service->$updateMethod($this, $useInsertIgnore);
+            $service->$updateMethod($this, $useInsertIgnore);
             return;
         }
         return;
@@ -131,7 +131,6 @@ class EntitySet extends ObjectSet
         if (isset(StaticRegistry::$entityServices[$currentClassName])) {
             return StaticRegistry::$entityServices[$currentClassName];
         }
-        $entityServiceName = null;
         /** @var EntitySet $currentClassName */
         if ($currentClassName::SERVICE_NAME) {
             $entityServiceName = $currentClassName::SERVICE_NAME;

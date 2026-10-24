@@ -1272,7 +1272,7 @@ class Datafilter
             if ($allowedDiacritics === null) {
                 return $text;
             }
-            foreach ($allowedDiacritics as $key => $value) {
+            foreach ($allowedDiacritics as $value) {
                 if (isset($umlaute['/' . $value . '/'])) {
                     unset($umlaute['/' . $value . '/']);
                 }
@@ -1511,11 +1511,9 @@ class Datafilter
     {
         $text = str_replace("\t", ' ', $text);
         if ($breakMoreSpecialChars) {
-            $breakChars = '\-/';
             // convert _ because if we want to delimt by this char the _ is part of an word and not as separator (see word \boundary).
             $text = str_replace('_', '-', $text);
         } else {
-            $breakChars = '';
         }
 
         if (!$text) {
@@ -1770,7 +1768,7 @@ class Datafilter
                 $parsedNumber = $phoneUtil->parse($number);
             }
             return $phoneUtil->isValidNumber($parsedNumber);
-        } catch (NumberParseException $e) {
+        } catch (NumberParseException) {
             return false;
         }
     }

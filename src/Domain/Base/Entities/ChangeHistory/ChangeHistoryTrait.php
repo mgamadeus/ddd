@@ -44,7 +44,7 @@ trait ChangeHistoryTrait
             try {
                 $parentEntityClassName = static::getParentEntityClassName();
                 $reflectionClass = ReflectionClass::instance($parentEntityClassName ?? static::class);
-            } catch (\Throwable $t) {
+            } catch (\Throwable) {
                 $reflectionClass = ReflectionClass::instance(static::class);
             }
         } else {

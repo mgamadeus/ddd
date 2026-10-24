@@ -61,7 +61,6 @@ class UniquePropertyValidator extends ConstraintValidator
             if ($repoClassName){
                 $queryBuidler = $repoClassName::createQueryBuilder();
                 $alias = $repoClassName::getBaseModelAlias();
-                $entityHasId = isset($entity->id);
                 $queryBuidler
                     ->select("COUNT($alias.id)")
                     ->from($repoClassName::BASE_ORM_MODEL, $alias);

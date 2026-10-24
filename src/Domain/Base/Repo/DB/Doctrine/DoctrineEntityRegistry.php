@@ -74,7 +74,6 @@ class DoctrineEntityRegistry
             gc_collect_cycles();
             return;
         }
-        $entityCacheAttribute = null;
         $registryIndex = $repoClass . '_' . ($idOrQuery instanceof DoctrineQueryBuilder ? $idOrQuery->getQueryHash(
             ) : $idOrQuery);
 

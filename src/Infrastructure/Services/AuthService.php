@@ -121,7 +121,6 @@ class AuthService
     public function checkLogin(?string $authToken = null, ?string $authTokenType = null): bool
     {
         $tokenTypeJwt = Config::getEnv('AUTH_JWT_HASH_TOKEN_TYPE_JWT');
-        $tokenTypeBasic = Config::getEnv('AUTH_JWT_HASH_TOKEN_TYPE_BASIC');
         return match ($authTokenType) {
             $tokenTypeJwt => $this->validateJwt($authToken),
             default => $this->checkRedisAuthLogin()
@@ -150,7 +149,7 @@ class AuthService
                 DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
                 self::setAccount($account);
             }
-        } catch (Exception $e) {
+        } catch (Exception) {
             return false;
         }
         return true;

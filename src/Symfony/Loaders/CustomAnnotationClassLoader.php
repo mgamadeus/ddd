@@ -101,7 +101,6 @@ class CustomAnnotationClassLoader extends AttributeRouteControllerLoader
     protected function getGlobals(ReflectionClass $class): array
     {
         //echo $class->getName() . '<br />';die();
-        $annot = null;
         $attributes = $class->getAttributes($this->routeAnnotationClass, ReflectionAttribute::IS_INSTANCEOF) ?? null;
 
         $allGlobals = [];

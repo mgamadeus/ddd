@@ -183,7 +183,7 @@ class ReflectionClass extends \ReflectionClass
             $reflection = new ReflectionClass($className);
             self::$relectionClassCache[$className] = $reflection;
             return $reflection;
-        } catch (ReflectionException $e) {
+        } catch (ReflectionException) {
             self::$relectionClassCache[$className] = self::NO_REFLECTION;
             return null;
         }
@@ -232,7 +232,6 @@ class ReflectionClass extends \ReflectionClass
         $properties = parent::getProperties($filter);
         $returnProperties = [];
         foreach ($properties as $property) {
-            $propertyType = $property->getType();
             $returnProperty = new ReflectionProperty($this->name, $property->name);
             $returnProperties[] = $returnProperty;
         }
@@ -556,7 +555,7 @@ class ReflectionClass extends \ReflectionClass
     {
         $classAttributes = $this->getAttributes($name, $flags);
         foreach ($classAttributes as $attribute) {
-            $attributeInstance = $attribute->newInstance();
+            $attribute->newInstance();
             return $attribute->newInstance();
         }
         return null;

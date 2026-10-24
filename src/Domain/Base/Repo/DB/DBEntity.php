@@ -109,7 +109,6 @@ class DBEntity extends DatabaseRepoEntity
         $entityClass = $this->ormInstance::ENTITY_CLASS;
         /** @var EntityTrait $entityInstance */
         $entityInstance = new $entityClass();
-        $entityReflectionClass = ReflectionClass::instance((string)$entityClass);
 
         /** @var ChangeHistory $changeHistoryAttributeInstance */
         if (method_exists($entityClass, 'getChangeHistoryAttribute')) {
@@ -315,7 +314,6 @@ class DBEntity extends DatabaseRepoEntity
             );
             if ($translatableProperty) {
                 /** @var TranslatableTrait $entity */
-                $translationInfos = $entity->getTranslationInfos();
                 $entity->setTranslationsForProperty($entityPropertyName, $this->ormInstance->$propertyName);
                 return;
             }
@@ -662,12 +660,9 @@ class DBEntity extends DatabaseRepoEntity
 
         // if attribute has lazyload on it, we do not map it to repository, it is then e.g. en EntitySet of dependent Entities
         $hasDBOrVirtualLazyloadRepo = false;
-        $propertyValueIsValueObject = false;
-        $propertyValueIsEntity = false;
         $propertyInitialized = ReflectionClass::isPropertyInitialized($entity, $propertyName);
         $propertyValue = $propertyInitialized ? $entity->$propertyName : null;
         $propertyValueIsValueObject = DefaultObject::isValueObject($propertyValue);
-        $propertyValueIsEntity = DefaultObject::isEntity($propertyValue);
 
         if (
             $propertyValueIsValueObject && ($lazyloadAttributes = $entityReflectionProperty->getAttributes(

@@ -39,15 +39,11 @@ class DatabaseVirtualColumn extends ValueObject
     public function getSql(bool $asUpdate = false): string
     {
         $sql = $asUpdate ? 'ADD COLUMN IF NOT EXISTS ' : '';
-        $defaultValue = '';
         if (isset($this->sqlDefaultValue)) {
             if (is_string($this->sqlDefaultValue)) {
-                $defaultValue = "'{$this->sqlDefaultValue}'";
             } else {
-                $defaultValue = $this->sqlDefaultValue;
             }
         } elseif ($this->allowsNull) {
-            $defaultValue = 'NULL';
         }
 
         $sql .= '`' . $this->getName()

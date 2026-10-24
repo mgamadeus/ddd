@@ -242,7 +242,6 @@ MD;
                 $queryOptionPropertyMapping = $mappingFunction($propertyName);
                 $propertyName = $queryOptionPropertyMapping->propertyName;
             }
-            $orderByExpression = null;
             if (($strRightPos = strrpos($propertyName, '.')) !== false) {
                 $propertyNameInExpandPath = substr($orderByOption->propertyName, $strRightPos + 1);
                 if ($joinAlias = $orderByOption?->getExpandOption()?->joinAlias ?? null) {
