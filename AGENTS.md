@@ -498,6 +498,8 @@ Without the gate, a caller asking for "lite Entity without `setting`" pays an N-
 | Module compiler pass | `src/Symfony/CompilerPasses/ModuleCompilerPass.php` |
 | DDDBundle | `src/DDDBundle.php` |
 | DDDKernel | `src/Symfony/Kernels/DDDKernel.php` |
+| Unit tests | `tests/` (`vendor/bin/phpunit`) |
+| Integration tests (real MariaDB) | `tests/Integration/` — `docker compose -f tests/Integration/docker-compose.yml up -d --wait`, then `DDD_TEST_DRIVER=pdo_mysql vendor/bin/phpunit -c phpunit.integration.xml`; fixture models via `php tests/Integration/generate-fixture-models.php` |
 
 ---
 

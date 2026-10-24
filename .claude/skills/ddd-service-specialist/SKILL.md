@@ -344,7 +344,7 @@ When the decision depends on a **derived count or several rows** (e.g. "settle a
 
 The atomic-SQL form above is right for a scalar/flag/counter. When the column you must persist is a **VO/JSON column, a `VECTOR` column, or a `Date`/`DateTime`**, hand-written SQL would have to re-implement the EntityManager's per-type encoding (JSON for VO, `VEC_FromText(...)` for vectors, the datetime format). And `$entity->update()` is wrong here: it writes the **whole row** (clobbers a column a concurrent writer just set) and, with `DB_USE_READ_AFTER_WRITE=true`, does `EntityManager::clear()` + `find()` afterwards — **detaching your live entity** (next lazy-load throws) and polluting the registry.
 
-Use **`$entity->updatePartialIgnoringRights('colA', 'colB')`** (instance method on every entity; repo twin `DBEntity::updatePartialIgnoringRights($entity, ...$names)`). It maps ONLY id + the named properties via `mapToRepository($entity, $names)` (reusing the per-type / translation / change-history handling) and passes the same allow-list to `upsert($model, null, $names)`, which writes **strictly those columns** — independent of the generated model's inline column defaults. No read-after-write, no detach, no rights applied (system write of a row the caller already loaded under rights). No-op if the entity has no id.
+Use **`$entity->updatePartialIgnoringRights('colA', 'colB')`** (instance method on every entity; repo twin `DBEntity::updatePartialIgnoringRights($entity, ...$names)`). It maps ONLY id + the named properties via `mapToRepository($entity, $names)` (reusing the per-type / translation / change-history handling) and writes **strictly those columns** with `UPDATE … WHERE id = ?` (`DoctrineEntityManager::updateColumnsById()`) — independent of the generated model's inline column defaults. No read-after-write, no detach, no rights applied (system write of a row the caller already loaded under rights). No-op if the entity has no id, and **never an insert**: a row deleted meanwhile stays deleted (the repo method returns null). An `onUpdateAction` reading `VALUES(<own column>)` gets the written value, as in an upsert.
 
 ```php
 $conversation->updatePartialIgnoringRights('summary');                 // async-computed VO column
@@ -362,7 +362,7 @@ $message->updatePartialIgnoringRights('toolCall', 'status');           // JSON V
 
 ### Reading back in the same process (fixed in v2.64.2)
 
-The partial write goes through a raw `upsert()` that bypasses Doctrine's UnitOfWork. A model of that row hydrated by
+The partial write is a raw `UPDATE` that bypasses Doctrine's UnitOfWork. A model of that row hydrated by
 an EARLIER query therefore stayed MANAGED with its pre-write values, and every later hydration of the same row in the
 same process — a set query, a `find()`, even one with `Query::HINT_REFRESH` — got the stale managed instance back.
 Symptom: you write `status = PAUSED`, the DB has `PAUSED` on any connection, and your own process keeps reading

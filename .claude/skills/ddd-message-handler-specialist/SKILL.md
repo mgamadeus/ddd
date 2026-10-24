@@ -54,8 +54,13 @@ A long-lived worker otherwise serves job N+1 from job N's leftovers: a DB sessio
 the previous job's writes, the Doctrine unit of work, the process-static entity registries. The framework therefore
 prepends `DDD\Symfony\Messenger\Middleware\FreshWorkerStateMiddleware` to EVERY bus (`FreshWorkerStateMiddlewarePass`,
 registered by `DDDKernel::build()` ahead of Symfony's MessengerPass) — no app config, no handler code. It runs
-`AppMessageHandler::resetWorkerStateForNewJob()` for messages carrying a `ReceivedStamp`; synchronous dispatches inside
-a request keep the request's state.
+`AppMessageHandler::resetWorkerStateForNewJob()` for messages the Worker consumed (`ConsumedByWorkerStamp`;
+`app:process-cli-message` stamps it too). Synchronous dispatches keep the request's state and transaction — including
+a `sync://` transport, which stamps `ReceivedStamp` but runs inside the dispatching request.
+
+After every consumed job — returned or thrown, opt-out or not — the middleware rolls back a transaction the handler
+left open on any existing connection scope and logs "rolled back a transaction left open by <handler>", so it cannot
+swallow the next message's writes. A transaction that was already open before the handler is never touched.
 
 - Do NOT add cache clearing, connection resets or registry wipes to a handler — it is already done, once, for all.
 - Opt out per handler: `public const bool RESET_WORKER_STATE_BEFORE_JOB = false;` (a batch handler that accumulates

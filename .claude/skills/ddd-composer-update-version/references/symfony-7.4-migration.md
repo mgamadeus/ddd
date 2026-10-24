@@ -130,3 +130,18 @@ order; every item cost one of those apps time.
   column untouched, and the generated model property carries no PHP default (the SQL `DEFAULT` stays). The entity
   constant `PRESERVED_ON_OMISSION` is honoured the same way (deprecated). Apps that removed model defaults by hand
   regenerate and commit the generator output — no restores.
+- 2.70.9 — bug-fix release; the consumer-visible changes:
+  - **`ft` / `fb` on a property without a declared FULLTEXT index is a 400 by default** (it was the database's 1191,
+    a 500). An app whose index exists without a `#[DatabaseIndex]` / `Translatable(fullTextIndex: true)` declaration
+    sets `ddd.queryoptions.strict_fulltext_operators: false`, or declares the index.
+  - Filter values are validated by column kind: `id eq '#12'`, `amount eq 'abc'`, `created eq '2026-10'` and any
+    comparison on a JSON column or an exact `eq` on a plain Translatable are 400s; `eq 'true'` on a bool now matches
+    the true rows. Wildcards (`'*x*'`) keep their LIKE. A Translatable with `fullTextIndex: true` compares and sorts
+    on its search column (an exact `eq` matches single-language rows; the sort order changes in case / accents).
+  - `updatePartialIgnoringRights()` on a row deleted meanwhile writes nothing and returns null (it inserted a ghost
+    row); through the entity it is a silent no-op.
+  - Batch upserts (`batchUpdate()`) write each row's initialized fields only and store NULL geometries, vectors and
+    replace-translations correctly; several statements run atomically.
+  - Workers roll back (and log) a transaction a handler left open; a `sync://` dispatch no longer resets the
+    request's state. `app:db:read` runs in a READ ONLY transaction.
+  - Public symbols nothing used were removed (list in the release commit "Dead code: …").
