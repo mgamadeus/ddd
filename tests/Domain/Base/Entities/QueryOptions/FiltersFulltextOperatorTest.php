@@ -103,9 +103,20 @@ class FiltersFulltextOperatorTest extends TestCase
         $this->assertFalse($definitions->getFilterDefinitionForPropertyName('plainOne')->supportsFulltext);
     }
 
-    public function testValidationAcceptsAFulltextOperatorByDefaultEvenWithoutAnIndex(): void
+    public function testByDefaultAFulltextOperatorWithoutAnIndexIsRefused(): void
     {
-        // default OFF: the framework does not own the schema, so an undeclared index must not turn into a refusal
+        // the parameter is absent here: refusing is the default, the database would answer 1191 (a 500)
+        $filters = FiltersOptions::fromString("plain ft 'search me'");
+
+        $this->expectException(BadRequestException::class);
+        $this->expectExceptionMessageMatches('/no FULLTEXT index/');
+        $filters->validateAgainstDefinitions($this->definitions);
+    }
+
+    public function testTheParameterSetFalseAcceptsAFulltextOperatorWithoutADeclaredIndex(): void
+    {
+        // the opt-out for an app whose FULLTEXT index exists in the database without a declaration
+        dddTestContainer()->setParameter(FiltersOptions::FULLTEXT_STRICT_PARAMETER, false);
         $filters = FiltersOptions::fromString("plain ft 'search me'");
         $this->assertTrue($filters->validateAgainstDefinitions($this->definitions));
     }

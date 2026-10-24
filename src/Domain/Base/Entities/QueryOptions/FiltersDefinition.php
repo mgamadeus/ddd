@@ -42,6 +42,27 @@ class FiltersDefinition extends ValueObject
      */
     public bool $supportsFulltext = false;
 
+    /** @var string Column kinds: what a filter value is validated as and bound as ({@see self::$columnKind}) */
+    public const string COLUMN_KIND_INT = 'int';
+    public const string COLUMN_KIND_FLOAT = 'float';
+    public const string COLUMN_KIND_BOOL = 'bool';
+    public const string COLUMN_KIND_STRING = 'string';
+    public const string COLUMN_KIND_DATETIME = 'datetime';
+    /** @var string An array / JSON column: comparisons never match its JSON text */
+    public const string COLUMN_KIND_JSON = 'json';
+    /** @var string A plain #[Translatable] (JSON of all languages, no search column) */
+    public const string COLUMN_KIND_TRANSLATABLE = 'translatable';
+    /** @var string A #[Translatable(fullTextIndex: true)]: comparisons and orderBy use its virtual search column */
+    public const string COLUMN_KIND_TRANSLATABLE_SEARCHABLE = 'translatable-searchable';
+
+    /**
+     * @var string|null The kind of the filtered column (one of the COLUMN_KIND_* constants), set from reflection: the
+     * builtin type, the framework Date/DateTime, the Translatable attribute and its fullTextIndex flag; `int|string`
+     * (the inherited id) is an int. Null — other unions, virtual columns, constructor-form definitions — means no
+     * value validation and an untyped bind, as before kinds existed.
+     */
+    public ?string $columnKind = null;
+
     /**
      * @var string|null MOMENT for a DateTime-typed or DateTime-meaning filter, DAY for a Date one, null = not
      * temporal. Set automatically from the reflected property type, or explicitly through the associative

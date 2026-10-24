@@ -241,14 +241,16 @@ class FiltersOptionsParser
         // numbers, strings, arrays, null
 
         // number literal
-        if ($curChar && ctype_digit($curChar)) {
+        // `!== null`, not truthiness: the digit '0' is falsy and an unquoted 0 could not be parsed
+        if ($curChar !== null && ctype_digit($curChar)) {
             while (true) {
                 $literal .= $curChar;
                 $tIndex++;
                 $curChar = $this->input[$tIndex] ?? null;
-                if (!(ctype_digit($curChar) || $curChar == '.') || $curChar === null) {
+                // the end of input is checked first: ctype_*() on null is deprecated
+                if ($curChar === null || !(ctype_digit($curChar) || $curChar == '.')) {
                     // only valid options after end of number sequence
-                    if (!(ctype_space($curChar) || $curChar == ')' || $curChar === null)) {
+                    if (!($curChar === null || ctype_space($curChar) || $curChar == ')')) {
                         throw $this->buildParseException('invalid number literal');
                     }
                     $this->index = $tIndex;
@@ -256,7 +258,7 @@ class FiltersOptionsParser
                 }
             }
         } // null
-        elseif (strtolower($curChar) == 'n') {
+        elseif ($curChar !== null && strtolower($curChar) == 'n') {
             $substr = strtolower(substr($this->input, $tIndex, 4));
             if ($substr === 'null') {
                 $tIndex += 4;

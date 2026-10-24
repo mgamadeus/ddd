@@ -70,6 +70,12 @@ class FiltersDefinitions extends ObjectSet
     protected static array $fulltextCapablePropertiesForCurrentReflection = [];
 
     /**
+     * @var string[] {@see FiltersDefinition::$columnKind} by (prefixed) property name, collected and consumed like
+     * {@see self::$temporalKindsForCurrentReflection}
+     */
+    protected static array $columnKindsForCurrentReflection = [];
+
+    /**
      * Allowed filters either as string representing allowed property name or
      * array representing on it's first index the property name and following allwed options to be used as value
      * @param string|array ...$allowedPropertyNames
@@ -122,11 +128,14 @@ class FiltersDefinitions extends ObjectSet
             $filtersDefinitions->referenceClassName = $referenceClassName;
             self::$temporalKindsForCurrentReflection = [];
             self::$fulltextCapablePropertiesForCurrentReflection = [];
+            self::$columnKindsForCurrentReflection = [];
             $filtersProperties = self::getFilterPropertiesForClass($referenceClassName);
             $temporalKinds = self::$temporalKindsForCurrentReflection;
             $fulltextCapableProperties = self::$fulltextCapablePropertiesForCurrentReflection;
+            $columnKinds = self::$columnKindsForCurrentReflection;
             self::$temporalKindsForCurrentReflection = [];
             self::$fulltextCapablePropertiesForCurrentReflection = [];
+            self::$columnKindsForCurrentReflection = [];
             if ($filtersProperties) {
                 foreach ($filtersProperties as $filterPropertyName => $options) {
                     $filterDefinition = new FiltersDefinition(
@@ -134,6 +143,7 @@ class FiltersDefinitions extends ObjectSet
                     );
                     $filterDefinition->temporalKind = $temporalKinds[$filterPropertyName] ?? null;
                     $filterDefinition->supportsFulltext = $fulltextCapableProperties[$filterPropertyName] ?? false;
+                    $filterDefinition->columnKind = $columnKinds[$filterPropertyName] ?? null;
                     $filtersDefinitions->add($filterDefinition);
                 }
             }
@@ -161,6 +171,51 @@ class FiltersDefinitions extends ObjectSet
         }
         self::$filtersDefinitionsForClass[$referenceClassName] = $filtersDefinitions;
         return $filtersDefinitions;
+    }
+
+    /**
+     * The column kind of a filterable property, from its declared type and its Translatable attribute. `int|string`
+     * (with or without null — the inherited id) is an int: DDD ids are ints and the generated models map them so.
+     * Any other union, `mixed` and every non-builtin type except the framework Date / DateTime get no kind.
+     *
+     * @param ReflectionProperty $reflectionProperty The filterable property
+     * @param Translatable|null $translatableAttribute Its Translatable attribute, when it has one
+     * @return string|null One of the FiltersDefinition::COLUMN_KIND_* constants, or null
+     */
+    protected static function getColumnKindForProperty(
+        ReflectionProperty $reflectionProperty,
+        ?Translatable $translatableAttribute
+    ): ?string {
+        if ($translatableAttribute) {
+            return $translatableAttribute->fullTextIndex
+                ? FiltersDefinition::COLUMN_KIND_TRANSLATABLE_SEARCHABLE
+                : FiltersDefinition::COLUMN_KIND_TRANSLATABLE;
+        }
+        $type = $reflectionProperty->getType();
+        if ($type instanceof ReflectionUnionType) {
+            $memberNames = [];
+            foreach ($type->getTypes() as $memberType) {
+                if ($memberType instanceof \ReflectionNamedType && $memberType->getName() !== 'null') {
+                    $memberNames[] = $memberType->getName();
+                }
+            }
+            sort($memberNames);
+            return $memberNames === ['int', 'string'] ? FiltersDefinition::COLUMN_KIND_INT : null;
+        }
+        if (!$type instanceof \ReflectionNamedType) {
+            return null;
+        }
+        if (!$type->isBuiltin()) {
+            return is_a($type->getName(), DateTime::class, true) ? FiltersDefinition::COLUMN_KIND_DATETIME : null;
+        }
+        return match ($type->getName()) {
+            'int' => FiltersDefinition::COLUMN_KIND_INT,
+            'float' => FiltersDefinition::COLUMN_KIND_FLOAT,
+            'bool' => FiltersDefinition::COLUMN_KIND_BOOL,
+            'string' => FiltersDefinition::COLUMN_KIND_STRING,
+            'array' => FiltersDefinition::COLUMN_KIND_JSON,
+            default => null,
+        };
     }
 
     /**
@@ -276,6 +331,10 @@ class FiltersDefinitions extends ObjectSet
                     continue;
                 }
                 $allowedFilterProperties[$propertyPrefix . $reflectionProperty->getName()] = $allowedPropertyValue;
+                $columnKind = self::getColumnKindForProperty($reflectionProperty, $translatableAttribute);
+                if ($columnKind !== null) {
+                    self::$columnKindsForCurrentReflection[$propertyName] = $columnKind;
+                }
                 if (!$type->isBuiltin() && is_a($type->getName(), DateTime::class, true)) {
                     // a calendar day never carries a time, so it is never zone-converted
                     self::$temporalKindsForCurrentReflection[$propertyName] = is_a($type->getName(), Date::class, true)
@@ -302,6 +361,7 @@ class FiltersDefinitions extends ObjectSet
                     $modifiedColumn = $changeHistoryAttributeInstance?->getModifiedColumn();
                     if ($createdColumn) {
                         $allowedFilterProperties[$propertyPrefix . $createdColumn] = true;
+                        self::$columnKindsForCurrentReflection[$propertyPrefix . $createdColumn] = FiltersDefinition::COLUMN_KIND_DATETIME;
                         // ChangeHistory writes DateTime values (createdTime / modifiedTime), so these columns are
                         // MOMENT filters like any other reflected DateTime property — they are added here by hand
                         // rather than through the property loop, so the temporal kind has to be recorded here too.
@@ -310,6 +370,7 @@ class FiltersDefinitions extends ObjectSet
                     }
                     if ($modifiedColumn) {
                         $allowedFilterProperties[$propertyPrefix . $modifiedColumn] = true;
+                        self::$columnKindsForCurrentReflection[$propertyPrefix . $modifiedColumn] = FiltersDefinition::COLUMN_KIND_DATETIME;
                         self::$temporalKindsForCurrentReflection[$propertyPrefix . $modifiedColumn] =
                             FiltersDefinition::TEMPORAL_KIND_MOMENT;
                     }

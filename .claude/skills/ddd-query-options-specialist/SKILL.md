@@ -1,6 +1,6 @@
 ---
 name: ddd-query-options-specialist
-description: Work with the OData-inspired QueryOptions system in mgamadeus/ddd — database-level filtering, sorting, pagination, select, expand and fulltext search over Translatable properties. Wire syntax filters=/expand=/orderBy=/select=/top=/skip= (plural filters, no dollar prefix; default top 50). Covers entity setup (QueryOptionsTrait on BOTH Entity and EntitySet), controller DTOs, the filter grammar (eq/ne/gt/ge/lt/le/in/ni/bw, ft/fb fulltext, and/or grouping, dot-notation), expand with nested clauses and join read-rights, propertyScore relevance, programmatic snapshot/restore, mandatory scope filters via addFiltersConnectedByAnd, the Argus shared-defaults rule, why HideProperty fields are never filterable, and temporal filters (FiltersDefinition::$temporalKind, normalizeMomentLiterals) for zone-aware callers. Use when a query param is ignored, when results cap at 50, when enforcing an inescapable scope filter, when Argus defaults have no effect, or when date-time filters compare against the wrong zone.
+description: Work with the OData-inspired QueryOptions system in mgamadeus/ddd — database-level filtering, sorting, pagination, select, expand and fulltext search over Translatable properties. Wire syntax filters=/expand=/orderBy=/select=/top=/skip= (plural filters, no dollar prefix; default top 50). Covers entity setup (QueryOptionsTrait on BOTH Entity and EntitySet), controller DTOs, the filter grammar (eq/ne/gt/ge/lt/le/in/ni/bw, ft/fb fulltext, and/or grouping, dot-notation, escaping, createExpression for runtime values), value validation by column kind (400 for a non-numeric int, a bad date, a comparison on JSON or a plain Translatable, ft/fb without a declared index), expand with nested clauses and join read-rights, propertyScore relevance, programmatic snapshot/restore, mandatory scope filters via addFiltersConnectedByAnd, the Argus shared-defaults rule, why HideProperty fields are never filterable, and temporal filters (FiltersDefinition::$temporalKind, normalizeMomentLiterals) for zone-aware callers. Use when a filter answers 400 or 500, when a query param is ignored, when results cap at 50, when enforcing an inescapable scope filter, when Argus defaults have no effect, or when date-time filters compare against the wrong zone.
 metadata:
   author: mgamadeus
   version: "1.3.0"
@@ -204,6 +204,35 @@ public function list(ResourcesGetRequestDto &$requestDto, ResourcesService $reso
 - Lists: `['val1','val2']` — and the parser also accepts SQL-style **paren lists** after `in`/`ni`/`bw`, e.g. `in ('A','B')` (`parseArrayLiteral()`).
 - **Logical operators:** `and`, `or` (case-insensitive), `(...)` for grouping/precedence (nesting allowed)
 - Property names support **dot-notation** for expanded relations: `business.type`, `account.person.name`
+
+### Value validation by column kind
+
+Validation (`validateAgainstDefinitions()`, run for every request filter) checks the value against the kind of the
+filtered column, **by content** — a quoted literal is the normal form, `id eq '12'` is an int. A filter the database
+cannot answer, or a value that does not fit, is a **400** naming property, kind and value (it used to be an empty
+result or a 500). The kind (`FiltersDefinition::$columnKind`) comes from the declared type:
+
+| Kind | From | Accepted values (each element of `in` / `ni` / `bw`) | Bound as |
+|---|---|---|---|
+| `int` | `int`, and `int\|string` (the inherited `id`) | `^-?\d+$`; a decimal `'1.5'` too (compared numerically) | int |
+| `float` | `float` | `^-?\d+(\.\d+)?$` | float |
+| `bool` | `bool` | `1`, `0`, `true`, `false` in any case | bool (`eq 'true'` matches the true rows) |
+| `datetime` | framework `Date` / `DateTime`, ChangeHistory `created` / `updated` | `DateTime::MODEL_INPUT_FORMATS` (offset or `Z`) and `Y-m-d` | as sent |
+| `string` | `string` | anything | as sent |
+| `json` | `array` | — every comparison is refused | — |
+| `translatable` | `#[Translatable]` | only `eq` / `ne` with a `*` wildcard (LIKE on the JSON text, as before) | as sent |
+| `translatable-searchable` | `#[Translatable(fullTextIndex: true)]` | anything; compared and sorted on `virtual{Prop}Search` | as sent |
+
+- Never validated: `eq` / `ne` with `null` or `'null'` in any case (IS [NOT] NULL, on the source column even for a
+  searchable Translatable), the fulltext operators (search text), a definition without a kind (other unions, virtual
+  columns, constructor-form `FiltersDefinitions`), and filters set with `setFilters(…, false)`.
+- A value containing `*` on a scalar kind keeps its LIKE and is not type-checked (`tableNumber eq '*4*'`).
+- An unquoted numeral arrives as a float from the parser (`7` → `7.0`) and is judged by its string form (`"7"`).
+- On a searchable Translatable an exact `eq` compares the folded text of **all** languages: it matches a row whose
+  name exists in one language only. `orderBy` sorts that text in the search column's collation; a plain Translatable
+  keeps sorting its JSON text.
+- A dotted filter through an expand (`expand=child&filters=child.title fb 'x'`) is validated like a root one (it used
+  to lose its operator and end in a 500).
 
 ### Filter Examples
 
@@ -528,11 +557,10 @@ Two consequences:
 - **The documentation advertises it.** A filter property that supports the operators is rendered as
   `- \`content\` - fulltext-searchable (\`ft\`, \`fb\`)` in the `filters` parameter description, so a caller — an
   agent above all — can tell which properties accept them instead of discovering 1191 at runtime.
-- **Refusing is opt-in.** With the container parameter `ddd.queryoptions.strict_fulltext_operators: true`,
-  validation throws a `BadRequestException` for a fulltext operator on a property that declares no index. It is OFF
-  by default *because this framework does not manage the schema*: an index created by hand without a
-  `#[DatabaseIndex]` declaration is invisible to the reflection, and strict mode would refuse a filter that works.
-  Turn it on in an app whose indexes are fully declared in the entities.
+- **Refusing is the default.** Validation throws a `BadRequestException` (400) for a fulltext operator on a
+  property that declares no index, instead of the database's 1191 (a 500). The support is read from the entity
+  attributes: an app whose FULLTEXT index exists in the database without a declaration sets the container parameter
+  `ddd.queryoptions.strict_fulltext_operators: false` — better, it declares the index.
 
 Declaring it by hand (an Argus-backed or otherwise non-reflected definition) uses the associative form:
 `['propertyName' => 'content', 'supportsFulltext' => true]`.
@@ -589,6 +617,9 @@ Type a mapping helper `string|int|float|array|null` and handle the array case (m
 | Expand not loading in response | Verify `expand` in query string AND `->expand()` called in controller after loading |
 | Expand returns no results | Read rights (`applyReadRightsQuery`) are applied to expanded entities -- check rights |
 | Fulltext `ft` not matching partial words | Use `fb` (boolean mode) with `*` prefix for partial matching |
+| 400 "is not a valid int / bool / datetime" | The value does not fit the column kind (see "Value validation by column kind"); send a numeric term only, a complete `Y-m-d` |
+| 400 on `eq` against a Translatable | Plain Translatable: use `eq '*term*'`, or give the property `#[Translatable(fullTextIndex: true)]` |
+| 400 "carries no FULLTEXT index" on `ft` / `fb` | Declare the index (`#[DatabaseIndex(TYPE_FULLTEXT)]` or `Translatable(fullTextIndex: true)`), or set `ddd.queryoptions.strict_fulltext_operators: false` |
 | `nameScore` ordering ignored | Requires active `ft` or `fb` filter on the same property |
 | Default top=50 truncating results | Explicitly pass `?top=1000` or set programmatically |
 | Programmatic QueryOptions leaking | Always clone + restore original QueryOptions |

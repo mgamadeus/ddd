@@ -178,6 +178,26 @@ MD;
     }
 
     /**
+     * The column an orderBy on $propertyName sorts: the virtual search column for a
+     * #[Translatable(fullTextIndex: true)] property (its folded text, in that column's collation), the property's own
+     * column otherwise — a plain Translatable keeps sorting its JSON text as before.
+     *
+     * @param string $modelClass The Doctrine model the property belongs to
+     * @param string $propertyName The orderBy property
+     * @return string
+     * @throws ReflectionException
+     */
+    protected static function getOrderByColumnName(string $modelClass, string $propertyName): string
+    {
+        /** @var DoctrineModel $modelClass */
+        $searchColumnName = FiltersOptions::getTranslatableSearchColumnName($modelClass::ENTITY_CLASS, $propertyName);
+        if ($searchColumnName && $modelClass::isValidDatabaseExpression($modelClass::MODEL_ALIAS . ".$searchColumnName")) {
+            return $searchColumnName;
+        }
+        return $propertyName;
+    }
+
+    /**
      * Applies orderBy options to query builder
      * @param DoctrineQueryBuilder $queryBuilder
      * @return DoctrineQueryBuilder
@@ -233,6 +253,7 @@ MD;
                         continue;
                     }
                     $verifyModelAlias = $verifyModelClass::MODEL_ALIAS;
+                    $propertyNameInExpandPath = self::getOrderByColumnName($verifyModelClass, $propertyNameInExpandPath);
                     if (!$verifyModelClass::isValidDatabaseExpression("$verifyModelAlias.$propertyNameInExpandPath")) {
                         continue;
                     }
@@ -243,6 +264,9 @@ MD;
             } else {
                 $baseAlias = $baseModelClass::MODEL_ALIAS;
                 $baseAlias = $orderByOption?->getFiltersDefinition()?->getExpandDefinition() ? '' : $baseAlias;
+                if ($baseAlias) {
+                    $propertyName = self::getOrderByColumnName($baseModelClass, $propertyName);
+                }
                 $orderByExpression = ($baseAlias ? $baseAlias . '.' : '') . $propertyName;
                 /** @var DoctrineModel $baseModelClass */
                 if (!$baseModelClass::isValidDatabaseExpression($orderByExpression, $baseModelClass)) {
