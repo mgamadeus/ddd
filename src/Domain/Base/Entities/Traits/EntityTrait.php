@@ -2,7 +2,6 @@
 
 namespace DDD\Domain\Base\Entities\Traits;
 
-use DDD\Domain\Base\Entities\BaseObject;
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;

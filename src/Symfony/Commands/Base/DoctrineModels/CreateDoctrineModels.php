@@ -4,9 +4,7 @@ declare(strict_types=1);
 // src/Security/AccessDeniedHandler.php
 namespace DDD\Symfony\Commands\Base\DoctrineModels;
 
-use DDD\Domain\Common\Entities\Accounts\Account;
 use DDD\Domain\Common\Services\EntityModelGeneratorService;
-use DDD\Infrastructure\Services\DDDService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;

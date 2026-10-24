@@ -6,7 +6,6 @@ namespace DDD\Domain\Common\Repo\DB\CacheScopes\Invalidations;
 
 use DateInterval;
 use DDD\Domain\Base\Entities\DefaultObject;
-use DDD\Domain\Base\Repo\DatabaseRepoEntity;
 use DDD\Domain\Base\Repo\DB\DBEntity;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;

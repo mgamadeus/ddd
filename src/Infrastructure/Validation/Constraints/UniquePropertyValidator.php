@@ -5,13 +5,10 @@ namespace DDD\Infrastructure\Validation\Constraints;
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadTrait;
-use DDD\Domain\Base\Entities\Traits\EntityTrait;
 use DDD\Domain\Base\Repo\DB\DBEntity;
-use DDD\Domain\Common\Validators\NotContainingUrlPrefix\NotContainingUrlPrefixConstraint;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
 use Symfony\Component\Validator\Exception\UnexpectedTypeException;
-use Symfony\Component\Validator\Exception\UnexpectedValueException;
 
 /**
  * Validator for the {@see UniqueProperty} constraint.

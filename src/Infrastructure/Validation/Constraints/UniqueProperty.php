@@ -3,9 +3,7 @@
 namespace DDD\Infrastructure\Validation\Constraints;
 
 use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
-use Symfony\Component\Validator\Attribute\HasNamedArguments;
 use Symfony\Component\Validator\Constraint;
-use Symfony\Component\Validator\Exception\InvalidArgumentException;
 
 /**
  * Constraint attribute that validates a property value is unique across all entities of the same type in the database.

@@ -10,7 +10,6 @@ use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Repo\DB\Attributes\EntityCache;
-use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Infrastructure\Cache\Cache;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;

@@ -3,7 +3,6 @@
 namespace DDD\Symfony\Loaders;
 
 use ReflectionClass;
-use Symfony\Component\Config\FileLocatorInterface;
 use Symfony\Component\Config\Resource\FileResource;
 use Symfony\Component\HttpKernel\Config\FileLocator;
 use Symfony\Component\Routing\Loader\AttributeFileLoader;

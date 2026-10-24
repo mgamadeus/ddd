@@ -7,7 +7,6 @@ namespace DDD\Domain\Base\Repo\DB\Doctrine\Hydration;
 use BackedEnum;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\DBAL\Result;
-use Doctrine\Deprecations\Deprecation;
 use Doctrine\ORM\Events;
 use Doctrine\ORM\Internal\Hydration\AbstractHydrator;
 use Doctrine\ORM\Internal\Hydration\HydrationException;

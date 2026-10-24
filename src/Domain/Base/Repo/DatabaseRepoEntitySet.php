@@ -12,7 +12,6 @@ use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Traits\ReflectorTrait;
 use Doctrine\DBAL\Exception;
-use Doctrine\ORM\Mapping\MappingException;
 
 abstract class DatabaseRepoEntitySet
 {

@@ -6,7 +6,6 @@ namespace DDD\Domain\Base\Entities\ChangeHistory;
 
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
-use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use ReflectionException;

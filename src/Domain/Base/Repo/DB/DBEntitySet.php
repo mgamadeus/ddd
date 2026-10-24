@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo\DB;
 
-use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
-use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistoryTrait;
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
