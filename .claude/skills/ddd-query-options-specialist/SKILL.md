@@ -328,6 +328,8 @@ public ?string $name = null;
 
 The DB model generator creates a stored virtual search column (`virtualNameSearch`) with a FULLTEXT index. API consumers filter on the logical property name, but queries target the virtual column automatically.
 
+> **Never hand-write `MATCH (alias.name) AGAINST (…)` on a `#[Translatable]` property.** The property itself is a JSON column without a FULLTEXT index — MariaDB answers error 1191 ("Can't find FULLTEXT index matching the column list"). Use the `ft` / `fb` filter on the logical property and let the framework target `virtualNameSearch`. Only where a service genuinely needs a raw relevance expression outside QueryOptions, target the virtual column through `Translatable::getFullTextSearchVirtualColumnName('name')`.
+
 ### `ft` vs `fb` -- Choosing the Right Operator
 
 | Operator | Mode | Use For | Prefix Matching |

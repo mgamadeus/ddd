@@ -1098,7 +1098,6 @@ trait SerializerTrait
     /**
      * removes marks for index
      * @param $index
-     * @param false $recursive
      */
     public function unmark($index): void
     {

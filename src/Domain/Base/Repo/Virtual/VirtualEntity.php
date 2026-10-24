@@ -12,7 +12,6 @@ class VirtualEntity
 {
     /**
      * This method calls the
-     * @param bool $useEntityRegistryCache
      * @return Entity|null
      */
     public function callLazyLoadMethod(

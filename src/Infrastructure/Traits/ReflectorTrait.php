@@ -32,7 +32,6 @@ trait ReflectorTrait
     /**
      * Returns the instance of the first found class attribute of the given name
      * @param string|null $name
-     * @param int $flags
      * @return mixed|object|null
      * @throws ReflectionException
      */

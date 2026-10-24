@@ -345,7 +345,6 @@ trait EntityTrait
      * Returns the property name for the property containing the id of the parent Entity given. If not found, returns false.
      * E.g. returns when called on AdSet with a Campaign (parent Entity) given, it will return campaignId
      * @param DefaultObject $entityOrSet
-     * @param string $propertyName
      * @return string|bool
      */
     public static function getPropertyContainingIdForParentEntity(

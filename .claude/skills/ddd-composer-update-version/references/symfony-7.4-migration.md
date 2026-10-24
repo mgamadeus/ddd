@@ -70,13 +70,35 @@ order; every item cost one of those apps time.
 6. **Framework options 7.4 wants set:** `framework.property_info.with_constructor_extractor: true` and
    `framework.profiler.collect_serializer_data: true`.
 7. **`config/…/reference.php`** — framework-bundle 7.4 regenerates it on warmup (array shapes for PHP config, ~1,300
-   lines). Commit it with the upgrade or add it to `.gitignore`; decide once per app.
+   lines). **Add it to `.gitignore`** (owner decision 2026-10-24, all apps): `/config/symfony/default/reference.php`
+   relative to the app root. If it is already tracked, `git rm --cached` it.
 8. **Deprecation noise to expect** (harmless on 7.4, fixed in ddd 2.70.3 where it was Core's): ~500–8,000 Route
    getter calls per cold build from the ddd route loader, the `Choice` options default, Core constraints passing `[]`,
    implicit-nullable parameters. What remains after 2.70.3 is app code (commands without `configure(): void`, the app's
-   own constraints and nullables) and three "internal method" notices from Core's kernel.
+   own constraints and nullables) and, where an app forked Symfony's ErrorHandler, the "internal / final" notices of
+   that fork (see 9).
+
+9. **Deleting an ErrorHandler fork un-silences E_NOTICE.** Apps that carried a fork of Symfony's ErrorHandler
+   usually also masked notices in `public/index.php` (`error_reporting(... & ~E_NOTICE ...)`). Once both go, the
+   stock handler sees every notice: thrown in debug, logged as `php.ERROR` in prod. Before deleting, find the
+   pass-by-reference calls with a non-variable argument, typically `$set->add(new X(...))` or
+   `$set->add($service->build())` against `ObjectSet::add(&...$elements)`. Qodana reports them as
+   `PhpPassByRefInspection`. Fix: assign to a local variable first. Also diff the fork against
+   `vendor/symfony/error-handler/ErrorHandler.php` (normalise `\` prefixes and `private`/`protected`): forks
+   accumulate app features (Dineful's rendered kernel-escaping fatals as JSON on `?errors_as_json`) that
+   disappear with it. (Radbonus had 0 such calls, Dineful 22.)
+10. **A cold debug-container build does not fit php-fpm's default 128M.** Measured peak ~170 MB (7.3) and
+    ~180 MB (7.4) for a mid-size app; `bin/console` sets 512M itself, FPM does not. Symptom: every `?debug=1`
+    request dies with "Allowed memory size … exhausted … DebugClassLoader.php", and `var/cache/dev` holds only
+    `…DevDebugContainer.php.lock`. It surfaces when the first request after a vendor/config change comes
+    through FPM instead of a console cache reset. Fix: raise `memory_limit` for debug requests on dev
+    workspaces (e.g. `ini_set('memory_limit', '512M')` in `public/index.php` behind the dev-workspace + debug
+    check), or warm with `bin/console cache:warmup` after every change. Measure your own peak with a cold
+    `new DDDKernel('dev', true)` + `boot()` under `APP_CACHE_DIR=<empty dir>` and `memory_get_peak_usage(true)`.
 
 ## 5. Runtime notes (no breakage)
+
+- The first `?debug=1` request after an upgrade can run out of memory while it builds the container — see 4.10.
 
 - **Long console runs in debug mode on ddd ≤ 2.70.2 can exhaust memory.** The debug error handler keeps every
   deprecation it sees, and the ddd route loader and `Choice` produced thousands per container / route load. RC's
@@ -95,3 +117,8 @@ order; every item cost one of those apps time.
   app's own cookie / bearer authenticators should call `AuthService::isAccessTokenPayload()`.
 - 2.70.3 — a filter `eq null` / `ne null` now compares with IS [NOT] NULL like `'NULL'`. Before, a bare `null` was
   bound as a parameter (`col = NULL`) and matched no row. Code that used bare `null` returned nothing until now.
+- 2.70.5 — `AccountsService::find(null)` loads the authenticated account (it used to crash), and its docblock no
+  longer announces a phantom `$accountId` (that and 32 more phantom `@param`s raised DebugClassLoader deprecations
+  in every overriding app class). `AppMessage::dispatch(array $stamps = [])` takes Messenger stamps. An entity named
+  like a DQL reserved word (`Order`) gets `MODEL_ALIAS = 'OrderModel'`. Apps no longer need their cweagans patches
+  for these — drop them (see "Consumers never patch mgamadeus/*" in the skill).

@@ -168,7 +168,6 @@ class EntitySet extends ObjectSet
      * Returns the property name for the property containing the id of the parent Entity given. If not found, returns false.
      * E.g. returns when called on AdSet with a Campaign (parent Entity) given, it will return campaignId
      * @param Entity|EntitySet $entityOrSet
-     * @param string $propertyName
      * @return string|bool
      */
     public static function getPropertyContainingIdForParentEntity(DefaultObject|EntitySet &$entityOrSet): string|bool

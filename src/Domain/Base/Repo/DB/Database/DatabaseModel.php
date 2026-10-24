@@ -33,6 +33,20 @@ class DatabaseModel extends ValueObject
     public const string MODEL_SUFFIX = 'Model';
 
     /**
+     * @var string[] The reserved words of Doctrine's DQL lexer (Query\TokenType, every token >= T_ALL). An entity named
+     *      like one of them cannot be the DQL identification variable — `SELECT Order FROM …` is a syntax error and DQL
+     *      has no quoting for it — so its MODEL_ALIAS gets {@see self::MODEL_SUFFIX} ({@see self::getModelAlias()}).
+     *      DatabaseModelReservedDqlAliasTest keeps the list in step with the installed Doctrine.
+     */
+    public const array RESERVED_DQL_KEYWORDS = [
+        'ALL', 'AND', 'ANY', 'AS', 'ASC', 'AVG', 'BETWEEN', 'BOTH', 'BY', 'CASE', 'COALESCE', 'COUNT', 'DELETE', 'DESC',
+        'DISTINCT', 'ELSE', 'EMPTY', 'END', 'ESCAPE', 'EXISTS', 'FALSE', 'FROM', 'GROUP', 'HAVING', 'HIDDEN', 'IN', 'INDEX',
+        'INNER', 'INSTANCE', 'IS', 'JOIN', 'LEADING', 'LEFT', 'LIKE', 'MAX', 'MEMBER', 'MIN', 'NEW', 'NOT', 'NULL',
+        'NULLIF', 'OF', 'OR', 'ORDER', 'OUTER', 'PARTIAL', 'SELECT', 'SET', 'SOME', 'SUM', 'THEN', 'TRAILING', 'TRUE',
+        'UPDATE', 'WHEN', 'WHERE', 'WITH',
+    ];
+
+    /**
      * @var string|null Optional: If Entity inherits another Entity, then, a Database Model is generated that inherits the one of the parent Entity, but no SQL Table.
      * In this case Single Table Inheritance definitions is applied to the parent's class Database Model
      */
@@ -591,6 +605,19 @@ class DatabaseModel extends ValueObject
     }
 
     /**
+     * The MODEL_ALIAS to emit: the entity name, suffixed with {@see self::MODEL_SUFFIX} when it is a DQL reserved word
+     * (`Order` → `OrderModel`). Class, table and entity names stay as they are.
+     * @return string
+     */
+    public function getModelAlias(): string
+    {
+        if (in_array(strtoupper($this->name), self::RESERVED_DQL_KEYWORDS, true)) {
+            return $this->name . self::MODEL_SUFFIX;
+        }
+        return $this->name;
+    }
+
+    /**
      * @return ClassWithNamespace Returns Model ClassWithNamespace
      */
     public function getModelClassNameWithNameSpace(): ClassWithNamespace
@@ -745,7 +772,7 @@ class DatabaseModel extends ValueObject
                 );
                 $this->modelImports->mergeFromOtherSet($modelImportsFromSubclassIndicators);
             }
-            $modelClassContent = "#[ORM\Entity]\n#[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]\n#[ORM\Table(name: '$this->sqlTableName')]$subclassIndicatorDeclarations\nclass {$this->getModelClassNameWithNameSpace()->name} extends DoctrineModel\n{\n\tpublic const string MODEL_ALIAS = '$this->name';\n\n\tpublic const string TABLE_NAME = '$this->sqlTableName';\n\n\tpublic const string ENTITY_CLASS = '{$this->entityClassWithNamespace->getNameWithNamespace()}';\n\n";
+            $modelClassContent = "#[ORM\Entity]\n#[ORM\ChangeTrackingPolicy('DEFERRED_EXPLICIT')]\n#[ORM\Table(name: '$this->sqlTableName')]$subclassIndicatorDeclarations\nclass {$this->getModelClassNameWithNameSpace()->name} extends DoctrineModel\n{\n\tpublic const string MODEL_ALIAS = '{$this->getModelAlias()}';\n\n\tpublic const string TABLE_NAME = '$this->sqlTableName';\n\n\tpublic const string ENTITY_CLASS = '{$this->entityClassWithNamespace->getNameWithNamespace()}';\n\n";
         }
 
         if ($this->virtualColumns->count()) {

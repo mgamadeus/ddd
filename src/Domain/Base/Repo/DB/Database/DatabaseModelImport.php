@@ -24,8 +24,6 @@ class DatabaseModelImport extends ValueObject
     }
 
     /**
-     * @param string $indexType
-     * @param array $indexColumns
      */
     public function __construct(
         ?ClassWithNamespace $importClassWithNamespace = null,

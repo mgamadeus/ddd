@@ -18,7 +18,7 @@ class Settings extends EntitySet
     /**
      * Merges foreach setting merges data from corresponding other settings entry if present, e.g. AdsSetting > AdsSetting.
      * If a setting is not present here but in otherSettings, it is newly created and merged (in order to not have a reference of the other setting but a copy instead).
-     * @param Settings $otherSettings
+     * @param string $type
      * @return void
      */
     public function getSettingByType($type): ?Setting

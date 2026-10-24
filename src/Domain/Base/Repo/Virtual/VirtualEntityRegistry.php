@@ -55,10 +55,7 @@ class VirtualEntityRegistry
     /**
      * Adds entity to registry by caller uniquekey, repoclass and method name
      * If extended registry cache is defined to be used, stores the entity as well in extended entity registry cache
-     * @param DefaultObject|null $entity
      * @param string $repoClass
-     * @param string|int|DoctrineQueryBuilder $idOrQuery
-     * @param bool $deferredCaching
      * @return void
      * @throws InvalidArgumentException
      */
@@ -93,7 +90,6 @@ class VirtualEntityRegistry
      * If extended registry cache is defined to be used, tries to find it in the cache.
      * If no result is found, returns false
      * @param string $repoClass
-     * @param string|int|DoctrineQueryBuilder $idOrQuery
      * @return Entity|EntitySet|false|null
      * @throws InternalErrorException
      * @throws BadRequestException

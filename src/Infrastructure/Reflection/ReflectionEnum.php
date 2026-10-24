@@ -21,7 +21,7 @@ class ReflectionEnum extends \ReflectionEnum
     /**
      * returns an instance of reflection class
      * instances are statically cached per className
-     * @param string $className
+     * @param string $enumClassName
      * @return mixed|ReflectionClass
      * @throws ReflectionException
      */

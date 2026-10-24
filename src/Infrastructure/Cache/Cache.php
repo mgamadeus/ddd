@@ -163,7 +163,7 @@ abstract class Cache
      * obtains values from $keys, if multiple keys are provided, it returns the results as associative array grouped by the keys,
      * otherwise it returns a single result.
      * if no result is found, returns null
-     * @param string $key
+     * @param string ...$keys
      * @return mixed
      */
     public function get(string ...$keys): mixed

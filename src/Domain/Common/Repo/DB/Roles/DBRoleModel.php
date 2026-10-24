@@ -22,13 +22,13 @@ class DBRoleModel extends DoctrineModel
 	public const string ENTITY_CLASS = 'DDD\Domain\Common\Entities\Roles\Role';
 
 	#[ORM\Column(type: 'string')]
-	public ?string $name;
+	public string $name;
 
 	#[ORM\Column(type: 'string')]
 	public ?string $description;
 
 	#[ORM\Column(type: 'boolean')]
-	public ?bool $isAdminRole = false;
+	public bool $isAdminRole = false;
 
 	#[ORM\Id]
 	#[ORM\GeneratedValue]

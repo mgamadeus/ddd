@@ -14,7 +14,7 @@ class RolesRequiredForUpdate
     public array $rolesRequiredForUpdate = [];
 
     /**
-     * @param bool $blockRecursiveUpdate
+     * @param string ...$rolesRequiredForUpdate
      */
     public function __construct(
         string ...$rolesRequiredForUpdate

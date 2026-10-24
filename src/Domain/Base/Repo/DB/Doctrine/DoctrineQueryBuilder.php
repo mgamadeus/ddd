@@ -1430,7 +1430,6 @@ class DoctrineQueryBuilder extends QueryBuilder
      *         ->andWhere('u.is_active = 1');
      * </code>
      *
-     * @param mixed $where The query restrictions.
      *
      * @return $this
      * @see where()
@@ -1463,7 +1462,6 @@ class DoctrineQueryBuilder extends QueryBuilder
      *         ->orWhere('u.id = 2');
      * </code>
      *
-     * @param mixed $where The WHERE statement.
      *
      * @return $this
      * @see where()

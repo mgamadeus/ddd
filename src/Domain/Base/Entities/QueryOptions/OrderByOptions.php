@@ -180,7 +180,6 @@ MD;
     /**
      * Applies orderBy options to query builder
      * @param DoctrineQueryBuilder $queryBuilder
-     * @param string $baseAlias
      * @return DoctrineQueryBuilder
      */
     public function applyOrderByToDoctrineQueryBuilder(

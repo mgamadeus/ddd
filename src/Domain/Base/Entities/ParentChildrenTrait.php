@@ -17,7 +17,7 @@ trait ParentChildrenTrait
 
     /**
      * Ads Elements to children of this Instance
-     * @param DefaultObject|null $child
+     * @param DefaultObject|null ...$children
      * @return void
      */
     public function addChildren(?DefaultObject &...$children): void

@@ -75,7 +75,6 @@ class PhotoUtils
 
 
     /**
-     * @param string $base64Image
      * @param int $minWidth
      * @param int $minHeight
      * @param int $maxWidth

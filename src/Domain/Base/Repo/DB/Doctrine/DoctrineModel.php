@@ -60,7 +60,6 @@ abstract class DoctrineModel
      * Verifies if an expression like site_competiors.source is valid for model, if not, returns false, else true
      * This is usefull e.g. in order to assure that filters that are not DB related are not applied to DB queries
      * @param string $expression
-     * @param string $baseModelClass
      * @return bool
      * @throws ReflectionException
      */
@@ -103,7 +102,7 @@ abstract class DoctrineModel
 
     /**
      * Returns the class name of DoctrineModel of the target property
-     * @param string $propertyName
+     * @param ReflectionProperty $reflectionProperty
      * @return string|null
      * @throws ReflectionException
      */

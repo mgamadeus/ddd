@@ -85,7 +85,7 @@ class AuthService
     }
 
     /**
-     * @param Account $account
+     * @param int $accountId
      */
     public function setAccountId(int &$accountId): void
     {

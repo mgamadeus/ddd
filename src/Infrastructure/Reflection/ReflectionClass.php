@@ -556,7 +556,6 @@ class ReflectionClass extends \ReflectionClass
      * without the question mark since we do not want to stare null values. Also, If the Type is a Union Type
      * this function will decide which Data Type to use.
      * @param ReflectionProperty $property
-     * @param mixed $valueToBeAssigned
      * @return string
      */
     public function getReflectionType(\ReflectionProperty|ReflectionProperty $property): string

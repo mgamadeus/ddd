@@ -95,7 +95,7 @@ class ExpandOptions extends ObjectSet
     /**
      * Validates all defined expand options if a LazyLoad definition exists for it in target class and throws Error if invalid field names are used.
      * returns true if validation finds no issues
-     * @param FiltersDefinitions $allowedFields
+     * @param string $referenceClassName
      * @return bool
      * @throws BadRequestException
      */

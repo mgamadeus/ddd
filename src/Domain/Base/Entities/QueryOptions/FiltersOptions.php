@@ -322,7 +322,7 @@ MD;
 
     /**
      * Recursively sets definitions to FilterOptions so earch FilterOption has access to it's corresponding definition
-     * @param FiltersDefinition $filtersDefinition
+     * @param FiltersDefinition $filtersDefinitions
      */
     public function setFiltersDefinitionsForAllFilterOptions(FiltersDefinitions $filtersDefinitions): void
     {
@@ -831,9 +831,7 @@ MD;
      * @param DoctrineQueryBuilder $queryBuilder The QueryBuilder containing the joins.
      * @param string $joinString The join path (e.g. "push.world").
      * @param string $joinAlias The alias of the join (e.g. "world").
-     * @param string $baseModelClass Fully qualified model class for filter logic.
      * @param callable|null $mappingFunction Optional callback to transform property/value.
-     * @param string|null $baseModelAlias Alias of the root entity under which the join lives.
      *
      * @throws ReflectionException
      */

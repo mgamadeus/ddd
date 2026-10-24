@@ -48,7 +48,6 @@ class DatabaseTrigger extends ValueObject
     public array $executeOnOperations = [self::OPERATION_INSERT];
 
     /**
-     * @param string ...$columns
      */
     public function __construct(string $exectutionOrder, array $executeOnOperations)
     {

@@ -93,7 +93,6 @@ class Config
     }
 
     /**
-     * @param array $configRoots
      * @param string $searchString
      * @param bool $prioritizeDirectorySearch
      * @return mixed
@@ -128,7 +127,6 @@ class Config
     }
 
     /**
-     * @param array $configRoots
      * @param string $searchString
      * @param bool $prioritizeDirectorySearch
      * @return array|null

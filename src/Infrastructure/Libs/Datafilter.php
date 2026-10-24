@@ -1292,7 +1292,6 @@ class Datafilter
 
     /**
      * Clean keywords array
-     * @param     $string
      * @return
      */
     public static function clean_keywords(array $array, bool $removeDuplicates = false): ?array
