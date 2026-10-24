@@ -254,7 +254,7 @@ See the `ddd-module-orchestrator` skill for the complete module ecosystem, depen
 
 ## Rules
 
-- **Consumers never patch `mgamadeus/*`.** No cweagans `extra.patches`, no hand-edited `vendor/mgamadeus/` files in a consuming app (owner decision 2026-10-24). A DDD bug is fixed in the DDD repo and released as a patch version; the app updates. An unavoidable short-lived workaround lives in APP code with a TODO naming the target release — never in `vendor/`. A patch found in an app is an ingest candidate: upstream it, release, then the app drops the patch.
+- **Consumers never patch `mgamadeus/*`.** No cweagans `extra.patches`, no hand-edited `vendor/mgamadeus/` files in a consuming app. A DDD bug is fixed in the DDD repo and released as a patch version; the app updates. An unavoidable short-lived workaround lives in APP code with a TODO naming the target release — never in `vendor/`. A patch found in an app is an ingest candidate: upstream it, release, then the app drops the patch.
 - **Never** push a tag without first committing the version bump to `composer.json`
 - The tag version (`vX.Y.Z`) must match `composer.json` version (`X.Y.Z`)
 - Always include `Co-Authored-By` in commits

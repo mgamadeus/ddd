@@ -70,7 +70,7 @@ order; every item cost one of those apps time.
 6. **Framework options 7.4 wants set:** `framework.property_info.with_constructor_extractor: true` and
    `framework.profiler.collect_serializer_data: true`.
 7. **`config/…/reference.php`** — framework-bundle 7.4 regenerates it on warmup (array shapes for PHP config, ~1,300
-   lines). **Add it to `.gitignore`** (owner decision 2026-10-24, all apps): `/config/symfony/default/reference.php`
+   lines). **Add it to `.gitignore`** in every app: `/config/symfony/default/reference.php`
    relative to the app root. If it is already tracked, `git rm --cached` it.
 8. **Deprecation noise to expect** (harmless on 7.4, fixed in ddd 2.70.3 where it was Core's): ~500–8,000 Route
    getter calls per cold build from the ddd route loader, the `Choice` options default, Core constraints passing `[]`,
