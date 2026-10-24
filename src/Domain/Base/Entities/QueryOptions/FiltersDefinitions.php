@@ -420,7 +420,36 @@ class FiltersDefinitions extends ObjectSet
                 return true;
             }
         }
-        return false;
+        return self::propertyGetsDefaultFulltextIndex($reflectionClass, $reflectionProperty);
+    }
+
+    /**
+     * Whether the model generator gives this property's column a FULLTEXT index on its own: a property without any
+     * property-level #[DatabaseIndex] (one of those replaces the default, TYPE_NONE included) whose column is TEXT /
+     * MEDIUMTEXT / LONGTEXT gets the default index of its SQL type
+     * ({@see DatabaseColumn::SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS}). Same column derivation as the generator.
+     *
+     * @param ReflectionClass $reflectionClass The entity
+     * @param ReflectionProperty $reflectionProperty The filterable property
+     * @return bool
+     */
+    protected static function propertyGetsDefaultFulltextIndex(
+        ReflectionClass $reflectionClass,
+        ReflectionProperty $reflectionProperty
+    ): bool {
+        if ($reflectionProperty->getAttributes(DatabaseIndex::class, ReflectionAttribute::IS_INSTANCEOF)) {
+            return false;
+        }
+        try {
+            $databaseColumn = DatabaseColumn::createFromReflectionProperty($reflectionClass, $reflectionProperty);
+        } catch (\Throwable) {
+            return false;
+        }
+        if (!$databaseColumn || !isset($databaseColumn->sqlType) || !$databaseColumn->hasIndex || $databaseColumn->ignoreProperty) {
+            return false;
+        }
+        return (DatabaseColumn::SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS[$databaseColumn->sqlType] ?? null)
+            === DatabaseIndex::TYPE_FULLTEXT;
     }
 
     public function getFilterDefinitionForPropertyName(string $propertyName): ?FiltersDefinition

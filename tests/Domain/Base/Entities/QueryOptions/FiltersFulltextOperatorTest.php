@@ -12,6 +12,7 @@ use DDD\Domain\Base\Entities\QueryOptions\FiltersOptions;
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptionsTrait;
 use DDD\Domain\Base\Entities\Translatable\Translatable;
 use DDD\Domain\Base\Entities\Translatable\TranslatableTrait;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseIndex;
 use DDD\Domain\Common\Repo\DB\Crons\DBCronExecution;
 use DDD\Infrastructure\Exceptions\BadRequestException;
@@ -41,6 +42,18 @@ class FulltextProbeEntity extends Entity
 
     #[DatabaseIndex(indexType: DatabaseIndex::TYPE_INDEX)]
     public string $plainlyIndexed = '';
+
+    /** a TEXT column: the generator gives it a FULLTEXT index without any #[DatabaseIndex] */
+    #[DatabaseColumn(sqlType: DatabaseColumn::SQL_TYPE_TEXT)]
+    public ?string $longText = null;
+
+    #[DatabaseColumn(sqlType: DatabaseColumn::SQL_TYPE_LONGTEXT)]
+    public ?string $veryLongText = null;
+
+    /** a TEXT column whose default index is switched off */
+    #[DatabaseColumn(sqlType: DatabaseColumn::SQL_TYPE_TEXT)]
+    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
+    public ?string $unindexedText = null;
 }
 
 class FiltersFulltextOperatorTest extends TestCase
@@ -85,6 +98,18 @@ class FiltersFulltextOperatorTest extends TestCase
     {
         $this->assertTrue($this->supportsFulltext('title'), 'the property the caller filters on');
         $this->assertTrue($this->supportsFulltext(Translatable::getFullTextSearchVirtualColumnName('title')));
+    }
+
+    public function testATextColumnCountsThroughTheGeneratorsDefaultFulltextIndex(): void
+    {
+        $this->assertTrue($this->supportsFulltext('longText'));
+        $this->assertTrue($this->supportsFulltext('veryLongText'));
+        $this->assertTrue(FiltersOptions::fromString("longText fb 'x*'")->validateAgainstDefinitions($this->definitions));
+    }
+
+    public function testATextColumnWhoseDefaultIndexIsSwitchedOffDoesNotCount(): void
+    {
+        $this->assertFalse($this->supportsFulltext('unindexedText'));
     }
 
     public function testAPropertyWithoutAFulltextIndexIsNotAdvertised(): void

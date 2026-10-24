@@ -145,3 +145,5 @@ order; every item cost one of those apps time.
   - Workers roll back (and log) a transaction a handler left open; a `sync://` dispatch no longer resets the
     request's state. `app:db:read` runs in a READ ONLY transaction.
   - Public symbols nothing used were removed (list in the release commit "Dead code: …").
+- 2.70.10 — a TEXT / MEDIUMTEXT / LONGTEXT column counts as fulltext-capable through the FULLTEXT index the generator
+  gives it by default; 2.70.9 answered 400 to `ft` / `fb` there although the index existed.

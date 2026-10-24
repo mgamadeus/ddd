@@ -183,6 +183,6 @@ class FiltersValueValidationTest extends TestCase
         $this->expectException(BadRequestException::class);
         $this->expectExceptionMessageMatches('/no FULLTEXT index/');
 
-        $this->cronExpandValidation("executions.output fb 'x'");
+        $this->cronExpandValidation("executions.state fb 'x'");
     }
 }

@@ -550,6 +550,8 @@ attributes while the definitions are reflected:
 | class-level `#[DatabaseIndex(indexType: …TYPE_FULLTEXT, indexColumns: ['thatColumn'])]` | true |
 | class-level fulltext index over several columns | false — it cannot serve a single-column MATCH |
 | `#[Translatable(fullTextIndex: true)]` | true for the property AND its generated `virtual<Name>Search` column |
+| a TEXT / MEDIUMTEXT / LONGTEXT column with no property-level `#[DatabaseIndex]` (the generator's default index for these types) | true |
+| the same column with `#[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]` | false |
 | a plain `#[DatabaseIndex]`, or nothing | false |
 
 Two consequences:
