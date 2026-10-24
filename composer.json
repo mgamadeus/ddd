@@ -72,6 +72,11 @@
             "src/Infrastructure/Helpers/helpers_bootstrap.php"
         ]
     },
+    "autoload-dev": {
+        "psr-4": {
+            "DDD\\Tests\\": "tests/"
+        }
+    },
     "config": {
         "allow-plugins": {
             "symfony/runtime": false
