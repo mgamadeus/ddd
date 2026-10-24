@@ -1126,26 +1126,6 @@ class Datafilter
         return strtr($s, $replace);
     }
 
-    /**
-     * Removes consecutive duplicates from an string
-     * eg: seo for seo => seo for seo
-     *     seo for seo seo => seo for seo
-     * @param $text
-     * @return array
-     */
-    public static function remove_consecutive_duplicate(string $text): string
-    {
-        $arr = explode(' ', $text);
-
-        $countArr = count($arr ?? []);
-        for ($i = 0; $i < $countArr; $i++) {
-            if (isset($arr[$i - 1]) && $arr[$i] == $arr[$i - 1]) {
-                unset($arr[$i]);
-            }
-        }
-        return implode(' ', $arr);
-    }
-
 
     /**
      * Clean keyword
@@ -1706,65 +1686,10 @@ class Datafilter
         return $text;
     }
 
-    public static function keyword_decode(string $keyword): string
-    {
-        return str_replace('KW__', '', $keyword);
-    }
-
-    public static function ordUTF8(string $c, int $index = 0, ?int &$bytes = null): int|bool
-    {
-        $len = strlen($c);
-        $bytes = 0;
-
-        if ($index >= $len) {
-            return false;
-        }
-
-        $h = ord($c[$index]);
-
-        if ($h <= 0x7F) {
-            $bytes = 1;
-            return $h;
-        } elseif ($h < 0xC2) {
-            return false;
-        } elseif ($h <= 0xDF && $index < $len - 1) {
-            $bytes = 2;
-            return ($h & 0x1F) << 6 | (ord($c[$index + 1]) & 0x3F);
-        } elseif ($h <= 0xEF && $index < $len - 2) {
-            $bytes = 3;
-            return ($h & 0x0F) << 12 | (ord($c[$index + 1]) & 0x3F) << 6 | (ord($c[$index + 2]) & 0x3F);
-        } elseif ($h <= 0xF4 && $index < $len - 3) {
-            $bytes = 4;
-            return ($h & 0x0F) << 18 | (ord($c[$index + 1]) & 0x3F) << 12 | (ord($c[$index + 2]) & 0x3F) << 6 | (ord(
-                        $c[$index + 3]
-                    ) & 0x3F);
-        } else {
-            return false;
-        }
-    }
-
-    public static function domain_tld(string $domain): ?string
-    {
-        preg_match('#(?P<domain>.*?)\.(?P<tld>[a-z]{2,6})$#', $domain, $match);
-        $return = new stdClass();
-        $return->domain = $match['domain'] ?? null;
-        $return->tld = $match['tld'] ?? null;
-        return $return;
-    }
-
     /*
      * Reliable only for DE/AT/CH domains.
      * Compare domains and check if they are the same domain
      */
-
-    public static function compare_array(array $a, array $b): int
-    {
-        if ($a->density == $b->density) {
-            return 0;
-        } else {
-            return ($a->density < $b->density);
-        }
-    }
 
     /**
      * Generate all possible combinations of words up to a specified number of words in sequence from a given query.
@@ -1848,145 +1773,6 @@ class Datafilter
         } catch (NumberParseException $e) {
             return false;
         }
-    }
-
-    /**
-     * Normalizes phone numbers to different formats based on the specified format and country code.
-     * Available formats:
-     * - PhoneNumberFormat::INTERNATIONAL
-     * - PhoneNumberFormat::NATIONAL
-     * - PhoneNumberFormat::E164
-     *
-     * @param string $number The phone number to be normalized.
-     * @param string $countryCode The ISO 3166-1 alpha-2 country code, default is 'DE'.
-     * @param int|PhoneNumberFormat $format The format to use for the phone number normalization. libphonenumber 9
-     *      made PhoneNumberFormat an int-backed enum (8 had int constants); both the enum case and its int value
-     *      are accepted, so callers work on either major version.
-     * @param bool $returnFragments If true, returns an object with countryCode and nationalNumber, otherwise returns formatted string.
-     * @return string|object The formatted phone number or an object with phone number fragments based on $returnFragments.
-     */
-    public static function normalizePhoneNumber(
-        string $number,
-        string $countryCode = 'de',
-        int|PhoneNumberFormat $format = PhoneNumberFormat::INTERNATIONAL,
-        bool $returnFragments = false
-    ) {
-        if (is_int($format) && enum_exists(PhoneNumberFormat::class)) {
-            $format = PhoneNumberFormat::from($format);
-        }
-        $number = str_replace('&nbsp', ' ', $number);
-        $phoneUtil = PhoneNumberUtil::getInstance();
-        try {
-            $parsedNumber = $phoneUtil->parseAndKeepRawInput($number, strtoupper($countryCode));
-            if ($returnFragments) {
-                return (object)[
-                    'countryCode' => $parsedNumber->getCountryCode(),
-                    'nationalNumber' => $parsedNumber->getNationalNumber()
-                ];
-            }
-            if ($phoneUtil->isValidNumber($parsedNumber)) {
-                return $phoneUtil->format($parsedNumber, $format);
-            } else {
-                return $number;
-            }
-        } catch (NumberParseException $e) {
-            return $number;
-        }
-    }
-
-    /**
-     * filters out all non german diacritics e.g. "é" => "e" etc.
-     *
-     *
-     * @param $text
-     */
-    public static function normalizeNonGermanDiacritics(string $text): string
-    {
-        $diacritics_from = [
-            'Á',
-            'É',
-            'Í',
-            'Ó',
-            'Ñ',
-            'á',
-            'é',
-            'í',
-            'ó',
-            'ú',
-            'ñ',
-            'à',
-            'â',
-            'æ',
-            'ç',
-            'é',
-            'è',
-            'ê',
-            'ë',
-            'î',
-            'ï',
-            'ô',
-            'œ',
-            'ù',
-            'û',
-            'À',
-            'Â',
-            'Æ',
-            'Ç',
-            'É',
-            'È',
-            'Ê',
-            'Ë',
-            'Î',
-            'Ï',
-            'Ô',
-            'Œ',
-            'Ù',
-            'Û'
-        ];
-        $diacritics_to = [
-            'A',
-            'E',
-            'I',
-            'O',
-            'N',
-            'a',
-            'e',
-            'i',
-            'o',
-            'u',
-            'n',
-            'a',
-            'a',
-            'a',
-            'c',
-            'e',
-            'e',
-            'e',
-            'e',
-            'i',
-            'i',
-            'o',
-            'o',
-            'u',
-            'u',
-            'A',
-            'A',
-            'A',
-            'C',
-            'E',
-            'E',
-            'E',
-            'E',
-            'I',
-            'I',
-            'O',
-            'O',
-            'U',
-            'U'
-        ];
-
-        $text = str_replace($diacritics_from, $diacritics_to, $text);
-        return $text;
     }
 
     /**

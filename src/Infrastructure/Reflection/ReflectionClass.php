@@ -59,8 +59,6 @@ class ReflectionClass extends \ReflectionClass
         self::ARRAY
     ];
 
-    public const array NUMERIC_TYPES = [self::INTEGER, self::FLOAT, self::DOUBLE];
-
     public const array SCALAR_TYPES = [
         self::STRING,
         self::BOOL,

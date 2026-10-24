@@ -103,11 +103,6 @@ abstract class DoctrineModel
         return null;
     }
 
-    public function getClassVars(): array
-    {
-        return get_class_vars($this::class);
-    }
-
     /**
      * Returns true if property is initialized (already loaded) without trigering lazyload
      * @param string $property
