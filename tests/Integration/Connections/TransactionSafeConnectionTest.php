@@ -83,6 +83,7 @@ class TransactionSafeConnectionTest extends IntegrationTestCase
         $this->assertSame([], $this->businessKeysStoredInCounterRows());
     }
 
+    /** @group mariadb `CONNECTION_ID()`/`KILL` (via killConnectionOf()) are MariaDB/MySQL-only. */
     public function testAKilledConnectionInsideATransactionMakesTheNextWriteThrowInsteadOfAutocommitting(): void
     {
         $entityManager = static::entityManager();
@@ -103,6 +104,7 @@ class TransactionSafeConnectionTest extends IntegrationTestCase
         $this->assertSame([], $this->businessKeysStoredInCounterRows());
     }
 
+    /** @group mariadb `CONNECTION_ID()`/`KILL` (via killConnectionOf()) are MariaDB/MySQL-only. */
     public function testOutsideATransactionAFailedPingStillReplacesTheEntityManager(): void
     {
         $entityManager = static::entityManager();

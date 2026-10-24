@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Integration suite against a throwaway MariaDB:
+  Integration suite against a throwaway MariaDB or PostgreSQL:
     docker compose (file tests/Integration/docker-compose.yml) up, wait for healthy
-    DDD_TEST_DRIVER=pdo_mysql vendor/bin/phpunit (config phpunit.integration.xml)
-  Without DDD_TEST_DRIVER=pdo_mysql every test is skipped.
+    DDD_TEST_DRIVER=pdo_mysql|pdo_pgsql vendor/bin/phpunit (config phpunit.integration.xml)
+  Without DDD_TEST_DRIVER=pdo_mysql|pdo_pgsql every "integration" test is skipped.
+
+  The "golden" testsuite needs NEITHER env var NOR a running database: it reconstructs the fixture DDL in pure PHP
+  and compares it byte-identically against tests/golden/mariadb/*.sql (T0 golden, see tests/golden/README.md and
+  tests/GoldenDdl/DdlGoldenTest.php's docblock for which golden files this covers and how the rest are verified).
+    vendor/bin/phpunit -c phpunit.integration.xml (test suite "golden")
 -->
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
@@ -14,6 +19,9 @@
     <testsuites>
         <testsuite name="integration">
             <directory>tests/Integration</directory>
+        </testsuite>
+        <testsuite name="golden">
+            <directory>tests/GoldenDdl</directory>
         </testsuite>
     </testsuites>
 </phpunit>

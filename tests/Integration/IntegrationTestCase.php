@@ -6,6 +6,7 @@ namespace DDD\Tests\Integration;
 
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
+use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityManager;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Tests\Integration\Fixtures\Entities\CounterRows\CounterRow;
@@ -17,10 +18,13 @@ use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 
 /**
- * Base of the integration suite: runs only with DDD_TEST_DRIVER=pdo_mysql against the throwaway MariaDB of
+ * Base of the integration suite: runs with DDD_TEST_DRIVER=pdo_mysql|pdo_pgsql against the throwaway database of
  * tests/Integration/docker-compose.yml (a PHPUnit 9 bootstrap cannot skip a suite, so the gate sits here). The
  * fixture tables come from the generator's DDL, are created once per test class, emptied before every test and
- * dropped afterwards.
+ * dropped afterwards — on MariaDB only (§6 step 1): the generator's DDL is MariaDB-specific SQL, and the PostgreSQL
+ * fixture DDL lands in step 4a of the dual-dialect architecture plan. Until then, every test in every subclass is
+ * skipped under pdo_pgsql ({@see self::fixtureTablesSupported()}); the bare connection boot itself is instead
+ * checked by {@see \DDD\Tests\Integration\Harness\ConnectionBootTest}, which needs no fixture tables.
  */
 abstract class IntegrationTestCase extends TestCase
 {
@@ -29,12 +33,26 @@ abstract class IntegrationTestCase extends TestCase
 
     public static function isIntegrationDatabaseEnabled(): bool
     {
-        return (getenv('DDD_TEST_DRIVER') ?: ($_SERVER['DDD_TEST_DRIVER'] ?? null)) === 'pdo_mysql';
+        return in_array(static::currentDriver(), ['pdo_mysql', 'pdo_pgsql'], true);
+    }
+
+    protected static function currentDriver(): ?string
+    {
+        return getenv('DDD_TEST_DRIVER') ?: ($_SERVER['DDD_TEST_DRIVER'] ?? null);
+    }
+
+    /**
+     * MariaDB only until step 4a: the fixture DDL below is `DatabaseModel::getSql()`, MariaDB-specific SQL
+     * (`AUTO_INCREMENT`, `ENGINE=InnoDB`, …) that a PostgreSQL server refuses outright.
+     */
+    protected static function fixtureTablesSupported(): bool
+    {
+        return static::currentDriver() === 'pdo_mysql';
     }
 
     public static function setUpBeforeClass(): void
     {
-        if (!static::isIntegrationDatabaseEnabled()) {
+        if (!static::isIntegrationDatabaseEnabled() || !static::fixtureTablesSupported()) {
             return;
         }
         (new ReflectionProperty(LazyLoadRepo::class, 'defaultRepoType'))->setValue(null, LazyLoadRepo::DB);
@@ -45,7 +63,7 @@ abstract class IntegrationTestCase extends TestCase
         $connection = static::connection();
         foreach (self::FIXTURE_ENTITY_CLASSES as $fixtureEntityClass) {
             $databaseModel = DatabaseModel::fromEntityClass($fixtureEntityClass);
-            $connection->executeStatement('DROP TABLE IF EXISTS `' . $databaseModel->sqlTableName . '`');
+            $connection->executeStatement('DROP TABLE IF EXISTS ' . static::quoteIdentifier($databaseModel->sqlTableName));
             foreach (static::splitSqlStatements($databaseModel->getSql()) as $statement) {
                 $connection->executeStatement($statement);
             }
@@ -55,7 +73,7 @@ abstract class IntegrationTestCase extends TestCase
 
     public static function tearDownAfterClass(): void
     {
-        if (!static::isIntegrationDatabaseEnabled()) {
+        if (!static::isIntegrationDatabaseEnabled() || !static::fixtureTablesSupported()) {
             return;
         }
         RecordingMiddleware::wireIfEnabled();
@@ -66,7 +84,7 @@ abstract class IntegrationTestCase extends TestCase
         }
         foreach (self::FIXTURE_ENTITY_CLASSES as $fixtureEntityClass) {
             $connection->executeStatement(
-                'DROP TABLE IF EXISTS `' . DatabaseModel::fromEntityClass($fixtureEntityClass)->sqlTableName . '`'
+                'DROP TABLE IF EXISTS ' . static::quoteIdentifier(DatabaseModel::fromEntityClass($fixtureEntityClass)->sqlTableName)
             );
         }
         RecordingMiddleware::endTest();
@@ -75,7 +93,15 @@ abstract class IntegrationTestCase extends TestCase
     protected function setUp(): void
     {
         if (!static::isIntegrationDatabaseEnabled()) {
-            $this->markTestSkipped('Integration suite: start tests/Integration/docker-compose.yml and set DDD_TEST_DRIVER=pdo_mysql');
+            $this->markTestSkipped(
+                'Integration suite: start tests/Integration/docker-compose.yml and set DDD_TEST_DRIVER=pdo_mysql|pdo_pgsql'
+            );
+        }
+        if (!static::fixtureTablesSupported()) {
+            $this->markTestSkipped(
+                'PostgreSQL fixture DDL lands in step 4a of the dual-dialect architecture plan; '
+                . static::class . ' needs real fixture tables.'
+            );
         }
         (new ReflectionProperty(LazyLoadRepo::class, 'defaultRepoType'))->setValue(null, LazyLoadRepo::DB);
         RecordingMiddleware::wireIfEnabled();
@@ -92,7 +118,7 @@ abstract class IntegrationTestCase extends TestCase
         }
         foreach (self::FIXTURE_ENTITY_CLASSES as $fixtureEntityClass) {
             $connection->executeStatement(
-                'DELETE FROM `' . DatabaseModel::fromEntityClass($fixtureEntityClass)->sqlTableName . '`'
+                'DELETE FROM ' . static::quoteIdentifier(DatabaseModel::fromEntityClass($fixtureEntityClass)->sqlTableName)
             );
         }
         static::entityManager()->clear();
@@ -100,7 +126,7 @@ abstract class IntegrationTestCase extends TestCase
 
     protected function tearDown(): void
     {
-        if (static::isIntegrationDatabaseEnabled()) {
+        if (static::isIntegrationDatabaseEnabled() && static::fixtureTablesSupported()) {
             RecordingMiddleware::endTest();
         }
     }
@@ -119,6 +145,20 @@ abstract class IntegrationTestCase extends TestCase
     protected static function connection(): Connection
     {
         return static::entityManager()->getConnection();
+    }
+
+    protected static function dialect(): SqlDialect
+    {
+        return EntityManagerFactory::getDialect();
+    }
+
+    /**
+     * Quotes a table/column name for the harness's own setUp/teardown SQL through the one seam that already knows
+     * how (§6 step 1) — `` `x` `` on MariaDB, `"x"` on PostgreSQL once step 4a gives it real fixture tables to quote.
+     */
+    protected static function quoteIdentifier(string $identifier): string
+    {
+        return static::dialect()->quote($identifier);
     }
 
     /**
@@ -141,6 +181,6 @@ abstract class IntegrationTestCase extends TestCase
     /** @return array<string, mixed>|false The stored row of $table with $id, as the database returns it */
     protected function fetchRow(string $table, int $id): array|false
     {
-        return static::connection()->fetchAssociative("SELECT * FROM `$table` WHERE id = ?", [$id]);
+        return static::connection()->fetchAssociative('SELECT * FROM ' . static::quoteIdentifier($table) . ' WHERE id = ?', [$id]);
     }
 }

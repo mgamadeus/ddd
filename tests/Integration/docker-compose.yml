@@ -1,5 +1,7 @@
-# Throwaway MariaDB for the integration suite (phpunit.integration.xml). tmpfs data dir: nothing survives a restart,
-# and no production data is ever loaded. Port via DDD_TEST_DB_PORT (default 3317).
+# Throwaway databases for the integration suite (phpunit.integration.xml). tmpfs data dirs: nothing survives a
+# restart, and no production data is ever loaded. MariaDB port via DDD_TEST_DB_PORT (default 3317), PostgreSQL port
+# via DDD_TEST_PG_PORT (default 5433, distinct from 3317). DDD_TEST_DRIVER selects which one phpunit.integration.xml
+# runs against; both containers may run at once.
 services:
   mariadb:
     image: mariadb:11.8.5
@@ -13,6 +15,24 @@ services:
       - /var/lib/mysql
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_PASSWORD: ddd-test
+      POSTGRES_DB: ddd_test
+      POSTGRES_USER: postgres
+    ports:
+      - "127.0.0.1:${DDD_TEST_PG_PORT:-5433}:5432"
+    tmpfs:
+      # postgres:18 stores data in a major-version-specific subdirectory of /var/lib/postgresql itself now
+      # (pg_ctlcluster layout); a tmpfs at the old .../data path collides with that. See docker-library/postgres#1259.
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ddd_test"]
       interval: 2s
       timeout: 5s
       retries: 30

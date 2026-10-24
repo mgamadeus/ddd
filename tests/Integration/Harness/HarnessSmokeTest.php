@@ -27,6 +27,7 @@ class HarnessSmokeTest extends IntegrationTestCase
         $this->assertSame(0, (int)$storedRow['displayOrder']);
     }
 
+    /** @group mariadb `@@sql_mode` is a MariaDB/MySQL system variable; PostgreSQL has no equivalent to assert on. */
     public function testTheServerRunsWithOnlyFullGroupBy(): void
     {
         $this->assertStringContainsString('ONLY_FULL_GROUP_BY', (string)static::connection()->fetchOne('SELECT @@sql_mode'));

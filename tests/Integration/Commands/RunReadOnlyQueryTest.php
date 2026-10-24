@@ -13,6 +13,9 @@ use Symfony\Component\Console\Tester\CommandTester;
  * app:db:read runs its statement in a READ ONLY transaction: the keyword guard alone let a SELECT that calls a writing
  * stored function write in autocommit, and SELECT … FOR UPDATE take row locks — on the production database the dev
  * workspaces read from.
+ *
+ * @group mariadb Fixtures use `CREATE FUNCTION … MODIFIES SQL DATA`, `SHOW TABLES` and `@@in_transaction`, all
+ *     MariaDB/MySQL syntax; the PostgreSQL part of `app:db:read` is §6 step 9.
  */
 class RunReadOnlyQueryTest extends IntegrationTestCase
 {
