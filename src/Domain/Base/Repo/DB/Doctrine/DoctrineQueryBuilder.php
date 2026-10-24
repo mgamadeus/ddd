@@ -1431,13 +1431,13 @@ class DoctrineQueryBuilder extends QueryBuilder
      * </code>
      *
      *
+     * @param mixed $where The query restrictions, one or more.
      * @return $this
      * @see where()
-     *
      */
-    public function andWhere()
+    public function andWhere(mixed ...$where)
     {
-        $args = func_get_args();
+        $args = $where;
         $where = $this->getDQLPart('where');
 
         if ($where instanceof Expr\Andx) {
@@ -1463,13 +1463,13 @@ class DoctrineQueryBuilder extends QueryBuilder
      * </code>
      *
      *
+     * @param mixed $where The WHERE statements, one or more.
      * @return $this
      * @see where()
-     *
      */
-    public function orWhere()
+    public function orWhere(mixed ...$where)
     {
-        $args = func_get_args();
+        $args = $where;
         $where = $this->getDQLPart('where');
 
         if ($where instanceof Expr\Orx) {
