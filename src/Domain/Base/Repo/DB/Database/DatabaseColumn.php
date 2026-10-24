@@ -6,6 +6,7 @@ namespace DDD\Domain\Base\Repo\DB\Database;
 
 use Attribute;
 use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
+use DDD\Domain\Base\Entities\Attributes\PreserveOnOmission;
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
@@ -399,7 +400,11 @@ class DatabaseColumn extends ValueObject
             }
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[$type->getName()];
             if ($reflectionProperty->getDefaultValue() !== null) {
-                $databaseColum->phpDefaultValue = $reflectionProperty->getDefaultValue();
+                // a property preserved on omission must stay uninitialized on the model until something sets it —
+                // upsert() skips only uninitialized model fields — so it gets the SQL DEFAULT but no PHP default
+                if (!PreserveOnOmission::isPropertyPreservedOnOmission($reflectionClass->getName(), $propertyName)) {
+                    $databaseColum->phpDefaultValue = $reflectionProperty->getDefaultValue();
+                }
                 if ($type->getName() == ReflectionClass::BOOL) {
                     $databaseColum->sqlDefaultValue = (int)$reflectionProperty->getDefaultValue();
                 } elseif ($type->getName() == ReflectionClass::INTEGER) {

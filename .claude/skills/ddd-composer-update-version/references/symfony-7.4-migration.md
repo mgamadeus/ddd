@@ -126,3 +126,7 @@ order; every item cost one of those apps time.
   nothing), `\\` is one backslash, any other backslash is literal. `FiltersOptions::createExpression($property,
   $operator, $value)` builds an expression from a runtime value — use it instead of concatenating the value into a
   filter string.
+- 2.70.8 — `#[PreserveOnOmission]` on an entity property: an update payload that omits the key leaves the stored
+  column untouched, and the generated model property carries no PHP default (the SQL `DEFAULT` stays). The entity
+  constant `PRESERVED_ON_OMISSION` is honoured the same way (deprecated). Apps that removed model defaults by hand
+  regenerate and commit the generator output — no restores.
