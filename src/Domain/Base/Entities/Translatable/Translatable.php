@@ -157,11 +157,6 @@ class Translatable extends ValueObject
         self::$translationSettingsSnapshot = null;
     }
 
-    public static function isCurrentLanguageSet(): bool
-    {
-        return isset(self::$currentLanguageCode);
-    }
-
     public static function fallbackToDefaultLanguageIfNoTranslationIsPresent(): bool
     {
         return static::getTranslatableService()->fallbackToDefaultLanguageIfNoTranslationIsPresent();

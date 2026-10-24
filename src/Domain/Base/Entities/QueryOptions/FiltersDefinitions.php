@@ -147,27 +147,6 @@ class FiltersDefinitions extends ObjectSet
                     $filtersDefinitions->add($filterDefinition);
                 }
             }
-            /*
-            $expandDefinitions = ExpandDefinitions::getExpandDefinitionsForReferenceClass(
-                $referenceClassName,
-                $depth
-            );
-
-            foreach ($expandDefinitions->getElements() as $expandDefinition) {
-                // check property of expand definition
-                if ($expandDefinition->filtersDefinitions ?? null) {
-                    foreach ($expandDefinition->filtersDefinitions->getElements() as $filtersDefinition) {
-                        $filterDefinition = new FiltersDefinition(
-                            $expandDefinition->propertyName . '.' . $filtersDefinition->propertyName,
-                            $filtersDefinition->options ?? null,
-                            $expandDefinition
-                        );
-                        $filtersDefinitions->add($filterDefinition);
-
-                        $filtersProperties[$expandDefinition->propertyName . '.' . $filtersDefinition->propertyName] = $filtersDefinition->options ?? true;
-                    }
-                }
-            }*/
         }
         self::$filtersDefinitionsForClass[$referenceClassName] = $filtersDefinitions;
         return $filtersDefinitions;

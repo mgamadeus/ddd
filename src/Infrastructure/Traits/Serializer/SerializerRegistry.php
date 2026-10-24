@@ -12,7 +12,6 @@ use DateTimeZone;
 
 class SerializerRegistry
 {
-    public const int MAX_SIZE = 3000;
 
     /**
      * @var DateTimeZone|null The zone a supplied date-time STRING is written in. Consulted only by the fromString

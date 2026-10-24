@@ -245,7 +245,6 @@ class PathParameterSchema
                                 $parameter->setToBeSkipped(true);
                                 continue;
                             }
-                            //$this->pattern = $queryOptions->orderBy->getRegexForOpenApi();
                             // Reset to the short summary (full grammar once at document level); then the endpoint's list.
                             $parameter->description = ExpandOptions::getParameterSummary();
                             $parameter->description .= "\n\n<details><summary>Allowed expand properties:</summary>  \n\n";

@@ -33,18 +33,6 @@ class SubclassIndicator extends ValueObject
     public ?string $indicatorPropertyName = null;
 
     /**
-     * @return ClassWithNamespace[]
-     */
-    public function getSubClasses(): array
-    {
-        $classesWithNameSpaces = [];
-        foreach ($this->indicators as $propertyValue => $className) {
-            $classesWithNameSpaces[] = new ClassWithNamespace($className);
-        }
-        return $classesWithNameSpaces;
-    }
-
-    /**
      * Returns the value that is associated for given entity Class
      * @param string $entityClass
      * @return string|null

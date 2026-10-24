@@ -26,8 +26,6 @@ class CreateDoctrineModels extends Command
             'Doctrine Model Generator (generates Doctrine Models based on Entities)',
             '============',
         ]);
-        //echo AppService::instance()->getContainerServiceClassNameForClass(\DDD\Symfony\Commands\Common\Crons\CronsExecute::class);
-        //die();
         $entityModelGeneratorService = new EntityModelGeneratorService();
         $classes = $entityModelGeneratorService->getAllEntityClasses();
         foreach ($classes as $classWithNamespace){

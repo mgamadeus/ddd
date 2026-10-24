@@ -84,8 +84,6 @@ trait ValidatorTrait
             $validationError = new ValidationError($jsonPath);
             /** @var ConstraintViolation $violation */
             foreach ($violations as $violation) {
-                // We treat array elements separately below
-                //if (!str_starts_with($violation->getPropertyPath(), '[')) {
                 $validationResult = new ValidationResult(
                     $violation->getPropertyPath(),
                     $violation->getMessage(),
@@ -93,7 +91,6 @@ trait ValidatorTrait
                     static::class
                 );
                 $validationError->add($validationResult);
-                //}
             }
             // We might not have elements in the case of object that contain only an array, like an EntitySet
             if (count($validationError->elements)) {
@@ -101,7 +98,6 @@ trait ValidatorTrait
             }
         }
         // validate recursive public properties
-        //foreach ($this->getProperties(\ReflectionProperty::IS_PUBLIC) as $property) {
         foreach ($this->getProperties(ReflectionProperty::IS_PUBLIC) as $reflectionProperty) {
             $propertyName = $reflectionProperty->getName();
             if (!$reflectionProperty->isInitialized($this)) {

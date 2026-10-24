@@ -145,20 +145,6 @@ abstract class Cache
         return static::$instances[$cacheGroup];
     }
 
-    public static function getDefaultTtl(string $cacheType): int
-    {
-        $cacheConfig = self::getCacheConfig($cacheType);
-        $ttl = Config::getEnv('CACHE_DEFAULT_TTL') ?? 3600;
-
-        if (!$ttl) {
-            $ttl = Config::getEnv('CACHE_DEFAULT_TTL') ?? self::DEEFAULT_TTL;
-        }
-        if (!$ttl) {
-            $ttl = self::DEEFAULT_TTL;
-        }
-        return $ttl;
-    }
-
     /**
      * obtains values from $keys, if multiple keys are provided, it returns the results as associative array grouped by the keys,
      * otherwise it returns a single result.
@@ -168,7 +154,6 @@ abstract class Cache
      */
     public function get(string ...$keys): mixed
     {
-        //$this->delete($keys[0]);
         $keys = array_map(function ($a) {
             return self::convertKeyToValidCacheKey($a);
         }, $keys);

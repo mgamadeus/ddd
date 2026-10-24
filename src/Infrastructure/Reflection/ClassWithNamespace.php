@@ -60,7 +60,6 @@ class ClassWithNamespace
         if ($namespace[0] == '\\') {
             $namespace = substr($namespace[0], 1);
         }
-        //  $namespace = '\\' . $namespace;
         if ($nameSpaceSeparator != '\\') {
             $namespace = str_replace('\\', $nameSpaceSeparator, $namespace);
         }

@@ -25,8 +25,6 @@ class ChangeHistory extends ValueObject
 
     public const string DEFAULT_MODIFIED_COLUMN_NAME = 'updated';
 
-    public const string DEFAULT_COLUMN_STYLE = self::DATETIME_SIMPLE;
-
     /**
      * The time at which the entity has been created and persisted
      * @var DateTime|null

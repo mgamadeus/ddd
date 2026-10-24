@@ -435,13 +435,6 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
         return false;
     }
 
-    protected function resetIteratorPosition()
-    {
-        if ($this->iteratorPosition > $this->elementCount - 1) {
-            $this->iteratorPosition = 0;
-        }
-    }
-
     /**
      * Set addAsChild, this determines if when adding elements they are also added as children or not. This needs to set to false for
      * children ObjectSet in ParentChildrenTrait as we otherwise run into a recursion
@@ -489,38 +482,6 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
             return false;
         }
         return true;
-    }
-
-    /**
-     * Returns true if set contains same elements in the same order
-     * @param ObjectSet $other
-     * @return bool
-     */
-    public function containsSameElementsInSameOrder(ObjectSet $other): bool
-    {
-        $thisKeys = '';
-        $otherKeys = '';
-        foreach ($this->getElements() as $element) {
-            $thisKeys .= $element->uniqueKey();
-        }
-        foreach ($other->getElements() as $element) {
-            $otherKeys .= $element->uniqueKey();
-        }
-        return $thisKeys == $otherKeys;
-    }
-
-    /**
-     * Returns Reflection type of elements array
-     * @return ReflectionNamedType|ReflectionUnionType
-     * @throws ReflectionException
-     */
-    public function getElementType(): ReflectionNamedType|ReflectionUnionType
-    {
-        $reflectionClass = ReflectionClass::instance(static::class);
-        $reflectionProperty = $reflectionClass->getProperty('elements');
-        /** @var ReflectionArrayType $arrayType */
-        $arrayType = $reflectionProperty->getType();
-        return $arrayType->getArrayType();
     }
 
     public function isEmpty(): bool

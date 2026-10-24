@@ -63,11 +63,6 @@ class Components
         $schema->buildSchema($maxRecursiveSchemaDepth);
     }
 
-    public function getSchemaForClass(ClassWithNamespace $classWithNamespace): ?Schema {
-        $classNamespaceWithDots = $classWithNamespace->getNameWithNamespace('.');
-        return $this->schemas[$classNamespaceWithDots] ?? null;
-    }
-
     public function getSchemaRefForClass(ClassWithNamespace &$classWithNamespace): string
     {
         if ($this->document->useExternalSchemaReferences()) {

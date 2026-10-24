@@ -74,7 +74,6 @@ class VirtualEntityRegistry
 
         if ($entityCacheAttribute && $entityCacheAttribute->useExtendedRegistryCache && $entityCacheAttribute->ttl) {
             $cache = Cache::instance($entityCacheAttribute->cacheGroup);
-            //$cacheValue = $result?->toJSON(true);
             $cache->set(
                 self::getCacheKey($cacheIndex),
                 $result,

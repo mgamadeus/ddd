@@ -563,12 +563,6 @@ trait SerializerTrait
             if ($cachedResult = SerializerRegistry::getToObjectCacheForObjectId($cacheKey)) {
                 return $cachedResult;
             }
-            /* This creates problems
-            if ($entityId) {
-                if ($cachedResult = SerializerRegistry::getToObjectCacheForObjectId($entityId)) {
-                    return $cachedResult;
-                }
-            }*/
         }
 
         // on each iteration we add the current spl_object_id to the path; when trying to add the same id again,
@@ -718,10 +712,6 @@ trait SerializerTrait
         }
         if ($cached) {
             SerializerRegistry::setToObjectCacheForObjectId($cacheKey, $resultArray);
-            /*
-            if ($entityId) {
-                SerializerRegistry::setToObjectCacheForObjectId($entityId, $resultArray);
-            }*/
         }
         if (empty($resultArray)) {
             return new stdClass(); // Leeres Objekt statt leeres Array zurückgeben

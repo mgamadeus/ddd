@@ -42,14 +42,6 @@ class Exception extends \Exception
     }
 
     /**
-     * @return string
-     */
-    public function getContentType()
-    {
-        return $this->contentType;
-    }
-
-    /**
      * Log Exception with short trace
      * @param LoggerInterface $logger
      * @param string $context

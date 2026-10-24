@@ -806,11 +806,6 @@ class DatabaseModel extends ValueObject
         $this->modelImports->add($databaseColumnModelImport);
 
         foreach ($this->columns->getElements() as $column) {
-            // doctrine does not want the discriminator column (in our case the subclassIndicator to be part of the model definition
-            /*
-            if ($this->subclassIndicator && $this->subclassIndicator->indicatorPropertyName == $column->name) {
-                continue;
-            }*/
             // Ignore columns which are to be excluded
             if ($column->ignoreProperty) {
                 continue;

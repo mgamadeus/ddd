@@ -115,19 +115,6 @@ class ReflectionClass extends \ReflectionClass
     }
 
     /**
-     * Checks if ReflectionProperty is of numeric type
-     * @param \ReflectionProperty $property
-     * @return bool
-     */
-    public static function isNumericType(\ReflectionProperty &$property): bool
-    {
-        if (in_array($property->getType()->getName(), self::NUMERIC_TYPES)) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
      * Returns the closest common ancestor class of given classes, works also if one of them is inheriting the other
      * @param string ...$classes
      * @return string|null
@@ -210,10 +197,6 @@ class ReflectionClass extends \ReflectionClass
             return $cachedProperty;
         }
         $property = parent::getProperty($propertyName);
-        //$propertyType = $property->getType();
-        /*if (!$propertyType || $propertyType instanceof \ReflectionUnionType) {
-            return $property;
-        }*/
         $returnProperty = new ReflectionProperty($this->name, $property->name);
         self::$propertyCache[$this->name][$propertyName] = $returnProperty;
         return $returnProperty;
@@ -255,23 +238,6 @@ class ReflectionClass extends \ReflectionClass
             $returnProperty = new ReflectionProperty($this->name, $property->name);
             $returnProperties[] = $returnProperty;
         }
-        /*
-        usort($returnProperties, function (\ReflectionProperty $a, \ReflectionProperty $b) {
-            if ($a->getName() == 'id' && $b->getName() != 'id') {
-                return -1;
-            }
-            if ($a->getName() != 'id' && $b->getName() == 'id') {
-                return 1;
-            }
-
-            if ($a->getName() == 'objectType' && $b->getName() != 'objectType') {
-                return 1;
-            }
-            if ($a->getName() != 'objectType' && $b->getName() == 'objectType') {
-                return -1;
-            }
-            return 0;
-        });*/
         self::$getPropertiesCache[$cacheKey] = $returnProperties;
         return $returnProperties;
     }
@@ -483,9 +449,7 @@ class ReflectionClass extends \ReflectionClass
         }
 
         $source = $this->readFileSource();
-        //$this->useStatements = $this->tokenizeSource($source);
         $tokens = token_get_all($source);
-        //echo json_encode($tokens);die();
         $currentUse = null;
         $useSet = false;
         $asSet = false;
@@ -549,28 +513,6 @@ class ReflectionClass extends \ReflectionClass
         }
         fclose($file);
         return $source;
-    }
-
-    /**
-     * This function returns the type of the property. If the Property is a Nullable Type, the type will be returned
-     * without the question mark since we do not want to stare null values. Also, If the Type is a Union Type
-     * this function will decide which Data Type to use.
-     * @param ReflectionProperty $property
-     * @return string
-     */
-    public function getReflectionType(\ReflectionProperty|ReflectionProperty $property): string
-    {
-        /** @var ReflectionNamedType|ReflectionArrayType|ReflectionUnionType $propertyType */
-        $propertyType = $property->getType();
-
-        /** TODO: handle Union Types */
-        if ($propertyType instanceof ReflectionUnionType || $propertyType instanceof \ReflectionUnionType) {
-            return '';
-        } elseif ($propertyType instanceof ReflectionArrayType) {
-            return $propertyType->getArrayType()->getName();
-        } else {
-            return $propertyType->getName();
-        }
     }
 
     /**

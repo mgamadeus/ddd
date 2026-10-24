@@ -43,56 +43,6 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
     public const BASE_ENTITY_SET_CLASS = null;
 
     /**
-     * Returns an array of properties to hide based on select options applied to current query.
-     * If select options are present, we add properties to hide from them, in order to avoid implicit display of automatically loaded properties, such as
-     * loading account.projects => resulting in each project to have an .account => if account was not explicitely selected with select options,
-     * it should be hidden when serialized
-     * @return bool|array
-     * @throws ReflectionException
-     */
-    public static function getPropertiesToHideBasedOnSelectOptions():bool|array {
-        $entitySetClass = (string)static::BASE_ENTITY_SET_CLASS;
-        $entitySetReflectionClass = ReflectionClass::instance($entitySetClass);
-        if (!$entitySetReflectionClass->hasTrait(QueryOptionsTrait::class)) {
-            return false;
-        }
-        /** @var QueryOptionsTrait $entitySetClass */
-        /** @var AppliedQueryOptions $defaultQueryOptions */
-        $defaultQueryOptions = $entitySetClass::getDefaultQueryOptions();
-        $selectedProperties = [];
-        if ($selectOptions = $defaultQueryOptions->getSelect()) {
-            foreach ($selectOptions->getElements() as $selectOption) {
-                $selectedProperties[$selectOption->propertyName] = true;
-            }
-        }
-        if (!$selectOptions) {
-            return false;
-        }
-        /** @var DBEntity $baseRepoClass */
-        $baseRepoClass = static::BASE_REPO_CLASS;
-        $baseEntityClass = $baseRepoClass::BASE_ENTITY_CLASS;
-        $baseEntityReflectionClass = ReflectionClass::instance($baseEntityClass);
-        if (!$baseEntityReflectionClass) {
-            return false;
-        }
-        $publicProperties = $baseEntityReflectionClass->getProperties(ReflectionProperty::IS_PUBLIC);
-        $propertiesToHide = [];
-        foreach ($publicProperties as $publicProperty) {
-            if ($publicProperty->getName() == 'id') {
-                continue;
-            }
-            if (!isset($selectedProperties[$publicProperty->getName()])) {
-                $propertiesToHide[$publicProperty->getName()] = true;
-            }
-        }
-        // handle ChangeHistory
-        if (isset($propertiesToHide['changeHistory']) && (isset($selectedProperties[ChangeHistory::DEFAULT_CREATED_COLUMN_NAME]) || isset($selectedProperties[ChangeHistory::DEFAULT_MODIFIED_COLUMN_NAME]))) {
-            unset($propertiesToHide['changeHistory']);
-        }
-        return array_keys($propertiesToHide);
-    }
-
-    /**
      * Applies QueryOptions to QueryBuilder
      * @param QueryBuilder $queryBuilder
      * @return QueryBuilder
@@ -285,7 +235,6 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
         // First we clear the SelectOptions::$propertiesToHideByJoinPath cache
         SelectOptions::$propertiesToHideByJoinPath = [];
         $queryBuilder = self::applyQueryOptions($queryBuilder);
-        //$sql = $queryBuilder->getQuery()->getSQL();
 
         if ($useEntityRegistrCache) {
             $className = (string)$this::BASE_ENTITY_SET_CLASS;
@@ -298,12 +247,6 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
             }
         }
 
-        /*echo $queryBuilder->getQuery()->getSQL()."\n<br />";
-        foreach ($queryBuilder->getParameters() as $parameter){
-            $parameterValue = is_array($parameter->getValue())? implode(', ', $parameter->getValue()): $parameter->getValue();
-            echo $parameter->getName() . ' ' . $parameterValue ."\n";
-        }
-        echo "\n<br />\n<br />";*/
         // useEntityRegistrCache=false means the caller wants a FRESH load — pass it through as the refresh flag so the
         // simple (no-join) branch sets Query::HINT_REFRESH and re-hydrates managed entities from the DB instead of
         // returning the stale identity-map instance. (The single-entity DatabaseRepoEntity::find() already did this; the
@@ -315,7 +258,6 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
         $entitySetInstance = new $baseEntitySetClass();
         $memoryUsage = memory_get_usage();
 
-        //$propertiesToHideBasedOnSelectOptions = static::getPropertiesToHideBasedOnSelectOptions();
         $propertiesToHideBasedOnSelectOptions = SelectOptions::$propertiesToHideByJoinPath;
         foreach ($ormInstances as $ormInstance) {
             /** @var DBEntity $baseRepoInstance */

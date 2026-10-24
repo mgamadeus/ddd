@@ -31,11 +31,6 @@ class FileResponseDto extends Response
         parent::__construct($content, $status, $headers);
     }
 
-    public function setContentType(string $mimeType): void
-    {
-        $this->headers->set('Content-Type', $mimeType);
-    }
-
     /**
      * Sends content for the current web response.
      *

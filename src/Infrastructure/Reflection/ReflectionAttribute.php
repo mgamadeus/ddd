@@ -29,47 +29,10 @@ class ReflectionAttribute extends \ReflectionAttribute
         $this->attributeIndex = $attributeIndex;
     }
 
-    /**
-     * @return string
-     */
-    public function getReflectionClassName(): string
-    {
-        return $this->reflectionClassName;
-    }
-
-    /**
-     * @param string $reflectionClassName
-     */
-    public function setReflectionClassName(string $reflectionClassName): void
-    {
-        $this->reflectionClassName = $reflectionClassName;
-    }
-
-    /**
-     * @return string
-     */
-    public function getReflectionPropertyName(): string
-    {
-        return $this->reflectionPropertyName;
-    }
-
-    /**
-     * @param string $reflectionPropertyName
-     */
-    public function setReflectionPropertyName(string $reflectionPropertyName): void
-    {
-        $this->reflectionPropertyName = $reflectionPropertyName;
-    }
-
 
     public function getReflectionClass(): ReflectionClass
     {
         return ReflectionClass::instance($this->reflectionClassName);
-    }
-
-    public function getRefflectionProperty(): ReflectionProperty
-    {
-        return self::getReflectionClass()->getProperty($this->reflectionPropertyName);
     }
 
     public function getArguments(): array

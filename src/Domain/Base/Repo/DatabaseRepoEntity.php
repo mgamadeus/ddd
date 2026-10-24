@@ -188,12 +188,6 @@ abstract class DatabaseRepoEntity extends RepoEntity
                 $query->disableResultCache()->useQueryCache(false)->setHint(Query::HINT_REFRESH, true);
             }
             $ormInstance = $query->setMaxResults(1)->getResult();
-            /*echo $queryBuilder->getQuery()->getSQL()."\n<br />";
-            foreach ($queryBuilder->getParameters() as $parameter){
-                $parameterValue = is_array($parameter->getValue())? implode(', ', $parameter->getValue()): $parameter->getValue();
-                echo $parameter->getName() . ' ' . $parameterValue ."\n";
-            }
-            echo "\n<br />\n<br />";*/
             $ormInstance = $ormInstance[0] ?? null;
         }
         if (!$ormInstance) {
@@ -373,20 +367,6 @@ abstract class DatabaseRepoEntity extends RepoEntity
     public function getOrmInstance(): DoctrineModel
     {
         return $this->ormInstance;
-    }
-
-    /**
-     * This will receive a property where we want to set a value that we are not sure exists, checks the value in the
-     * valueClass parameter, and if it exists, it sets it to our property which is passed by reference in the function.
-     * @param $property
-     * @param $value
-     * @param $valueClass
-     */
-    public function setIfExists(&$property, $value, $valueClass): void
-    {
-        if (isset($valueClass->$value)) {
-            $property = $valueClass->$value;
-        }
     }
 
     /**

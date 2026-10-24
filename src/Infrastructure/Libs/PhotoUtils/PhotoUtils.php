@@ -11,7 +11,6 @@ use ImagickException;
 
 class PhotoUtils
 {
-    public const array SUPPORTED_FORMATS = [IMAGETYPE_PNG, IMAGETYPE_JPEG, IMAGETYPE_GIF];
 
     /**
      * Returns the file mime type from a base64
@@ -65,12 +64,6 @@ class PhotoUtils
         }
         $widthAndHeightData = explode('"', $imageInfo[3]);
         return [(int)$widthAndHeightData[1], (int)$widthAndHeightData[3]];
-    }
-
-    public static function getNumbersFromString(string $message): array
-    {
-        preg_match_all('/\d+/', $message, $matches);
-        return $matches[0];
     }
 
 

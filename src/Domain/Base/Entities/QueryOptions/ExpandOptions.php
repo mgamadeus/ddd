@@ -406,7 +406,6 @@ MD;
             }
             if (isset($expandOption->expandOptions)) {
                 // when property is a Collection, we need its Model class
-                //$targetModel = $baseModelClass::getTargetModelClassForProperty($expandReflectionProperty);
                 $expandOption->expandOptions->applyExpandOptionsToDoctrineQueryBuilder(
                     $queryBuilder
                 );

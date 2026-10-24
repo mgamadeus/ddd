@@ -163,10 +163,6 @@ class SchemaProperty
         // we have a union type e.g. ClassA|ClassB
         $unionType = false;
 
-        /* Used for Debug to stop at particular class
-        if ($schemaReflectionClass->getName() == KeywordDomainsLocationsRankings::class && $schemaClassReflectionProperty->getName() == 'locations'){
-            echo "asd";
-        }*/
 
         if ($schemaClassReflectionProperty->getType() instanceof \ReflectionUnionType) {
             $types = $schemaClassReflectionProperty->getType()->getTypes();
@@ -306,14 +302,6 @@ class SchemaProperty
                         foreach ($arrayTypes as $arrayType) {
                             // we have a base type (excluding array)
                             if (isset($this->typeNameAllocation[$arrayType])) {
-                                // we cannot have simply array[], we need a base or complex type defined
-                                /*if ($arrayType == 'array') {
-                                    throw new TypeDefinitionMissingOrWrong(
-                                        'Declared type array[] in ' . $schemaReflectionClass->getName(
-                                        ) . '->$' . $schemaClassReflectionProperty->getName(
-                                        ) . ' is not allowed. Array needs to be specified either as array of some basetype, e.g. string[] or as array of ComplexClass[]'
-                                    );
-                                }*/
                                 if ($unionType) {
                                     $this->items['oneOf'][] = ['type' => $this->typeNameAllocation[$arrayType]];
                                 } elseif ($arrayType == 'array') {

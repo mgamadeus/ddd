@@ -40,8 +40,6 @@ class FiltersOptions extends ObjectSet
 
     public const string JOIN_OPERATOR_OR = 'or';
 
-    public const array JOIN_OPERATORS = [self::JOIN_OPERATOR_AND, self::JOIN_OPERATOR_OR];
-
     /** @var string Equal */
     public const string OPERATOR_EQUAL = 'eq';
 

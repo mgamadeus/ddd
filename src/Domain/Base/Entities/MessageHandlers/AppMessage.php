@@ -113,7 +113,6 @@ class AppMessage extends ValueObject implements SerializerInterface
         $this->dispatchedFromWorkspaceDir = DDDService::instance()->getRootDir();
         $this->dispatchedFromEnvironment = DDDService::instance()->getWorkspaceName();
         $messageBus = DDDService::instance()->getService('messenger.default_bus');
-        //$messageBus->dispatch($this, [new AmqpStamp('sync')]);
         $messageBus->dispatch($this, $stamps);
     }
 

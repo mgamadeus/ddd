@@ -111,11 +111,6 @@ class AuthService
         self::$adminAccount = $adminAccount;
     }
 
-    public function isLoggedIn(): bool
-    {
-        return isset(self::$account);
-    }
-
     /**
      * @param string|null $authToken
      * @param string|null $authTokenType
