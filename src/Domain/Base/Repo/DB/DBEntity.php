@@ -502,13 +502,13 @@ class DBEntity extends DatabaseRepoEntity
      * and pollute the entity registry.
      *
      * Strictly targeted by construction: {@see mapToRepository()} maps ONLY id + $propertyNames (reusing its
-     * special-type / translation / change-history handling), and {@see DoctrineEntityManager::upsert()} is passed the
-     * SAME allow-list so it writes exactly those columns — independent of the generated model's inline column defaults.
-     * No rights are applied (a null rights QueryBuilder makes upsert skip the rights check entirely — it never consults
-     * the rights state otherwise); this is a system write of a row the caller already loaded under rights.
+     * special-type / translation / change-history handling), and {@see DoctrineEntityManager::updateColumnsById()}
+     * writes exactly those columns with `UPDATE … WHERE id = ?` — independent of the generated model's inline column
+     * defaults, and never inserting: a row deleted in the meantime stays deleted. No rights are applied; this is a
+     * system write of a row the caller already loaded under rights.
      *
      * @param string ...$propertyNames Entity property names whose columns are the ONLY ones written.
-     * @return int|null The row id, or null when the entity is not persisted (no id) — a partial update needs an existing row.
+     * @return int|null The row id, or null when the entity has no id or its row does not exist (nothing written).
      * @throws ReflectionException
      */
     public function updatePartialIgnoringRights(DefaultObject &$entity, string ...$propertyNames): ?int
@@ -522,7 +522,7 @@ class DBEntity extends DatabaseRepoEntity
         $this->ormInstance = new (static::getBaseModelNameForEntityInstance($entity))();
         $this->mapToRepository($entity, $propertyNames);
         $entityManager = EntityManagerFactory::getInstance();
-        $rowId = $entityManager->upsert($this->ormInstance, null, $propertyNames);
+        $rowId = $entityManager->updateColumnsById($this->ormInstance, $propertyNames);
         // The raw upsert bypasses the UnitOfWork: a model of this row that an EARLIER query hydrated stays MANAGED
         // with its pre-write field values, and every later hydration of the same row in this process (a set query, a
         // find(), even one with HINT_REFRESH) hands the stale managed instance back — so a status written a moment

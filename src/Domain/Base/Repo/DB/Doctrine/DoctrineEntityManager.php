@@ -19,6 +19,7 @@ use Doctrine\DBAL\Exception\ConnectionLost;
 use Doctrine\ORM\Configuration;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Exception\ORMException;
+use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\Mapping\MappingException;
 use Doctrine\ORM\Query\Parser;
 use Doctrine\ORM\QueryBuilder;
@@ -88,9 +89,8 @@ class DoctrineEntityManager extends EntityManager
     /**
      * @param string[]|null $onlyFieldNames When non-null, write STRICTLY the identifier + exactly these fields and
      *   nothing else — independent of which other model columns happen to be initialized (e.g. by the generated
-     *   model's inline defaults). This is the strict-partial-write primitive behind
-     *   {@see \DDD\Domain\Base\Repo\DB\DBEntity::updatePartialIgnoringRights()}. Null = the normal full upsert (every
-     *   initialized field).
+     *   model's inline defaults). It still inserts when the row is missing; a strict partial write of an existing row
+     *   is {@see self::updateColumnsById()}. Null = the normal full upsert (every initialized field).
      */
     public function upsert(DoctrineModel &$doctrineModel, ?QueryBuilder $updateRightsQueryBuilder = null, ?array $onlyFieldNames = null): ?int
     {
@@ -130,6 +130,7 @@ class DoctrineEntityManager extends EntityManager
                 continue;
             }
             $value = $metadata->getFieldValue($doctrineModel, $fieldName);
+            $fieldValue = $value;
             $column = $metadata->getColumnName($fieldName);
             $column = '`' . $column . '`';
             if ($metadata->isIdentifier($fieldName)) {
@@ -232,32 +233,19 @@ class DoctrineEntityManager extends EntityManager
                 $update[] = "$column = VALUES($column)";
             }
 
-            // Mirror of the ODKU decision chain above for the rights-scoped direct UPDATE: same semantics per
-            // column, with `VALUES(col)` replaced by the bound placeholder expression itself. Identifier columns
-            // are skipped (the WHERE clause carries the id).
+            // The rights-scoped direct UPDATE takes the same per-column semantics in UPDATE form (identifier columns
+            // are skipped: the WHERE clause carries the id).
             if ($rightsScopedUpdatePath && !$metadata->isIdentifier($fieldName)) {
-                $setExpressionForField = $set[array_key_last($set)];
-                $assignmentBindsValue = !$skipValueBinding;
-                if ($databaseColumnAttributeInstance?->isMergableJSONColumn && is_array($value)) {
-                    if (in_array($fieldName, $doctrineModel->columnsToReplaceInsteadOfMerge, true)) {
-                        $rightsScopedUpdateAssignments[] = "$column = $setExpressionForField";
-                    } else {
-                        $rightsScopedUpdateAssignments[] = "$column = JSON_MERGE_PATCH(COALESCE($column,'{}'), $setExpressionForField)";
-                    }
-                } elseif ($fieldName == $createdColumn) {
-                    // created is never overwritten on an update
-                    $rightsScopedUpdateAssignments[] = "$column = COALESCE($setExpressionForField, $column)";
-                } elseif (isset($databaseColumnAttributeInstance->onUpdateAction)) {
-                    // the action expression replaces the bound value entirely — nothing to bind for this column
-                    $rightsScopedUpdateAssignments[] = "$column = " . $databaseColumnAttributeInstance->onUpdateAction;
-                    $assignmentBindsValue = false;
-                } else {
-                    $rightsScopedUpdateAssignments[] = "$column = $setExpressionForField";
-                }
-                if ($assignmentBindsValue) {
-                    $rightsScopedUpdateValues[] = $value;
-                    $rightsScopedUpdateTypes[] = $types[array_key_last($types)];
-                }
+                $rightsScopedUpdateAssignment = $this->buildUpdateAssignmentForField(
+                    $metadata,
+                    $doctrineModel,
+                    $fieldName,
+                    $fieldValue,
+                    $databaseColumnAttributeInstance
+                );
+                $rightsScopedUpdateAssignments[] = $rightsScopedUpdateAssignment->sql;
+                array_push($rightsScopedUpdateValues, ...$rightsScopedUpdateAssignment->values);
+                array_push($rightsScopedUpdateTypes, ...$rightsScopedUpdateAssignment->types);
             }
         }
 
@@ -431,6 +419,191 @@ class DoctrineEntityManager extends EntityManager
             throw $t;
         }
         return $entityId;
+    }
+
+    /**
+     * Strict partial write of an EXISTING row: `UPDATE <table> SET <the named, initialized fields> WHERE id = ?`. There
+     * is no insert branch — a row deleted in the meantime stays deleted (the former upsert form inserted a ghost row
+     * holding only these columns). Each column takes the UPDATE form the rights-scoped write uses
+     * ({@see self::buildUpdateAssignmentForField()}).
+     *
+     * MariaDB counts CHANGED rows, so 0 affected rows is followed by `SELECT 1 … WHERE id = ?` to tell "missing"
+     * (null) from "unchanged" (the id). Without any assignment only that check runs.
+     *
+     * @param DoctrineModel $doctrineModel Model carrying the id and the fields to write
+     * @param string[] $fieldNames The model fields to write; others are never touched
+     * @return int|null The id, or null when the row does not exist (nothing is written)
+     * @throws Exception
+     * @throws MappingException
+     * @throws ReflectionException
+     */
+    public function updateColumnsById(DoctrineModel &$doctrineModel, array $fieldNames): ?int
+    {
+        if (!isset($doctrineModel->id) || !$doctrineModel->id) {
+            return null;
+        }
+        $connection = $this->getConnection();
+        $metadata = $this->getClassMetadata($doctrineModel::class);
+        $reflectionClass = ReflectionClass::instance($doctrineModel::class);
+        $assignments = [];
+        $values = [];
+        $types = [];
+        foreach ($metadata->getFieldNames() as $fieldName) {
+            if (
+                isset($doctrineModel::$virtualColumns[$fieldName])
+                || $metadata->isIdentifier($fieldName)
+                || !in_array($fieldName, $fieldNames, true)
+            ) {
+                continue;
+            }
+            $reflectionProperty = $reflectionClass->getProperty($fieldName);
+            if (!$reflectionProperty->isInitialized($doctrineModel)) {
+                continue;
+            }
+            $assignment = $this->buildUpdateAssignmentForField(
+                $metadata,
+                $doctrineModel,
+                $fieldName,
+                $metadata->getFieldValue($doctrineModel, $fieldName),
+                $reflectionProperty->getAttributeInstance(DatabaseColumn::class)
+            );
+            $assignments[] = $assignment->sql;
+            array_push($values, ...$assignment->values);
+            array_push($types, ...$assignment->types);
+        }
+        $entityId = (int)$doctrineModel->id;
+        if ($assignments !== []) {
+            $affectedRows = (int)$connection->executeStatement(
+                'UPDATE ' . $doctrineModel->getTableName() . ' SET ' . implode(', ', $assignments) . ' WHERE `id` = ?',
+                [...$values, $entityId],
+                [...$types, 'integer']
+            );
+            if ($affectedRows > 0) {
+                return $entityId;
+            }
+        }
+        $rowExists = $connection->fetchOne(
+            'SELECT 1 FROM ' . $doctrineModel->getTableName() . ' WHERE `id` = ?',
+            [$entityId],
+            ['integer']
+        ) !== false;
+        return $rowExists ? $entityId : null;
+    }
+
+    /**
+     * One column's assignment in UPDATE form (`col = …`), shared by the rights-scoped write in {@see self::upsert()} and
+     * {@see self::updateColumnsById()}:
+     *
+     * - mergable JSON (array value): `JSON_MERGE_PATCH(COALESCE(col,'{}'), ?)`, or `col = ?` for a column in
+     *   `columnsToReplaceInsteadOfMerge`; a JSON string value is decoded first, as upsert() does;
+     * - the created column: `COALESCE(?, col)` — never overwritten;
+     * - spatial: `ST_GeomFromText(?)` (NULL bound plainly); vector: `VEC_FromText(?)`, or the zero vector for NULL;
+     * - an `onUpdateAction`: the action, with `VALUES(<own column>)` replaced by the bound value — `VALUES()` is NULL
+     *   outside INSERT … ON DUPLICATE KEY UPDATE, so a verbatim copy would drop the incoming value; `VALUES()` of any
+     *   other column has no value here and is refused; an action without `VALUES()` (a keep-existing form) is copied
+     *   and binds nothing.
+     *
+     * @param ClassMetadata $metadata Metadata of the model class
+     * @param DoctrineModel $doctrineModel The model
+     * @param string $fieldName Model field
+     * @param mixed $value The field value as read from the model
+     * @param DatabaseColumn|null $databaseColumnAttributeInstance The field's DatabaseColumn attribute
+     * @return DoctrineBoundSql The assignment and its values
+     * @throws MappingException
+     * @throws \LogicException When an onUpdateAction reads VALUES() of another column
+     */
+    protected function buildUpdateAssignmentForField(
+        ClassMetadata $metadata,
+        DoctrineModel $doctrineModel,
+        string $fieldName,
+        mixed $value,
+        ?DatabaseColumn $databaseColumnAttributeInstance
+    ): DoctrineBoundSql {
+        $columnName = $metadata->getColumnName($fieldName);
+        $column = '`' . $columnName . '`';
+        $type = $metadata->getTypeOfField($fieldName);
+
+        if ($databaseColumnAttributeInstance?->isMergableJSONColumn && is_string($value) && $value !== '') {
+            $decodedMergableValue = json_decode($value, true);
+            if (is_array($decodedMergableValue)) {
+                $value = $decodedMergableValue;
+            }
+        }
+
+        if (isset(DatabaseColumn::SPATIAL_SQL_TYPES[$type])) {
+            $valueExpression = $value !== null ? new DoctrineBoundSql('ST_GeomFromText(?)', [(string)$value], ['string'])
+                : new DoctrineBoundSql('?', [null], ['string']);
+        } elseif ($type == 'vector') {
+            $vectorDimensions = (int)($metadata->fieldMappings[$fieldName]['length'] ?? 0);
+            if ($value !== null) {
+                $valueExpression = new DoctrineBoundSql('VEC_FromText(?)', [json_encode($value, JSON_THROW_ON_ERROR)], ['string']);
+            } elseif ($vectorDimensions > 0) {
+                $valueExpression = new DoctrineBoundSql((string)DatabaseColumn::createMariaDbNullVectorDefault($vectorDimensions));
+            } else {
+                $valueExpression = new DoctrineBoundSql('?', [null], ['string']);
+            }
+        } else {
+            $valueExpression = new DoctrineBoundSql('?', [$value], [$type]);
+        }
+
+        if ($databaseColumnAttributeInstance?->isMergableJSONColumn && is_array($value)) {
+            if (in_array($fieldName, $doctrineModel->columnsToReplaceInsteadOfMerge, true)) {
+                return new DoctrineBoundSql("$column = $valueExpression->sql", $valueExpression->values, $valueExpression->types);
+            }
+            return new DoctrineBoundSql(
+                "$column = JSON_MERGE_PATCH(COALESCE($column,'{}'), $valueExpression->sql)",
+                $valueExpression->values,
+                $valueExpression->types
+            );
+        }
+        if ($fieldName == ChangeHistory::DEFAULT_CREATED_COLUMN_NAME) {
+            return new DoctrineBoundSql("$column = COALESCE($valueExpression->sql, $column)", $valueExpression->values, $valueExpression->types);
+        }
+        if (isset($databaseColumnAttributeInstance->onUpdateAction)) {
+            return $this->buildOnUpdateActionAssignment(
+                $column,
+                $columnName,
+                $databaseColumnAttributeInstance->onUpdateAction,
+                $valueExpression
+            );
+        }
+        return new DoctrineBoundSql("$column = $valueExpression->sql", $valueExpression->values, $valueExpression->types);
+    }
+
+    /**
+     * An onUpdateAction in UPDATE form: every `VALUES(<own column>)` becomes the bound value expression (bound once per
+     * occurrence, in textual order, so the placeholders stay aligned).
+     *
+     * @param string $column The quoted column
+     * @param string $columnName The column name
+     * @param string $onUpdateAction The action as declared, written for ON DUPLICATE KEY UPDATE
+     * @param DoctrineBoundSql $valueExpression The value expression of this column
+     * @return DoctrineBoundSql
+     * @throws \LogicException When the action reads VALUES() of another column
+     */
+    protected function buildOnUpdateActionAssignment(
+        string $column,
+        string $columnName,
+        string $onUpdateAction,
+        DoctrineBoundSql $valueExpression
+    ): DoctrineBoundSql {
+        $values = [];
+        $types = [];
+        $actionInUpdateForm = preg_replace_callback(
+            '/\bVALUES\s*\(\s*`?([A-Za-z0-9_]+)`?\s*\)/i',
+            function (array $valuesCall) use ($columnName, $onUpdateAction, $valueExpression, &$values, &$types): string {
+                if ($valuesCall[1] !== $columnName) {
+                    throw new \LogicException(
+                        "onUpdateAction of column `$columnName` reads VALUES(`{$valuesCall[1]}`), which has no value in an UPDATE: $onUpdateAction"
+                    );
+                }
+                array_push($values, ...$valueExpression->values);
+                array_push($types, ...$valueExpression->types);
+                return '(' . $valueExpression->sql . ')';
+            },
+            $onUpdateAction
+        );
+        return new DoctrineBoundSql("$column = $actionInUpdateForm", $values, $types);
     }
 
     /**
