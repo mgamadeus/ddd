@@ -607,107 +607,217 @@ class DoctrineEntityManager extends EntityManager
     }
 
     /**
-     * Upsert multiple entities with JSON_MERGE_PATCH for specified JSON mergeable columns.
+     * Writes many models of one class with multi-row INSERT … ON DUPLICATE KEY UPDATE statements
+     * ({@see self::buildUpsertMultipleStatements()}). Several statements run atomically: in an own transaction when
+     * none is open, behind a savepoint inside a caller's transaction (so a caller that catches keeps none of the
+     * batch). A single statement takes neither.
      *
-     * @param DoctrineModel[] $doctrineModels
-     * @param bool $useInsertIgnore
+     * @param DoctrineModel[] $doctrineModels Models of one class
+     * @param bool $useInsertIgnore INSERT IGNORE without ON DUPLICATE KEY UPDATE
      * @return void
      * @throws Exception
      * @throws MappingException
+     * @throws ReflectionException
      */
     public function upsertMultiple(array &$doctrineModels, bool $useInsertIgnore = false): void
     {
-        if (!count($doctrineModels)) {
+        $statements = $this->buildUpsertMultipleStatements($doctrineModels, $useInsertIgnore);
+        if (!$statements->count()) {
             return;
         }
         $connection = $this->getConnection();
+        if ($statements->count() === 1) {
+            $statement = $statements->first();
+            $connection->executeStatement($statement->sql, $statement->values, $statement->types);
+            return;
+        }
+        $ownTransaction = !$connection->isTransactionActive();
+        $savepointName = null;
+        if ($ownTransaction) {
+            $connection->beginTransaction();
+        } else {
+            $savepointName = 'DDD_UPSERT_MULTIPLE_' . ++self::$insertRightsSavepointCounter;
+            $connection->createSavepoint($savepointName);
+        }
+        try {
+            foreach ($statements->getElements() as $statement) {
+                $connection->executeStatement($statement->sql, $statement->values, $statement->types);
+            }
+            if ($ownTransaction) {
+                $connection->commit();
+            } else {
+                $connection->releaseSavepoint($savepointName);
+            }
+        } catch (\Throwable $throwable) {
+            if ($ownTransaction) {
+                if ($connection->isTransactionActive()) {
+                    $connection->rollBack();
+                }
+            } elseif ($connection->isTransactionActive()) {
+                try {
+                    $connection->rollbackSavepoint($savepointName);
+                } catch (\Throwable) {
+                    // the caller's transaction is broken beyond savepoint reach; the original exception carries the cause
+                }
+            }
+            throw $throwable;
+        }
+    }
+
+    /**
+     * Builds the statements of a batch upsert. Each row writes only its INITIALIZED fields (as {@see self::upsert()}
+     * does — an uninitialized field, e.g. a #[PreserveOnOmission] property the payload omitted, keeps its stored value),
+     * and a row without an id leaves the id column out. Rows are grouped into contiguous runs, in input order, of the
+     * same shape (id present, initialized fields, columns to replace instead of merge); a uniform batch is one
+     * statement. The ON DUPLICATE KEY UPDATE list of a run names only that run's columns: `VALUES(c)` of a column
+     * absent from the INSERT list is NULL and would overwrite the stored value.
+     *
+     * Column forms: spatial `ST_GeomFromText(?)` (NULL bound plainly, always one bound value), vector
+     * `VEC_FromText(?)` or the zero vector for NULL, a mergable JSON string decoded like upsert() does; on a duplicate
+     * key: created `COALESCE(VALUES(c), c)`, mergable JSON `JSON_MERGE_PATCH(COALESCE(c,'{}'), COALESCE(VALUES(c),'{}'))`
+     * (a NULL keeps the stored value) or `VALUES(c)` for a replace column, an onUpdateAction verbatim, else `VALUES(c)`.
+     *
+     * @param DoctrineModel[] $doctrineModels Models of one class
+     * @param bool $useInsertIgnore INSERT IGNORE without ON DUPLICATE KEY UPDATE
+     * @return DoctrineBoundSqls The statements, in execution order
+     * @throws MappingException
+     * @throws ReflectionException
+     */
+    public function buildUpsertMultipleStatements(array $doctrineModels, bool $useInsertIgnore = false): DoctrineBoundSqls
+    {
+        $statements = new DoctrineBoundSqls();
+        if (!count($doctrineModels)) {
+            return $statements;
+        }
         $firstModel = reset($doctrineModels);
-        $metadata = $this->getClassMetadata(reset($doctrineModels)::class);
-        $identifier = $metadata->getSingleIdentifierFieldName();
-
-        $columns = [];
-        $values = [];
-        $types = [];
-        $set = [];
-        $update = [];
-        $hasId = $metadata->containsForeignIdentifier;
-        $createdColumn = ChangeHistory::DEFAULT_CREATED_COLUMN_NAME;
-        $doctrineModel = $doctrineModels[0];
+        $metadata = $this->getClassMetadata($firstModel::class);
         $reflectionClass = ReflectionClass::instance($firstModel::class);
+        $tableName = $firstModel->getTableName();
 
-        // Get column names outside of the loop
+        // per field, once: reflection, attribute, type, quoted column
+        $fieldDefinitions = [];
         foreach ($metadata->getFieldNames() as $fieldName) {
-            // We ignore virtual columns
-            if (isset($doctrineModel::$virtualColumns[$fieldName])) {
+            if (isset($firstModel::$virtualColumns[$fieldName])) {
                 continue;
             }
             $reflectionProperty = $reflectionClass->getProperty($fieldName);
-            /** @var DatabaseColumn $databaseColumnAttributeInstance */
-            $databaseColumnAttributeInstance = $reflectionProperty->getAttributeInstance(DatabaseColumn::class);
-
-            $type = $metadata->getTypeOfField($fieldName);
-            $column = $metadata->getColumnName($fieldName);
-            $column = '`' . $column . '`';
-            $columns[] = $column;
-            $isIdentifier = false;
-            if ($metadata->isIdentifier($fieldName)) {
-                $isIdentifier = true;
-            }
-            if ($fieldName == $createdColumn) {
-                $update[] = "$column = COALESCE(VALUES($column), $column)";
-            } elseif ($isIdentifier) {
-                // we need to set this explicitely, otherwise in case of updates we cannot access the id with lastInsertId();
-                $update[] = "$column = LAST_INSERT_ID($column)";
-            } elseif ($databaseColumnAttributeInstance?->isMergableJSONColumn) {
-                $update[] = "$column = JSON_MERGE_PATCH(COALESCE($column,'{}'), COALESCE(VALUES($column),'{}'))";
-            }
-            elseif (isset($databaseColumnAttributeInstance->onUpdateAction)) {
-                $update[] = "$column = " . $databaseColumnAttributeInstance->onUpdateAction;
-            } else {
-                $update[] = "$column = VALUES($column)";
-            }
+            $fieldDefinitions[$fieldName] = [
+                'reflectionProperty' => $reflectionProperty,
+                'databaseColumn' => $reflectionProperty->getAttributeInstance(DatabaseColumn::class),
+                'type' => $metadata->getTypeOfField($fieldName),
+                'column' => '`' . $metadata->getColumnName($fieldName) . '`',
+                'isIdentifier' => $metadata->isIdentifier($fieldName),
+                'vectorDimensions' => (int)($metadata->fieldMappings[$fieldName]['length'] ?? 0),
+            ];
         }
 
-        // Loop over models to get values, types, set clause, and update clause
+        // contiguous runs of rows with the same shape
+        $runs = [];
+        $currentRunKey = null;
         foreach ($doctrineModels as $doctrineModel) {
-            $setRow = [];
-            $typesRow = [];
-            foreach ($columns as $index => $column) {
-                $fieldName = $metadata->getFieldName(str_replace('`', '', $column));
-                $type = $metadata->getTypeOfField($fieldName);
-                $value = $metadata->getFieldValue($doctrineModel, $fieldName);
-                // Handle Spatial Types
-                if (isset(DatabaseColumn::SPATIAL_SQL_TYPES[$type])) {
-                    $setRow[] = 'ST_GeomFromText(?)';
-                    if ($value) {
-                        $value = (string)$value;
-                        $typesRow[] = 'string';
-                    }
-                } else {
-                    $setRow[] = '?';
-                    $typesRow[] = $type;
+            $rowFieldNames = [];
+            foreach ($fieldDefinitions as $fieldName => $fieldDefinition) {
+                if (!$fieldDefinition['reflectionProperty']->isInitialized($doctrineModel)) {
+                    continue;
                 }
-                $values[] = $value;
+                if ($fieldDefinition['isIdentifier'] && !$metadata->getFieldValue($doctrineModel, $fieldName)) {
+                    continue;
+                }
+                $rowFieldNames[] = $fieldName;
             }
-            $set[] = '(' . implode(', ', $setRow) . ')';
-            $types = array_merge($types, $typesRow);
+            $columnsToReplace = array_values(array_intersect($doctrineModel->columnsToReplaceInsteadOfMerge, $rowFieldNames));
+            sort($columnsToReplace);
+            $runKey = implode(',', $rowFieldNames) . '|' . implode(',', $columnsToReplace);
+            if ($runKey !== $currentRunKey) {
+                $runs[] = ['fieldNames' => $rowFieldNames, 'columnsToReplace' => $columnsToReplace, 'models' => []];
+                $currentRunKey = $runKey;
+            }
+            $runs[array_key_last($runs)]['models'][] = $doctrineModel;
         }
-        $ignoreStatement = $useInsertIgnore ? 'IGNORE' : '';
-        $sql = "INSERT $ignoreStatement INTO " . reset($doctrineModels)->getTableName() . ' (' . implode(
-                ', ',
-                $columns
-            ) . ')' . ' VALUES ' . implode(
-                ', ',
-                $set
-            );
-        if (!$useInsertIgnore) {
-            $sql .= ' ON DUPLICATE KEY UPDATE ' . implode(', ', $update);
+
+        foreach ($runs as $run) {
+            if ($run['fieldNames'] === []) {
+                continue;
+            }
+            $columns = [];
+            $updateAssignments = [];
+            $identifierUpdated = false;
+            foreach ($run['fieldNames'] as $fieldName) {
+                $fieldDefinition = $fieldDefinitions[$fieldName];
+                $column = $fieldDefinition['column'];
+                $columns[] = $column;
+                if ($fieldName == ChangeHistory::DEFAULT_CREATED_COLUMN_NAME) {
+                    $updateAssignments[] = "$column = COALESCE(VALUES($column), $column)";
+                } elseif ($fieldDefinition['isIdentifier']) {
+                    // makes lastInsertId() return the id of an updated row too
+                    $updateAssignments[] = "$column = LAST_INSERT_ID($column)";
+                    $identifierUpdated = true;
+                } elseif ($fieldDefinition['databaseColumn']?->isMergableJSONColumn) {
+                    $updateAssignments[] = in_array($fieldName, $run['columnsToReplace'], true)
+                        ? "$column = VALUES($column)"
+                        : "$column = JSON_MERGE_PATCH(COALESCE($column,'{}'), COALESCE(VALUES($column),'{}'))";
+                } elseif (isset($fieldDefinition['databaseColumn']->onUpdateAction)) {
+                    $updateAssignments[] = "$column = " . $fieldDefinition['databaseColumn']->onUpdateAction;
+                } else {
+                    $updateAssignments[] = "$column = VALUES($column)";
+                }
+            }
+            if (!$identifierUpdated) {
+                foreach ($fieldDefinitions as $fieldName => $fieldDefinition) {
+                    if ($fieldDefinition['isIdentifier']) {
+                        $updateAssignments[] = "{$fieldDefinition['column']} = LAST_INSERT_ID({$fieldDefinition['column']})";
+                    }
+                }
+            }
+
+            $rowPlaceholders = [];
+            $values = [];
+            $types = [];
+            foreach ($run['models'] as $doctrineModel) {
+                $rowExpressions = [];
+                foreach ($run['fieldNames'] as $fieldName) {
+                    $fieldDefinition = $fieldDefinitions[$fieldName];
+                    $type = $fieldDefinition['type'];
+                    $value = $metadata->getFieldValue($doctrineModel, $fieldName);
+                    if (isset(DatabaseColumn::SPATIAL_SQL_TYPES[$type])) {
+                        $rowExpressions[] = $value !== null ? 'ST_GeomFromText(?)' : '?';
+                        $values[] = $value !== null ? (string)$value : null;
+                        $types[] = 'string';
+                    } elseif ($type == 'vector') {
+                        if ($value !== null) {
+                            $rowExpressions[] = 'VEC_FromText(?)';
+                            $values[] = json_encode($value, JSON_THROW_ON_ERROR);
+                            $types[] = 'string';
+                        } elseif ($fieldDefinition['vectorDimensions'] > 0) {
+                            $rowExpressions[] = (string)DatabaseColumn::createMariaDbNullVectorDefault($fieldDefinition['vectorDimensions']);
+                        } else {
+                            $rowExpressions[] = '?';
+                            $values[] = null;
+                            $types[] = 'string';
+                        }
+                    } else {
+                        if ($fieldDefinition['databaseColumn']?->isMergableJSONColumn && is_string($value) && $value !== '') {
+                            $decodedMergableValue = json_decode($value, true);
+                            if (is_array($decodedMergableValue)) {
+                                $value = $decodedMergableValue;
+                            }
+                        }
+                        $rowExpressions[] = '?';
+                        $values[] = $value;
+                        $types[] = $type;
+                    }
+                }
+                $rowPlaceholders[] = '(' . implode(', ', $rowExpressions) . ')';
+            }
+            $sql = 'INSERT ' . ($useInsertIgnore ? 'IGNORE ' : '') . 'INTO ' . $tableName
+                . ' (' . implode(', ', $columns) . ') VALUES ' . implode(', ', $rowPlaceholders);
+            if (!$useInsertIgnore) {
+                $sql .= ' ON DUPLICATE KEY UPDATE ' . implode(', ', $updateAssignments);
+            }
+            $statement = new DoctrineBoundSql($sql, $values, $types);
+            $statements->add($statement);
         }
-        $connection->executeStatement(
-            $sql,
-            $values,
-            $types
-        );
+        return $statements;
     }
 
     public function createQuery($dql = ''): DoctrineQuery
