@@ -26,6 +26,8 @@ use Doctrine\ORM\OptimisticLockException;
 use Exception;
 use Psr\Cache\InvalidArgumentException;
 use ReflectionException;
+use Throwable;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Validator\Constraints\Length;
 use Symfony\Component\Validator\Constraints\NotBlank;
@@ -78,7 +80,13 @@ class Cron extends Entity
 
     /**
      * Execute the Crons command and stores the results of the Cron execution in a new CronExecution,
-     * and returns CronExecution if Cron is scheduled for execution of no other Execution is already running
+     * and returns CronExecution if Cron is scheduled for execution of no other Execution is already running.
+     *
+     * A command that times out or throws never leaves the execution RUNNING: the execution is closed as FAILED with
+     * the captured output (stdout and stderr) and the reason, and the next slot is ALWAYS advanced. A RUNNING row
+     * excludes the Cron from the tick until the cleanup removes it after hours, so a hanging command would otherwise
+     * re-fire only every few hours and hang again; and the exception used to abort every later Cron of the tick.
+     *
      * @param int $timeoutPerCronInSeconds
      * @return CronExecution|null
      * @throws BadRequestException
@@ -91,7 +99,7 @@ class Cron extends Entity
      */
     public function execute(int $timeoutPerCronInSeconds = 60): ?CronExecution
     {
-        $lastExecution = CronExecution::getService()->getLastExecutionForCron($this);
+        $lastExecution = $this->getLastExecutionOfThisCron();
         // we make sure the that this cron is not running currently already and that it is not scheduled in the future
         if (
             $lastExecution && $lastExecution->state == CronExecution::STATE_RUNNING || $this->nextExecutionScheduledAt > new DateTime()
@@ -102,25 +110,87 @@ class Cron extends Entity
         $cronExecution->cronId = $this->id;
         $cronExecution->executionStartedAt = new DateTime();
         $cronExecution->state = CronExecution::STATE_RUNNING;
-        $cronExecution->update();
+        $this->persistCronExecution($cronExecution);
         $this->lastExecutionStartedAt = $cronExecution->executionStartedAt;
-        $this->update();
-        $baseCommand = ['php', DDDService::instance()->getRootDir() . DDDService::instance()->getConsoleDir()];
-        $command = array_merge($baseCommand, explode(' ', $this->command));
-        $process = new Process($command);
-        $process->setTimeout($timeoutPerCronInSeconds);
-        // we want to capture the output combined
-        $process->setInput(Process::ERR | Process::OUT);
-        $process->run();
-        $cronExecution->executionEndedAt = new DateTime();
-        $cronExecution->executionState = $process->isSuccessful() ? CronExecution::EXECUTION_STATE_SUCCESSFUL : CronExecution::EXECUTION_STATE_FAILED;
-        $cronExecution->output = $process->getOutput();
-        $cronExecution->state = CronExecution::STATE_ENDED;
-        $cronExecution->update();
-        $this->nextExecutionScheduledAt = $this->getNextScheduledExecution();
-        $this->update();
+        $this->persistCron();
+        try {
+            $process = null;
+            $failureMessage = null;
+            try {
+                $process = $this->createCronCommandProcess($timeoutPerCronInSeconds);
+                $process->run();
+            } catch (ProcessTimedOutException) {
+                $failureMessage = 'Cron command timed out after ' . $timeoutPerCronInSeconds . ' s and was stopped';
+            } catch (Throwable $throwable) {
+                $failureMessage = 'Cron command failed: ' . get_class($throwable) . ': ' . $throwable->getMessage();
+            }
+            $cronExecution->executionEndedAt = new DateTime();
+            $cronExecution->executionState = $failureMessage === null && $process->isSuccessful()
+                ? CronExecution::EXECUTION_STATE_SUCCESSFUL
+                : CronExecution::EXECUTION_STATE_FAILED;
+            $cronExecution->output = $this->getCombinedProcessOutput($process, $failureMessage);
+            $cronExecution->state = CronExecution::STATE_ENDED;
+            $this->persistCronExecution($cronExecution);
+        } finally {
+            // even when closing the execution failed: the Cron must not stay due at a slot that has passed
+            $this->nextExecutionScheduledAt = $this->getNextScheduledExecution();
+            $this->persistCron();
+        }
         $cronExecution->cron = $this;
         return $cronExecution;
+    }
+
+    /**
+     * The process that runs this Cron's console command, with the timeout set. The seam a test replaces.
+     * @param int $timeoutInSeconds
+     * @return Process
+     */
+    protected function createCronCommandProcess(int $timeoutInSeconds): Process
+    {
+        $baseCommand = ['php', DDDService::instance()->getRootDir() . DDDService::instance()->getConsoleDir()];
+        $process = new Process(array_merge($baseCommand, explode(' ', $this->command)));
+        $process->setTimeout($timeoutInSeconds);
+        return $process;
+    }
+
+    /**
+     * What the execution stores as output: stdout, then stderr — where a failing command writes its error — then the
+     * executor's own reason when the command timed out or could not run.
+     * @param Process|null $process
+     * @param string|null $failureMessage
+     * @return string
+     */
+    protected function getCombinedProcessOutput(?Process $process, ?string $failureMessage): string
+    {
+        $outputParts = [];
+        if ($process !== null) {
+            $outputParts[] = $process->getOutput();
+            $outputParts[] = $process->getErrorOutput();
+        }
+        if ($failureMessage !== null) {
+            $outputParts[] = '[cron executor] ' . $failureMessage;
+        }
+        return trim(implode("\n", array_filter($outputParts, static fn (string $outputPart): bool => trim($outputPart) !== '')));
+    }
+
+    /**
+     * @return CronExecution|null The latest execution of this Cron — the seam a test replaces
+     */
+    protected function getLastExecutionOfThisCron(): ?CronExecution
+    {
+        return CronExecution::getService()->getLastExecutionForCron($this);
+    }
+
+    /** Writes the execution row — the seam a test replaces. */
+    protected function persistCronExecution(CronExecution $cronExecution): void
+    {
+        $cronExecution->update();
+    }
+
+    /** Writes this Cron row — the seam a test replaces. */
+    protected function persistCron(): void
+    {
+        $this->update();
     }
 
     /**
