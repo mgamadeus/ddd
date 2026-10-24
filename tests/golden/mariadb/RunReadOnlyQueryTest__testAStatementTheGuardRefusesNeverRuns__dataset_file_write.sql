@@ -1,0 +1,21 @@
+DELETE FROM `CounterRows`
+-- params: []
+-- ----------------------------------------
+DELETE FROM `TranslatedRows`
+-- params: []
+-- ----------------------------------------
+DELETE FROM `SpatialRows`
+-- params: []
+-- ----------------------------------------
+INSERT INTO CounterRows (businessKey, amount) VALUES ('probe', 1)
+-- params: []
+-- ----------------------------------------
+DROP FUNCTION IF EXISTS ddd_it_write_counter_row
+-- params: []
+-- ----------------------------------------
+CREATE FUNCTION ddd_it_write_counter_row() RETURNS INT MODIFIES SQL DATA BEGIN INSERT INTO CounterRows (businessKey) VALUES (UUID()); RETURN 1; END
+-- params: []
+-- ----------------------------------------
+DROP FUNCTION IF EXISTS ddd_it_write_counter_row
+-- params: []
+-- ----------------------------------------

@@ -11,6 +11,7 @@ use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Tests\Integration\Fixtures\Entities\CounterRows\CounterRow;
 use DDD\Tests\Integration\Fixtures\Entities\SpatialRows\SpatialRow;
 use DDD\Tests\Integration\Fixtures\Entities\TranslatedRows\TranslatedRow;
+use DDD\Tests\Integration\Harness\RecordingMiddleware;
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
@@ -37,6 +38,10 @@ abstract class IntegrationTestCase extends TestCase
             return;
         }
         (new ReflectionProperty(LazyLoadRepo::class, 'defaultRepoType'))->setValue(null, LazyLoadRepo::DB);
+        // No-op unless DDD_GOLDEN_RECORD is set — see RecordingMiddleware. Must run before the first
+        // connection/table of the suite so the fixture DDL itself is captured.
+        RecordingMiddleware::wireIfEnabled();
+        RecordingMiddleware::beginTest(static::goldenTestId('setUpBeforeClass'));
         $connection = static::connection();
         foreach (self::FIXTURE_ENTITY_CLASSES as $fixtureEntityClass) {
             $databaseModel = DatabaseModel::fromEntityClass($fixtureEntityClass);
@@ -45,6 +50,7 @@ abstract class IntegrationTestCase extends TestCase
                 $connection->executeStatement($statement);
             }
         }
+        RecordingMiddleware::endTest();
     }
 
     public static function tearDownAfterClass(): void
@@ -52,6 +58,8 @@ abstract class IntegrationTestCase extends TestCase
         if (!static::isIntegrationDatabaseEnabled()) {
             return;
         }
+        RecordingMiddleware::wireIfEnabled();
+        RecordingMiddleware::beginTest(static::goldenTestId('tearDownAfterClass'));
         $connection = static::connection();
         while ($connection->isTransactionActive()) {
             $connection->rollBack();
@@ -61,6 +69,7 @@ abstract class IntegrationTestCase extends TestCase
                 'DROP TABLE IF EXISTS `' . DatabaseModel::fromEntityClass($fixtureEntityClass)->sqlTableName . '`'
             );
         }
+        RecordingMiddleware::endTest();
     }
 
     protected function setUp(): void
@@ -69,6 +78,14 @@ abstract class IntegrationTestCase extends TestCase
             $this->markTestSkipped('Integration suite: start tests/Integration/docker-compose.yml and set DDD_TEST_DRIVER=pdo_mysql');
         }
         (new ReflectionProperty(LazyLoadRepo::class, 'defaultRepoType'))->setValue(null, LazyLoadRepo::DB);
+        RecordingMiddleware::wireIfEnabled();
+        // A data-provider test runs this method once per data set, each with its own setUp()/tearDown() — the
+        // data set must be part of the golden id, or every run after the first silently overwrites the last.
+        $testName = $this->getName(false);
+        if ($this->dataName() !== '') {
+            $testName .= '__dataset_' . $this->dataName();
+        }
+        RecordingMiddleware::beginTest(static::goldenTestId($testName));
         $connection = static::connection();
         while ($connection->isTransactionActive()) {
             $connection->rollBack();
@@ -79,6 +96,19 @@ abstract class IntegrationTestCase extends TestCase
             );
         }
         static::entityManager()->clear();
+    }
+
+    protected function tearDown(): void
+    {
+        if (static::isIntegrationDatabaseEnabled()) {
+            RecordingMiddleware::endTest();
+        }
+    }
+
+    /** "<ShortClassName>::<phase>" — the golden file id for a test method or a class-level DDL phase */
+    protected static function goldenTestId(string $phase): string
+    {
+        return (new \ReflectionClass(static::class))->getShortName() . '::' . $phase;
     }
 
     protected static function entityManager(): DoctrineEntityManager
