@@ -117,11 +117,29 @@ final class CopyToPostgresService
     {
         $results = [];
         foreach ($this->databaseModels as $databaseModel) {
+            if (!$this->sourceHasTable($databaseModel->sqlTableName)) {
+                // An entity table the source database never had (e.g. a DDD core entity the app does not use):
+                // created empty by the schema phase, nothing to copy or verify.
+                $results[$databaseModel->sqlTableName] = ['rows' => 0, 'seconds' => 0.0, 'absentInSource' => true];
+                continue;
+            }
             $start = microtime(true);
             $rows = $this->copyTable($databaseModel);
             $results[$databaseModel->sqlTableName] = ['rows' => $rows, 'seconds' => microtime(true) - $start];
         }
         return $results;
+    }
+
+    /** @var array<string, bool>|null Source table names (MariaDB, current database). */
+    protected ?array $sourceTables = null;
+
+    protected function sourceHasTable(string $table): bool
+    {
+        $this->sourceTables ??= array_fill_keys(
+            $this->source->fetchFirstColumn('SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE()'),
+            true
+        );
+        return isset($this->sourceTables[$table]);
     }
 
     protected function copyTable(DatabaseModel $databaseModel): int
@@ -253,6 +271,9 @@ final class CopyToPostgresService
     {
         $results = [];
         foreach ($this->databaseModels as $databaseModel) {
+            if (!$this->sourceHasTable($databaseModel->sqlTableName)) {
+                continue; // absent in the source: nothing was copied, nothing to compare
+            }
             $results[$databaseModel->sqlTableName] = $this->verifyTable($databaseModel);
         }
         return $results;
