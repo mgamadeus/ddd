@@ -20,7 +20,7 @@ would be the placeholder `.env`.
 | Key | Rotate? | Effect |
 |---|---|---|
 | `APP_SECRET`, `ENCRYPTION_COOKIE_PASSWORD` | yes | sessions/cookies invalid → everyone logged out once |
-| `JWT_HASH_KEY` = `AUTH_JWT_HASH_KEY` | yes, **as a pair** | all JWTs invalid → everyone logged out once |
+| `JWT_HASH_KEY` (+ the deprecated `AUTH_JWT_HASH_KEY` while a file still carries it — same value) | yes | all JWTs invalid → everyone logged out once |
 | `AUTH_PASSWORD_HASH_KEY` | only if passwords are `password_hash` (Argon2id/bcrypt) | if the app does `hash_hmac(method, plaintext, AUTH_PASSWORD_HASH_KEY)` the key is a live pepper: rotating it invalidates every password — reset them (`app:accounts:set-password`) or keep the key |
 | `PASSWORD_HASH` | only if no entity column uses `enryptionScope` (sic) | it salts the `Encrypt` helper for DB column encryption |
 

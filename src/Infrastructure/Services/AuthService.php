@@ -140,7 +140,7 @@ class AuthService
         try {
             $decoded = JWT::decode(
                 $jwt,
-                new Key(Config::getEnv('AUTH_JWT_HASH_KEY'), Config::getEnv('AUTH_JWT_HASH_METHOD'))
+                new Key(JWTPayload::getHashKey(), JWTPayload::getHashMethod())
             );
 
             if ($decoded->user_id) {
