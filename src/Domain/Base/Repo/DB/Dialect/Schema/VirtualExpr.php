@@ -41,12 +41,20 @@ final readonly class VirtualExpr
         /** `jsonDecimal` only. */
         public ?int $precision = null,
         public ?int $scale = null,
+        /** `coalesce` only: `timestamp` when the literal is a date (`dateLiteral` shape), else null. */
+        public ?string $literalType = null,
     ) {
     }
 
     public static function coalesce(string $mariaDbExpression, string $column, int|string $literal): self
     {
         return new self(self::INTENT_COALESCE, $mariaDbExpression, $column, literal: $literal);
+    }
+
+    /** `COALESCE(col, STR_TO_DATE('Y-m-d', '%Y-%m-%d'))` — the plan's `dateLiteral` intent, a coalesce to a timestamp. */
+    public static function coalesceDate(string $mariaDbExpression, string $column, string $date): self
+    {
+        return new self(self::INTENT_COALESCE, $mariaDbExpression, $column, literal: $date, literalType: 'timestamp');
     }
 
     public static function jsonText(string $mariaDbExpression, string $column, string $jsonKey): self
@@ -85,7 +93,13 @@ final readonly class VirtualExpr
             return self::coalesce($as, $m[1], stripslashes($m[2]));
         }
 
-        $jsonExtract = "JSON_UNQUOTE\({$ws}JSON_EXTRACT\({$ws}($identifier){$ws},{$ws}'\\\$\.($identifier)'{$ws}\){$ws}\)";
+        // (COALESCE(col, STR_TO_DATE('9999-12-31', '%Y-%m-%d'))) — Radbonus TeamMembers/WorldMembers.leftAt
+        if (preg_match("/^\({$ws}COALESCE\({$ws}`?($identifier)`?{$ws},{$ws}STR_TO_DATE\({$ws}'(\d{4}-\d{2}-\d{2})'{$ws},{$ws}'%Y-%m-%d'{$ws}\){$ws}\){$ws}\)\$/", $as, $m)) {
+            return self::coalesceDate($as, $m[1], $m[2]);
+        }
+
+        // JSON source column optionally backticked; the path may be nested ('$.accountProfile.id').
+        $jsonExtract = "JSON_UNQUOTE\({$ws}JSON_EXTRACT\({$ws}`?($identifier)`?{$ws},{$ws}'\\\$\.($identifier(?:\.$identifier)*)'{$ws}\){$ws}\)";
 
         // (JSON_UNQUOTE(JSON_EXTRACT(col, '$.key')))
         if (preg_match("/^\({$ws}{$jsonExtract}{$ws}\)\$/", $as, $m)) {
@@ -120,9 +134,9 @@ final readonly class VirtualExpr
 
         return match ($this->intent) {
             self::INTENT_COALESCE => 'COALESCE(' . $column . ', ' . $this->literalSql() . ')',
-            self::INTENT_JSON_TEXT => '(' . $column . '::json ->> ' . $this->quotedKey() . ')',
-            self::INTENT_JSON_INT => '((' . $column . '::json ->> ' . $this->quotedKey() . '))::bigint',
-            self::INTENT_JSON_DECIMAL => '((' . $column . '::json ->> ' . $this->quotedKey() . "))::numeric($this->precision,$this->scale)",
+            self::INTENT_JSON_TEXT => '(' . $column . '::json ' . $this->jsonPathOperator() . ')',
+            self::INTENT_JSON_INT => '((' . $column . '::json ' . $this->jsonPathOperator() . '))::bigint',
+            self::INTENT_JSON_DECIMAL => '((' . $column . '::json ' . $this->jsonPathOperator() . "))::numeric($this->precision,$this->scale)",
         };
     }
 
@@ -149,7 +163,20 @@ final readonly class VirtualExpr
         if (is_int($this->literal)) {
             return (string)$this->literal;
         }
+        if ($this->literalType === 'timestamp') {
+            return "TIMESTAMP '" . $this->literal . " 00:00:00'";
+        }
         return "'" . str_replace("'", "''", (string)$this->literal) . "'";
+    }
+
+    /** `->> 'key'` for a single key, `#>> '{a,b}'` for a nested `$.a.b` path. */
+    protected function jsonPathOperator(): string
+    {
+        $segments = explode('.', (string)$this->jsonKey);
+        if (count($segments) === 1) {
+            return '->> ' . $this->quotedKey();
+        }
+        return "#>> '{" . implode(',', $segments) . "}'";
     }
 
     protected function quotedKey(): string
