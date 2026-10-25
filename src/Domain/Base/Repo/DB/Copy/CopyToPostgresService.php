@@ -142,14 +142,45 @@ final class CopyToPostgresService
         return isset($this->sourceTables[$table]);
     }
 
+    /** @var array<string, array<string, bool>> Source column names per table. */
+    protected array $sourceColumns = [];
+
+    /**
+     * The entity's persisted columns that also exist in the source table. A column the entity declares but the
+     * source never had (schema drift, e.g. Radbonus CacheScopeInvalidations.locationId) is reported once and left to
+     * the target's DEFAULT / NULL — the copy moves what exists, it does not invent data.
+     *
+     * @return DatabaseColumn[]
+     */
+    protected function columnsPresentInSource(DatabaseModel $databaseModel): array
+    {
+        $table = $databaseModel->sqlTableName;
+        if (!isset($this->sourceColumns[$table])) {
+            $this->sourceColumns[$table] = array_fill_keys($this->source->fetchFirstColumn(
+                'SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+                [$table]
+            ), true);
+            $missing = [];
+            foreach ($databaseModel->columns->getElements() as $column) {
+                if (!$column->ignoreProperty && !isset($this->sourceColumns[$table][$column->name])) {
+                    $missing[] = $column->name;
+                }
+            }
+            if ($missing !== []) {
+                $this->io->note("\"$table\": column(s) absent in the source, left to the target default: " . implode(', ', $missing));
+            }
+        }
+        return array_values(array_filter(
+            $databaseModel->columns->getElements(),
+            fn (DatabaseColumn $column): bool => !$column->ignoreProperty && isset($this->sourceColumns[$table][$column->name])
+        ));
+    }
+
     protected function copyTable(DatabaseModel $databaseModel): int
     {
         $table = $databaseModel->sqlTableName;
         /** @var DatabaseColumn[] $columns */
-        $columns = array_values(array_filter(
-            $databaseModel->columns->getElements(),
-            static fn (DatabaseColumn $column): bool => !$column->ignoreProperty
-        ));
+        $columns = $this->columnsPresentInSource($databaseModel);
         $fieldNames = array_map(static fn (DatabaseColumn $column): string => $column->name, $columns);
 
         if ($this->dryRun) {
@@ -284,10 +315,7 @@ final class CopyToPostgresService
     {
         $table = $databaseModel->sqlTableName;
         /** @var DatabaseColumn[] $columns */
-        $columns = array_values(array_filter(
-            $databaseModel->columns->getElements(),
-            static fn (DatabaseColumn $column): bool => !$column->ignoreProperty
-        ));
+        $columns = $this->columnsPresentInSource($databaseModel);
 
         $sourceIds = array_map('intval', $this->source->fetchFirstColumn("SELECT `id` FROM `$table` ORDER BY `id`"));
         $targetIds = array_map('intval', $this->target->fetchFirstColumn('SELECT "id" FROM "' . $table . '" ORDER BY "id"'));
