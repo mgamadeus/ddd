@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Repo\DB\Doctrine;
 
 // Infrastructure / Framework imports
+use DDD\Domain\Base\Repo\DB\Dialect\DatabaseConfigurationException;
 use DDD\Domain\Base\Repo\DB\Dialect\DialectResolver;
 use DDD\Domain\Base\Repo\DB\Dialect\Guard\UnreleasedCodeGuard;
 use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
@@ -196,6 +197,17 @@ class EntityManagerFactory
         $dialect = DialectResolver::forDriver($configSettings['connectionParams']['driver']);
         $configSettings['connectionParams'] = $dialect->connectionParams($configSettings['connectionParams']);
         UnreleasedCodeGuard::assertAllowed($configSettings['connectionParams']);
+        // §4.12 boot guard (D3): named locks on PostgreSQL run on a dedicated, non-pooled connection — a
+        // session-scoped advisory lock on a PgBouncer transaction-mode connection leaks and loses mutual
+        // exclusion. Checked here, at scope boot, rather than lazily inside PostgresLockService, so a
+        // misconfigured scope fails loudly before anything tries to take a lock on it.
+        if ($dialect->capabilities()->isPostgres() && !Config::getEnv("DB_{$scope}_DIRECT_HOST")) {
+            throw new DatabaseConfigurationException(
+                "DB_{$scope}_DIRECT_HOST is required on PostgreSQL: named locks (LockService) take a dedicated, "
+                . 'non-pooled connection, because a session-scoped advisory lock on a PgBouncer transaction-mode '
+                . 'connection leaks and loses mutual exclusion (architecture plan §4.12).'
+            );
+        }
         $dialect->configureOrm($config);
         self::$dialects[$scope] = $dialect;
 

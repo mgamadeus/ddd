@@ -38,6 +38,13 @@ $integrationEnvironment = match ($driver) {
         'DATABASE_TABLE_PREFIX' => '',
         'CACHE_APC_TTL' => '60',
         'CACHE_APC_NAMESPACE' => 'ddd_it',
+        // §4.12 (locks, D3): PostgresLockService refuses to run without a direct, non-pooled connection — the
+        // harness has no PgBouncer in front of its throwaway PostgreSQL (T3 pooler is its own compose, not this
+        // one), so the "direct" host/port here are simply the same single-node server the pooled connection
+        // above already uses. DDD_TEST_PG_DIRECT_PORT defaults to the same value as DDD_TEST_PG_PORT so a lock
+        // test needs no extra env when the two happen to coincide, but can still be pointed elsewhere.
+        'DB_DEFAULT_DIRECT_HOST' => '127.0.0.1',
+        'DB_DEFAULT_DIRECT_PORT' => (string)($_SERVER['DDD_TEST_PG_DIRECT_PORT'] ?? getenv('DDD_TEST_PG_DIRECT_PORT') ?: ($_SERVER['DDD_TEST_PG_PORT'] ?? getenv('DDD_TEST_PG_PORT') ?: '5433')),
     ],
     default => [
         'DB_DEFAULT_CONNECTION_DRIVER' => 'pdo_mysql',

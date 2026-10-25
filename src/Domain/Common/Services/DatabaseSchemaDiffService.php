@@ -334,17 +334,16 @@ class DatabaseSchemaDiffService
 
         // Cross-request mutex: only one apply may run at a time. Closes the concurrent-apply race
         // where two admins (or admin + CLI) both pass the signature gate against the same pre-
-        // apply live state and then race to execute. GET_LOCK is a MySQL/MariaDB session-bound
-        // advisory lock — held until RELEASE_LOCK or session end, NOT scoped to a transaction.
-        // 30-second timeout is enough for any normal apply; if it expires the operator gets a
-        // clean 503-shaped error and can retry. Lock name is global to the package so a single
-        // misbehaving caller can't break the gate by holding a per-table lock.
+        // apply live state and then race to execute. LockService (architecture plan §4.12) is a
+        // session-bound advisory lock on both engines — held until release or session end, NOT
+        // scoped to a transaction; on PostgreSQL it runs on a dedicated, non-pooled connection
+        // rather than $connection itself. 30-second timeout is enough for any normal apply; if it
+        // expires the operator gets a clean 503-shaped error and can retry. Lock name is global to
+        // the package so a single misbehaving caller can't break the gate by holding a per-table
+        // lock.
         $lockTimeoutSeconds = 30;
-        $lockAcquired = (int)$connection->fetchOne(
-            'SELECT GET_LOCK(?, ?)',
-            [self::APPLY_LOCK_NAME, $lockTimeoutSeconds]
-        );
-        if ($lockAcquired !== 1) {
+        $lockService = EntityManagerFactory::getDialect()->locks($connection);
+        if (!$lockService->acquire(self::APPLY_LOCK_NAME, $lockTimeoutSeconds)) {
             throw new BadRequestException(
                 self::ERROR_CODE_APPLY_LOCK_BUSY
                 . ' Another schema-diff apply is currently in progress. Wait a few seconds and retry.'
@@ -420,7 +419,7 @@ class DatabaseSchemaDiffService
             // diffs (the regression the round-2 audit caught in the entity-class-scoped path).
             return $this->computeDiffsForTables($affectedTableNames);
         } finally {
-            $connection->executeStatement('SELECT RELEASE_LOCK(?)', [self::APPLY_LOCK_NAME]);
+            $lockService->release(self::APPLY_LOCK_NAME);
         }
     }
 

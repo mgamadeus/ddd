@@ -75,10 +75,13 @@ use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\VectorType;
 
 use DDD\Domain\Base\Repo\DB\Dialect\Query\MariaDbDistinctSubqueryPagination;
 use DDD\Domain\Base\Repo\DB\Dialect\Query\PaginationStrategy;
+use DDD\Domain\Base\Repo\DB\Dialect\Locks\LockService;
+use DDD\Domain\Base\Repo\DB\Dialect\Locks\MariaDbLockService;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\MariaDbDdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\MariaDbUpsertBuilder;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder;
+use Doctrine\DBAL\Connection;
 
 use DoctrineExtensions\Query\Mysql\DateAdd;
 use DoctrineExtensions\Query\Mysql\Field;
@@ -258,5 +261,10 @@ final class MariaDbDialect implements SqlDialect
     public function pagination(): PaginationStrategy
     {
         return new MariaDbDistinctSubqueryPagination();
+    }
+
+    public function locks(Connection $connection, string $scope = 'DEFAULT'): LockService
+    {
+        return new MariaDbLockService($connection);
     }
 }
