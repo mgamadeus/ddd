@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo\DB\Dialect;
 
+use DDD\Domain\Base\Repo\DB\Dialect\Query\PaginationStrategy;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder;
 use Doctrine\ORM\Configuration;
@@ -45,4 +46,12 @@ interface SqlDialect
      * one per instance.
      */
     public function upsertBuilder(): UpsertBuilder;
+
+    /**
+     * Step 5 (§4.3/§4.8/D2): the dialect's pagination-with-joins-and-limit strategy, used by
+     * {@see \DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder::applyDistinctSubqueryIfNeededAndGetResult()}
+     * for exactly the case that is dialect-specific (every other case — no joins, or no limit/offset — is
+     * dialect-agnostic and stays in that method directly).
+     */
+    public function pagination(): PaginationStrategy;
 }

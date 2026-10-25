@@ -483,7 +483,12 @@ final class PostgresDdlRenderer implements DdlRenderer
         return "CREATE INDEX \"$indexName\" ON \"$table\" USING gist (" . $this->quoteColumns($index->indexColumns) . ')';
     }
 
-    /** D14/Mig §3.5: NAME = pg_trgm prefix search on ddd_fold(col); DOCUMENT = to_tsvector fulltext. */
+    /**
+     * D14/Mig §3.5: NAME = pg_trgm prefix search on ddd_fold(col); DOCUMENT = to_tsvector fulltext; D19/step 5
+     * TOKEN_MATCH = GIN on `string_to_array(col, ' ')` for the Radbonus `Tracks.allocations` token-list shape —
+     * the identical expression {@see \DDD\Domain\Base\Repo\DB\Dialect\Query\TokenMatch} renders in its predicate,
+     * or the planner ignores the index.
+     */
     protected function renderFulltextIndex(string $table, string $indexName, DatabaseIndex $index): string
     {
         if (count($index->indexColumns) !== 1) {
@@ -496,6 +501,7 @@ final class PostgresDdlRenderer implements DdlRenderer
         return match ($index->fullTextMode) {
             FullTextMode::NAME => "CREATE INDEX \"$indexName\" ON \"$table\" USING gin ((ddd_fold($column) COLLATE \"C\") gin_trgm_ops)",
             FullTextMode::DOCUMENT => "CREATE INDEX \"$indexName\" ON \"$table\" USING gin (to_tsvector('simple', ddd_unaccent($column)))",
+            FullTextMode::TOKEN_MATCH => "CREATE INDEX \"$indexName\" ON \"$table\" USING gin (string_to_array($column, ' '))",
         };
     }
 

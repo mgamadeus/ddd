@@ -73,6 +73,8 @@ use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\PolygonType;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\UnescapedJsonType;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\VectorType;
 
+use DDD\Domain\Base\Repo\DB\Dialect\Query\MariaDbDistinctSubqueryPagination;
+use DDD\Domain\Base\Repo\DB\Dialect\Query\PaginationStrategy;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\MariaDbDdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\MariaDbUpsertBuilder;
@@ -250,5 +252,11 @@ final class MariaDbDialect implements SqlDialect
     public function upsertBuilder(): UpsertBuilder
     {
         return new MariaDbUpsertBuilder();
+    }
+
+    /** §6 step 5: today's regex-based distinct-subquery rewrite, unchanged (golden-sensitive behaviour, not SQL text). */
+    public function pagination(): PaginationStrategy
+    {
+        return new MariaDbDistinctSubqueryPagination();
     }
 }

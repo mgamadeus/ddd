@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Entities\QueryOptions;
 
 use DDD\Domain\Base\Entities\ObjectSet;
+use DDD\Domain\Base\Repo\DB\Database\FullTextMode;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Infrastructure\Exceptions\BadRequestException;
@@ -184,17 +185,59 @@ MD;
      *
      * @param string $modelClass The Doctrine model the property belongs to
      * @param string $propertyName The orderBy property
-     * @return string
+     * @return array{0: string, 1: bool} [columnName, routedToSearchColumn]
      * @throws ReflectionException
      */
-    protected static function getOrderByColumnName(string $modelClass, string $propertyName): string
+    protected static function getOrderByColumnName(string $modelClass, string $propertyName): array
     {
         /** @var DoctrineModel $modelClass */
         $searchColumnName = FiltersOptions::getTranslatableSearchColumnName($modelClass::ENTITY_CLASS, $propertyName);
         if ($searchColumnName && $modelClass::isValidDatabaseExpression($modelClass::MODEL_ALIAS . ".$searchColumnName")) {
-            return $searchColumnName;
+            return [$searchColumnName, true];
         }
-        return $propertyName;
+        return [$propertyName, false];
+    }
+
+    /**
+     * The property's {@see FiltersDefinition::$columnKind}, read the same way
+     * {@see FiltersDefinitions::getFiltersDefinitionsForReferenceClass()} already builds it for filtering — cached
+     * per entity class there, so this is a cheap lookup.
+     */
+    protected static function getColumnKind(string $modelClass, string $propertyName): ?string
+    {
+        /** @var DoctrineModel $modelClass */
+        $filtersDefinitions = FiltersDefinitions::getFiltersDefinitionsForReferenceClass($modelClass::ENTITY_CLASS);
+        foreach ($filtersDefinitions?->getElements() ?? [] as $filtersDefinition) {
+            if ($filtersDefinition->propertyName === $propertyName) {
+                return $filtersDefinition->columnKind;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * D8/Mig §3.2 (real failure, Dineful on PostgreSQL: `could not identify an ordering operator for type json`):
+     * a `json` column — including a plain (non-searchable) Translatable, stored as `json` — has no B-tree
+     * opclass, so `ORDER BY` needs `JSON_TEXT()` on PostgreSQL (MariaDB sorts the stored JSON text's bytes
+     * directly, `utf8mb4_bin`). Never applied when `$routedToSearchColumn` is true — the virtual search column is
+     * already plain text on both engines.
+     */
+    protected static function wrapOrderByExpressionForPostgresJson(
+        DoctrineQueryBuilder $queryBuilder,
+        string $orderByExpression,
+        string $modelClass,
+        string $propertyName,
+        bool $routedToSearchColumn
+    ): string {
+        if ($routedToSearchColumn || !FiltersOptions::isPostgresDialect($queryBuilder)) {
+            return $orderByExpression;
+        }
+        $columnKind = self::getColumnKind($modelClass, $propertyName);
+
+        return match ($columnKind) {
+            FiltersDefinition::COLUMN_KIND_JSON, FiltersDefinition::COLUMN_KIND_TRANSLATABLE => "JSON_TEXT($orderByExpression)",
+            default => $orderByExpression,
+        };
     }
 
     /**
@@ -226,13 +269,19 @@ MD;
                     );
                 }
 
-                $booleanModeClause = $fulltextSearchInfo['booleanMode'] ? ' IN BOOLEAN MODE' : '';
                 $parameterCount = $queryBuilder->getParameters()->count() + 1;
                 $queryBuilder->setParameter($parameterCount, $fulltextSearchInfo['searchTerms']);
 
-                $queryBuilder->addSelect(
-                    "MATCH({$fulltextSearchInfo['qualifiedColumn']}) AGAINST (?$parameterCount$booleanModeClause) AS HIDDEN $scoreAlias"
-                );
+                if (FiltersOptions::isPostgresDialect($queryBuilder)) {
+                    /** @var FullTextMode $fullTextMode */
+                    $fullTextMode = $fulltextSearchInfo['fullTextMode'] ?? FullTextMode::NAME;
+                    $scoreSelect = "FULLTEXT_SCORE({$fulltextSearchInfo['qualifiedColumn']}, ?$parameterCount, '{$fullTextMode->value}')";
+                } else {
+                    $booleanModeClause = $fulltextSearchInfo['booleanMode'] ? ' IN BOOLEAN MODE' : '';
+                    $scoreSelect = "MATCH({$fulltextSearchInfo['qualifiedColumn']}) AGAINST (?$parameterCount$booleanModeClause)";
+                }
+
+                $queryBuilder->addSelect("$scoreSelect AS HIDDEN $scoreAlias");
                 $queryBuilder->addOrderBy($scoreAlias, $orderByOption->direction);
                 continue;
             }
@@ -252,24 +301,33 @@ MD;
                         continue;
                     }
                     $verifyModelAlias = $verifyModelClass::MODEL_ALIAS;
-                    $propertyNameInExpandPath = self::getOrderByColumnName($verifyModelClass, $propertyNameInExpandPath);
+                    [$propertyNameInExpandPath, $routedToSearchColumn] = self::getOrderByColumnName($verifyModelClass, $propertyNameInExpandPath);
                     if (!$verifyModelClass::isValidDatabaseExpression("$verifyModelAlias.$propertyNameInExpandPath")) {
                         continue;
                     }
                     $orderByExpression = "$joinAlias.$propertyNameInExpandPath";
+                    $orderByExpression = self::wrapOrderByExpressionForPostgresJson(
+                        $queryBuilder, $orderByExpression, $verifyModelClass, $propertyNameInExpandPath, $routedToSearchColumn
+                    );
                 } else {
                     continue;
                 }
             } else {
                 $baseAlias = $baseModelClass::MODEL_ALIAS;
                 $baseAlias = $orderByOption?->getFiltersDefinition()?->getExpandDefinition() ? '' : $baseAlias;
+                $routedToSearchColumn = false;
                 if ($baseAlias) {
-                    $propertyName = self::getOrderByColumnName($baseModelClass, $propertyName);
+                    [$propertyName, $routedToSearchColumn] = self::getOrderByColumnName($baseModelClass, $propertyName);
                 }
                 $orderByExpression = ($baseAlias ? $baseAlias . '.' : '') . $propertyName;
                 /** @var DoctrineModel $baseModelClass */
                 if (!$baseModelClass::isValidDatabaseExpression($orderByExpression, $baseModelClass)) {
                     continue;
+                }
+                if ($baseAlias) {
+                    $orderByExpression = self::wrapOrderByExpressionForPostgresJson(
+                        $queryBuilder, $orderByExpression, $baseModelClass, $propertyName, $routedToSearchColumn
+                    );
                 }
             }
             $queryBuilder->addOrderBy($orderByExpression, $orderByOption->direction);

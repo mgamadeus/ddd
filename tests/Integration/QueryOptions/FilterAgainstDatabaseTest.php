@@ -24,10 +24,13 @@ use DDD\Tests\Integration\IntegrationTestCase;
 class FilterAgainstDatabaseTest extends IntegrationTestCase
 {
     /**
-     * Only this class's TranslatedRow/JSON cases are gated — see the per-test {@see self::skipTranslatedRowCasesOnPostgres()}
-     * and {@see self::skipWildcardOnIntOnPostgres()} calls below. The CounterRow-only cases (plain int/bool/null
-     * comparisons, no wildcard) are plain portable DQL (`QueryBuilder::expr()`) against quoted scalar columns and
-     * need neither: they run on both engines (§6 step 4/5 item 5, "QueryOptions basic filters").
+     * §6 step 5: the wildcard-on-int and TranslatedRow/JSON cases below used to be gated behind
+     * {@see self::skipWildcardOnIntOnPostgres()} / {@see self::skipTranslatedRowCasesOnPostgres()} pending the
+     * `TEXT_CAST`/`JSON_TEXT` dialect functions this step adds (now wired into
+     * {@see \DDD\Domain\Base\Entities\QueryOptions\FiltersOptions} and
+     * {@see \DDD\Domain\Base\Entities\QueryOptions\OrderByOptions}); the guards are kept as dead code (never
+     * called) rather than deleted, so a future regression's fix is a one-line uncomment away from this same
+     * documented root cause.
      */
     protected function setUp(): void
     {
@@ -104,7 +107,9 @@ class FilterAgainstDatabaseTest extends IntegrationTestCase
 
     protected function translatedRowIds(): array
     {
-        return array_map('intval', static::connection()->fetchFirstColumn('SELECT id FROM TranslatedRows ORDER BY id'));
+        $table = static::dialect()->quote('TranslatedRows');
+        $id = static::dialect()->quote('id');
+        return array_map('intval', static::connection()->fetchFirstColumn("SELECT $id FROM $table ORDER BY $id"));
     }
 
     public function testAQuotedIntIsComparedAsANumber(): void
@@ -130,7 +135,6 @@ class FilterAgainstDatabaseTest extends IntegrationTestCase
 
     public function testAWildcardOnAnIntKeepsItsLike(): void
     {
-        $this->skipWildcardOnIntOnPostgres();
         $this->assertSame(['a', 'b'], $this->counterRowsMatching("amount eq '*4*'"));
     }
 
@@ -141,7 +145,6 @@ class FilterAgainstDatabaseTest extends IntegrationTestCase
 
     public function testAWildcardOnAPlainTranslatableKeepsItsLikeOnTheJsonText(): void
     {
-        $this->skipTranslatedRowCasesOnPostgres();
         [$pizzaRowId] = $this->translatedRowIds();
         $this->assertSame([$pizzaRowId], $this->translatedRowIdsMatching("title eq '*piz*'"));
     }
@@ -154,7 +157,6 @@ class FilterAgainstDatabaseTest extends IntegrationTestCase
 
     public function testAPlainTranslatableSortsAsBefore(): void
     {
-        $this->skipTranslatedRowCasesOnPostgres();
         [$zebraPizzaId, $appleId, $mangoId] = $this->translatedRowIds();
         // the JSON text order: {"en": "Apple"} < {"en": "Mango"} < {"en": "Zebra pizza"}
         $this->assertSame([$appleId, $mangoId, $zebraPizzaId], $this->translatedRowIdsMatching(null, 'title asc'));
@@ -162,7 +164,6 @@ class FilterAgainstDatabaseTest extends IntegrationTestCase
 
     public function testAnExactComparisonOnASearchableTranslatableMatchesASingleLanguageRow(): void
     {
-        $this->skipTranslatedRowCasesOnPostgres();
         [$pizzaId] = $this->translatedRowIds();
         // against the JSON source column 'Pizza' never matched
         $this->assertSame([$pizzaId], $this->translatedRowIdsMatching("name eq 'Pizza'"));
@@ -170,14 +171,12 @@ class FilterAgainstDatabaseTest extends IntegrationTestCase
 
     public function testAWildcardOnASearchableTranslatableMatchesOnItsSearchColumn(): void
     {
-        $this->skipTranslatedRowCasesOnPostgres();
         [, $pastaId] = $this->translatedRowIds();
         $this->assertSame([$pastaId], $this->translatedRowIdsMatching("name eq '*nudel*'"));
     }
 
     public function testANullComparisonOnASearchableTranslatableUsesTheSourceColumn(): void
     {
-        $this->skipTranslatedRowCasesOnPostgres();
         [, , $unnamedId] = $this->translatedRowIds();
         // the search column holds '' for a NULL source
         $this->assertSame([$unnamedId], $this->translatedRowIdsMatching("name eq 'NULL'"));
@@ -185,14 +184,15 @@ class FilterAgainstDatabaseTest extends IntegrationTestCase
 
     public function testASearchableTranslatableSortsByItsSearchText(): void
     {
-        $this->skipTranslatedRowCasesOnPostgres();
-        $connection = static::connection();
-        $connection->executeStatement('DELETE FROM TranslatedRows');
+        // `lastInsertId()` throws outright on PostgreSQL (behind the pooler, Arch §4.6) — this fixture used to be
+        // gated behind that on top of the JSON_TEXT/TEXT_CAST need; it now only needs its two rows isolated and
+        // identified without that call, so it uses the harness's own `insertRow()` (which already quotes
+        // identifiers per dialect, D1) and reads ids back via `translatedRowIds()` instead.
+        static::connection()->executeStatement('DELETE FROM ' . static::dialect()->quote('TranslatedRows'));
         // JSON text order: {"en": "Cerise"} < {"fr": "Banane"}; search text order: Banane < Cerise
-        $connection->insert('TranslatedRows', ['name' => json_encode(['fr' => 'Banane'])]);
-        $bananeId = (int)$connection->lastInsertId();
-        $connection->insert('TranslatedRows', ['name' => json_encode(['en' => 'Cerise'])]);
-        $ceriseId = (int)$connection->lastInsertId();
+        static::insertRow('TranslatedRows', ['name' => json_encode(['fr' => 'Banane'])]);
+        static::insertRow('TranslatedRows', ['name' => json_encode(['en' => 'Cerise'])]);
+        [$bananeId, $ceriseId] = $this->translatedRowIds();
 
         $this->assertSame([$bananeId, $ceriseId], $this->translatedRowIdsMatching(null, 'name asc'));
     }
