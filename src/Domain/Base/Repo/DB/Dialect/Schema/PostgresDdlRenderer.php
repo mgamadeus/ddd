@@ -78,7 +78,7 @@ final class PostgresDdlRenderer implements DdlRenderer
     }
 
     /** @return DdlStatement[] */
-    private function ensureFunctionStatements(): array
+    protected function ensureFunctionStatements(): array
     {
         // Every ddd_* function below pins `SET search_path = public, pg_catalog` (verified against a real PG 18
         // container 2026-10-25). Without it, a SQL-language function that calls another by its bare name — exactly
@@ -207,7 +207,7 @@ final class PostgresDdlRenderer implements DdlRenderer
 
     // ───────────────────────────────────────────────────────── columns
 
-    private function renderColumnDefinition(DatabaseColumn $column): string
+    protected function renderColumnDefinition(DatabaseColumn $column): string
     {
         $type = $this->mapColumnType($column);
         $collation = $this->collationClause($column->sqlType, $column->encrypted, $column->collation);
@@ -226,7 +226,7 @@ final class PostgresDdlRenderer implements DdlRenderer
      * forms). Anything else has no PostgreSQL form yet and is refused, naming the table, property and expression,
      * rather than silently emitting the MariaDB expression (invalid SQL on PostgreSQL) or an empty column.
      */
-    private function renderVirtualColumnDefinition(DatabaseVirtualColumn $virtualColumn, string $table): string
+    protected function renderVirtualColumnDefinition(DatabaseVirtualColumn $virtualColumn, string $table): string
     {
         $columnName = $virtualColumn->getName();
 
@@ -283,7 +283,7 @@ final class PostgresDdlRenderer implements DdlRenderer
      *
      * @return array{0: string, 1: string} [type, collation clause]
      */
-    private function columnDefinitionForReferenceColumn(DatabaseVirtualColumn $virtualColumn): array
+    protected function columnDefinitionForReferenceColumn(DatabaseVirtualColumn $virtualColumn): array
     {
         $referenceColumn = $virtualColumn->referenceColumn;
         if ($referenceColumn === null) {
@@ -297,7 +297,7 @@ final class PostgresDdlRenderer implements DdlRenderer
         return [$type, $collation];
     }
 
-    private function mapColumnType(DatabaseColumn $column): string
+    protected function mapColumnType(DatabaseColumn $column): string
     {
         if ($column->encrypted) {
             // Mirrors DatabaseColumn::getSqlType()'s encrypted branch: text-shaped types stay text, everything
@@ -329,7 +329,7 @@ final class PostgresDdlRenderer implements DdlRenderer
         };
     }
 
-    private function collationClause(?string $sqlType, bool $encrypted, ?string $mariaDbCollation): string
+    protected function collationClause(?string $sqlType, bool $encrypted, ?string $mariaDbCollation): string
     {
         if ($encrypted || !$this->isTextLike($sqlType)) {
             return '';
@@ -345,7 +345,7 @@ final class PostgresDdlRenderer implements DdlRenderer
         return ' COLLATE "' . $collation . '"';
     }
 
-    private function isTextLike(?string $sqlType): bool
+    protected function isTextLike(?string $sqlType): bool
     {
         return in_array(
             $sqlType,
@@ -359,7 +359,7 @@ final class PostgresDdlRenderer implements DdlRenderer
         );
     }
 
-    private function defaultClause(DatabaseColumn $column): string
+    protected function defaultClause(DatabaseColumn $column): string
     {
         if ($column->sqlType === DatabaseColumn::SQL_TYPE_VECTOR) {
             // $column->sqlDefaultValue, if set, carries MariaDB's raw VEC_FromText(...) expression
@@ -387,7 +387,7 @@ final class PostgresDdlRenderer implements DdlRenderer
         return ' DEFAULT ' . $value;
     }
 
-    private function postgresNullVectorLiteral(int $dimensions): string
+    protected function postgresNullVectorLiteral(int $dimensions): string
     {
         if ($dimensions <= 0) {
             throw new InternalErrorException('PostgresDdlRenderer: VECTOR dimensions must be a positive integer.');
@@ -397,7 +397,7 @@ final class PostgresDdlRenderer implements DdlRenderer
 
     // ───────────────────────────────────────────────────────── indexes
 
-    private function renderIndex(DatabaseModel $databaseModel, DatabaseIndex $index): string
+    protected function renderIndex(DatabaseModel $databaseModel, DatabaseIndex $index): string
     {
         $table = $databaseModel->sqlTableName;
         $indexName = $this->identifierPolicy->indexName($table, $index->getIndexNameBase());
@@ -414,7 +414,7 @@ final class PostgresDdlRenderer implements DdlRenderer
         };
     }
 
-    private function renderBtreeIndex(string $table, string $indexName, DatabaseIndex $index, bool $unique): string
+    protected function renderBtreeIndex(string $table, string $indexName, DatabaseIndex $index, bool $unique): string
     {
         $kind = $unique ? 'UNIQUE INDEX' : 'INDEX';
         // G-R3-2: NULLS NOT DISTINCT only ever applies to a UNIQUE index; a plain index ignores the flag.
@@ -422,14 +422,14 @@ final class PostgresDdlRenderer implements DdlRenderer
         return "CREATE $kind \"$indexName\" ON \"$table\" (" . $this->quoteColumns($index->indexColumns) . ')' . $nullsNotDistinct;
     }
 
-    private function renderSpatialIndex(string $table, string $indexName, DatabaseIndex $index): string
+    protected function renderSpatialIndex(string $table, string $indexName, DatabaseIndex $index): string
     {
         // GiST is PostGIS's R-tree-equivalent access method (Mig §3.8) — MariaDB's SPATIAL INDEX counterpart.
         return "CREATE INDEX \"$indexName\" ON \"$table\" USING gist (" . $this->quoteColumns($index->indexColumns) . ')';
     }
 
     /** D14/Mig §3.5: NAME = pg_trgm prefix search on ddd_fold(col); DOCUMENT = to_tsvector fulltext. */
-    private function renderFulltextIndex(string $table, string $indexName, DatabaseIndex $index): string
+    protected function renderFulltextIndex(string $table, string $indexName, DatabaseIndex $index): string
     {
         if (count($index->indexColumns) !== 1) {
             throw new InternalErrorException(
@@ -445,7 +445,7 @@ final class PostgresDdlRenderer implements DdlRenderer
     }
 
     /** D6: ON_DISK (default) -> pgvectorscale diskann at any dimension; IN_MEMORY -> pgvector hnsw, halfvec cast 2001-4000 dims. */
-    private function renderVectorIndex(DatabaseModel $databaseModel, string $table, string $indexName, DatabaseIndex $index): string
+    protected function renderVectorIndex(DatabaseModel $databaseModel, string $table, string $indexName, DatabaseIndex $index): string
     {
         if (count($index->indexColumns) !== 1) {
             throw new InternalErrorException('PostgresDdlRenderer: a multi-column VECTOR index is not supported.');
@@ -480,14 +480,14 @@ final class PostgresDdlRenderer implements DdlRenderer
         return "CREATE INDEX \"$indexName\" ON \"$table\" USING hnsw ($quotedColumn vector_$opsSuffix)";
     }
 
-    private function quoteColumns(array $columns): string
+    protected function quoteColumns(array $columns): string
     {
         return implode(', ', array_map(static fn (string $column): string => '"' . $column . '"', $columns));
     }
 
     // ───────────────────────────────────────────────────────── foreign keys
 
-    private function renderForeignKey(string $table, DatabaseForeignKey $foreignKey): string
+    protected function renderForeignKey(string $table, DatabaseForeignKey $foreignKey): string
     {
         // D1/§4.5: table-first order (opposite of MariaDB's fk_{table}_{col}) so a schema-wide alphabetical listing
         // groups every constraint by its owning table.

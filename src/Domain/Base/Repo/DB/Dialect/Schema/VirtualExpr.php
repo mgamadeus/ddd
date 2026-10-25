@@ -28,7 +28,7 @@ final readonly class VirtualExpr
 
     public const string INTENT_JSON_DECIMAL = 'jsonDecimal';
 
-    private function __construct(
+    protected function __construct(
         public string $intent,
         /** The original, unmodified `as:` string — {@see renderMariaDb()} returns this verbatim. */
         public string $mariaDbExpression,
@@ -144,7 +144,7 @@ final readonly class VirtualExpr
         };
     }
 
-    private function literalSql(): string
+    protected function literalSql(): string
     {
         if (is_int($this->literal)) {
             return (string)$this->literal;
@@ -152,7 +152,7 @@ final readonly class VirtualExpr
         return "'" . str_replace("'", "''", (string)$this->literal) . "'";
     }
 
-    private function quotedKey(): string
+    protected function quotedKey(): string
     {
         return "'" . str_replace("'", "''", (string)$this->jsonKey) . "'";
     }

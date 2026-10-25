@@ -30,12 +30,12 @@ final class IdentifierPolicy
     /** PostgreSQL's NAMEDATALEN is 64, so the last usable identifier byte is index 62 (63 bytes total). */
     public const int MAX_LENGTH = 63;
 
-    private const int HASH_SUFFIX_LENGTH = 8;
+    protected const int HASH_SUFFIX_LENGTH = 8;
 
-    private const int HEAD_LENGTH = self::MAX_LENGTH - self::HASH_SUFFIX_LENGTH - 1;
+    protected const int HEAD_LENGTH = self::MAX_LENGTH - self::HASH_SUFFIX_LENGTH - 1;
 
     /** @var array<string, string> shortened/final name => the full pre-shorten name that produced it */
-    private array $issuedNames = [];
+    protected array $issuedNames = [];
 
     public function indexName(string $table, string $indexNameBase): string
     {
@@ -53,7 +53,7 @@ final class IdentifierPolicy
         return $this->resolve($name);
     }
 
-    private function resolve(string $fullName): string
+    protected function resolve(string $fullName): string
     {
         $final = strlen($fullName) <= self::MAX_LENGTH ? $fullName : $this->shorten($fullName);
         $this->assertNotADuplicate($final, $fullName);
@@ -61,13 +61,13 @@ final class IdentifierPolicy
         return $final;
     }
 
-    private function shorten(string $fullName): string
+    protected function shorten(string $fullName): string
     {
         $hashSuffix = substr(hash('sha256', $fullName), 0, self::HASH_SUFFIX_LENGTH);
         return substr($fullName, 0, self::HEAD_LENGTH) . '_' . $hashSuffix;
     }
 
-    private function assertNotADuplicate(string $final, string $fullName): void
+    protected function assertNotADuplicate(string $final, string $fullName): void
     {
         if (isset($this->issuedNames[$final]) && $this->issuedNames[$final] !== $fullName) {
             throw new InternalErrorException(

@@ -13,7 +13,7 @@ use Composer\InstalledVersions;
  */
 final class ComposerInstalledPackageInfo implements InstalledPackageInfo
 {
-    private const string PACKAGE_NAME = 'mgamadeus/ddd';
+    protected const string PACKAGE_NAME = 'mgamadeus/ddd';
 
     public function prettyVersion(): string
     {
@@ -35,7 +35,7 @@ final class ComposerInstalledPackageInfo implements InstalledPackageInfo
         return $this->distTypeIsPath();
     }
 
-    private function isInstalledAsDependency(): bool
+    protected function isInstalledAsDependency(): bool
     {
         return class_exists(InstalledVersions::class) && InstalledVersions::isInstalled(self::PACKAGE_NAME);
     }
@@ -45,7 +45,7 @@ final class ComposerInstalledPackageInfo implements InstalledPackageInfo
      * to `InstalledVersions.php` itself (`vendor/composer/installed.json`) — best-effort, never fatal if a consuming
      * app's Composer layout differs (an unreadable/unexpected file is simply "not a path install").
      */
-    private function distTypeIsPath(): bool
+    protected function distTypeIsPath(): bool
     {
         $vendorDir = dirname((new \ReflectionClass(InstalledVersions::class))->getFileName(), 2);
         $installedJsonFile = $vendorDir . '/composer/installed.json';

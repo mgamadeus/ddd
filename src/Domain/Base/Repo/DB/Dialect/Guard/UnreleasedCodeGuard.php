@@ -65,7 +65,7 @@ final class UnreleasedCodeGuard
         }
     }
 
-    private static function isReleased(InstalledPackageInfo $packageInfo): bool
+    protected static function isReleased(InstalledPackageInfo $packageInfo): bool
     {
         if ($packageInfo->isPathInstall()) {
             return false;
@@ -75,20 +75,20 @@ final class UnreleasedCodeGuard
     }
 
     /** @return string[] */
-    private static function productionHosts(): array
+    protected static function productionHosts(): array
     {
         return array_values(array_unique([...self::DEFAULT_PRODUCTION_HOSTS, ...self::envList('DB_PRODUCTION_HOSTS')]));
     }
 
     /** @return int[] */
-    private static function productionPorts(): array
+    protected static function productionPorts(): array
     {
         $extra = array_map('intval', self::envList('DB_PRODUCTION_PORTS'));
         return array_values(array_unique([...self::DEFAULT_PRODUCTION_PORTS, ...$extra]));
     }
 
     /** @return string[] */
-    private static function envList(string $envName): array
+    protected static function envList(string $envName): array
     {
         $raw = getenv($envName);
         if ($raw === false || trim($raw) === '') {
