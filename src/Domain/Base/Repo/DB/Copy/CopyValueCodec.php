@@ -30,7 +30,7 @@ final class CopyValueCodec
     public const string PGSQL_COPY_FROM_ARRAY_NULL_AS = "\\\\N";
 
     /** The 2-byte COPY TEXT NULL token a field carries in the row string itself. */
-    private const string FIELD_NULL_TOKEN = '\N';
+    protected const string FIELD_NULL_TOKEN = '\N';
 
     /**
      * Escapes one field's logical text value for COPY TEXT format: backslash, tab, newline, CR; null becomes the
@@ -145,7 +145,7 @@ final class CopyValueCodec
         };
     }
 
-    private static function boolToInt(mixed $value): int
+    protected static function boolToInt(mixed $value): int
     {
         if (is_bool($value)) {
             return $value ? 1 : 0;
@@ -157,12 +157,12 @@ final class CopyValueCodec
         return (int)$value !== 0 ? 1 : 0;
     }
 
-    private static function normalizeZeroDateToNull(string $value): ?string
+    protected static function normalizeZeroDateToNull(string $value): ?string
     {
         return str_starts_with($value, '0000-00-00') ? null : $value;
     }
 
-    private static function zeroDateGuard(
+    protected static function zeroDateGuard(
         string $value,
         DatabaseColumn $column,
         string $table,
@@ -181,7 +181,7 @@ final class CopyValueCodec
         return substr($value, 0, $expectedLength);
     }
 
-    private static function validatedJsonText(string $value, string $table, string $columnName, int|string $id): string
+    protected static function validatedJsonText(string $value, string $table, string $columnName, int|string $id): string
     {
         json_decode($value, associative: true);
         if (json_last_error() !== JSON_ERROR_NONE) {
@@ -194,14 +194,14 @@ final class CopyValueCodec
     }
 
     /** Raw float32-LE bytes (MariaDB VECTOR's on-wire column form, no header) -> PostgreSQL's `[v,v,…]` vector literal. */
-    private static function vectorBytesToText(string $rawBytes): string
+    protected static function vectorBytesToText(string $rawBytes): string
     {
         $floats = self::unpackVectorFloats($rawBytes);
         return '[' . implode(',', array_map(static fn (float $f): string => sprintf('%.9g', $f), $floats)) . ']';
     }
 
     /** @return float[] */
-    private static function unpackVectorFloats(string $rawBytes): array
+    protected static function unpackVectorFloats(string $rawBytes): array
     {
         $floats = unpack('g*', $rawBytes);
         if ($floats === false) {
@@ -211,7 +211,7 @@ final class CopyValueCodec
     }
 
     /** Verify (Mig §5.5 item 2): raw float32-LE bytes, concatenated hex — the bit pattern itself, no decimal text. */
-    private static function vectorBytesToBitHex(string $rawBytes): string
+    protected static function vectorBytesToBitHex(string $rawBytes): string
     {
         return bin2hex($rawBytes);
     }
@@ -222,7 +222,7 @@ final class CopyValueCodec
      * back to the EXACT stored float4 bit pattern, so re-packing it here recovers that same bit pattern (see
      * {@see canonicalizeValueForVerify()}'s docblock comment for why comparing decimal text instead does not work).
      */
-    private static function vectorPgTextToBitHex(string $pgVectorText): string
+    protected static function vectorPgTextToBitHex(string $pgVectorText): string
     {
         $inner = trim($pgVectorText, '[]');
         if ($inner === '') {
@@ -236,12 +236,12 @@ final class CopyValueCodec
     }
 
     /** DatabaseColumn::SPATIAL_SQL_TYPES is an associative set keyed by LOWERCASE type names (point/linestring/…); $column->sqlType is the UPPERCASE SQL_TYPE_* constant — array_key_exists() on the lowered value, never in_array(). */
-    private static function isSpatialType(?string $sqlType): bool
+    protected static function isSpatialType(?string $sqlType): bool
     {
         return $sqlType !== null && array_key_exists(strtolower($sqlType), DatabaseColumn::SPATIAL_SQL_TYPES);
     }
 
-    private static function isBlobType(?string $sqlType): bool
+    protected static function isBlobType(?string $sqlType): bool
     {
         return in_array(
             $sqlType,

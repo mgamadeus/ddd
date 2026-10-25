@@ -29,20 +29,20 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 final class CopyToPostgresService
 {
     /** @var DatabaseModel[] */
-    private array $databaseModels;
+    protected array $databaseModels;
 
-    private PostgresDdlRenderer $renderer;
+    protected PostgresDdlRenderer $renderer;
 
     /**
      * @param DatabaseModel[] $databaseModels Already filtered by --table; one DatabaseModel per entity to copy.
      */
     public function __construct(
-        private readonly Connection $source,
-        private readonly Connection $target,
+        protected readonly Connection $source,
+        protected readonly Connection $target,
         array $databaseModels,
-        private readonly SymfonyStyle $io,
-        private readonly int $chunkSize = 5000,
-        private readonly bool $dryRun = false,
+        protected readonly SymfonyStyle $io,
+        protected readonly int $chunkSize = 5000,
+        protected readonly bool $dryRun = false,
     ) {
         $this->databaseModels = $databaseModels;
         $this->renderer = new PostgresDdlRenderer();
@@ -124,7 +124,7 @@ final class CopyToPostgresService
         return $results;
     }
 
-    private function copyTable(DatabaseModel $databaseModel): int
+    protected function copyTable(DatabaseModel $databaseModel): int
     {
         $table = $databaseModel->sqlTableName;
         /** @var DatabaseColumn[] $columns */
@@ -219,7 +219,7 @@ final class CopyToPostgresService
         return $results;
     }
 
-    private function resetIdentity(DatabaseModel $databaseModel): void
+    protected function resetIdentity(DatabaseModel $databaseModel): void
     {
         $table = $databaseModel->sqlTableName;
         $primaryKeyColumn = $databaseModel->columns->getPrimaryKeyColumn();
@@ -259,7 +259,7 @@ final class CopyToPostgresService
     }
 
     /** @return array{idSetMatches: bool, rowMismatches: string[], identityOk: bool, rows: int} */
-    private function verifyTable(DatabaseModel $databaseModel): array
+    protected function verifyTable(DatabaseModel $databaseModel): array
     {
         $table = $databaseModel->sqlTableName;
         /** @var DatabaseColumn[] $columns */
@@ -281,30 +281,41 @@ final class CopyToPostgresService
             array_map(static fn (DatabaseColumn $c): string => CopyValueCodec::postgresSelectExpression($c), $columns)
         );
 
-        $sourceRows = [];
-        foreach ($this->source->fetchAllAssociative("SELECT $sourceSelect FROM `$table` ORDER BY `id`") as $row) {
-            $sourceRows[(int)$row['id']] = $row;
-        }
-        $targetRows = [];
-        foreach ($this->target->fetchAllAssociative('SELECT ' . $targetSelect . ' FROM "' . $table . '" ORDER BY "id"') as $row) {
-            $targetRows[(int)$row['id']] = $row;
-        }
-
+        // Compared in id windows of the chunk size: a table can hold more data than PHP may load at once
+        // (Dineful MediaItems: ~1.1 GB in 764 rows), so neither side is ever fetched whole.
         $mismatches = [];
-        foreach ($sourceIds as $id) {
-            if (!isset($targetRows[$id])) {
-                continue; // already surfaced by the id-set mismatch
+        foreach (array_chunk($sourceIds, max(1, $this->chunkSize)) as $idWindow) {
+            $firstId = $idWindow[0];
+            $lastId = $idWindow[count($idWindow) - 1];
+            $sourceRows = [];
+            foreach ($this->source->fetchAllAssociative(
+                "SELECT $sourceSelect FROM `$table` WHERE `id` BETWEEN ? AND ? ORDER BY `id`",
+                [$firstId, $lastId]
+            ) as $row) {
+                $sourceRows[(int)$row['id']] = $row;
             }
-            $sourceCanonical = $this->canonicalRow($columns, $sourceRows[$id], fromPostgres: false);
-            $targetCanonical = $this->canonicalRow($columns, $targetRows[$id], fromPostgres: true);
-            if ($sourceCanonical !== $targetCanonical) {
-                $diffColumns = [];
-                foreach ($sourceCanonical as $columnName => $value) {
-                    if (($targetCanonical[$columnName] ?? null) !== $value) {
-                        $diffColumns[] = $columnName;
-                    }
+            $targetRows = [];
+            foreach ($this->target->fetchAllAssociative(
+                'SELECT ' . $targetSelect . ' FROM "' . $table . '" WHERE "id" BETWEEN ? AND ? ORDER BY "id"',
+                [$firstId, $lastId]
+            ) as $row) {
+                $targetRows[(int)$row['id']] = $row;
+            }
+            foreach ($idWindow as $id) {
+                if (!isset($targetRows[$id], $sourceRows[$id])) {
+                    continue; // already surfaced by the id-set mismatch
                 }
-                $mismatches[] = "id=$id: " . implode(',', $diffColumns);
+                $sourceCanonical = $this->canonicalRow($columns, $sourceRows[$id], fromPostgres: false);
+                $targetCanonical = $this->canonicalRow($columns, $targetRows[$id], fromPostgres: true);
+                if ($sourceCanonical !== $targetCanonical) {
+                    $diffColumns = [];
+                    foreach ($sourceCanonical as $columnName => $value) {
+                        if (($targetCanonical[$columnName] ?? null) !== $value) {
+                            $diffColumns[] = $columnName;
+                        }
+                    }
+                    $mismatches[] = "id=$id: " . implode(',', $diffColumns);
+                }
             }
         }
 
@@ -332,7 +343,7 @@ final class CopyToPostgresService
     }
 
     /** @param DatabaseColumn[] $columns @return array<string, string|null> */
-    private function canonicalRow(array $columns, array $row, bool $fromPostgres): array
+    protected function canonicalRow(array $columns, array $row, bool $fromPostgres): array
     {
         $canonical = [];
         foreach ($columns as $column) {
@@ -341,7 +352,7 @@ final class CopyToPostgresService
         return $canonical;
     }
 
-    private function targetSequenceName(string $table): string
+    protected function targetSequenceName(string $table): string
     {
         $sequence = $this->target->fetchOne("SELECT pg_get_serial_sequence(?, 'id')", ['"' . $table . '"']);
         if (!is_string($sequence) || $sequence === '') {

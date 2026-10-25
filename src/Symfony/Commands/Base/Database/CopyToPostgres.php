@@ -50,7 +50,7 @@ class CopyToPostgres extends Command
      *      never scans tests/ — see ShowEntitySql's own pattern). Null means production discovery: every
      *      DB-mapped entity, exactly like `app:entity:show-sql` with no argument.
      */
-    public function __construct(private readonly ?array $entityClassNames = null)
+    public function __construct(protected readonly ?array $entityClassNames = null)
     {
         parent::__construct();
     }
@@ -146,7 +146,7 @@ class CopyToPostgres extends Command
         return $exitCode;
     }
 
-    private function resolveSourceConnection(string $sourceDsn): Connection
+    protected function resolveSourceConnection(string $sourceDsn): Connection
     {
         if ($sourceDsn !== '') {
             $parts = parse_url($sourceDsn);
@@ -178,7 +178,7 @@ class CopyToPostgres extends Command
      * @param string[] $tableFilter
      * @return array{0: DatabaseModel[], 1: string[]} [models to copy, source tables with no matching entity]
      */
-    private function resolveDatabaseModels(Connection $source, string $targetDbName, array $tableFilter, SymfonyStyle $io): array
+    protected function resolveDatabaseModels(Connection $source, string $targetDbName, array $tableFilter, SymfonyStyle $io): array
     {
         $entityClassNames = $this->entityClassNames ?? array_map(
             static fn ($classWithNamespace): string => $classWithNamespace->getNameWithNamespace(),
@@ -220,7 +220,7 @@ class CopyToPostgres extends Command
     }
 
     /** @param array<string, array{seconds: float}> $rows */
-    private function renderTimingTable(SymfonyStyle $io, string $firstHeader, string $secondHeader, array $rows): bool
+    protected function renderTimingTable(SymfonyStyle $io, string $firstHeader, string $secondHeader, array $rows): bool
     {
         $table = new Table($io);
         $table->setHeaders([$firstHeader, $secondHeader]);
@@ -232,7 +232,7 @@ class CopyToPostgres extends Command
     }
 
     /** @param array<string, array{rows: int, seconds: float}> $rows */
-    private function renderDataTable(SymfonyStyle $io, array $rows): bool
+    protected function renderDataTable(SymfonyStyle $io, array $rows): bool
     {
         $table = new Table($io);
         $table->setHeaders(['Table', 'Rows', 'Seconds']);
@@ -244,7 +244,7 @@ class CopyToPostgres extends Command
     }
 
     /** @param array<string, array{idSetMatches: bool, rowMismatches: string[], identityOk: bool, rows: int}> $rows */
-    private function renderVerifyTable(SymfonyStyle $io, array $rows): bool
+    protected function renderVerifyTable(SymfonyStyle $io, array $rows): bool
     {
         $table = new Table($io);
         $table->setHeaders(['Table', 'Rows', 'Id sets', 'Row hashes', 'Identity', 'Result']);
