@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace DDD\Tests\Domain\Base\Repo\DB\Dialect;
 
 use DDD\Domain\Base\Repo\DB\Dialect\DatabaseConfigurationException;
+use DDD\Domain\Base\Repo\DB\Dialect\Locks\PostgresLockService;
 use DDD\Domain\Base\Repo\DB\Dialect\PostgresDialect;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\PostgresDdlRenderer;
+use Doctrine\DBAL\Connection;
 use PDO;
 use PHPUnit\Framework\TestCase;
 
@@ -66,5 +68,33 @@ final class PostgresDialectTest extends TestCase
         $this->assertInstanceOf(PostgresDdlRenderer::class, $first);
         $this->assertInstanceOf(PostgresDdlRenderer::class, $second);
         $this->assertNotSame($first, $second);
+    }
+
+    /**
+     * §4.12 fix: `locks()` must hand back the SAME {@see PostgresLockService} for repeated calls with the same
+     * scope on the same `PostgresDialect` instance (which is itself the process-wide singleton
+     * {@see \DDD\Domain\Base\Repo\DB\Dialect\DialectResolver} caches) — otherwise a nested
+     * `AdvisoryLock::synchronized()` acquiring a name this request already holds goes through a FRESH instance
+     * with an empty depth map, which opens a SECOND direct connection and blocks on its own held lock (the exact
+     * "Could not acquire advisory lock … within 10s" self-timeout this test guards against). $connection is
+     * irrelevant to the cache key — PostgresLockService never uses it (see {@see SqlDialect::locks()}'s
+     * docblock) — only $scope is.
+     */
+    public function testLocksReturnsTheSameInstancePerScope(): void
+    {
+        $connection = $this->createMock(Connection::class);
+
+        $firstDefault = $this->dialect->locks($connection);
+        $secondDefault = $this->dialect->locks($connection, 'DEFAULT');
+        $this->assertInstanceOf(PostgresLockService::class, $firstDefault);
+        $this->assertSame($firstDefault, $secondDefault, 'two calls for the same scope must share one instance');
+
+        $otherScope = $this->dialect->locks($connection, 'OTHER');
+        $this->assertNotSame($firstDefault, $otherScope, 'a different scope must get its own instance');
+
+        // A second, independent PostgresDialect (simulating a different process — PHP has no cross-process
+        // statics) gets its own cache, so it is NOT the same instance either.
+        $freshProcessDialect = new PostgresDialect();
+        $this->assertNotSame($firstDefault, $freshProcessDialect->locks($connection));
     }
 }

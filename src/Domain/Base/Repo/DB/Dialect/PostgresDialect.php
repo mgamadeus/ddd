@@ -85,6 +85,24 @@ use PDO;
  */
 final class PostgresDialect implements SqlDialect
 {
+    /**
+     * One {@see PostgresLockService} per scope, for this process's whole lifetime (§4.12 fix: "a per-process
+     * name → depth map" only works per-process when the SAME instance backs every `locks()` call for a scope —
+     * `PostgresDialect` itself is already the process-wide singleton {@see DialectResolver} caches, so caching
+     * here is caching for the process). Without this, each `locks()` call handed out a FRESH
+     * `PostgresLockService`, each opening its OWN direct connection (a fresh PostgreSQL backend/session) lazily
+     * on first use: a nested acquire of a name this same request already holds — `AdvisoryLock::synchronized()`
+     * calling into nested service code that acquires the SAME name again — went through a SECOND instance whose
+     * empty `$depths` map saw no re-entrancy, so it tried `pg_try_advisory_lock` on a BRAND NEW backend session
+     * for a key a DIFFERENT session already holds; PostgreSQL advisory locks are session-scoped, so that second
+     * session blocks until timeout — the process deadlocks on its own held lock. One instance per scope makes
+     * every nested call share one `$depths` map (and one backend session), so {@see AbstractLockService}'s
+     * existing re-entrancy actually applies. A second PROCESS still gets its own `PostgresDialect`/cache (PHP has
+     * no cross-process statics) and so still genuinely blocks on another process's held lock, as intended.
+     *
+     * @var array<string, PostgresLockService>
+     */
+    protected array $lockServicesByScope = [];
 
     public function name(): string
     {
@@ -275,10 +293,11 @@ final class PostgresDialect implements SqlDialect
         return new PostgresUpsertBuilder();
     }
 
-    /** $connection is ignored on purpose — see {@see SqlDialect::locks()}'s docblock. */
+    /** $connection is ignored on purpose — see {@see SqlDialect::locks()}'s docblock; the returned instance is
+     * cached per scope for this process's lifetime — see {@see self::$lockServicesByScope}'s docblock. */
     public function locks(Connection $connection, string $scope = 'DEFAULT'): LockService
     {
-        return new PostgresLockService($scope, $this);
+        return $this->lockServicesByScope[$scope] ??= new PostgresLockService($scope, $this);
     }
 
     // ─── §4.3 app-facing SQL-fragment helpers — new work this build step; each is verified (unit fixtures,

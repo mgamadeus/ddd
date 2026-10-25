@@ -392,6 +392,119 @@ final class PostgresDdlRendererTest extends TestCase
         }
     }
 
+    /** @return string[] every CREATE_FOREIGN_KEY statement's SQL, in declaration order */
+    private function foreignKeyStatementSqls(DatabaseModel $model): array
+    {
+        return array_values(array_map(
+            static fn (DdlStatement $statement): string => $statement->sql,
+            array_filter(
+                $this->renderer->renderCreate($model),
+                static fn (DdlStatement $statement): bool => $statement->phase === DdlStatement::PHASE_CREATE_FOREIGN_KEY
+            )
+        ));
+    }
+
+    /**
+     * §4.10 multi-path cascade fix (pg-run4: deleting a Business → "insert or update on table Bills violates
+     * foreign key constraint Bills_fk_orderId" — Dineful's real shape, reproduced here minimally): a table with
+     * one `ON DELETE CASCADE` FK and one `ON DELETE SET NULL` FK to a DIFFERENT ancestor gets BOTH foreign keys
+     * deferred to commit, because a single parent delete can run this table's own cascade-delete and its
+     * same-row SET NULL update in either order.
+     */
+    public function testBothForeignKeysAreDeferredWhenTheTableMixesCascadeAndSetNull(): void
+    {
+        $columns = new DatabaseColumns();
+        $orderIdColumn = $this->column('orderId', DatabaseColumn::SQL_TYPE_INT);
+        $columns->add($orderIdColumn);
+        $businessIdColumn = $this->column('businessId', DatabaseColumn::SQL_TYPE_INT);
+        $columns->add($businessIdColumn);
+        $model = $this->model('Bills', $columns);
+
+        $toOrder = new DatabaseForeignKey(onDeleteAction: DatabaseForeignKey::ACTION_CASCADE);
+        $toOrder->internalIdColumn = 'orderId';
+        $toOrder->internalColumn = 'order';
+        $toOrder->foreignTable = 'Orders';
+        $toOrder->foreignModelClassName = 'DBOrderModel';
+        $model->foreignKeys->add($toOrder);
+
+        $toBusiness = new DatabaseForeignKey(onDeleteAction: DatabaseForeignKey::ACTION_SET_NULL);
+        $toBusiness->internalIdColumn = 'businessId';
+        $toBusiness->internalColumn = 'business';
+        $toBusiness->foreignTable = 'Businesses';
+        $toBusiness->foreignModelClassName = 'DBBusinessModel';
+        $model->foreignKeys->add($toBusiness);
+
+        $sqls = $this->foreignKeyStatementSqls($model);
+        $this->assertCount(2, $sqls);
+        foreach ($sqls as $sql) {
+            $this->assertStringEndsWith('DEFERRABLE INITIALLY DEFERRED', $sql);
+        }
+    }
+
+    /** The SET_DEFAULT action deferral-triggers exactly like SET_NULL does. */
+    public function testSetDefaultAlsoTriggersDeferralNextToACascadeForeignKey(): void
+    {
+        $columns = new DatabaseColumns();
+        $orderIdColumn = $this->column('orderId', DatabaseColumn::SQL_TYPE_INT);
+        $columns->add($orderIdColumn);
+        $statusIdColumn = $this->column('statusId', DatabaseColumn::SQL_TYPE_INT);
+        $columns->add($statusIdColumn);
+        $model = $this->model('Bills', $columns);
+
+        $toOrder = new DatabaseForeignKey(onDeleteAction: DatabaseForeignKey::ACTION_CASCADE);
+        $toOrder->internalIdColumn = 'orderId';
+        $toOrder->internalColumn = 'order';
+        $toOrder->foreignTable = 'Orders';
+        $toOrder->foreignModelClassName = 'DBOrderModel';
+        $model->foreignKeys->add($toOrder);
+
+        $toStatus = new DatabaseForeignKey(onDeleteAction: DatabaseForeignKey::ACTION_SET_DEFAULT);
+        $toStatus->internalIdColumn = 'statusId';
+        $toStatus->internalColumn = 'status';
+        $toStatus->foreignTable = 'Statuses';
+        $toStatus->foreignModelClassName = 'DBStatusModel';
+        $model->foreignKeys->add($toStatus);
+
+        foreach ($this->foreignKeyStatementSqls($model) as $sql) {
+            $this->assertStringEndsWith('DEFERRABLE INITIALLY DEFERRED', $sql);
+        }
+    }
+
+    /**
+     * No deferral when the table's foreign keys do not mix a CASCADE with a SET NULL/SET DEFAULT — the common
+     * case, unaffected by this fix (also proven unchanged by {@see testForeignKeyIsTablePrefixedAndActionsPassThrough}
+     * above, whose single SET NULL foreign key has no sibling CASCADE on the same table).
+     */
+    public function testNeitherForeignKeyIsDeferredWhenAllDeleteActionsAgree(): void
+    {
+        $columns = new DatabaseColumns();
+        $orderIdColumn = $this->column('orderId', DatabaseColumn::SQL_TYPE_INT);
+        $columns->add($orderIdColumn);
+        $menuIdColumn = $this->column('menuId', DatabaseColumn::SQL_TYPE_INT);
+        $columns->add($menuIdColumn);
+        $model = $this->model('OrderItems', $columns);
+
+        $toOrder = new DatabaseForeignKey(onDeleteAction: DatabaseForeignKey::ACTION_CASCADE);
+        $toOrder->internalIdColumn = 'orderId';
+        $toOrder->internalColumn = 'order';
+        $toOrder->foreignTable = 'Orders';
+        $toOrder->foreignModelClassName = 'DBOrderModel';
+        $model->foreignKeys->add($toOrder);
+
+        $toMenu = new DatabaseForeignKey(onDeleteAction: DatabaseForeignKey::ACTION_CASCADE);
+        $toMenu->internalIdColumn = 'menuId';
+        $toMenu->internalColumn = 'menu';
+        $toMenu->foreignTable = 'Menus';
+        $toMenu->foreignModelClassName = 'DBMenuModel';
+        $model->foreignKeys->add($toMenu);
+
+        $sqls = $this->foreignKeyStatementSqls($model);
+        $this->assertCount(2, $sqls);
+        foreach ($sqls as $sql) {
+            $this->assertStringNotContainsString('DEFERRABLE', $sql);
+        }
+    }
+
     // ───────────────────────────────────────────────────────── virtual columns
 
     public function testTranslatableFullTextSearchColumnRendersAsStoredGeneratedColumn(): void

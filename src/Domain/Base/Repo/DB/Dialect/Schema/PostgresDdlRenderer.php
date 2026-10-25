@@ -260,12 +260,13 @@ final class PostgresDdlRenderer implements DdlRenderer
             );
         }
 
+        $deferrable = $this->tableNeedsDeferredForeignKeys($databaseModel);
         foreach ($databaseModel->foreignKeys->getElements() as $foreignKey) {
             if (!$foreignKey->applyForeignKeyConstraint) {
                 continue;
             }
             $statements[] = new DdlStatement(
-                sql: $this->renderForeignKey($table, $foreignKey),
+                sql: $this->renderForeignKey($table, $foreignKey, $deferrable),
                 phase: DdlStatement::PHASE_CREATE_FOREIGN_KEY,
                 table: $table,
             );
@@ -562,16 +563,65 @@ final class PostgresDdlRenderer implements DdlRenderer
 
     // ───────────────────────────────────────────────────────── foreign keys
 
-    protected function renderForeignKey(string $table, DatabaseForeignKey $foreignKey): string
+    protected function renderForeignKey(string $table, DatabaseForeignKey $foreignKey, bool $deferrable = false): string
     {
         // D1/§4.5: table-first order (opposite of MariaDB's fk_{table}_{col}) so a schema-wide alphabetical listing
         // groups every constraint by its owning table.
         $constraintName = $this->identifierPolicy->foreignKeyName($table, $foreignKey->internalIdColumn);
 
+        // §4.10 multi-path cascade fix: a table whose OWN foreign keys mix a CASCADE action with a SET
+        // NULL/SET DEFAULT action gets every one of its FKs deferred to COMMIT (see
+        // tableNeedsDeferredForeignKeys()'s docblock for why an immediate check on this table is unsafe).
+        $deferrableClause = $deferrable ? ' DEFERRABLE INITIALLY DEFERRED' : '';
+
         return "ALTER TABLE \"$table\" ADD CONSTRAINT \"$constraintName\" FOREIGN KEY (\"$foreignKey->internalIdColumn\") "
             . "REFERENCES \"$foreignKey->foreignTable\" (\"$foreignKey->foreignIdColumn\") "
             // DatabaseForeignKey::ACTION_* strings (CASCADE, NO ACTION, SET NULL, RESTRICT, SET DEFAULT) are already
             // valid PostgreSQL referential-action keywords — no per-dialect mapping needed.
-            . "ON UPDATE $foreignKey->onUpdateAction ON DELETE $foreignKey->onDeleteAction";
+            . "ON UPDATE $foreignKey->onUpdateAction ON DELETE $foreignKey->onDeleteAction" . $deferrableClause;
+    }
+
+    /**
+     * §4.10 ("FK validation and deferral"), the dual-dialect plan's multi-path cascade fix: true when
+     * $databaseModel declares at least one FK with `ON DELETE CASCADE` AND at least one FK with
+     * `ON DELETE SET NULL`/`SET DEFAULT` (e.g. Dineful's `Bills.orderId` CASCADE to `Orders` next to
+     * `Bills.businessId` SET NULL to `Businesses`, with `Orders.businessId` itself CASCADE to `Businesses`).
+     *
+     * Why an immediate check is unsafe on such a table: deleting the shared ancestor (`Businesses`) fires BOTH
+     * of this table's FK actions in one statement — a cascade delete of this row (via the chain through the
+     * CASCADE-linked parent) and a same-row SET NULL/SET DEFAULT update (via the FK straight to the ancestor).
+     * PostgreSQL does not guarantee the delete runs before the update; when the update runs first it re-checks
+     * every OTHER immediate FK on the row it just touched — including the CASCADE one — against a parent that
+     * a sibling cascade chain may have already deleted, raising a spurious "violates foreign key constraint"
+     * even though this very row is itself about to be cascade-deleted a moment later. Deferring every FK on the
+     * table to end-of-transaction (`DEFERRABLE INITIALLY DEFERRED`) makes the check run once, after every row
+     * that is going away has already gone, so the cascade delete and the SET NULL/SET DEFAULT update can land
+     * in any order without tripping each other.
+     *
+     * Trade-off accepted for this rule (table-local, both-actions-present only — never "every FK" and never
+     * cross-table graph analysis): a genuine FK violation on one of this table's OTHER rows now surfaces at
+     * COMMIT instead of at the statement that caused it. No DDD or app code catches
+     * `Doctrine\DBAL\Exception\ForeignKeyConstraintViolationException` (searched both repos), so nothing relies
+     * on the immediate-throw timing; MariaDB is unaffected (it has no DEFERRABLE concept, this method is
+     * PostgreSQL-only).
+     */
+    protected function tableNeedsDeferredForeignKeys(DatabaseModel $databaseModel): bool
+    {
+        $hasCascade = false;
+        $hasSetNullOrDefault = false;
+        foreach ($databaseModel->foreignKeys->getElements() as $foreignKey) {
+            if (!$foreignKey->applyForeignKeyConstraint) {
+                continue;
+            }
+            if ($foreignKey->onDeleteAction === DatabaseForeignKey::ACTION_CASCADE) {
+                $hasCascade = true;
+            } elseif (
+                $foreignKey->onDeleteAction === DatabaseForeignKey::ACTION_SET_NULL
+                || $foreignKey->onDeleteAction === DatabaseForeignKey::ACTION_SET_DEFAULT
+            ) {
+                $hasSetNullOrDefault = true;
+            }
+        }
+        return $hasCascade && $hasSetNullOrDefault;
     }
 }

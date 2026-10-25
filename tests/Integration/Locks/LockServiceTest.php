@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace DDD\Tests\Integration\Locks;
 
 use DDD\Domain\Base\Repo\DB\Dialect\Locks\LockTimeoutException;
+use DDD\Domain\Base\Repo\DB\Dialect\PostgresDialect;
+use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Domain\Common\Services\DatabaseSchemaDiffService;
 use DDD\Infrastructure\Libs\Config;
@@ -73,6 +75,25 @@ final class LockServiceTest extends TestCase
         return $connection;
     }
 
+    /**
+     * The dialect a "contender" (simulated second process) acquires through. On MariaDB, `locks($connection)`
+     * always wraps the GIVEN connection in a fresh `MariaDbLockService` (architecture plan §4.12) — the shared
+     * `EntityManagerFactory::getDialect()` singleton already behaves like a second process once handed a second
+     * connection. On PostgreSQL, `locks()` now caches one `PostgresLockService` per scope ON the dialect instance
+     * (§4.12 fix, this build step) so that NESTED acquires within the SAME process/request — two different call
+     * sites each doing `getDialect()->locks($connection)` for a name this same request already holds — share one
+     * depth map instead of each opening its own direct connection and blocking on the other's held advisory lock.
+     * That means handing the shared singleton a second `$connection` no longer simulates a second process on
+     * PostgreSQL (it would return the SAME cached instance as the holder's, defeating the simulation) — a
+     * genuinely different process gets its OWN `PostgresDialect` (statics do not cross OS processes), so the
+     * test constructs a fresh one here to match.
+     */
+    protected function contenderDialect(): SqlDialect
+    {
+        $dialect = EntityManagerFactory::getDialect();
+        return $dialect instanceof PostgresDialect ? new PostgresDialect() : $dialect;
+    }
+
     public function testAcquireThenReleaseRoundTrip(): void
     {
         $name = $this->lockName('roundtrip');
@@ -91,7 +112,7 @@ final class LockServiceTest extends TestCase
         $holder = $dialect->locks(EntityManagerFactory::getInstance()->getConnection());
         $this->assertTrue($holder->acquire($name, 5));
 
-        $contender = $dialect->locks($this->secondConnection());
+        $contender = $this->contenderDialect()->locks($this->secondConnection());
         $start = microtime(true);
         $this->assertFalse($contender->acquire($name, 1), 'a second session must not get a lock the first holds');
         $elapsed = microtime(true) - $start;
@@ -108,7 +129,7 @@ final class LockServiceTest extends TestCase
         $holder = $dialect->locks(EntityManagerFactory::getInstance()->getConnection());
         $this->assertTrue($holder->acquire($name, 5));
 
-        $contender = $dialect->locks($this->secondConnection());
+        $contender = $this->contenderDialect()->locks($this->secondConnection());
         $this->assertFalse($contender->acquire($name, 0));
 
         $this->assertTrue($holder->release($name));
@@ -132,7 +153,7 @@ final class LockServiceTest extends TestCase
         }
 
         // Prove the lock was actually released server-side: a different session can now take it.
-        $contender = $dialect->locks($this->secondConnection());
+        $contender = $this->contenderDialect()->locks($this->secondConnection());
         $this->assertTrue($contender->acquire($name, 1));
         $this->assertTrue($contender->release($name));
     }
@@ -148,8 +169,48 @@ final class LockServiceTest extends TestCase
         });
         $this->assertSame('inner', $result);
 
-        $contender = $dialect->locks($this->secondConnection());
+        $contender = $this->contenderDialect()->locks($this->secondConnection());
         $this->assertTrue($contender->acquire($name, 1), 'the outer synchronized() must have released once both levels unwound');
+        $this->assertTrue($contender->release($name));
+    }
+
+    /**
+     * The exact self-timeout this build step fixes (§4.12, pg-run4: "Could not acquire advisory lock
+     * lock:locations:location-slug:… within 10s"): `AdvisoryLock::synchronized()` and nested service code each
+     * call `getDialect()->locks($connection)` independently — TWO SEPARATE `locks()` calls, not one reused
+     * variable (unlike {@see testNestedSynchronizedOnTheSameNameDoesNotDeadlock} above). Before the fix, each
+     * call on PostgreSQL got a FRESH `PostgresLockService` with its own empty depth map, which opened its own
+     * direct connection and tried `pg_try_advisory_lock` on a BRAND NEW backend session for a name a DIFFERENT
+     * session (the first call's) already held — a real session-scoped PostgreSQL advisory lock is not visible
+     * as "already held" across two different backend connections, so the inner acquire genuinely blocked until
+     * timeout. Caching one `PostgresLockService` per scope on the dialect singleton makes both calls return the
+     * SAME instance, so the existing re-entrant depth map in {@see
+     * \DDD\Domain\Base\Repo\DB\Dialect\Locks\AbstractLockService} actually applies. On MariaDB this was never
+     * broken — `GET_LOCK` is itself re-entrant and ref-counted per session (MariaDB ≥ 10.0.2) — so this test is
+     * equally valid, and green, on both engines.
+     */
+    public function testNestedAcquireThroughTwoSeparateLocksCallsOnTheSameProcessDoesNotSelfDeadlock(): void
+    {
+        $name = $this->lockName('nested-separate-calls');
+        $connection = EntityManagerFactory::getInstance()->getConnection();
+
+        // Two INDEPENDENT locks() calls — simulates AdvisoryLock::synchronized() calling into nested service
+        // code that independently resolves the dialect's lock service again for the same scope.
+        $outer = EntityManagerFactory::getDialect()->locks($connection);
+        $inner = EntityManagerFactory::getDialect()->locks($connection);
+
+        $start = microtime(true);
+        $result = $outer->synchronized($name, 5, function () use ($inner, $name) {
+            return $inner->synchronized($name, 5, static fn () => 'inner');
+        });
+        $elapsed = microtime(true) - $start;
+
+        $this->assertSame('inner', $result);
+        $this->assertLessThan(2.0, $elapsed, 'the nested acquire must succeed immediately, never wait out any part of the timeout');
+
+        // Fully released — a genuinely separate process can now take the name.
+        $contender = $this->contenderDialect()->locks($this->secondConnection());
+        $this->assertTrue($contender->acquire($name, 1));
         $this->assertTrue($contender->release($name));
     }
 
@@ -161,7 +222,7 @@ final class LockServiceTest extends TestCase
         $holder = $dialect->locks(EntityManagerFactory::getInstance()->getConnection());
         $this->assertTrue($holder->acquire($name, 5));
 
-        $contender = $dialect->locks($this->secondConnection());
+        $contender = $this->contenderDialect()->locks($this->secondConnection());
         $this->expectException(LockTimeoutException::class);
         try {
             $contender->synchronized($name, 1, static fn () => 'never reached');
@@ -182,7 +243,7 @@ final class LockServiceTest extends TestCase
 
         $this->assertTrue($holder->acquire(DatabaseSchemaDiffService::APPLY_LOCK_NAME, 5));
 
-        $contender = $dialect->locks($this->secondConnection());
+        $contender = $this->contenderDialect()->locks($this->secondConnection());
         $this->assertFalse(
             $contender->acquire(DatabaseSchemaDiffService::APPLY_LOCK_NAME, 0),
             'a second apply must be refused the lock while the first holds it, exactly like the BadRequestException path in applyDiffs()'
