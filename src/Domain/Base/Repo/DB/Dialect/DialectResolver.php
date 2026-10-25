@@ -21,11 +21,11 @@ use WeakMap;
  */
 final class DialectResolver
 {
-    private static ?MariaDbDialect $mariaDb = null;
-    private static ?PostgresDialect $postgres = null;
+    protected static ?MariaDbDialect $mariaDb = null;
+    protected static ?PostgresDialect $postgres = null;
 
     /** @var WeakMap<Connection, SqlDialect>|null */
-    private static ?WeakMap $byConnection = null;
+    protected static ?WeakMap $byConnection = null;
 
     public static function forDriver(string $driver): SqlDialect
     {
@@ -61,12 +61,12 @@ final class DialectResolver
         };
     }
 
-    private static function mariaDb(): MariaDbDialect
+    protected static function mariaDb(): MariaDbDialect
     {
         return self::$mariaDb ??= new MariaDbDialect();
     }
 
-    private static function postgres(): PostgresDialect
+    protected static function postgres(): PostgresDialect
     {
         return self::$postgres ??= new PostgresDialect();
     }
