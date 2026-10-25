@@ -37,6 +37,7 @@ class PostgresLimitSubqueryOutputWalker extends LimitSubqueryOutputWalker
 {
     use NullsOrderingTrait;
     use JsonColumnAwareTrait;
+    use PostgresComparisonTrait;
 
     /** {@inheritDoc} */
     public function walkOrderByItem($orderByItem)
