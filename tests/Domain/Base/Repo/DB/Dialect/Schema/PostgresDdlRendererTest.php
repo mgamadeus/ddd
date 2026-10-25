@@ -416,7 +416,8 @@ final class PostgresDdlRendererTest extends TestCase
         );
     }
 
-    public function testNonTranslatableVirtualColumnIsRefused(): void
+    /** A shape VirtualExpr does not recognise (no outer parens, backticked identifier) still refuses. */
+    public function testUnrecognisedVirtualColumnExpressionIsRefused(): void
     {
         $column = $this->column('locationId', DatabaseColumn::SQL_TYPE_INT);
         $columns = new DatabaseColumns();
@@ -424,12 +425,124 @@ final class PostgresDdlRendererTest extends TestCase
         $model = $this->model('AccountRights', $columns);
 
         $virtualColumn = new DatabaseVirtualColumn(as: 'IFNULL(`locationId`, 0)', stored: true, createIndex: false);
-        $referenceColumn = $this->column('virtualLocationId', DatabaseColumn::SQL_TYPE_INT);
+        $referenceColumn = $this->column('locationId', DatabaseColumn::SQL_TYPE_INT);
         $virtualColumn->referenceColumn = $referenceColumn;
         $model->virtualColumns->add($virtualColumn);
 
         $this->expectException(InternalErrorException::class);
+        $this->expectExceptionMessageMatches('/AccountRights.*locationId.*IFNULL\(`locationId`, 0\)/s');
         $this->renderer->renderCreate($model);
+    }
+
+    /** Mig §3.7: `IFNULL(col, 0)` — the coalesce intent, column type carried over from the reference column. */
+    public function testIfNullIntCoalesceVirtualColumnRendersAsCoalesceOfReferenceColumnType(): void
+    {
+        $column = $this->column('locationId', DatabaseColumn::SQL_TYPE_INT);
+        $column->isUnsigned = true;
+        $columns = new DatabaseColumns();
+        $columns->add($column);
+        $model = $this->model('AccountRights', $columns);
+
+        $virtualColumn = new DatabaseVirtualColumn(as: '(IFNULL(locationId, 0))', stored: false, createIndex: false);
+        $virtualColumn->referenceColumn = $column;
+        $model->virtualColumns->add($virtualColumn);
+
+        $createTable = $this->findStatement($this->renderer->renderCreate($model), DdlStatement::PHASE_CREATE_TABLE);
+        // stored: false on MariaDB; Arch §4.10 "generated columns are always STORED" on PostgreSQL regardless.
+        $this->assertStringContainsString(
+            '"virtualLocationId" bigint GENERATED ALWAYS AS (COALESCE("locationId", 0)) STORED',
+            $createTable->sql
+        );
+    }
+
+    /** Mig §3.7: `IFNULL(col, '')` — string coalesce, reference column's own varchar/collation carried over. */
+    public function testIfNullStringCoalesceVirtualColumnRendersWithReferenceColumnCollation(): void
+    {
+        $column = $this->column('invitedEmail', DatabaseColumn::SQL_TYPE_VARCHAR);
+        $columns = new DatabaseColumns();
+        $columns->add($column);
+        $model = $this->model('StaffMemberships', $columns);
+
+        $virtualColumn = new DatabaseVirtualColumn(as: "(IFNULL(invitedEmail, ''))", stored: true, createIndex: false);
+        $virtualColumn->referenceColumn = $column;
+        $model->virtualColumns->add($virtualColumn);
+
+        $createTable = $this->findStatement($this->renderer->renderCreate($model), DdlStatement::PHASE_CREATE_TABLE);
+        $this->assertStringContainsString(
+            '"virtualInvitedEmail" varchar(255) COLLATE "ddd_ci_ai" GENERATED ALWAYS AS (COALESCE("invitedEmail", \'\')) STORED',
+            $createTable->sql
+        );
+    }
+
+    /** Mig §3.7: the three JSON-extract shapes (MediaItem), each with its own intent-derived PostgreSQL type. */
+    public function testJsonExtractVirtualColumnsRenderWithIntentDerivedTypes(): void
+    {
+        $jsonColumn = $this->column('mediaItemContent', DatabaseColumn::SQL_TYPE_JSON);
+        $columns = new DatabaseColumns();
+        $columns->add($jsonColumn);
+        $model = $this->model('MediaItems', $columns);
+
+        $textVirtual = new DatabaseVirtualColumn(
+            as: "(JSON_UNQUOTE(JSON_EXTRACT(mediaItemContent, '\$.contentHash')))",
+            stored: true,
+            createIndex: true
+        );
+        $textVirtual->referenceColumn = $this->column('contentHash', DatabaseColumn::SQL_TYPE_VARCHAR);
+        $model->virtualColumns->add($textVirtual);
+
+        $intVirtual = new DatabaseVirtualColumn(
+            as: "(CAST(JSON_UNQUOTE(JSON_EXTRACT(mediaItemContent, '\$.height')) AS SIGNED))",
+            stored: true,
+            createIndex: false
+        );
+        $intVirtual->referenceColumn = $this->column('height', DatabaseColumn::SQL_TYPE_INT);
+        $model->virtualColumns->add($intVirtual);
+
+        $decimalVirtual = new DatabaseVirtualColumn(
+            as: "(CAST(JSON_UNQUOTE(JSON_EXTRACT(mediaItemContent, '\$.fileSize')) AS DECIMAL(15,2)))",
+            stored: true,
+            createIndex: false
+        );
+        $decimalVirtual->referenceColumn = $this->column('fileSize', DatabaseColumn::SQL_TYPE_DOUBLE);
+        $model->virtualColumns->add($decimalVirtual);
+
+        $createTable = $this->findStatement($this->renderer->renderCreate($model), DdlStatement::PHASE_CREATE_TABLE);
+        $this->assertStringContainsString(
+            '"virtualContentHash" text COLLATE "ddd_ci_ai" GENERATED ALWAYS AS (("mediaItemContent"::json ->> \'contentHash\')) STORED',
+            $createTable->sql
+        );
+        $this->assertStringContainsString(
+            '"virtualHeight" bigint GENERATED ALWAYS AS ((("mediaItemContent"::json ->> \'height\'))::bigint) STORED',
+            $createTable->sql
+        );
+        $this->assertStringContainsString(
+            '"virtualFileSize" numeric(15,2) GENERATED ALWAYS AS ((("mediaItemContent"::json ->> \'fileSize\'))::numeric(15,2)) STORED',
+            $createTable->sql
+        );
+    }
+
+    /** Arch §4.10 escape hatch: `asPostgres:` is used verbatim, MariaDB's `as:` untouched. */
+    public function testAsPostgresEscapeHatchIsUsedVerbatim(): void
+    {
+        $column = $this->column('legacyFlag', DatabaseColumn::SQL_TYPE_INT);
+        $columns = new DatabaseColumns();
+        $columns->add($column);
+        $model = $this->model('Widgets', $columns);
+
+        $virtualColumn = new DatabaseVirtualColumn(
+            as: '(some MariaDB-only expression with no VirtualExpr intent)',
+            stored: true,
+            createIndex: false,
+            asPostgres: 'COALESCE("legacyFlag", 0) + 1'
+        );
+        $virtualColumn->referenceColumn = $column;
+        $model->virtualColumns->add($virtualColumn);
+
+        $createTable = $this->findStatement($this->renderer->renderCreate($model), DdlStatement::PHASE_CREATE_TABLE);
+        $this->assertStringContainsString(
+            '"virtualLegacyFlag" integer GENERATED ALWAYS AS (COALESCE("legacyFlag", 0) + 1) STORED',
+            $createTable->sql
+        );
     }
 
     public function testSingleTableInheritanceSubclassRendersNoStatements(): void

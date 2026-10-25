@@ -53,6 +53,15 @@ class DatabaseVirtualColumn extends ValueObject
      */
     public ?string $translatableBaseColumnName = null;
 
+    /**
+     * Explicit PostgreSQL escape hatch (dual-dialect architecture plan §4.10 "`asPostgres:` as escape hatch"): a
+     * raw PostgreSQL generated-column expression used as-is instead of recognising `$as` via
+     * {@see \DDD\Domain\Base\Repo\DB\Dialect\Schema\VirtualExpr::fromMariaDbExpression()}. Never read on MariaDB —
+     * `$as` alone still drives the golden MariaDB DDL. Use only when the MariaDB expression has no portable
+     * `VirtualExpr` intent; prefer extending `VirtualExpr` over reaching for this on a second, similar case.
+     */
+    public ?string $asPostgres = null;
+
     public function getSql(bool $asUpdate = false): string
     {
         $sql = $asUpdate ? 'ADD COLUMN IF NOT EXISTS ' : '';
@@ -102,11 +111,13 @@ class DatabaseVirtualColumn extends ValueObject
     public function __construct(
         string $as,
         bool $stored = true,
-        bool $createIndex = false
+        bool $createIndex = false,
+        ?string $asPostgres = null
     ) {
         $this->as = $as;
         $this->stored = $stored;
         $this->createIndex = $createIndex;
+        $this->asPostgres = $asPostgres;
         parent::__construct();
     }
 }

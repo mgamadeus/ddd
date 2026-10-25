@@ -165,7 +165,7 @@ final class PostgresDdlRenderer implements DdlRenderer
             $columnDefinitions[] = $this->renderColumnDefinition($column);
         }
         foreach ($databaseModel->virtualColumns->getElements() as $virtualColumn) {
-            $columnDefinitions[] = $this->renderVirtualColumnDefinition($virtualColumn);
+            $columnDefinitions[] = $this->renderVirtualColumnDefinition($virtualColumn, $table);
         }
         $primaryKey = $databaseModel->columns->getPrimaryKeyColumn();
         if ($primaryKey !== null) {
@@ -219,29 +219,82 @@ final class PostgresDdlRenderer implements DdlRenderer
     }
 
     /**
-     * The one virtual-column shape step 4a supports (see class docblock): the Translatable fulltext search column.
-     * Every other virtual column has no PostgreSQL form before `VirtualExpr` (step 7) and is refused here rather
-     * than silently emitting the MariaDB expression (invalid SQL on PostgreSQL) or an empty column.
+     * Every virtual/generated column PostgresDdlRenderer knows how to produce (dual-dialect architecture plan
+     * §4.10, build step 7): the Translatable fulltext search column (its own MariaDB-only template, recognised by
+     * flag, not by parsing `$as`); the explicit `asPostgres:` escape hatch; and every `$as` shape
+     * {@see VirtualExpr::fromMariaDbExpression()} recognises (Mig §3.7: `IFNULL` coalesce, the three JSON-extract
+     * forms). Anything else has no PostgreSQL form yet and is refused, naming the table, property and expression,
+     * rather than silently emitting the MariaDB expression (invalid SQL on PostgreSQL) or an empty column.
      */
-    private function renderVirtualColumnDefinition(DatabaseVirtualColumn $virtualColumn): string
+    private function renderVirtualColumnDefinition(DatabaseVirtualColumn $virtualColumn, string $table): string
     {
-        if (!$virtualColumn->isTranslatableFullTextSearchColumn || $virtualColumn->translatableBaseColumnName === null) {
+        $columnName = $virtualColumn->getName();
+
+        if ($virtualColumn->isTranslatableFullTextSearchColumn) {
+            if ($virtualColumn->translatableBaseColumnName === null) {
+                throw new InternalErrorException(
+                    "PostgresDdlRenderer: \"$table\".\"$columnName\" is flagged as the Translatable fulltext search "
+                    . 'column but carries no translatableBaseColumnName — this is a DatabaseModel bug, not a '
+                    . 'missing VirtualExpr case.'
+                );
+            }
+            $expression = 'ddd_translatable_text("' . $virtualColumn->translatableBaseColumnName . '")';
+            // TEXT column; Mig §3.5 "every fulltext column and virtual{Prop}Search keeps its text type and
+            // ddd_ci_ai" (equality/LIKE/ORDER BY run against it, not just the GIN index).
+            $collation = ' COLLATE "' . self::DEFAULT_COLLATION . '"';
+            // Arch §4.10: "generated columns are always STORED" — PostgreSQL requires STORED for a column
+            // referenced by an index (the GIN fulltext index on this very column) regardless of
+            // $virtualColumn->stored, so the flag is not read here (true for every branch below too).
+            return '"' . $columnName . '" text' . $collation . ' GENERATED ALWAYS AS (' . $expression . ') STORED';
+        }
+
+        $propertyName = $virtualColumn->referenceColumn?->name ?? $columnName;
+
+        if ($virtualColumn->asPostgres !== null) {
+            [$type, $collation] = $this->columnDefinitionForReferenceColumn($virtualColumn);
+            return '"' . $columnName . '" ' . $type . $collation . ' GENERATED ALWAYS AS (' . $virtualColumn->asPostgres . ') STORED';
+        }
+
+        $virtualExpr = VirtualExpr::fromMariaDbExpression($virtualColumn->as);
+        if ($virtualExpr === null) {
             throw new InternalErrorException(
-                'PostgresDdlRenderer: virtual/generated column "' . $virtualColumn->getName() . '" has no '
-                . 'PostgreSQL form yet. Only the #[Translatable(fullTextIndex: true)] search column is portable '
-                . 'before VirtualExpr (dual-dialect architecture plan §4.10, build step 7).'
+                "PostgresDdlRenderer: virtual column on \"$table\".\"$propertyName\" (rendered as \"$columnName\") "
+                . 'has no PostgreSQL form — VirtualExpr does not recognise this MariaDB expression: '
+                . $virtualColumn->as
             );
         }
 
-        $expression = 'ddd_translatable_text("' . $virtualColumn->translatableBaseColumnName . '")';
-        // TEXT column; Mig §3.5 "every fulltext column and virtual{Prop}Search keeps its text type and ddd_ci_ai"
-        // (equality/LIKE/ORDER BY run against it, not just the GIN index).
-        $collation = ' COLLATE "' . self::DEFAULT_COLLATION . '"';
+        if ($virtualExpr->intent === VirtualExpr::INTENT_COALESCE) {
+            [$type, $collation] = $this->columnDefinitionForReferenceColumn($virtualColumn);
+        } else {
+            $type = $virtualExpr->postgresColumnType();
+            // Only jsonText produces a text-shaped result; jsonInt/jsonDecimal are numeric, never collated.
+            $collation = $virtualExpr->intent === VirtualExpr::INTENT_JSON_TEXT
+                ? ' COLLATE "' . self::DEFAULT_COLLATION . '"'
+                : '';
+        }
 
-        // Arch §4.10: "generated columns are always STORED" — PostgreSQL requires STORED for a column referenced
-        // by an index (the GIN fulltext index on this very column) regardless of $virtualColumn->stored, so the
-        // flag is not read here.
-        return '"' . $virtualColumn->getName() . '" text' . $collation . ' GENERATED ALWAYS AS (' . $expression . ') STORED';
+        return '"' . $columnName . '" ' . $type . $collation . ' GENERATED ALWAYS AS (' . $virtualExpr->renderPostgres() . ') STORED';
+    }
+
+    /**
+     * `coalesce` and `asPostgres:` both carry over the type of the property's own reference column (a passthrough
+     * of an existing id/string column, e.g. `IFNULL(locationId, 0)` is still an id, `bigint`/`integer`-shaped).
+     *
+     * @return array{0: string, 1: string} [type, collation clause]
+     */
+    private function columnDefinitionForReferenceColumn(DatabaseVirtualColumn $virtualColumn): array
+    {
+        $referenceColumn = $virtualColumn->referenceColumn;
+        if ($referenceColumn === null) {
+            throw new InternalErrorException(
+                'PostgresDdlRenderer: virtual column "' . $virtualColumn->getName() . '" has no referenceColumn to '
+                . 'derive its PostgreSQL type from.'
+            );
+        }
+        $type = $this->mapColumnType($referenceColumn);
+        $collation = $this->collationClause($referenceColumn->sqlType, $referenceColumn->encrypted, $referenceColumn->collation);
+        return [$type, $collation];
     }
 
     private function mapColumnType(DatabaseColumn $column): string

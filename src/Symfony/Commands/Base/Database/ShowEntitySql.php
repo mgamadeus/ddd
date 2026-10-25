@@ -8,6 +8,7 @@ use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
 use DDD\Domain\Base\Repo\DB\Dialect\DialectResolver;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatement;
 use DDD\Domain\Common\Services\EntityModelGeneratorService;
+use DDD\Infrastructure\Exceptions\InternalErrorException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -101,11 +102,27 @@ class ShowEntitySql extends Command
         $renderer = DialectResolver::forDriver('pdo_pgsql')->ddlRenderer();
 
         $statements = $renderer->ensure();
+        // Collect every refusal across the whole run instead of failing on the first (build step 7 iteration
+        // need): a model's InternalErrorException is caught, logged against its table, and rendering continues
+        // with the next model, so one invocation reports every remaining unportable shape together.
+        $refusals = [];
         /** @var DatabaseModel $databaseModel */
         foreach ($databaseModels->getElements() as $databaseModel) {
-            foreach ($renderer->renderCreate($databaseModel) as $statement) {
-                $statements[] = $statement;
+            try {
+                foreach ($renderer->renderCreate($databaseModel) as $statement) {
+                    $statements[] = $statement;
+                }
+            } catch (InternalErrorException $exception) {
+                $refusals[] = $databaseModel->sqlTableName . ': ' . $exception->getMessage();
             }
+        }
+
+        if ($refusals !== []) {
+            $output->writeln('<error>PostgreSQL rendering refused ' . count($refusals) . ' table(s):</error>');
+            foreach ($refusals as $refusal) {
+                $output->writeln("  - $refusal");
+            }
+            return Command::FAILURE;
         }
 
         if ($statements === []) {
