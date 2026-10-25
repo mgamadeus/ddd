@@ -24,7 +24,7 @@ use InvalidArgumentException;
  */
 final class LockKey
 {
-    private function __construct()
+    protected function __construct()
     {
         // Static-only: no instance holds state, so there is nothing a constructor could usefully set up.
     }
