@@ -6,6 +6,8 @@ namespace DDD\Domain\Base\Repo\DB\Doctrine;
 
 use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
+use DDD\Domain\Base\Repo\DB\Dialect\DialectResolver;
+use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
 use DDD\Infrastructure\Exceptions\ForbiddenException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Services\AuthService;
@@ -73,6 +75,16 @@ class DoctrineEntityManager extends EntityManager
     }
 
     /**
+     * D10's app-facing accessor (architecture plan §4.3 `$entityManager->getDialect()`), resolved from this
+     * entity manager's OWN connection via {@see DialectResolver::forConnection()} — works for any entity manager
+     * instance regardless of which scope (if any) it was created under, and needs no scope lookup.
+     */
+    public function getDialect(): SqlDialect
+    {
+        return DialectResolver::forConnection($this->getConnection());
+    }
+
+    /**
      * * Insert entity if it does not exist, update if it does.
      * ID is set to the enity after upsert.
      * Main reason to use this over fetch/save is to avoid race conditions.
@@ -94,6 +106,12 @@ class DoctrineEntityManager extends EntityManager
      */
     public function upsert(DoctrineModel &$doctrineModel, ?QueryBuilder $updateRightsQueryBuilder = null, ?array $onlyFieldNames = null): ?int
     {
+        // §6 step 3/4: PostgreSQL's write path (ON CONFLICT, not ON DUPLICATE KEY UPDATE) lives in its own
+        // builder; everything below this branch is MariaDB's ORIGINAL code, untouched, so the golden suite
+        // (byte-identical MariaDB SQL) stays valid by construction.
+        if ($this->getDialect()->name() === SqlDialect::POSTGRES) {
+            return $this->getDialect()->upsertBuilder()->upsert($this, $doctrineModel, $updateRightsQueryBuilder, $onlyFieldNames);
+        }
         $connection = $this->getConnection();
         $metadata = $this->getClassMetadata($doctrineModel::class);
         $columns = [];
@@ -420,6 +438,20 @@ class DoctrineEntityManager extends EntityManager
     }
 
     /**
+     * "Insert or lose the race" (architecture plan §4.3): a plain INSERT that returns null on a unique-key
+     * collision instead of merging onto the row that won the race — the facade method dialect-dispatches to
+     * {@see \DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder::insertOrNull()}; MariaDB's implementation is new
+     * (nothing existing does this), PostgreSQL's catches a 23505 via `ON CONFLICT` having no target to land on.
+     * @throws Exception
+     * @throws MappingException
+     * @throws ReflectionException
+     */
+    public function insertOrNull(DoctrineModel &$doctrineModel): ?int
+    {
+        return $this->getDialect()->upsertBuilder()->insertOrNull($this, $doctrineModel);
+    }
+
+    /**
      * Strict partial write of an EXISTING row: `UPDATE <table> SET <the named, initialized fields> WHERE id = ?`. There
      * is no insert branch — a row deleted in the meantime stays deleted (the former upsert form inserted a ghost row
      * holding only these columns). Each column takes the UPDATE form the rights-scoped write uses
@@ -437,6 +469,9 @@ class DoctrineEntityManager extends EntityManager
      */
     public function updateColumnsById(DoctrineModel &$doctrineModel, array $fieldNames): ?int
     {
+        if ($this->getDialect()->name() === SqlDialect::POSTGRES) {
+            return $this->getDialect()->upsertBuilder()->updateColumnsById($this, $doctrineModel, $fieldNames);
+        }
         if (!isset($doctrineModel->id) || !$doctrineModel->id) {
             return null;
         }
@@ -619,6 +654,10 @@ class DoctrineEntityManager extends EntityManager
      */
     public function upsertMultiple(array &$doctrineModels, bool $useInsertIgnore = false): void
     {
+        if ($this->getDialect()->name() === SqlDialect::POSTGRES) {
+            $this->getDialect()->upsertBuilder()->upsertMultiple($this, $doctrineModels, $useInsertIgnore);
+            return;
+        }
         $statements = $this->buildUpsertMultipleStatements($doctrineModels, $useInsertIgnore);
         if (!$statements->count()) {
             return;

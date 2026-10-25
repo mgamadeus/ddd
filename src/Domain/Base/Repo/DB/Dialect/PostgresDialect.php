@@ -11,6 +11,8 @@ use DDD\Domain\Base\Repo\DB\Dialect\Runtime\BacktickQuoteMiddleware;
 use DDD\Domain\Base\Repo\DB\Dialect\Runtime\ValueNormalizerMiddleware;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\PostgresDdlRenderer;
+use DDD\Domain\Base\Repo\DB\Dialect\Write\PostgresUpsertBuilder;
+use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder;
 use Doctrine\ORM\Configuration;
 use PDO;
 
@@ -96,5 +98,10 @@ final class PostgresDialect implements SqlDialect
     public function ddlRenderer(): DdlRenderer
     {
         return new PostgresDdlRenderer(new IdentifierPolicy());
+    }
+
+    public function upsertBuilder(): UpsertBuilder
+    {
+        return new PostgresUpsertBuilder();
     }
 }

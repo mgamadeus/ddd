@@ -7,7 +7,7 @@ DELETE FROM `TranslatedRows`
 DELETE FROM `SpatialRows`
 -- params: []
 -- ----------------------------------------
-INSERT INTO TranslatedRows (name) VALUES (?)
+INSERT INTO `TranslatedRows` (`name`) VALUES (?)
 -- params: {"1":"{\"en\":\"Bread\",\"fr\":\"Pain\"}"}
 -- ----------------------------------------
 UPDATE TranslatedRows SET `name` = JSON_MERGE_PATCH(COALESCE(`name`,'{}'), ?) WHERE `id` = ?

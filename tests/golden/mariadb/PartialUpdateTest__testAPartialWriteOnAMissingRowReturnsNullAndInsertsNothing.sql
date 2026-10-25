@@ -13,6 +13,6 @@ UPDATE CounterRows SET `label` = ? WHERE `id` = ?
 SELECT 1 FROM CounterRows WHERE `id` = ?
 -- params: {"1":424242}
 -- ----------------------------------------
-SELECT COUNT(*) FROM CounterRows
+SELECT COUNT(*) FROM `CounterRows`
 -- params: []
 -- ----------------------------------------

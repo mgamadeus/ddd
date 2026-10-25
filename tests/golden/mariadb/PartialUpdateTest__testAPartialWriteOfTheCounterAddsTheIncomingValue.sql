@@ -7,7 +7,7 @@ DELETE FROM `TranslatedRows`
 DELETE FROM `SpatialRows`
 -- params: []
 -- ----------------------------------------
-INSERT INTO CounterRows (businessKey, counter) VALUES (?, ?)
+INSERT INTO `CounterRows` (`businessKey`, `counter`) VALUES (?, ?)
 -- params: {"1":"c","2":100}
 -- ----------------------------------------
 UPDATE CounterRows SET `counter` = `counter` + COALESCE((?), 1) WHERE `id` = ?

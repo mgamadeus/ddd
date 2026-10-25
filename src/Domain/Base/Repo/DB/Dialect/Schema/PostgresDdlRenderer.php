@@ -139,9 +139,64 @@ final class PostgresDdlRenderer implements DdlRenderer
                 $ddd$
             SQL;
 
+        // ddd_json_merge_patch(): the write path's order-preserving JSON_MERGE_PATCH equivalent (dual-dialect
+        // architecture plan §4.6 MERGE_PATCH, Mig §3.2). A FLAT (one JSON-object-level) merge — the only shape
+        // any entity in this codebase stores through a mergable JSON column (Translatable language maps,
+        // `TrackGeoHash`-style settings objects): nested recursive merging (MySQL JSON_MERGE_PATCH's general
+        // contract) is NOT implemented, since nothing here needs it. `json_each(...)` (the `json`-typed variant,
+        // not `json_each_text`) keeps each value's ORIGINAL text verbatim — no jsonb round trip, which would
+        // reorder keys. Order rule: a target key kept (patch omits it, or patch's value is JSON `null` → DROPPED)
+        // keeps its original position; a target key the patch overwrites (non-null) keeps its position but gets
+        // the patch's value; a patch-only key (non-null) is appended, in the patch's own order, after every
+        // target-derived row. `STRICT`: NULL in, NULL out (every call site here already does
+        // `COALESCE(target,'{}')`/`COALESCE(patch,'{}')`, so NULL never actually reaches it — declared to match
+        // the plan's "like JSON_MERGE_PATCH" wording).
+        $jsonMergePatchFunction = <<<'SQL'
+            CREATE OR REPLACE FUNCTION ddd_json_merge_patch(target json, patch json) RETURNS json
+                LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+                SET search_path = public, pg_catalog
+                AS $ddd$
+                    WITH t AS (
+                        SELECT key, value, ord FROM json_each(target) WITH ORDINALITY AS x(key, value, ord)
+                    ),
+                    p AS (
+                        SELECT key, value, ord FROM json_each(patch) WITH ORDINALITY AS x(key, value, ord)
+                    ),
+                    kept_or_patched AS (
+                        SELECT t.key, COALESCE(p.value, t.value) AS value, t.ord
+                        FROM t LEFT JOIN p ON p.key = t.key
+                        WHERE p.key IS NULL OR p.value::text IS DISTINCT FROM 'null'
+                    ),
+                    appended AS (
+                        SELECT p.key, p.value, 1000000 + p.ord AS ord
+                        FROM p
+                        WHERE NOT EXISTS (SELECT 1 FROM t WHERE t.key = p.key)
+                          AND p.value::text IS DISTINCT FROM 'null'
+                    )
+                    SELECT COALESCE(
+                        (
+                            SELECT ('{' || string_agg(to_json(all_rows.key)::text || ': ' || all_rows.value::text, ', ' ORDER BY all_rows.ord) || '}')::json
+                            FROM (SELECT * FROM kept_or_patched UNION ALL SELECT * FROM appended) all_rows
+                        ),
+                        '{}'::json
+                    )
+                $ddd$
+            SQL;
+
+        // Raw-SQL compatibility shim: app/test code that calls the MariaDB builtin VEC_ToText(col) directly
+        // (outside DQL — DQL's own vector functions, step 5, are a separate registry) gets the same text-array
+        // form on PostgreSQL. pgvector's own `vector::text` cast already renders "[v1,v2,...]", which is valid
+        // JSON array text verbatim, so this is a one-line passthrough. Unquoted in SQL, the identifier folds to
+        // lowercase ("vec_totext"), which PostgreSQL resolves case-insensitively against this declaration.
+        $vecToTextFunction = <<<'SQL'
+            CREATE OR REPLACE FUNCTION vec_totext(vector) RETURNS text
+                LANGUAGE sql IMMUTABLE PARALLEL SAFE
+                AS $ddd$ SELECT $1::text $ddd$
+            SQL;
+
         return array_map(
             static fn (string $sql): DdlStatement => new DdlStatement(sql: $sql, phase: DdlStatement::PHASE_FUNCTION),
-            [$nowFunction, $unaccentFunction, $foldFunction, $translatableTextFunction]
+            [$nowFunction, $unaccentFunction, $foldFunction, $translatableTextFunction, $jsonMergePatchFunction, $vecToTextFunction]
         );
     }
 

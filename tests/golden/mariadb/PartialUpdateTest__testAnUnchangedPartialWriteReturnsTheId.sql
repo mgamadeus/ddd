@@ -7,7 +7,7 @@ DELETE FROM `TranslatedRows`
 DELETE FROM `SpatialRows`
 -- params: []
 -- ----------------------------------------
-INSERT INTO CounterRows (businessKey, label) VALUES (?, ?)
+INSERT INTO `CounterRows` (`businessKey`, `label`) VALUES (?, ?)
 -- params: {"1":"b","2":"same"}
 -- ----------------------------------------
 UPDATE CounterRows SET `label` = ? WHERE `id` = ?
@@ -16,6 +16,6 @@ UPDATE CounterRows SET `label` = ? WHERE `id` = ?
 SELECT 1 FROM CounterRows WHERE `id` = ?
 -- params: {"1":2}
 -- ----------------------------------------
-SELECT COUNT(*) FROM CounterRows
+SELECT COUNT(*) FROM `CounterRows`
 -- params: []
 -- ----------------------------------------

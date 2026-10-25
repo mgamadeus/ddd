@@ -12,14 +12,6 @@ use DDD\Tests\Integration\IntegrationTestCase;
  */
 class HarnessSmokeTest extends IntegrationTestCase
 {
-    protected static function unsupportedOnCurrentDriverReason(): ?string
-    {
-        // Both methods: the round trip writes via update() (ON DUPLICATE KEY UPDATE, §6 steps 3/4); the
-        // @@sql_mode assertion is MariaDB/MySQL-only (also @group mariadb) with no PostgreSQL equivalent to assert.
-        return 'The entity round trip here writes via update() (ON DUPLICATE KEY UPDATE is §6 steps 3/4, not '
-            . 'built yet); the @@sql_mode assertion is MariaDB/MySQL-only.';
-    }
-
     public function testAnEntityRoundTripsThroughItsRepo(): void
     {
         $counterRow = new CounterRow();
@@ -35,9 +27,17 @@ class HarnessSmokeTest extends IntegrationTestCase
         $this->assertSame(0, (int)$storedRow['displayOrder']);
     }
 
-    /** @group mariadb `@@sql_mode` is a MariaDB/MySQL system variable; PostgreSQL has no equivalent to assert on. */
+    /**
+     * @group mariadb `@@sql_mode` is a MariaDB/MySQL system variable; PostgreSQL has no equivalent to assert on.
+     * Self-skip too (RunReadOnlyQueryTest's convention) so this ONE method is robust to a run that does not pass
+     * `--exclude-group mariadb` — the rest of this class runs on both engines, so the skip can't live at the
+     * class level the way RunReadOnlyQueryTest's does.
+     */
     public function testTheServerRunsWithOnlyFullGroupBy(): void
     {
+        if (static::currentDriver() === 'pdo_pgsql') {
+            $this->markTestSkipped('`@@sql_mode` is a MariaDB/MySQL system variable (@group mariadb).');
+        }
         $this->assertStringContainsString('ONLY_FULL_GROUP_BY', (string)static::connection()->fetchOne('SELECT @@sql_mode'));
     }
 }

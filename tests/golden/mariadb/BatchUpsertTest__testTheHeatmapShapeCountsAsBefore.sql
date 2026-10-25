@@ -13,6 +13,6 @@ INSERT INTO CounterRows (`businessKey`, `counter`, `isActive`, `displayOrder`) V
 INSERT INTO CounterRows (`businessKey`, `counter`, `isActive`, `displayOrder`) VALUES (?, ?, ?, ?), (?, ?, ?, ?) ON DUPLICATE KEY UPDATE `businessKey` = VALUES(`businessKey`), `counter` = `counter` + COALESCE(VALUES(`counter`), 1), `isActive` = VALUES(`isActive`), `displayOrder` = VALUES(`displayOrder`), `id` = LAST_INSERT_ID(`id`)
 -- params: {"1":"cell-1","2":5,"3":1,"4":0,"5":"cell-3","6":1,"7":1,"8":0}
 -- ----------------------------------------
-SELECT * FROM CounterRows
+SELECT * FROM `CounterRows`
 -- params: []
 -- ----------------------------------------

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Repo\DB\Dialect;
 
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlRenderer;
+use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder;
 use Doctrine\ORM\Configuration;
 
 /**
@@ -36,4 +37,12 @@ interface SqlDialect
 
     /** Step 4a: the CREATE-path schema renderer (§4.10). ALTER/introspection land in step 7. */
     public function ddlRenderer(): DdlRenderer;
+
+    /**
+     * Step 3/4's write-path collaborator (§4.3). Deviation from the plan's zero-arg signature: the builder is
+     * stateless (plan rule 3 — never process-global), but its methods execute against a connection, so every
+     * `UpsertBuilder` method takes the calling `DoctrineEntityManager` explicitly instead of the dialect caching
+     * one per instance.
+     */
+    public function upsertBuilder(): UpsertBuilder;
 }

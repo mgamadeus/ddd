@@ -7,7 +7,7 @@ DELETE FROM `TranslatedRows`
 DELETE FROM `SpatialRows`
 -- params: []
 -- ----------------------------------------
-INSERT INTO CounterRows (businessKey) VALUES (?)
+INSERT INTO `CounterRows` (`businessKey`) VALUES (?)
 -- params: {"1":"caller"}
 -- ----------------------------------------
 SAVEPOINT DDD_UPSERT_MULTIPLE_1
@@ -22,6 +22,6 @@ INSERT INTO CounterRows (`businessKey`, `label`, `isActive`, `displayOrder`) VAL
 ROLLBACK TO SAVEPOINT DDD_UPSERT_MULTIPLE_1
 -- params: []
 -- ----------------------------------------
-SELECT * FROM CounterRows
+SELECT * FROM `CounterRows`
 -- params: []
 -- ----------------------------------------

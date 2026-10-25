@@ -75,6 +75,8 @@ use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\VectorType;
 
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\MariaDbDdlRenderer;
+use DDD\Domain\Base\Repo\DB\Dialect\Write\MariaDbUpsertBuilder;
+use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder;
 
 use DoctrineExtensions\Query\Mysql\DateAdd;
 use DoctrineExtensions\Query\Mysql\Field;
@@ -243,5 +245,10 @@ final class MariaDbDialect implements SqlDialect
     public function ddlRenderer(): DdlRenderer
     {
         return new MariaDbDdlRenderer();
+    }
+
+    public function upsertBuilder(): UpsertBuilder
+    {
+        return new MariaDbUpsertBuilder();
     }
 }
