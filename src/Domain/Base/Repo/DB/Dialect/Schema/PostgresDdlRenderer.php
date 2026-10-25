@@ -145,7 +145,7 @@ final class PostgresDdlRenderer implements DdlRenderer
                     SELECT CASE
                         WHEN json_typeof(input) = 'object' THEN (
                             SELECT COALESCE(string_agg(t.value, ' | ' ORDER BY t.ord), '')
-                            FROM json_each_text(input) WITH ORDINALITY AS t(key, value, ord)
+                            FROM json_each_text(regexp_replace(input::text, '(?<!\\)\\u0000', '', 'g')::json) WITH ORDINALITY AS t(key, value, ord)
                             WHERE t.value IS NOT NULL AND t.value <> ''
                         )
                         ELSE ''
