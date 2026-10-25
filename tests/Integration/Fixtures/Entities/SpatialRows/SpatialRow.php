@@ -9,6 +9,7 @@ use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptions;
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptionsTrait;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
+use DDD\Domain\Common\Entities\Geometry\Cartesian\Polygon;
 use DDD\Domain\Common\Entities\GeoEntities\GeoPoint;
 use DDD\Domain\Common\Entities\MathEntities\Vector;
 use DDD\Tests\Integration\Fixtures\Entities\FixtureSettings;
@@ -33,6 +34,13 @@ class SpatialRow extends Entity
     /** @var Vector|null Vector column */
     #[DatabaseColumn(vectorDimensions: 3)]
     public ?Vector $embedding;
+
+    /**
+     * @var Polygon|null Cartesian SRID-0 polygon column — the real Dineful PostgreSQL failure this fixture proves
+     * fixed: "Unknown column type 'cartesian_polygon' requested" the moment ClassMetadataFactory loads this
+     * entity on a connection whose dialect never registered it (dual-dialect architecture plan §4.9/§6 step 6).
+     */
+    public ?Polygon $layout;
 
     /** @var bool Bool after the spatial column */
     public bool $flag = false;

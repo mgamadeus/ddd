@@ -1291,6 +1291,27 @@ MD;
             }
             $value = $this->getTypedFilterValueForBinding($value);
 
+            // D8/§4.8 (dual-dialect architecture plan): a mandatory scope filter built through
+            // {@see self::createExpression()} (runtime values, no {@see self::validateAgainstDefinitions()} call —
+            // that is what rejects a user-facing `locationId eq ''` as a 400 for not matching the int column kind,
+            // {@see self::isFilterValueValidForColumnKind()}) can still bind a bare `''` against an int/float
+            // column (Dineful `StaffMembershipsService`-style "business-wide" scope: `locationId IS NULL OR
+            // locationId = ''`, legacy rows pre-dating a write-side normalization that would have stored NULL).
+            // MariaDB coerces the string '' to the number 0 when comparing it with an int/float column (`5 = ''`
+            // is `5 = 0`, false); PostgreSQL's pdo_pgsql driver instead rejects the bind outright ("invalid input
+            // syntax for type bigint: \"\""). Replicating MariaDB's RESULT (not its implicit cast) only on
+            // PostgreSQL keeps the MariaDB rendering byte-identical (golden) while making the same filter answer
+            // the same rows on both engines.
+            if (in_array($this->filtersDefinition->columnKind ?? null, [
+                    FiltersDefinition::COLUMN_KIND_INT,
+                    FiltersDefinition::COLUMN_KIND_FLOAT,
+                ], true)
+                && self::isPostgresDialect($queryBuilder)) {
+                $value = is_array($value)
+                    ? array_map(static fn(mixed $element): mixed => $element === '' ? 0 : $element, $value)
+                    : ($value === '' ? 0 : $value);
+            }
+
             // D8 (dual-dialect architecture plan §3): a `*term*` wildcard on a scalar kind, or a plain
             // JSON/Translatable column, keeps its `LIKE` on MariaDB (implicit int/bool->text cast) but needs an
             // explicit `TEXT_CAST`/`JSON_TEXT` on PostgreSQL ("operator does not exist: integer ~~ unknown") — the

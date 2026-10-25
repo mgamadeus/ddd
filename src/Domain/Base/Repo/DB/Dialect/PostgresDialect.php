@@ -44,8 +44,30 @@ use DDD\Domain\Base\Repo\DB\Dialect\Runtime\ValueNormalizerMiddleware;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\PostgresDdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\PostgresUpsertBuilder;
+use DDD\Domain\Base\Repo\DB\Dialect\Write\RawUpsertExecutor;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder;
+use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertResult;
+use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertSpec;
+
+// Brick\Geo Doctrine Type imports (vendor) — same aliasing as MariaDbDialect, so the identically-named DDD types
+// below keep their short names.
+use Brick\Geo\Doctrine\Types\GeometryType;
+use Brick\Geo\Doctrine\Types\LineStringType as BrickLineStringType;
+use Brick\Geo\Doctrine\Types\MultiLineStringType;
+use Brick\Geo\Doctrine\Types\MultiPointType;
+use Brick\Geo\Doctrine\Types\MultiPolygonType;
+use Brick\Geo\Doctrine\Types\PointType as BrickPointType;
+
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\BoundingBoxType;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\LineStringType;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\PointType;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\PolygonType;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\UnescapedJsonType;
+use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\VectorType;
+use DoctrineExtensions\Types\PolygonType as BrickPolygonType;
+
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\Configuration;
 use Doctrine\ORM\Query;
 use PDO;
@@ -150,6 +172,57 @@ final class PostgresDialect implements SqlDialect
         $configuration->addCustomDatetimeFunction('CURRENT_TIMESTAMP', PostgresCurrentTimestamp::class);
         $configuration->addCustomDatetimeFunction('CURRENT_DATE', PostgresCurrentDate::class);
         $configuration->addCustomDatetimeFunction('CURRENT_TIME', PostgresCurrentTime::class);
+
+        // ─── Column types (§4.9/§6 step 6 subset): the real Dineful PostgreSQL failure this registers against —
+        // "Unknown column type 'cartesian_polygon' requested" the moment ClassMetadataFactory loads an entity
+        // with a Cartesian/vector/JSON-override property on a connection whose dialect never ran this method
+        // (`Type::addType()`/`Type::overrideType()` are process-wide, not per-connection, so a pure-PostgreSQL
+        // process — never touching MariaDbDialect::configureOrm() — needs its own registration of every name the
+        // codebase uses). Each DDD custom type (VectorType, the four Cartesian types) already branches its
+        // read/write SQL per platform internally (§4.9); registering the SAME type class under the SAME name
+        // MariaDbDialect uses is what lets existing `#[DatabaseColumn(type: '…')]`/property-type-driven mappings
+        // resolve identically on both engines — no call-site change.
+        Type::overrideType('json', UnescapedJsonType::class);
+
+        if (!Type::hasType(VectorType::NAME)) {
+            Type::addType(VectorType::NAME, VectorType::class);
+        }
+
+        if (!Type::hasType('point')) {
+            Type::addType('point', BrickPointType::class);
+        }
+        if (!Type::hasType('geometry')) {
+            Type::addType('geometry', GeometryType::class);
+        }
+        if (!Type::hasType('linestring')) {
+            Type::addType('linestring', BrickLineStringType::class);
+        }
+        if (!Type::hasType('polygon')) {
+            Type::addType('polygon', BrickPolygonType::class);
+        }
+        if (!Type::hasType('multilinestring')) {
+            Type::addType('multilinestring', MultiLineStringType::class);
+        }
+        if (!Type::hasType('multipoint')) {
+            Type::addType('multipoint', MultiPointType::class);
+        }
+        if (!Type::hasType('multipolygon')) {
+            Type::addType('multipolygon', MultiPolygonType::class);
+        }
+
+        // ─── Cartesian geometry types (SRID 0) — Point2D / Polyline / Polygon / BoundingBox2D ───
+        if (!Type::hasType(PointType::NAME)) {
+            Type::addType(PointType::NAME, PointType::class);
+        }
+        if (!Type::hasType(LineStringType::NAME)) {
+            Type::addType(LineStringType::NAME, LineStringType::class);
+        }
+        if (!Type::hasType(PolygonType::NAME)) {
+            Type::addType(PolygonType::NAME, PolygonType::class);
+        }
+        if (!Type::hasType(BoundingBoxType::NAME)) {
+            Type::addType(BoundingBoxType::NAME, BoundingBoxType::class);
+        }
     }
 
     /** D2/§4.8: the single-statement ROW_NUMBER id-page pagination (no second DQL query, no `WhereInWalker`). */
@@ -206,5 +279,131 @@ final class PostgresDialect implements SqlDialect
     public function locks(Connection $connection, string $scope = 'DEFAULT'): LockService
     {
         return new PostgresLockService($scope, $this);
+    }
+
+    // ─── §4.3 app-facing SQL-fragment helpers — new work this build step; each is verified (unit fixtures,
+    // `tests/Integration/Query/SqlFacadeTest.php`) to answer the SAME result as MariaDbDialect's rendering for
+    // equal input/column values, not merely to look similar.
+
+    public function now(): string
+    {
+        // Mig §3.6 "current time is statement time": ddd_now() is the SAME STABLE function the generated
+        // schema's `created`/`updated` column defaults call (PostgresDdlRenderer::infrastructureStatements()).
+        return 'ddd_now()';
+    }
+
+    /** @var array<string, string> INTERVAL unit (MariaDB keyword, upper- or lower-case) => make_interval() named argument */
+    protected const array MAKE_INTERVAL_ARGUMENT_NAMES = [
+        'second' => 'secs',
+        'minute' => 'mins',
+        'hour' => 'hours',
+        'day' => 'days',
+        'week' => 'weeks',
+        'month' => 'months',
+        'year' => 'years',
+    ];
+
+    protected static function makeIntervalArgumentName(string $unit): string
+    {
+        $argumentName = self::MAKE_INTERVAL_ARGUMENT_NAMES[strtolower($unit)] ?? null;
+        if ($argumentName === null) {
+            throw new \InvalidArgumentException("PostgresDialect: unsupported interval unit \"$unit\" (expected one of: " . implode(', ', array_keys(self::MAKE_INTERVAL_ARGUMENT_NAMES)) . ').');
+        }
+        return $argumentName;
+    }
+
+    public function intervalAgo(string $amountSql, string $unit): string
+    {
+        return 'ddd_now() - make_interval(' . self::makeIntervalArgumentName($unit) . " => $amountSql)";
+    }
+
+    public function dateAdd(string $columnSql, string $amountSql, string $unit): string
+    {
+        // ($columnSql)::timestamp disambiguates an untyped string literal the same way dateBucket() does
+        // ("invalid input syntax for type interval" — Postgres tried the literal + interval overload first).
+        return "($columnSql)::timestamp + make_interval(" . self::makeIntervalArgumentName($unit) . " => $amountSql)";
+    }
+
+    public function secondsBetween(string $fromSql, string $toSql): string
+    {
+        // ::timestamp disambiguates two untyped string literals the same way dateAdd()/dateBucket() do
+        // ("operator is not unique: unknown - unknown" on a real PG 18 container).
+        return "(EXTRACT(EPOCH FROM (($toSql)::timestamp - ($fromSql)::timestamp)))::bigint";
+    }
+
+    public function dateBucket(string $columnSql, string $bucket): string
+    {
+        $truncField = match ($bucket) {
+            'week', 'month' => $bucket,
+            default => 'day',
+        };
+        // ($columnSql)::timestamp disambiguates date_trunc(text, timestamp) from its timestamptz overload —
+        // an untyped string literal (verified against a real PG 18 container: "function date_trunc(unknown,
+        // unknown) is not unique") needs it; a caller passing an already-typed column expression is unaffected,
+        // a double cast on an already-`timestamp` value is a no-op.
+        return "to_char(date_trunc('$truncField', ($columnSql)::timestamp), 'YYYY-MM-DD')";
+    }
+
+    public function stringAgg(string $exprSql, string $separator, string $orderBySql): string
+    {
+        $quotedSeparator = "'" . str_replace("'", "''", $separator) . "'";
+        return "string_agg($exprSql, $quotedSeparator ORDER BY $orderBySql)";
+    }
+
+    public function currentDatabase(): string
+    {
+        return 'current_database()';
+    }
+
+    public function rowHash60(array $columnSqls): string
+    {
+        // sha256() is a PostgreSQL 11+ pg_catalog builtin (no pgcrypto extension needed, verified against the
+        // real PG 18 harness) — same 256-bit digest MariaDB's SHA2(…, 256) computes, truncated the same way.
+        return 'substring(encode(sha256(convert_to(concat_ws(\'|\', ' . implode(', ', $columnSqls) . "), 'UTF8')), 'hex'), 1, 60)";
+    }
+
+    public function updateFromJoin(UpdateFromJoinSpec $spec): string
+    {
+        // PostgreSQL refuses a relation-qualified SET target ("SET target columns cannot be qualified with the
+        // relation name", 42703, verified against a real PG 18 container) — unlike MariaDB's `UPDATE … JOIN`,
+        // where every SET target is qualified by convention. The RIGHT-hand side keeps $joinAlias freely.
+        $assignments = [];
+        foreach ($spec->setAssignments as $columnName => $expressionSql) {
+            $assignments[] = '"' . $columnName . '" = ' . $expressionSql;
+        }
+        $sql = 'UPDATE "' . $spec->targetTable . '" AS ' . $spec->targetAlias
+            . ' SET ' . implode(', ', $assignments)
+            . ' FROM "' . $spec->joinTable . '" AS ' . $spec->joinAlias
+            . ' WHERE ' . $spec->joinOnSql;
+        if ($spec->whereSql !== null) {
+            $sql .= ' AND (' . $spec->whereSql . ')';
+        }
+        return $sql;
+    }
+
+    public function jsonFieldText(string $columnSql, string $key): string
+    {
+        $quotedKey = "'" . str_replace("'", "''", $key) . "'";
+        return "$columnSql->>$quotedKey";
+    }
+
+    public function bytesEqual(string $leftSql, string $rightSql): string
+    {
+        return "$leftSql IS NOT DISTINCT FROM $rightSql";
+    }
+
+    public function boolLiteral(bool $value): string
+    {
+        return $value ? 'TRUE' : 'FALSE';
+    }
+
+    public function upsert(Connection $connection, UpsertSpec $spec): UpsertResult
+    {
+        return RawUpsertExecutor::upsertPostgres($connection, $spec);
+    }
+
+    public function insertOrNull(Connection $connection, UpsertSpec $spec): ?int
+    {
+        return RawUpsertExecutor::insertOrNullPostgres($connection, $spec);
     }
 }

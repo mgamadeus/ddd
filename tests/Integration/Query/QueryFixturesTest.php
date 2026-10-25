@@ -188,4 +188,33 @@ class QueryFixturesTest extends IntegrationTestCase
             'nameScore desc still returns exactly the ft-matched set on both engines'
         );
     }
+
+    /**
+     * Real Dineful PostgreSQL failure this fixes (§6 step 5): `TypeError: Cannot assign
+     * Doctrine\ORM\Query\AST\Literal to property …PostgresSubstring::$firstSimpleArithmeticExpression of type
+     * SimpleArithmeticExpression` — a date-key trick (`SUBSTRING(o0_.someDatetime, 1, 10)`) with LITERAL
+     * start/length arguments, which {@see Parser::SimpleArithmeticExpression()}'s own "Phase 1 AST optimization"
+     * collapses to a bare `AST\Literal` rather than wrapping in `SimpleArithmeticExpression`
+     * ({@see \DDD\Domain\Base\Repo\DB\Dialect\Query\PostgresSubstring}'s own docblock explains the vendor
+     * precedent this now mirrors). MariaDB coerces the datetime to text implicitly through the SAME DQL name
+     * (Doctrine's built-in `SubstringFunction`, untouched); PostgreSQL needs the explicit `CAST(… AS TEXT)` this
+     * class adds.
+     *
+     * @group query
+     */
+    public function testSubstringWithLiteralStartAndLengthOverADatetimeColumn(): void
+    {
+        static::connection()->executeStatement('DELETE FROM ' . static::dialect()->quote('CounterRows'));
+        static::insertRow(
+            'CounterRows',
+            ['businessKey' => 'sub', 'amount' => 1, 'isActive' => 1, 'occurredAt' => '2026-03-04 15:30:00']
+        );
+
+        $query = DBCounterRow::createQueryBuilder(true)->getEntityManager()->createQuery(
+            'SELECT SUBSTRING(c.occurredAt, 1, 10) AS dayKey FROM ' . DBCounterRowModel::class . " c WHERE c.businessKey = 'sub'"
+        );
+        $result = $query->getResult(\Doctrine\ORM\Query::HYDRATE_SCALAR);
+
+        $this->assertSame('2026-03-04', $result[0]['dayKey']);
+    }
 }

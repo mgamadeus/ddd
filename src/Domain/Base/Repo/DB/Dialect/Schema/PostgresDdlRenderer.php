@@ -128,14 +128,28 @@ final class PostgresDdlRenderer implements DdlRenderer
         // storage order rule, value order here has no product meaning, only "every language's value is searchable"
         // does, so exact byte-for-byte parity with MariaDB's output is not a goal. Calls only pg_catalog builtins
         // (json_each_text, string_agg, coalesce), so the search_path pin is defensive rather than load-bearing here.
+        //
+        // Real data (Radbonus copy, Mig blocker): a Translatable column can hold a JSON ARRAY instead of an
+        // object (`ChatMessages.localizedBody`, 5 rows with `[]`) — `json_each_text()` requires an object and
+        // raises "cannot deconstruct an array as an object" on anything else. `json_typeof` guards the shape:
+        // non-object input (array, scalar, or SQL NULL — `json_typeof(NULL::json)` is NULL, falling to ELSE too)
+        // renders '' instead. This is a deliberate PostgreSQL deviation from MariaDB, which renders the array's
+        // JSON text verbatim (`'[]'` for that row) through its REGEXP_REPLACE template — searching over an empty
+        // (or any) JSON array has no language-keyed text to extract, so '' is the correct "nothing to search"
+        // answer, not a parity bug.
         $translatableTextFunction = <<<'SQL'
             CREATE OR REPLACE FUNCTION ddd_translatable_text(input json) RETURNS text
                 LANGUAGE sql IMMUTABLE PARALLEL SAFE
                 SET search_path = public, pg_catalog
                 AS $ddd$
-                    SELECT COALESCE(string_agg(t.value, ' | ' ORDER BY t.ord), '')
-                    FROM json_each_text(COALESCE(input, '{}'::json)) WITH ORDINALITY AS t(key, value, ord)
-                    WHERE t.value IS NOT NULL AND t.value <> ''
+                    SELECT CASE
+                        WHEN json_typeof(input) = 'object' THEN (
+                            SELECT COALESCE(string_agg(t.value, ' | ' ORDER BY t.ord), '')
+                            FROM json_each_text(input) WITH ORDINALITY AS t(key, value, ord)
+                            WHERE t.value IS NOT NULL AND t.value <> ''
+                        )
+                        ELSE ''
+                    END
                 $ddd$
             SQL;
 

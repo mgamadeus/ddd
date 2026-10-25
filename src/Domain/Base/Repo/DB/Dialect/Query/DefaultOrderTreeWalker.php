@@ -5,6 +5,11 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Repo\DB\Dialect\Query;
 
 use Doctrine\ORM\Query\AST;
+use Doctrine\ORM\Query\AST\Functions\AvgFunction;
+use Doctrine\ORM\Query\AST\Functions\CountFunction;
+use Doctrine\ORM\Query\AST\Functions\MaxFunction;
+use Doctrine\ORM\Query\AST\Functions\MinFunction;
+use Doctrine\ORM\Query\AST\Functions\SumFunction;
 use Doctrine\ORM\Query\TreeWalkerAdapter;
 
 /**
@@ -36,6 +41,27 @@ use Doctrine\ORM\Query\TreeWalkerAdapter;
  */
 final class DefaultOrderTreeWalker extends TreeWalkerAdapter
 {
+    /**
+     * `COUNT`/`AVG`/`MIN`/`MAX`/`SUM` parse through DQL's generic function dispatch (`Parser::SelectExpression()`'s
+     * `isFunction()` branch, not the `AggregateExpression()` grammar rule reached from `SimpleArithmeticExpression`)
+     * into these built-in `FunctionNode` subclasses — e.g. a bare `SELECT COUNT(x.id) FROM X x` (DDD's
+     * `DBEntitySet::count()`, hit by every entity's list-endpoint total count) yields a top-level
+     * `AST\Functions\CountFunction` `SelectExpression`, never an `AST\AggregateExpression` directly. Checking only
+     * `AST\AggregateExpression` therefore misses the single most common aggregate shape in the codebase: the
+     * walker would append `ORDER BY <root>.id` to a `SELECT COUNT(...)` with no `GROUP BY`, which PostgreSQL
+     * rejects (`column "x0_.id" must appear in the GROUP BY clause or be used in an aggregate function`) — MariaDB
+     * tolerates it, which is why this never surfaced before the PostgreSQL run.
+     *
+     * @var class-string[]
+     */
+    protected const array AGGREGATE_FUNCTION_CLASSES = [
+        CountFunction::class,
+        AvgFunction::class,
+        MinFunction::class,
+        MaxFunction::class,
+        SumFunction::class,
+    ];
+
     /** @var class-string[] FunctionNode classes whose result must stay the LAST ORDER BY item (ANN index use) */
     protected const array VECTOR_DISTANCE_FUNCTION_CLASSES = [
         PostgresCosineDistance::class,
@@ -100,6 +126,11 @@ final class DefaultOrderTreeWalker extends TreeWalkerAdapter
         foreach ($AST->selectClause->selectExpressions as $selectExpression) {
             if ($selectExpression->expression instanceof AST\AggregateExpression) {
                 return true;
+            }
+            foreach (self::AGGREGATE_FUNCTION_CLASSES as $aggregateFunctionClass) {
+                if ($selectExpression->expression instanceof $aggregateFunctionClass) {
+                    return true;
+                }
             }
         }
         return false;

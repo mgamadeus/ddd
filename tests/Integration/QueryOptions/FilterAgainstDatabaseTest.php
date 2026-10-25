@@ -41,6 +41,13 @@ class FilterAgainstDatabaseTest extends IntegrationTestCase
         static::insertRow('TranslatedRows', ['name' => json_encode(['en' => 'Pizza']), 'title' => json_encode(['en' => 'Zebra pizza'])]);
         static::insertRow('TranslatedRows', ['name' => json_encode(['en' => 'Pasta', 'de' => 'Nudeln']), 'title' => json_encode(['en' => 'Apple'])]);
         static::insertRow('TranslatedRows', ['name' => null, 'title' => json_encode(['en' => 'Mango'])]);
+        // Radbonus copy blocker, real data (`ChatMessages.localizedBody`): a Translatable column can hold a JSON
+        // ARRAY instead of an object (`[]`). `ddd_translatable_text()` used to call `json_each_text()` directly,
+        // which requires an object and raised "cannot deconstruct an array as an object" on PostgreSQL for this
+        // row — MariaDB's REGEXP_REPLACE/JSON_UNQUOTE template never minds the shape and renders the array's JSON
+        // text verbatim. Kept at the end so every other test's positional destructuring of translatedRowIds()
+        // (`[$pizzaRowId] = ...`, `[, $pastaId] = ...`, `[, , $unnamedId] = ...`) stays correct.
+        static::insertRow('TranslatedRows', ['name' => json_encode([]), 'title' => json_encode(['en' => 'Kiwi'])]);
     }
 
     /**
@@ -138,6 +145,37 @@ class FilterAgainstDatabaseTest extends IntegrationTestCase
         $this->assertSame(['a', 'b'], $this->counterRowsMatching("amount eq '*4*'"));
     }
 
+    /**
+     * D8/§4.8: a mandatory scope filter built via {@see FiltersOptions::createExpression()} +
+     * {@see FiltersOptions::setFiltersDefinition()} (a trusted runtime value, never through the 400-validated
+     * public filters= grammar — {@see FiltersOptions::validateAgainstDefinitions()} would reject `amount eq ''`
+     * outright for not fitting the int column kind) can still bind a bare `''` against an int column — the real
+     * Dineful shape is `StaffMembershipsService`'s "business-wide" scope, `locationId IS NULL OR locationId =
+     * ''`, against legacy rows a pre-normalization write left holding `''` instead of NULL. MariaDB coerces the
+     * string '' to 0 for an int comparison (`amount = ''` is `amount = 0`); PostgreSQL's pdo_pgsql driver instead
+     * rejects the bind ("invalid input syntax for type bigint"). Only the zero-amount row must match, on both
+     * engines.
+     */
+    public function testAnEmptyStringAgainstAnIntColumnMatchesZeroLikeMariaDbsCoercion(): void
+    {
+        static::insertRow('CounterRows', ['businessKey' => 'zero', 'amount' => 0, 'isActive' => 1, 'occurredAt' => null]);
+
+        $queryBuilder = DBCounterRow::createQueryBuilder(true);
+        $filtersOptions = FiltersOptions::createExpression('amount', FiltersOptions::OPERATOR_EQUAL, '');
+        $filtersOptions->setFiltersDefinition(
+            FiltersDefinitions::getFiltersDefinitionsForReferenceClass(CounterRow::class)
+                ->getFilterDefinitionForPropertyName('amount')
+        );
+        $filtersOptions->applyFiltersToDoctrineQueryBuilder($queryBuilder);
+        $queryBuilder->orderBy(DBCounterRowModel::MODEL_ALIAS . '.businessKey', 'ASC');
+
+        $businessKeys = array_map(
+            static fn(DBCounterRowModel $model): string => $model->businessKey,
+            $queryBuilder->getQuery()->getResult()
+        );
+        $this->assertSame(['zero'], $businessKeys);
+    }
+
     public function testADateOnADateTimeColumnComparesFromMidnight(): void
     {
         $this->assertSame(['c'], $this->counterRowsMatching("occurredAt ge '2026-01-15'"));
@@ -157,9 +195,9 @@ class FilterAgainstDatabaseTest extends IntegrationTestCase
 
     public function testAPlainTranslatableSortsAsBefore(): void
     {
-        [$zebraPizzaId, $appleId, $mangoId] = $this->translatedRowIds();
-        // the JSON text order: {"en": "Apple"} < {"en": "Mango"} < {"en": "Zebra pizza"}
-        $this->assertSame([$appleId, $mangoId, $zebraPizzaId], $this->translatedRowIdsMatching(null, 'title asc'));
+        [$zebraPizzaId, $appleId, $mangoId, $kiwiId] = $this->translatedRowIds();
+        // the JSON text order: {"en": "Apple"} < {"en": "Kiwi"} < {"en": "Mango"} < {"en": "Zebra pizza"}
+        $this->assertSame([$appleId, $kiwiId, $mangoId, $zebraPizzaId], $this->translatedRowIdsMatching(null, 'title asc'));
     }
 
     public function testAnExactComparisonOnASearchableTranslatableMatchesASingleLanguageRow(): void
@@ -195,5 +233,21 @@ class FilterAgainstDatabaseTest extends IntegrationTestCase
         [$bananeId, $ceriseId] = $this->translatedRowIds();
 
         $this->assertSame([$bananeId, $ceriseId], $this->translatedRowIdsMatching(null, 'name asc'));
+    }
+
+    /**
+     * The JSON-array-source row from {@see self::setUp()}: on PostgreSQL this used to make
+     * `ddd_translatable_text()` throw outright (`cannot deconstruct an array as an object`) the moment its search
+     * column was read — ordering by `name` reads it for every row. It must survive, render an empty search text
+     * (nothing language-keyed to extract from an array; same "no match" outcome a NULL source gets, D4's search
+     * column not being the comparison this asserts), and never match a NULL-source filter (its JSON column holds
+     * `[]`, not SQL NULL, on both engines).
+     */
+    public function testASearchableTranslatableWithAJsonArraySourceRendersAnEmptySearchTextInsteadOfErroring(): void
+    {
+        [, , $unnamedId, $arrayRowId] = $this->translatedRowIds();
+        $orderedIds = $this->translatedRowIdsMatching(null, 'name asc');
+        $this->assertContains($arrayRowId, $orderedIds, 'the array-source row must not be dropped or error out');
+        $this->assertSame([$unnamedId], $this->translatedRowIdsMatching("name eq 'NULL'"), 'a JSON array is not a SQL NULL');
     }
 }

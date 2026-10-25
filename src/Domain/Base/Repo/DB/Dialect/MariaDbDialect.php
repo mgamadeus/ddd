@@ -80,7 +80,10 @@ use DDD\Domain\Base\Repo\DB\Dialect\Locks\MariaDbLockService;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\MariaDbDdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\MariaDbUpsertBuilder;
+use DDD\Domain\Base\Repo\DB\Dialect\Write\RawUpsertExecutor;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder;
+use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertResult;
+use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertSpec;
 use Doctrine\DBAL\Connection;
 
 use DoctrineExtensions\Query\Mysql\DateAdd;
@@ -266,5 +269,94 @@ final class MariaDbDialect implements SqlDialect
     public function locks(Connection $connection, string $scope = 'DEFAULT'): LockService
     {
         return new MariaDbLockService($connection);
+    }
+
+    // ─── §4.3 app-facing SQL-fragment helpers — every rendering below is exactly what the app already writes
+    // (verified against the raw SQL call sites the dual-dialect migration plan's §4.13 sweep touched), unchanged
+    // by this build step; only PostgresDialect's renderings are new.
+
+    public function now(): string
+    {
+        return 'NOW()';
+    }
+
+    public function intervalAgo(string $amountSql, string $unit): string
+    {
+        return "DATE_SUB(NOW(), INTERVAL $amountSql $unit)";
+    }
+
+    public function dateAdd(string $columnSql, string $amountSql, string $unit): string
+    {
+        return "DATE_ADD($columnSql, INTERVAL $amountSql $unit)";
+    }
+
+    public function secondsBetween(string $fromSql, string $toSql): string
+    {
+        return "TIMESTAMPDIFF(SECOND, $fromSql, $toSql)";
+    }
+
+    public function dateBucket(string $columnSql, string $bucket): string
+    {
+        return match ($bucket) {
+            'week' => "DATE_FORMAT(DATE_SUB($columnSql, INTERVAL WEEKDAY($columnSql) DAY), '%Y-%m-%d')",
+            'month' => "DATE_FORMAT($columnSql, '%Y-%m-01')",
+            default => "DATE_FORMAT($columnSql, '%Y-%m-%d')",
+        };
+    }
+
+    public function stringAgg(string $exprSql, string $separator, string $orderBySql): string
+    {
+        $quotedSeparator = "'" . str_replace("'", "''", $separator) . "'";
+        return "GROUP_CONCAT($exprSql ORDER BY $orderBySql SEPARATOR $quotedSeparator)";
+    }
+
+    public function currentDatabase(): string
+    {
+        return 'DATABASE()';
+    }
+
+    public function rowHash60(array $columnSqls): string
+    {
+        return 'SUBSTRING(SHA2(CONCAT_WS(\'|\', ' . implode(', ', $columnSqls) . '), 256), 1, 60)';
+    }
+
+    public function updateFromJoin(UpdateFromJoinSpec $spec): string
+    {
+        $assignments = [];
+        foreach ($spec->setAssignments as $columnName => $expressionSql) {
+            $assignments[] = $spec->targetAlias . '.`' . $columnName . '` = ' . $expressionSql;
+        }
+        $sql = 'UPDATE `' . $spec->targetTable . '` AS ' . $spec->targetAlias
+            . ' JOIN `' . $spec->joinTable . '` AS ' . $spec->joinAlias . ' ON ' . $spec->joinOnSql
+            . ' SET ' . implode(', ', $assignments);
+        if ($spec->whereSql !== null) {
+            $sql .= ' WHERE ' . $spec->whereSql;
+        }
+        return $sql;
+    }
+
+    public function jsonFieldText(string $columnSql, string $key): string
+    {
+        return "JSON_UNQUOTE(JSON_EXTRACT($columnSql, '$.\"$key\"'))";
+    }
+
+    public function bytesEqual(string $leftSql, string $rightSql): string
+    {
+        return "$leftSql <=> $rightSql";
+    }
+
+    public function boolLiteral(bool $value): string
+    {
+        return $value ? '1' : '0';
+    }
+
+    public function upsert(Connection $connection, UpsertSpec $spec): UpsertResult
+    {
+        return RawUpsertExecutor::upsertMariaDb($connection, $spec);
+    }
+
+    public function insertOrNull(Connection $connection, UpsertSpec $spec): ?int
+    {
+        return RawUpsertExecutor::insertOrNullMariaDb($connection, $spec);
     }
 }
