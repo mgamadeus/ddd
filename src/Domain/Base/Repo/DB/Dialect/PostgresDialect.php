@@ -6,6 +6,8 @@ namespace DDD\Domain\Base\Repo\DB\Dialect;
 
 use DDD\Domain\Base\Repo\DB\Dialect\Identifiers\AlwaysQuoteStrategy;
 use DDD\Domain\Base\Repo\DB\Dialect\Identifiers\IdentifierPolicy;
+use DDD\Domain\Base\Repo\DB\Dialect\Locks\LockService;
+use DDD\Domain\Base\Repo\DB\Dialect\Locks\PostgresLockService;
 use DDD\Domain\Base\Repo\DB\Dialect\Runtime\AbortedTransactionGuard;
 use DDD\Domain\Base\Repo\DB\Dialect\Runtime\BacktickQuoteMiddleware;
 use DDD\Domain\Base\Repo\DB\Dialect\Runtime\ValueNormalizerMiddleware;
@@ -13,6 +15,7 @@ use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\PostgresDdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\PostgresUpsertBuilder;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder;
+use Doctrine\DBAL\Connection;
 use Doctrine\ORM\Configuration;
 use PDO;
 
@@ -103,5 +106,11 @@ final class PostgresDialect implements SqlDialect
     public function upsertBuilder(): UpsertBuilder
     {
         return new PostgresUpsertBuilder();
+    }
+
+    /** $connection is ignored on purpose — see {@see SqlDialect::locks()}'s docblock. */
+    public function locks(Connection $connection, string $scope = 'DEFAULT'): LockService
+    {
+        return new PostgresLockService($scope, $this);
     }
 }

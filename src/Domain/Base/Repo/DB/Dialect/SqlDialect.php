@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo\DB\Dialect;
 
+use DDD\Domain\Base\Repo\DB\Dialect\Locks\LockService;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder;
+use Doctrine\DBAL\Connection;
 use Doctrine\ORM\Configuration;
 
 /**
@@ -45,4 +47,17 @@ interface SqlDialect
      * one per instance.
      */
     public function upsertBuilder(): UpsertBuilder;
+
+    /**
+     * Step 8's locks collaborator (§4.3/§4.12, D3): named application locks, equal to MariaDB's
+     * `GET_LOCK`/`RELEASE_LOCK` contract on both engines. Deviation from the plan's zero-arg `locks(): LockService`
+     * signature, for the same reason as {@see upsertBuilder()}: `MariaDbDialect`/`PostgresDialect` are process-wide
+     * stateless singletons shared by every scope ({@see DialectResolver} caches one of each for all of them), so
+     * neither can know on its own which scope's connection a lock should run against. `MariaDbDialect` locks the
+     * given $connection directly (today's behaviour, unchanged). `PostgresDialect` ignores $connection — a
+     * session-scoped advisory lock on a PgBouncer transaction-mode connection leaks and loses mutual exclusion —
+     * and opens its own direct, non-pooled connection from $scope's `DB_<SCOPE>_DIRECT_HOST`/`DB_<SCOPE>_DIRECT_PORT`
+     * instead.
+     */
+    public function locks(Connection $connection, string $scope = 'DEFAULT'): LockService;
 }
