@@ -147,3 +147,6 @@ order; every item cost one of those apps time.
   - Public symbols nothing used were removed (list in the release commit "Dead code: …").
 - 2.70.10 — a TEXT / MEDIUMTEXT / LONGTEXT column counts as fulltext-capable through the FULLTEXT index the generator
   gives it by default; 2.70.9 answered 400 to `ft` / `fb` there although the index existed.
+- 2.70.11 — every JWT is signed and verified with `JWT_HASH_KEY` / `JWT_HASH_METHOD`. `AUTH_JWT_HASH_KEY` /
+  `AUTH_JWT_HASH_METHOD` are read only while `JWT_HASH_*` is empty (one deprecation per process) and go in the next
+  minor: make sure `JWT_HASH_*` is set (same values), then delete the `AUTH_JWT_HASH_*` lines and vault fields.

@@ -13,9 +13,10 @@ use Throwable;
  * This class encodes in JWT parameters and decodes them. It attaches an expiration timestamp that keeps the jwt valid for a slice of time,
  * e.g. during a 2 month period, e.g. january and february
  *
- * KEYS: {@see self::createJWTFromParameters()} signs with `JWT_HASH_KEY` / `JWT_HASH_METHOD`, while
- * {@see self::getParametersFromJWT()} verifies with `AUTH_JWT_HASH_KEY` / `AUTH_JWT_HASH_METHOD`. The two env pairs
- * MUST hold the same values — tokens minted here only verify because every deployment sets them equal.
+ * KEYS: every JWT is signed and verified with ONE pair, `JWT_HASH_KEY` / `JWT_HASH_METHOD`
+ * ({@see self::getHashKey()}, {@see self::getHashMethod()}) — here and in
+ * {@see \DDD\Infrastructure\Services\AuthService::validateJwt()}. The former verify pair `AUTH_JWT_HASH_KEY` /
+ * `AUTH_JWT_HASH_METHOD` is read only as a deprecated fallback while `JWT_HASH_*` is empty; it goes in the next minor.
  *
  * Every JWT minted here is signed with the same key, so a token's PURPOSE has to be stated in a claim: a login token
  * carries `tokenType: access` ({@see \DDD\Infrastructure\Services\AuthService::TOKEN_TYPE_ACCESS}) and the bearer
@@ -23,6 +24,21 @@ use Throwable;
  */
 class JWTPayload
 {
+    /** @var string The signing / verification key */
+    public const string ENV_HASH_KEY = 'JWT_HASH_KEY';
+
+    /** @var string The signing / verification algorithm, e.g. HS256 */
+    public const string ENV_HASH_METHOD = 'JWT_HASH_METHOD';
+
+    /** @deprecated The former verification key; read only while JWT_HASH_KEY is empty, removed in the next minor */
+    public const string ENV_LEGACY_HASH_KEY = 'AUTH_JWT_HASH_KEY';
+
+    /** @deprecated The former verification algorithm; read only while JWT_HASH_METHOD is empty, removed in the next minor */
+    public const string ENV_LEGACY_HASH_METHOD = 'AUTH_JWT_HASH_METHOD';
+
+    /** @var bool Whether this process already reported the legacy fallback */
+    protected static bool $legacyFallbackReported = false;
+
     /**
      * Days the url is available
      * @var int
@@ -73,11 +89,65 @@ class JWTPayload
             $expirationDate = self::getPeriodEndTimestamp(new DateTime());
         }
         $parameters['expiresAt'] = $expirationDate->getTimestamp();
-        return JWT::encode(
-            $parameters,
-            Config::getEnv('JWT_HASH_KEY'),
-            Config::getEnv('JWT_HASH_METHOD')
-        );
+        return JWT::encode($parameters, self::getHashKey(), self::getHashMethod());
+    }
+
+    /**
+     * The key every JWT is signed and verified with: `JWT_HASH_KEY`; while that is empty, the deprecated
+     * `AUTH_JWT_HASH_KEY`.
+     *
+     * @return string
+     */
+    public static function getHashKey(): string
+    {
+        return self::getEnvWithLegacyFallback(self::ENV_HASH_KEY, self::ENV_LEGACY_HASH_KEY);
+    }
+
+    /**
+     * The algorithm every JWT is signed and verified with: `JWT_HASH_METHOD`; while that is empty, the deprecated
+     * `AUTH_JWT_HASH_METHOD`.
+     *
+     * @return string
+     */
+    public static function getHashMethod(): string
+    {
+        return self::getEnvWithLegacyFallback(self::ENV_HASH_METHOD, self::ENV_LEGACY_HASH_METHOD);
+    }
+
+    /**
+     * The value of $envName, or — while it is empty — of the deprecated $legacyEnvName, reporting the fallback once
+     * per process. Cast to string: Config::getEnv() turns an all-digit value into an int.
+     *
+     * @param string $envName The current env variable
+     * @param string $legacyEnvName The deprecated env variable
+     * @return string
+     */
+    protected static function getEnvWithLegacyFallback(string $envName, string $legacyEnvName): string
+    {
+        $value = Config::getEnv($envName);
+        if ($value !== null && $value !== '' && $value !== false) {
+            return (string)$value;
+        }
+        $legacyValue = Config::getEnv($legacyEnvName);
+        if ($legacyValue === null || $legacyValue === '' || $legacyValue === false) {
+            return '';
+        }
+        if (!static::$legacyFallbackReported) {
+            static::$legacyFallbackReported = true;
+            trigger_deprecation(
+                'mgamadeus/ddd',
+                '2.70.11',
+                'JWTs are signed and verified with %s / %s; %s is empty, so the deprecated %s is used. Set %s (same value) and remove %s / %s — the fallback goes in the next minor.',
+                self::ENV_HASH_KEY,
+                self::ENV_HASH_METHOD,
+                $envName,
+                $legacyEnvName,
+                $envName,
+                self::ENV_LEGACY_HASH_KEY,
+                self::ENV_LEGACY_HASH_METHOD
+            );
+        }
+        return (string)$legacyValue;
     }
 
     /**
@@ -90,7 +160,7 @@ class JWTPayload
         try {
             $decoded = JWT::decode(
                 $jwt,
-                new Key(Config::getEnv('AUTH_JWT_HASH_KEY'),Config::getEnv('AUTH_JWT_HASH_METHOD'))
+                new Key(self::getHashKey(), self::getHashMethod())
             );
         } catch (Throwable) {
             return false;
