@@ -8,10 +8,12 @@ use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseForeignKey;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseIndex;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseTrigger;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseVirtualColumn;
 use DDD\Domain\Base\Repo\DB\Database\FullTextMode;
 use DDD\Domain\Base\Repo\DB\Database\VectorIndexProfile;
 use DDD\Domain\Base\Repo\DB\Dialect\Identifiers\IdentifierPolicy;
+use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 
 /**
@@ -20,14 +22,19 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
  * scopes: columns + types (Mig §3.1), identities, the primary key, unique/plain indexes (incl. `nullsNotDistinct`,
  * G-R3-2), foreign keys, `STORED` generated columns (the one case portable before `VirtualExpr`, step 7), trigram
  * and `to_tsvector` expression GIN indexes (D14, Mig §3.5), bool defaults, geometry (PostGIS, SRID 0, D5/Mig §3.8)
- * and vector (pgvector/pgvectorscale, D6) columns and indexes.
+ * and vector (pgvector/pgvectorscale, D6) columns and indexes. Step 7's trigger slice adds `DatabaseTrigger` per
+ * dialect (Arch §4.10): the entity's `….pgsql.sql` source file, split by {@see SqlScriptLexer} into one
+ * `DdlStatement` per top-level statement (typically `CREATE OR REPLACE FUNCTION` + `CREATE TRIGGER`), on the last
+ * CREATE-path phase ({@see DdlStatement::PHASE_CREATE_TRIGGER}) — after every index and foreign key, so
+ * `app:db:copy-to-postgres`'s finalise phase (which runs every non-table statement this renderer returns) creates
+ * triggers only once a table's data phase has already finished.
  *
  * **Out of scope here (step 7, "rest of PostgresDdlRenderer"):** ALTER/DROP/MODIFY, `NOT VALID` + `VALIDATE`,
  * per-column `CHECK` (`#[DatabaseCheck]`, G-R3-1), the trailing-space UNIQUE-key `CHECK`, `VirtualExpr` for any
- * virtual column OTHER than the one Translatable fulltext search column, per-dialect `DatabaseTrigger` bodies,
- * token-list `TOKEN_MATCH` indexes. Each unimplemented case throws {@see InternalErrorException} rather than
- * emitting silently-wrong SQL — a caller hitting one of these on Dineful's real entity set (152 tables, the next
- * build step) gets a clear, specific refusal instead of a table that type-checks but is wrong.
+ * virtual column OTHER than the one Translatable fulltext search column, token-list `TOKEN_MATCH` indexes. Each
+ * unimplemented case throws {@see InternalErrorException} rather than emitting silently-wrong SQL — a caller
+ * hitting one of these on Dineful's real entity set (152 tables, the next build step) gets a clear, specific
+ * refusal instead of a table that type-checks but is wrong.
  *
  * **Cross-table ordering.** `renderCreate()` returns one model's statements in a safe standalone order (table, then
  * its indexes, then its foreign keys). Rendering a WHOLE entity set additionally needs every table created before
@@ -272,7 +279,41 @@ final class PostgresDdlRenderer implements DdlRenderer
             );
         }
 
+        if (isset($databaseModel->triggers)) {
+            foreach ($databaseModel->triggers->getElements() as $trigger) {
+                foreach ($this->renderTrigger($databaseModel, $trigger) as $statement) {
+                    $statements[] = $statement;
+                }
+            }
+        }
+
         return $statements;
+    }
+
+    // ───────────────────────────────────────────────────────── triggers
+
+    /**
+     * Arch §4.10: reads the trigger's PostgreSQL source file (`{Entity}{Name}Trigger.pgsql.sql`,
+     * {@see DatabaseTrigger::getSqlForDialect()} — throws if the file is missing, "missing file fails generation"),
+     * splits it via {@see SqlScriptLexer} into one `DdlStatement` per top-level statement (so each one is, on its
+     * own, a single statement {@see \Doctrine\DBAL\Connection::executeStatement()} can run — it goes through
+     * prepare+execute, which forbids a multi-statement query), every one on {@see DdlStatement::PHASE_CREATE_TRIGGER}.
+     *
+     * @return DdlStatement[]
+     */
+    protected function renderTrigger(DatabaseModel $databaseModel, DatabaseTrigger $trigger): array
+    {
+        $table = $databaseModel->sqlTableName;
+        $sql = $trigger->getSqlForDialect($databaseModel->entityClassWithNamespace, SqlDialect::POSTGRES);
+
+        return array_map(
+            static fn (string $statement): DdlStatement => new DdlStatement(
+                sql: $statement,
+                phase: DdlStatement::PHASE_CREATE_TRIGGER,
+                table: $table,
+            ),
+            SqlScriptLexer::splitStatements($sql)
+        );
     }
 
     // ───────────────────────────────────────────────────────── columns

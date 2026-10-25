@@ -37,6 +37,14 @@ final readonly class DdlStatement
     public const string PHASE_CREATE_FOREIGN_KEY = 'CREATE_FOREIGN_KEY';
 
     /**
+     * `DatabaseTrigger` per dialect (Arch §4.10): last of the CREATE-path phases, deliberately — a copy/migration
+     * caller (`app:db:copy-to-postgres` finalise) must create every trigger only after a table's data phase has
+     * finished, since e.g. the Radbonus Track trigger refuses a row the bulk copy would otherwise insert
+     * unconditionally.
+     */
+    public const string PHASE_CREATE_TRIGGER = 'CREATE_TRIGGER';
+
+    /**
      * @var string[] Execution order for {@see sortByPhase()}. Step 7 (ALTER/DROP phases, aligned with
      *      `DatabaseSchemaDiffService`'s 13-phase assembler where it makes sense) extends this list; it does not
      *      reorder the entries already here.
@@ -48,6 +56,7 @@ final readonly class DdlStatement
         self::PHASE_CREATE_TABLE,
         self::PHASE_CREATE_INDEX,
         self::PHASE_CREATE_FOREIGN_KEY,
+        self::PHASE_CREATE_TRIGGER,
     ];
 
     // ─── Lock classes (production-guard data, not yet acted on in step 4a) ───

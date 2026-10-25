@@ -39,6 +39,7 @@ use DDD\Domain\Base\Repo\DB\Database\Diff\DBTriggerDiff;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBTriggerDiffs;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBVirtualColumnDiff;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBVirtualColumnDiffs;
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\SqlScriptLexer;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Libs\Config;
@@ -757,24 +758,20 @@ class DatabaseSchemaDiffService
     }
 
     /**
-     * Splits a multi-statement SQL string into individually-executable statements. Handles the
-     * comment banners DatabaseModel::getSql() emits (lines starting with "#"). DDL statements do
-     * not contain ";" in string literals in any current DDD-generated SQL, so naive splitting on
-     * ";" is safe — revisit if/when triggers with BEGIN…END blocks land in this generator path.
+     * Splits a multi-statement SQL string into individually-executable statements via
+     * {@see SqlScriptLexer::splitStatements()} (Arch §4.10) — quote/comment/`BEGIN…END`-aware, unlike the naive
+     * `explode(';', …)` this replaced, which would have wrongly cut a trigger's compound-statement body
+     * (`DatabaseTrigger`, Arch §4.10) on every semicolon inside it. The `#### $tableName ####` banner
+     * `DatabaseModel::getSql()` emits is stripped first (unchanged from the previous implementation) so it never
+     * prefixes the CREATE TABLE statement's text; any other comment is left to the lexer's own
+     * blank-or-comment-only filtering.
      *
      * @return string[]
      */
     protected function splitMultiStatementSql(string $sql): array
     {
-        $withoutComments = (string)preg_replace('/^\s*#.*$/m', '', $sql);
-        $statements = [];
-        foreach (explode(';', $withoutComments) as $part) {
-            $trimmed = trim($part);
-            if ($trimmed !== '') {
-                $statements[] = $trimmed;
-            }
-        }
-        return $statements;
+        $withoutBanner = (string)preg_replace('/^\s*#.*$/m', '', $sql);
+        return SqlScriptLexer::splitStatements($withoutBanner);
     }
 
     /**

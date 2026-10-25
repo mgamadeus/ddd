@@ -273,10 +273,12 @@ final class CopyToPostgresService
     }
 
     /**
-     * Phase `finalise` (Mig §5.1 step 3, minus triggers — PostgresDdlRenderer has no PL/pgSQL trigger body yet,
-     * step 7): secondary/unique indexes and FKs (`NOT VALID` + `VALIDATE` is step 7 too — the renderer's FK
-     * statement is a plain `ADD CONSTRAINT`, which still validates inline; fine at spike scale, not at production
-     * scale, hence step 7), then the identity reset per table.
+     * Phase `finalise` (Mig §5.1 step 3): secondary/unique indexes, FKs (`NOT VALID` + `VALIDATE` is still step 7 —
+     * the renderer's FK statement is a plain `ADD CONSTRAINT`, which still validates inline; fine at spike scale,
+     * not at production scale) and, last (Arch §4.10: `DdlStatement::PHASE_CREATE_TRIGGER` sorts after every other
+     * CREATE-path phase), every `DatabaseTrigger` — deliberately AFTER the data phase has already finished, since
+     * e.g. the Radbonus Track trigger would otherwise refuse rows the bulk copy inserts unconditionally. Then the
+     * identity reset per table.
      *
      * @return array<string, array{seconds: float}>
      */
