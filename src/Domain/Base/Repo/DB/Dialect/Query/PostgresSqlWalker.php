@@ -36,17 +36,128 @@ class PostgresSqlWalker extends SqlWalker
 {
     use NullsOrderingTrait;
     use LockSqlHelper;
+    use JsonColumnAwareTrait;
 
     /** {@inheritDoc} */
     public function walkOrderByItem($orderByItem)
     {
-        $sql = parent::walkOrderByItem($orderByItem);
+        $expression = $orderByItem->expression;
+        $type = strtoupper($orderByItem->type);
 
-        if ($orderByItem->expression instanceof AST\Subselect) {
+        if ($this->isJsonColumnPathExpression($expression)) {
+            $sql = $this->castJsonColumnSqlForOrdering($expression->dispatch($this)) . ' ' . $type;
+        } else {
+            $sql = parent::walkOrderByItem($orderByItem);
+        }
+
+        if ($expression instanceof AST\Subselect) {
             return $sql;
         }
 
-        return $this->appendNullsOrdering($sql, strtoupper($orderByItem->type), $orderByItem->expression);
+        return $this->appendNullsOrdering($sql, $type, $expression);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * D8 (dual-dialect architecture plan §4.8, JsonColumnAwareTrait): `walkArithmeticExpression`/
+     * `walkInputParameter`/`walkFunction`/`walkLiteral` — every method the three overrides below call — are
+     * `public`; none touches a property {@see \Doctrine\ORM\Query\SqlWalker} declares `private` (`$conn`,
+     * `$queryComponents`, …), so each delegates to `parent::` for the one branch that would (an unparsed non-`Node`
+     * operand; a string `$stringExpression` result-variable reference) — neither reachable from ordinary parsed
+     * DQL on a `json` column.
+     */
+    public function walkComparisonExpression($compExpr)
+    {
+        $leftExpr = $compExpr->leftExpression;
+        $rightExpr = $compExpr->rightExpression;
+
+        if (!$leftExpr instanceof AST\Node || !$rightExpr instanceof AST\Node) {
+            return parent::walkComparisonExpression($compExpr);
+        }
+
+        $leftSql = $this->isJsonColumnExpression($leftExpr)
+            ? $this->castJsonColumnSqlForComparison($leftExpr->dispatch($this))
+            : $leftExpr->dispatch($this);
+        $rightSql = $this->isJsonColumnExpression($rightExpr)
+            ? $this->castJsonColumnSqlForComparison($rightExpr->dispatch($this))
+            : $rightExpr->dispatch($this);
+
+        return $leftSql . ' ' . $compExpr->operator . ' ' . $rightSql;
+    }
+
+    /** {@inheritDoc} */
+    public function walkLikeExpression($likeExpr)
+    {
+        $stringExpr = $likeExpr->stringExpression;
+        if (!$this->isJsonColumnPathExpression($stringExpr)) {
+            return parent::walkLikeExpression($likeExpr);
+        }
+
+        $sql = $this->castJsonColumnSqlForComparison($stringExpr->dispatch($this)) . ($likeExpr->not ? ' NOT' : '') . ' LIKE ';
+
+        if ($likeExpr->stringPattern instanceof AST\InputParameter) {
+            $sql .= $this->walkInputParameter($likeExpr->stringPattern);
+        } elseif ($likeExpr->stringPattern instanceof AST\Functions\FunctionNode) {
+            $sql .= $this->walkFunction($likeExpr->stringPattern);
+        } elseif ($likeExpr->stringPattern instanceof AST\PathExpression) {
+            $sql .= $this->walkPathExpression($likeExpr->stringPattern);
+        } else {
+            $sql .= $this->walkLiteral($likeExpr->stringPattern);
+        }
+
+        if ($likeExpr->escapeChar) {
+            $sql .= ' ESCAPE ' . $this->walkLiteral($likeExpr->escapeChar);
+        }
+
+        return $sql;
+    }
+
+    /** {@inheritDoc} */
+    public function walkInListExpression(AST\InListExpression $inExpr): string
+    {
+        $expression = $inExpr->expression;
+        $expressionSql = $this->isJsonColumnExpression($expression)
+            ? $this->castJsonColumnSqlForComparison($expression->dispatch($this))
+            : $this->walkArithmeticExpression($expression);
+
+        return $expressionSql
+            . ($inExpr->not ? ' NOT' : '') . ' IN ('
+            . implode(', ', array_map([$this, 'walkInParameter'], $inExpr->literals))
+            . ')';
+    }
+
+    /** {@inheritDoc} */
+    public function walkBetweenExpression($betweenExpr)
+    {
+        $expression = $betweenExpr->expression;
+        if (!$this->isJsonColumnExpression($expression)) {
+            return parent::walkBetweenExpression($betweenExpr);
+        }
+
+        $sql = $this->castJsonColumnSqlForComparison($expression->dispatch($this)) . ($betweenExpr->not ? ' NOT' : '');
+        $sql .= ' BETWEEN ' . $this->walkArithmeticExpression($betweenExpr->leftBetweenExpression)
+            . ' AND ' . $this->walkArithmeticExpression($betweenExpr->rightBetweenExpression);
+
+        return $sql;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * D8 (`GROUP BY`): only the direct state-field `PathExpression` item (the common case, and the only shape a
+     * `json` column reaches on its own) is handled here; the string-keyed branches (a result-variable alias, or
+     * `GROUP BY <wholeEntityAlias>` expanding to one `PathExpression` per field) delegate to `parent::` unchanged
+     * — that expansion over an entity with `json` columns is not covered (no fixture here exercises it; see
+     * {@see self::castJsonSelectColumnsForDistinctOrGroupBy()}'s own deviation note).
+     */
+    public function walkGroupByItem($groupByItem)
+    {
+        if ($groupByItem instanceof AST\PathExpression && $this->isJsonColumnPathExpression($groupByItem)) {
+            return $this->castJsonColumnSqlForComparison($this->walkPathExpression($groupByItem));
+        }
+
+        return parent::walkGroupByItem($groupByItem);
     }
 
     /** {@inheritDoc} */
@@ -56,6 +167,9 @@ class PostgresSqlWalker extends SqlWalker
         $query = $this->getQuery();
 
         $sql = $this->createSqlForFinalizer($AST);
+        if ($AST->selectClause->isDistinct || $AST->groupByClause !== null) {
+            $sql = $this->castJsonSelectColumnsForDistinctOrGroupBy($AST->selectClause, $sql);
+        }
         $sql = $platform->modifyLimitQuery($sql, $query->getMaxResults(), $query->getFirstResult());
 
         $lockMode = $query->getHint(Query::HINT_LOCK_MODE) ?: LockMode::NONE;
@@ -100,5 +214,88 @@ class PostgresSqlWalker extends SqlWalker
         $rootTableAlias = $this->getSQLTableAlias($rootClass->getTableName(), $rootAlias);
 
         return 'FOR UPDATE OF ' . $rootTableAlias;
+    }
+
+    /**
+     * D8 (case (c), dual-dialect architecture plan §4.8): `SELECT DISTINCT` and `GROUP BY` both need a hash/
+     * equality operator on EVERY selected column — `json` has none (real failure: "could not identify an equality
+     * operator for type json", `SELECT DISTINCT` hydrating `OrderItem`, whose `unitPrice`/`optionsPriceDelta` are
+     * JSON-persisted `MoneyAmount` value objects — {@see \DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder::distinct()}'s
+     * to-many-LEFT-JOIN dedup).
+     *
+     * {@see \Doctrine\ORM\Query\SqlWalker::walkSelectExpression()} cannot be overridden to cast the json columns it
+     * projects — it reads `$rsm`/`$quoteStrategy`/`$em`/… , all declared `private` on `SqlWalker` itself, invisible
+     * from this subclass. Instead, this method edits the ALREADY-RENDERED SQL text — the same technique
+     * {@see MariaDbDistinctSubqueryPagination} already uses for its own dialect-specific SQL surgery: for every
+     * json-typed column this select clause projects, it recomputes the EXACT substring
+     * `walkSelectExpression()` would itself have produced for that column (same table alias, same quoted column
+     * name — both deterministic and memoized, so calling the inherited, un-overridden `walkPathExpression()` again
+     * here returns byte-identical text, no new alias, no side effect) and swaps it for its text-cast form only
+     * where it is immediately followed by ` AS ` — which only ever happens in the select list this method just
+     * rendered (a `WHERE`/`ORDER BY`/`GROUP BY` reference to the same column carries no ` AS alias` suffix, so it
+     * is never touched here). The VALUE is unaffected: PostgreSQL's wire format for a selected `json` column is
+     * already its text form, so casting it to `text` changes only the SQL, never the hydrated value.
+     *
+     * Deviation: `GROUP BY <wholeEntityAlias>` (Doctrine's own per-field `PathExpression` expansion inside
+     * {@see \Doctrine\ORM\Query\SqlWalker::walkGroupByItem()}) is not covered — no fixture here exercises it.
+     */
+    protected function castJsonSelectColumnsForDistinctOrGroupBy(AST\SelectClause $selectClause, string $sql): string
+    {
+        foreach ($this->collectJsonSelectPathExpressions($selectClause) as $pathExpression) {
+            $columnSql = $this->walkPathExpression($pathExpression);
+            $sql = str_replace(
+                $columnSql . ' AS ',
+                $this->castJsonColumnSqlForComparison($columnSql) . ' AS ',
+                $sql
+            );
+        }
+
+        return $sql;
+    }
+
+    /**
+     * One synthetic, already-typed `TYPE_STATE_FIELD` {@see AST\PathExpression} per json-typed column this select
+     * clause projects — covering a bare state-field select item (`SELECT DISTINCT oi.name FROM ...`) and the
+     * whole/partial-entity hydration item (`SELECT DISTINCT oi FROM ...` / `SELECT DISTINCT PARTIAL oi.{...}`),
+     * the same two shapes {@see \Doctrine\ORM\Query\SqlWalker::walkSelectExpression()} itself distinguishes.
+     *
+     * @return list<AST\PathExpression>
+     */
+    protected function collectJsonSelectPathExpressions(AST\SelectClause $selectClause): array
+    {
+        $pathExpressions = [];
+
+        foreach ($selectClause->selectExpressions as $selectExpression) {
+            $expression = $selectExpression->expression;
+
+            if ($expression instanceof AST\PathExpression) {
+                if ($this->isJsonColumnPathExpression($expression)) {
+                    $pathExpressions[] = $this->newStateFieldPathExpression($expression->identificationVariable, $expression->field);
+                }
+                continue;
+            }
+
+            if (is_string($expression)) {
+                $dqlAlias = $expression;
+                $partialFieldSet = [];
+            } elseif ($expression instanceof AST\PartialObjectExpression) {
+                $dqlAlias = $expression->identificationVariable;
+                $partialFieldSet = $expression->partialFieldSet;
+            } else {
+                continue;
+            }
+
+            $class = $this->getMetadataForDqlAlias($dqlAlias);
+            foreach ($class->fieldMappings as $fieldName => $mapping) {
+                if ($partialFieldSet && !in_array($fieldName, $partialFieldSet, true)) {
+                    continue;
+                }
+                if (($mapping['type'] ?? null) === 'json') {
+                    $pathExpressions[] = $this->newStateFieldPathExpression($dqlAlias, $fieldName);
+                }
+            }
+        }
+
+        return $pathExpressions;
     }
 }

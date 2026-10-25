@@ -15,7 +15,12 @@ use Doctrine\ORM\Tools\Pagination\LimitSubqueryOutputWalker;
  * MariaDB does, or a page boundary falls in a different place than the full (non-paginated) result's `ORDER BY`
  * would put it. `walkOrderByItem()` is not overridden by the parent class, so overriding it here reaches every
  * `ORDER BY` item the ROW_NUMBER clause walks ({@see \Doctrine\ORM\Tools\Pagination\RowNumberOverFunction::getSql()}
- * calls `$sqlWalker->walkOrderByClause()` on THIS instance).
+ * calls `$sqlWalker->walkOrderByClause()` on THIS instance). D8 (dual-dialect architecture plan §4.8,
+ * {@see JsonColumnAwareTrait}): the same clause can order by a `json`-typed column (a raw `orderBy()` on a
+ * Translatable, reaching this walker whenever that query also has joins + a limit/offset —
+ * {@see RowNumberPagePagination} / `DoctrineQueryBuilder::applyDistinctSubqueryIfNeededAndGetResult()`), so
+ * `walkOrderByItem()` casts it to text here too, the same way {@see PostgresSqlWalker} does for every
+ * non-paginated query.
  *
  * **How {@see RowNumberPagePagination} drives this class.** The stock class's `walkSelectStatementWithRowNumber()`
  * is `public` precisely so a caller outside the stock `Paginator` can get the id-page SQL directly with the
@@ -31,16 +36,24 @@ use Doctrine\ORM\Tools\Pagination\LimitSubqueryOutputWalker;
 class PostgresLimitSubqueryOutputWalker extends LimitSubqueryOutputWalker
 {
     use NullsOrderingTrait;
+    use JsonColumnAwareTrait;
 
     /** {@inheritDoc} */
     public function walkOrderByItem($orderByItem)
     {
-        $sql = parent::walkOrderByItem($orderByItem);
+        $expression = $orderByItem->expression;
+        $type = strtoupper($orderByItem->type);
 
-        if ($orderByItem->expression instanceof AST\Subselect) {
+        if ($this->isJsonColumnPathExpression($expression)) {
+            $sql = $this->castJsonColumnSqlForOrdering($expression->dispatch($this)) . ' ' . $type;
+        } else {
+            $sql = parent::walkOrderByItem($orderByItem);
+        }
+
+        if ($expression instanceof AST\Subselect) {
             return $sql;
         }
 
-        return $this->appendNullsOrdering($sql, strtoupper($orderByItem->type), $orderByItem->expression);
+        return $this->appendNullsOrdering($sql, $type, $expression);
     }
 }
