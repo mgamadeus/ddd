@@ -152,6 +152,41 @@ final class CopyToPostgresService
      *
      * @return DatabaseColumn[]
      */
+    /** Target bytes per chunk: rows are fetched buffered, so a chunk must fit comfortably in PHP's memory. */
+    public const int CHUNK_TARGET_BYTES = 32 * 1024 * 1024;
+
+    /** @var array<string, int> */
+    protected array $chunkSizes = [];
+
+    /**
+     * Rows per chunk for a table: the configured chunk size, capped so a chunk stays near CHUNK_TARGET_BYTES given the
+     * source's average row length (Radbonus Tracks carry multi-MB trackDetails blobs; Dineful MediaItems ~1 MB images).
+     */
+    protected function chunkSizeFor(string $table): int
+    {
+        if (!isset($this->chunkSizes[$table])) {
+            $averageRowLength = (int)($this->source->fetchOne(
+                'SELECT AVG_ROW_LENGTH FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+                [$table]
+            ) ?: 0);
+            // InnoDB's AVG_ROW_LENGTH excludes most off-page blob bytes; also measure twice the average over a sample of real rows.
+            $columns = $this->source->fetchFirstColumn(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?"
+                . " AND DATA_TYPE IN ('blob','mediumblob','longblob','text','mediumtext','longtext','json')",
+                [$table]
+            );
+            if ($columns !== []) {
+                $lengthSum = implode(' + ', array_map(static fn (string $c): string => "COALESCE(LENGTH(`$c`), 0)", $columns));
+                $sampledLength = (int)($this->source->fetchOne(
+                    "SELECT 2 * AVG(l) FROM (SELECT $lengthSum AS l FROM `$table` ORDER BY `id` DESC LIMIT 2000) AS sample"
+                ) ?: 0);
+                $averageRowLength = max($averageRowLength, $sampledLength);
+            }
+            $this->chunkSizes[$table] = max(1, min($this->chunkSize, intdiv(self::CHUNK_TARGET_BYTES, max(1, $averageRowLength))));
+        }
+        return $this->chunkSizes[$table];
+    }
+
     protected function columnsPresentInSource(DatabaseModel $databaseModel): array
     {
         $table = $databaseModel->sqlTableName;
@@ -205,7 +240,7 @@ final class CopyToPostgresService
         while (true) {
             $chunk = $this->source->fetchAllAssociative(
                 "SELECT $selectExpressions FROM `$table` WHERE `id` > ? ORDER BY `id` ASC LIMIT ?",
-                [$lastId, $this->chunkSize],
+                [$lastId, $this->chunkSizeFor($table)],
                 [PDO::PARAM_INT, PDO::PARAM_INT]
             );
             if ($chunk === []) {
@@ -333,7 +368,7 @@ final class CopyToPostgresService
         // Compared in id windows of the chunk size: a table can hold more data than PHP may load at once
         // (Dineful MediaItems: ~1.1 GB in 764 rows), so neither side is ever fetched whole.
         $mismatches = [];
-        foreach (array_chunk($sourceIds, max(1, $this->chunkSize)) as $idWindow) {
+        foreach (array_chunk($sourceIds, $this->chunkSizeFor($table)) as $idWindow) {
             $firstId = $idWindow[0];
             $lastId = $idWindow[count($idWindow) - 1];
             $sourceRows = [];
