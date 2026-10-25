@@ -10,6 +10,7 @@ use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityManager;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Infrastructure\Exceptions\ForbiddenException;
+use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Services\AuthService;
 use Doctrine\DBAL\ArrayParameterType;
@@ -27,11 +28,14 @@ use Throwable;
  * `INSERT … ON DUPLICATE KEY UPDATE` and uses a savepoint instead of MariaDB's "errors inside a transaction don't
  * abort it" tolerance (§4.7).
  *
- * Deliberately NOT built (no fixture needs it, see each method's docblock): identity catch-up after an explicit
- * id above the sequence (`nextval()`), the nullable-conflict-key runtime fallback (Mig §3.3's
- * "`ON CONFLICT DO NOTHING` + per-key lookup"), `#[UpsertConflictKey]`, and the insert-vs-update
- * `RETURNING … (old.id IS NULL) AS inserted` the plan's §4.6 table shows — simplified to plain `RETURNING "id"`
- * since no caller here or in the fixtures distinguishes the two outcomes.
+ * Built here: identity catch-up after an explicit id ({@see PostgresIdentityCatchUp}, `nextval()` only), the
+ * nullable-conflict-key runtime fallback (Mig §3.3's "`ON CONFLICT DO NOTHING` + per-key lookup", {@see
+ * self::upsertWithNullableFallback()}) and `#[UpsertConflictKey]` (via {@see ConflictTargetResolver}).
+ *
+ * Still deliberately NOT built (no fixture needs it): the insert-vs-update `RETURNING … (old.id IS NULL) AS
+ * inserted` the plan's §4.6 table shows — simplified to plain `RETURNING "id"` since no caller here or in the
+ * fixtures distinguishes the two outcomes; and the LAZY identity catch-up retry on a generated id's PK 23505
+ * (see {@see PostgresIdentityCatchUp}'s docblock).
  */
 final class PostgresUpsertBuilder implements UpsertBuilder
 {
@@ -61,21 +65,48 @@ final class PostgresUpsertBuilder implements UpsertBuilder
         $table = $doctrineModel->getTableName();
         $databaseModel = DatabaseModel::fromEntityClass($doctrineModel::ENTITY_CLASS);
         $presentColumnNames = array_map(static fn (ColumnWrite $columnWrite): string => $columnWrite->columnName, $columnWrites);
-        $conflictTarget = ConflictTargetResolver::resolve($databaseModel, $presentColumnNames, $idValue !== null);
-
-        [$sql, $values, $types] = $this->renderUpsertSql($table, $columnWrites, $idValue, $conflictTarget, false);
+        $conflictResolution = ConflictTargetResolver::resolve($databaseModel, $presentColumnNames, $idValue !== null);
 
         $checkInsertRights = $updateRightsQueryBuilder !== null && !isset($doctrineModel->id);
+
+        if ($conflictResolution->needsNullableFallback) {
+            if (!$checkInsertRights) {
+                return WriteExecutor::runSavepointed(
+                    $connection,
+                    function () use ($connection, $table, $columnWrites, $conflictResolution, &$doctrineModel): ?int {
+                        $entityId = $this->upsertWithNullableFallback($connection, $table, $columnWrites, $conflictResolution->candidateKeys);
+                        $doctrineModel->id = $entityId;
+                        return $entityId;
+                    }
+                );
+            }
+
+            return WriteExecutor::runInOwnOrCallerTransaction(
+                $connection,
+                function () use ($connection, $table, $columnWrites, $conflictResolution, &$doctrineModel, $updateRightsQueryBuilder): int {
+                    $entityId = $this->upsertWithNullableFallback($connection, $table, $columnWrites, $conflictResolution->candidateKeys);
+                    $doctrineModel->id = $entityId;
+                    $this->checkInsertRightsOrThrow($doctrineModel, $updateRightsQueryBuilder, $entityId);
+                    return $entityId;
+                }
+            );
+        }
+
+        [$sql, $values, $types] = $this->renderUpsertSql($table, $columnWrites, $idValue, $conflictResolution->columns, false);
+
         if (!$checkInsertRights) {
             return WriteExecutor::runSavepointed(
                 $connection,
-                static function () use ($connection, $sql, $values, $types, &$doctrineModel): ?int {
+                static function () use ($connection, $sql, $values, $types, $idValue, $table, &$doctrineModel): ?int {
                     $row = $connection->fetchAssociative($sql, $values, $types);
                     if ($row === false || !isset($row['id'])) {
                         return null;
                     }
                     $entityId = (int)$row['id'];
                     $doctrineModel->id = $entityId;
+                    if ($idValue !== null) {
+                        PostgresIdentityCatchUp::afterExplicitIdInsert($connection, $table, $entityId);
+                    }
                     return $entityId;
                 }
             );
@@ -83,10 +114,13 @@ final class PostgresUpsertBuilder implements UpsertBuilder
 
         return WriteExecutor::runInOwnOrCallerTransaction(
             $connection,
-            function () use ($connection, $sql, $values, $types, &$doctrineModel, $updateRightsQueryBuilder): int {
+            function () use ($connection, $sql, $values, $types, $idValue, $table, &$doctrineModel, $updateRightsQueryBuilder): int {
                 $row = $connection->fetchAssociative($sql, $values, $types);
                 $entityId = (int)$row['id'];
                 $doctrineModel->id = $entityId;
+                if ($idValue !== null) {
+                    PostgresIdentityCatchUp::afterExplicitIdInsert($connection, $table, $entityId);
+                }
                 $this->checkInsertRightsOrThrow($doctrineModel, $updateRightsQueryBuilder, $entityId);
                 return $entityId;
             }
@@ -183,13 +217,30 @@ final class PostgresUpsertBuilder implements UpsertBuilder
 
         $conflictTargetByIndex = [];
         $conflictKeyValueByIndex = [];
+        $needsFallbackByIndex = [];
+        $fallbackCandidateKeysByIndex = [];
         foreach ($doctrineModels as $index => $doctrineModel) {
             $hasId = $rowIdValues[$index] !== null;
             $presentColumnNames = array_map(
                 static fn (ColumnWrite $columnWrite): string => $columnWrite->columnName,
                 $rowColumnWrites[$index]
             );
-            $target = $useInsertIgnore ? [] : ConflictTargetResolver::resolve($databaseModel, $presentColumnNames, $hasId);
+            if ($useInsertIgnore) {
+                $conflictTargetByIndex[$index] = [];
+                $conflictKeyValueByIndex[$index] = null;
+                continue;
+            }
+            $resolution = ConflictTargetResolver::resolve($databaseModel, $presentColumnNames, $hasId);
+            if ($resolution->needsNullableFallback) {
+                // ON CONFLICT has no single target for this row — the fallback runs its own INSERT, so it must
+                // never share a multi-row statement with another row (BatchPlanner's rowByRow forcing below).
+                $conflictTargetByIndex[$index] = [];
+                $needsFallbackByIndex[$index] = true;
+                $fallbackCandidateKeysByIndex[$index] = $resolution->candidateKeys;
+                $conflictKeyValueByIndex[$index] = spl_object_id($doctrineModel) . '#fallback'; // unique → never dedups into another row's key
+                continue;
+            }
+            $target = $resolution->columns;
             $conflictTargetByIndex[$index] = $target;
             if ($target === []) {
                 $conflictKeyValueByIndex[$index] = null;
@@ -209,6 +260,15 @@ final class PostgresUpsertBuilder implements UpsertBuilder
         }
 
         $runs = BatchPlanner::planRuns($rowShapes, static fn (int $index) => $conflictKeyValueByIndex[$index]);
+        foreach ($runs as &$run) {
+            foreach ($run['modelIndexes'] as $index) {
+                if (isset($needsFallbackByIndex[$index])) {
+                    $run['rowByRow'] = true;
+                    break;
+                }
+            }
+        }
+        unset($run);
 
         $executeRuns = function () use (
             $connection,
@@ -217,6 +277,8 @@ final class PostgresUpsertBuilder implements UpsertBuilder
             $rowColumnWrites,
             $rowIdValues,
             $conflictTargetByIndex,
+            $needsFallbackByIndex,
+            $fallbackCandidateKeysByIndex,
             $table,
             $useInsertIgnore
         ): void {
@@ -234,6 +296,15 @@ final class PostgresUpsertBuilder implements UpsertBuilder
                     continue;
                 }
                 foreach ($run['modelIndexes'] as $index) {
+                    if (isset($needsFallbackByIndex[$index])) {
+                        $this->upsertWithNullableFallback(
+                            $connection,
+                            $table,
+                            $rowColumnWrites[$index],
+                            $fallbackCandidateKeysByIndex[$index]
+                        );
+                        continue;
+                    }
                     [$sql, $values, $types] = $this->renderUpsertSql(
                         $table,
                         $rowColumnWrites[$index],
@@ -243,6 +314,18 @@ final class PostgresUpsertBuilder implements UpsertBuilder
                     );
                     $connection->fetchAssociative($sql, $values, $types);
                 }
+            }
+
+            // nextval() is not transactional (§4.6) — safe to run before the caller's own commit/rollback decides
+            // the batch's fate, and cheaper than one call per explicit-id row.
+            $maxExplicitId = null;
+            foreach ($rowIdValues as $idValue) {
+                if ($idValue !== null && ($maxExplicitId === null || $idValue > $maxExplicitId)) {
+                    $maxExplicitId = $idValue;
+                }
+            }
+            if ($maxExplicitId !== null) {
+                PostgresIdentityCatchUp::afterExplicitIdInsert($connection, $table, (int)$maxExplicitId);
             }
         };
 
@@ -291,10 +374,13 @@ final class PostgresUpsertBuilder implements UpsertBuilder
         try {
             return WriteExecutor::runSavepointed(
                 $connection,
-                static function () use ($connection, $sql, $values, $types, &$doctrineModel): int {
+                static function () use ($connection, $sql, $values, $types, $idValue, $table, &$doctrineModel): int {
                     $row = $connection->fetchAssociative($sql, $values, $types);
                     $entityId = (int)$row['id'];
                     $doctrineModel->id = $entityId;
+                    if ($idValue !== null) {
+                        PostgresIdentityCatchUp::afterExplicitIdInsert($connection, $table, $entityId);
+                    }
                     return $entityId;
                 }
             );
@@ -514,6 +600,92 @@ final class PostgresUpsertBuilder implements UpsertBuilder
             }
         }
         return null;
+    }
+
+    // ───────────────────────────────────────────────────────── nullable-conflict-key runtime fallback (Mig §3.3)
+
+    /** @var int "counted" (Mig §3.3) — how many times the fallback actually had to look a row up, process-lifetime. */
+    protected static int $nullableFallbackLookupCount = 0;
+
+    public static function nullableFallbackLookupCount(): int
+    {
+        return self::$nullableFallbackLookupCount;
+    }
+
+    /**
+     * Mig §3.3 "Runtime fallback for the nullable cases": {@see ConflictTargetResolver::resolve()} could not name
+     * one safe `ON CONFLICT` target for this row ($candidateKeys has 2+ ambiguous UNIQUE keys, at least one with
+     * a nullable column, no `#[UpsertConflictKey]`). A target-less `ON CONFLICT DO NOTHING RETURNING id` absorbs
+     * a collision on ANY of the table's unique constraints without naming which one; when it inserted nothing,
+     * $candidateKeys is tried in order to find the row that actually collided, and that row is UPDATEd by id —
+     * "counted and logged" ({@see self::$nullableFallbackLookupCount}, `error_log()`) because every hit is an
+     * extra two round trips this entity's shape could avoid entirely with a declared `#[UpsertConflictKey]`.
+     *
+     * @param ColumnWrite[] $columnWrites
+     * @param string[][] $candidateKeys
+     */
+    protected function upsertWithNullableFallback(Connection $connection, string $table, array $columnWrites, array $candidateKeys): int
+    {
+        [$sql, $values, $types] = $this->renderUpsertSql($table, $columnWrites, null, [], true);
+        $row = $connection->fetchAssociative($sql, $values, $types);
+        if ($row !== false && isset($row['id'])) {
+            return (int)$row['id'];
+        }
+
+        foreach ($candidateKeys as $keyColumns) {
+            $conditions = [];
+            $lookupValues = [];
+            $lookupTypes = [];
+            foreach ($keyColumns as $columnName) {
+                $columnWrite = $this->findColumnWrite($columnWrites, $columnName);
+                if ($columnWrite === null) {
+                    continue 2; // this row never wrote one of this key's columns — not a candidate for THIS row
+                }
+                $conditions[] = '"' . $columnName . '" = ?';
+                $lookupValues[] = $columnWrite->value;
+                $lookupTypes[] = $columnWrite->dbalType;
+            }
+            $existingId = $connection->fetchOne(
+                'SELECT "id" FROM "' . $table . '" WHERE ' . implode(' AND ', $conditions),
+                $lookupValues,
+                $lookupTypes
+            );
+            if ($existingId === false) {
+                continue;
+            }
+
+            $entityId = (int)$existingId;
+            $assignments = [];
+            $updateValues = [];
+            $updateTypes = [];
+            foreach ($columnWrites as $columnWrite) {
+                [$assignmentSql, $assignmentValues, $assignmentTypes] = $this->renderUpdateByIdAssignment($columnWrite);
+                $assignments[] = $assignmentSql;
+                array_push($updateValues, ...$assignmentValues);
+                array_push($updateTypes, ...$assignmentTypes);
+            }
+            if ($assignments !== []) {
+                $connection->executeStatement(
+                    'UPDATE "' . $table . '" SET ' . implode(', ', $assignments) . ' WHERE "id" = ?',
+                    [...$updateValues, $entityId],
+                    [...$updateTypes, 'integer']
+                );
+            }
+
+            self::$nullableFallbackLookupCount++;
+            error_log(
+                'ConflictTargetResolver nullable-key fallback: "' . $table . '" row ' . $entityId
+                . ' matched candidate key (' . implode(', ', $keyColumns) . ') after the target-less INSERT found '
+                . 'no row to return — no #[UpsertConflictKey] declared on this entity.'
+            );
+            return $entityId;
+        }
+
+        throw new InternalErrorException(
+            'ConflictTargetResolver nullable-key fallback: "' . $table . '" rejected the insert as a duplicate '
+            . 'but no candidate UNIQUE key lookup found the existing row (a concurrent delete between the INSERT '
+            . 'and the lookup, or a collation mismatch between the write and this SELECT).'
+        );
     }
 
     // ───────────────────────────────────────────────────────── SQL rendering

@@ -56,6 +56,10 @@ final class RawUpsertExecutor
         // conflict branch's DO UPDATE replaces the tuple with a new version whose xmax is the CURRENT
         // transaction's id, not 0 — `xmax = 0` reliably tells the two apart within the SAME statement.
         $row = $connection->fetchAssociative($sql, $values, $types);
+        if ($spec->hasId()) {
+            // nextval() is not transactional (§4.6) — safe unconditionally, whichever branch (insert/update) ran.
+            PostgresIdentityCatchUp::afterExplicitIdInsert($connection, $spec->table, (int)$spec->idValue);
+        }
         return new UpsertResult($row['id'], (bool)$row['inserted']);
     }
 
@@ -68,7 +72,13 @@ final class RawUpsertExecutor
         } catch (UniqueConstraintViolationException) {
             return null;
         }
-        return $row === false ? null : (int)$row['id'];
+        if ($row === false) {
+            return null;
+        }
+        if ($spec->hasId()) {
+            PostgresIdentityCatchUp::afterExplicitIdInsert($connection, $spec->table, (int)$spec->idValue);
+        }
+        return (int)$row['id'];
     }
 
     /** @return array{0: string, 1: array, 2: string[]} */
