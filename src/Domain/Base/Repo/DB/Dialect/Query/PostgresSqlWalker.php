@@ -83,7 +83,51 @@ class PostgresSqlWalker extends SqlWalker
             ? $this->castJsonColumnSqlForComparison($rightExpr->dispatch($this))
             : $rightExpr->dispatch($this);
 
+        // A boolean column compared with the integer literal 0 or 1 (`x.archived != 1`, `x.isActive = 0`): MariaDB's
+        // BOOL is TINYINT(1), so app DQL is full of these; PostgreSQL has no boolean = integer operator. Render the
+        // literal as FALSE/TRUE — same truth value, both engines' semantics identical for 0/1.
+        if ($this->isBooleanColumnExpression($leftExpr) && ($literal = $this->unwrapToBinaryIntegerLiteral($rightExpr)) !== null) {
+            $rightSql = $literal === 1 ? 'TRUE' : 'FALSE';
+        } elseif ($this->isBooleanColumnExpression($rightExpr) && ($literal = $this->unwrapToBinaryIntegerLiteral($leftExpr)) !== null) {
+            $leftSql = $literal === 1 ? 'TRUE' : 'FALSE';
+        }
+
         return $leftSql . ' ' . $compExpr->operator . ' ' . $rightSql;
+    }
+
+    /** Whether $node is, or trivially wraps, a state field whose Doctrine type is `boolean`. */
+    protected function isBooleanColumnExpression(mixed $node): bool
+    {
+        $pathExpression = $this->unwrapToPathExpression($node);
+        if ($pathExpression === null || $pathExpression->type !== AST\PathExpression::TYPE_STATE_FIELD) {
+            return false;
+        }
+        $class = $this->getMetadataForDqlAlias($pathExpression->identificationVariable);
+
+        return (($class->fieldMappings[$pathExpression->field] ?? [])['type'] ?? null) === 'boolean';
+    }
+
+    /** 0 or 1 when $node is (or trivially wraps) the numeric literal 0 or 1, else null. */
+    protected function unwrapToBinaryIntegerLiteral(mixed $node): ?int
+    {
+        while (true) {
+            if ($node instanceof AST\Literal) {
+                return $node->type === AST\Literal::NUMERIC && in_array((string)$node->value, ['0', '1'], true)
+                    ? (int)$node->value
+                    : null;
+            }
+            if ($node instanceof AST\ArithmeticExpression && $node->simpleArithmeticExpression !== null) {
+                $node = $node->simpleArithmeticExpression;
+            } elseif ($node instanceof AST\SimpleArithmeticExpression && count($node->arithmeticTerms) === 1) {
+                $node = $node->arithmeticTerms[0];
+            } elseif ($node instanceof AST\ArithmeticTerm && count($node->arithmeticFactors) === 1) {
+                $node = $node->arithmeticFactors[0];
+            } elseif ($node instanceof AST\ArithmeticFactor && $node->sign === null) {
+                $node = $node->arithmeticPrimary;
+            } else {
+                return null;
+            }
+        }
     }
 
     /** {@inheritDoc} */
