@@ -10,6 +10,7 @@ use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatement;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\PostgresDdlRenderer;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\ParameterType;
 use PDO;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
@@ -352,10 +353,6 @@ final class CopyToPostgresService
         /** @var DatabaseColumn[] $columns */
         $columns = $this->columnsPresentInSource($databaseModel);
 
-        $sourceIds = array_map('intval', $this->source->fetchFirstColumn("SELECT `id` FROM `$table` ORDER BY `id`"));
-        $targetIds = array_map('intval', $this->target->fetchFirstColumn('SELECT "id" FROM "' . $table . '" ORDER BY "id"'));
-        $idSetMatches = $sourceIds === $targetIds;
-
         $sourceSelect = implode(
             ', ',
             array_map(static fn (DatabaseColumn $c): string => CopyValueCodec::mariaDbVerifySelectExpression($c), $columns)
@@ -365,29 +362,46 @@ final class CopyToPostgresService
             array_map(static fn (DatabaseColumn $c): string => CopyValueCodec::postgresSelectExpression($c), $columns)
         );
 
-        // Compared in id windows of the chunk size: a table can hold more data than PHP may load at once
-        // (Dineful MediaItems: ~1.1 GB in 764 rows), so neither side is ever fetched whole.
+        // Keyset windows over the source ids, each covering the CONTIGUOUS id range (previous last id, this last id]
+        // on both sides: the id sets are compared window by window and a target id inside a gap of the source still
+        // falls into some window. Nothing is ever loaded whole (TrackGeoHashes: 7.9 M rows, MediaItems: 1.1 GB).
         $mismatches = [];
-        foreach (array_chunk($sourceIds, $this->chunkSizeFor($table)) as $idWindow) {
-            $firstId = $idWindow[0];
-            $lastId = $idWindow[count($idWindow) - 1];
+        $idSetMatches = true;
+        $sourceRowCount = 0;
+        $previousLastId = PHP_INT_MIN;
+        $chunkSize = $this->chunkSizeFor($table);
+        while (true) {
+            $windowIds = array_map('intval', $this->source->fetchFirstColumn(
+                "SELECT `id` FROM `$table` WHERE `id` > ? ORDER BY `id` LIMIT ?",
+                [$previousLastId === PHP_INT_MIN ? -1 : $previousLastId, $chunkSize],
+                [ParameterType::INTEGER, ParameterType::INTEGER]
+            ));
+            if ($windowIds === []) {
+                break;
+            }
+            $lastId = $windowIds[count($windowIds) - 1];
+            $lowerBound = $previousLastId === PHP_INT_MIN ? -1 : $previousLastId;
+            $sourceRowCount += count($windowIds);
             $sourceRows = [];
             foreach ($this->source->fetchAllAssociative(
-                "SELECT $sourceSelect FROM `$table` WHERE `id` BETWEEN ? AND ? ORDER BY `id`",
-                [$firstId, $lastId]
+                "SELECT $sourceSelect FROM `$table` WHERE `id` > ? AND `id` <= ? ORDER BY `id`",
+                [$lowerBound, $lastId]
             ) as $row) {
                 $sourceRows[(int)$row['id']] = $row;
             }
             $targetRows = [];
             foreach ($this->target->fetchAllAssociative(
-                'SELECT ' . $targetSelect . ' FROM "' . $table . '" WHERE "id" BETWEEN ? AND ? ORDER BY "id"',
-                [$firstId, $lastId]
+                'SELECT ' . $targetSelect . ' FROM "' . $table . '" WHERE "id" > ? AND "id" <= ? ORDER BY "id"',
+                [$lowerBound, $lastId]
             ) as $row) {
                 $targetRows[(int)$row['id']] = $row;
             }
-            foreach ($idWindow as $id) {
+            if (array_keys($sourceRows) !== array_keys($targetRows)) {
+                $idSetMatches = false;
+            }
+            foreach ($windowIds as $id) {
                 if (!isset($targetRows[$id], $sourceRows[$id])) {
-                    continue; // already surfaced by the id-set mismatch
+                    continue; // surfaced by the id-set mismatch
                 }
                 $sourceCanonical = $this->canonicalRow($columns, $sourceRows[$id], fromPostgres: false);
                 $targetCanonical = $this->canonicalRow($columns, $targetRows[$id], fromPostgres: true);
@@ -401,6 +415,12 @@ final class CopyToPostgresService
                     $mismatches[] = "id=$id: " . implode(',', $diffColumns);
                 }
             }
+            $previousLastId = $lastId;
+        }
+        $maxSourceId = $previousLastId === PHP_INT_MIN ? 0 : $previousLastId;
+        // target rows beyond the last source id (or any row at all when the source is empty)
+        if ((int)$this->target->fetchOne('SELECT COUNT(*) FROM "' . $table . '" WHERE "id" > ?', [$maxSourceId === 0 ? -1 : $maxSourceId]) > 0) {
+            $idSetMatches = false;
         }
 
         $primaryKeyColumn = $databaseModel->columns->getPrimaryKeyColumn();
@@ -410,7 +430,6 @@ final class CopyToPostgresService
                 'SELECT AUTO_INCREMENT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
                 [$table]
             ) ?: 0);
-            $maxSourceId = $sourceIds === [] ? 0 : max($sourceIds);
             $expectedMinimum = max($sourceAutoIncrement, $maxSourceId + 1);
             $targetNextValue = (int)$this->target->fetchOne(
                 "SELECT last_value + CASE WHEN is_called THEN 1 ELSE 0 END FROM " . $this->targetSequenceName($table)
@@ -422,7 +441,7 @@ final class CopyToPostgresService
             'idSetMatches' => $idSetMatches,
             'rowMismatches' => $mismatches,
             'identityOk' => $identityOk,
-            'rows' => count($sourceIds),
+            'rows' => $sourceRowCount,
         ];
     }
 
