@@ -36,6 +36,23 @@ class DatabaseVirtualColumn extends ValueObject
      */
     public ?string $virtualColumnNameOverride = null;
 
+    /**
+     * Set only by {@see DatabaseModel::fromEntityClass()} for the `virtual{Prop}Search` column it generates from
+     * `#[Translatable(fullTextIndex: true)]`. `$as` on that one column is the MariaDB-only
+     * JSON_UNQUOTE/REGEXP_REPLACE template (DatabaseModel.php) — PostgreSQL's `PostgresDdlRenderer` recognises this
+     * flag and renders `GENERATED ALWAYS AS (ddd_translatable_text("col")) STORED` instead of attempting to
+     * translate `$as`. Every OTHER virtual column's `$as` is still MariaDB-only raw SQL with no PostgreSQL form
+     * until `VirtualExpr` (dual-dialect architecture plan §4.10, build step 7) — `PostgresDdlRenderer` refuses those.
+     */
+    public bool $isTranslatableFullTextSearchColumn = false;
+
+    /**
+     * Set together with {@see $isTranslatableFullTextSearchColumn}: the name of the JSON Translatable column this
+     * search column is derived from (`referenceColumn->name` is `{col}Search`, a renamed clone used only for its
+     * SQL type — NOT the base column — so the base name is carried separately).
+     */
+    public ?string $translatableBaseColumnName = null;
+
     public function getSql(bool $asUpdate = false): string
     {
         $sql = $asUpdate ? 'ADD COLUMN IF NOT EXISTS ' : '';

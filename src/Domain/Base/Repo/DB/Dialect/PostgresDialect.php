@@ -4,18 +4,24 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo\DB\Dialect;
 
+use DDD\Domain\Base\Repo\DB\Dialect\Identifiers\IdentifierPolicy;
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlRenderer;
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\PostgresDdlRenderer;
 use Doctrine\ORM\Configuration;
 use PDO;
 
 /**
- * PostgreSQL dialect skeleton (§6 build step 2 explicitly keeps the full dialect — upsert/pagination/DDL/schema —
- * out of scope; that lands in steps 4a/4-9). Only what the harness needs to boot a `pdo_pgsql` connection at all is
- * real: `connectionParams()` (D4.4 — charset must never reach DBAL's pgsql driver, `server_version` maps to
- * `serverVersion`) and a no-op `configureOrm()` (types/functions are step 4/5). `quote()` previews D1's
- * always-quote identifier policy since the harness's own setUp/tearDown SQL already needs it (step 1).
+ * PostgreSQL dialect skeleton (§6 build step 2 explicitly keeps the full dialect — upsert/pagination/schema
+ * introspection — out of scope; that lands in steps 4/5/7). Step 4a (this revision) completes the CREATE-path
+ * schema surface: `connectionParams()` (D4.4 — charset must never reach DBAL's pgsql driver, `server_version` maps
+ * to `serverVersion`), a no-op `configureOrm()` (DQL functions/types are step 4/5), `quote()` (D1's always-quote
+ * identifier policy, needed by the harness's own setUp/tearDown SQL since step 1), and now `ddlRenderer()`, backed
+ * by a fresh {@see IdentifierPolicy} per render run (schema-wide PostgreSQL index/constraint names, §4.5) — one
+ * `ddlRenderer()` call is one render run, so its duplicate-name bookkeeping never conflates two unrelated renders.
  */
 final class PostgresDialect implements SqlDialect
 {
+
     public function name(): string
     {
         return self::POSTGRES;
@@ -63,5 +69,10 @@ final class PostgresDialect implements SqlDialect
     public function quote(string $identifier): string
     {
         return '"' . str_replace('"', '""', $identifier) . '"';
+    }
+
+    public function ddlRenderer(): DdlRenderer
+    {
+        return new PostgresDdlRenderer(new IdentifierPolicy());
     }
 }

@@ -6,6 +6,7 @@ namespace DDD\Tests\Domain\Base\Repo\DB\Dialect;
 
 use DDD\Domain\Base\Repo\DB\Dialect\DatabaseConfigurationException;
 use DDD\Domain\Base\Repo\DB\Dialect\PostgresDialect;
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\PostgresDdlRenderer;
 use PDO;
 use PHPUnit\Framework\TestCase;
 
@@ -55,5 +56,15 @@ final class PostgresDialectTest extends TestCase
         $this->assertSame('postgres', $this->dialect->name());
         $this->assertTrue($this->dialect->capabilities()->isPostgres());
         $this->assertFalse($this->dialect->capabilities()->isMariaDb());
+    }
+
+    /** §6 step 4a: ddlRenderer() hands out a fresh PostgresDdlRenderer (and so a fresh IdentifierPolicy) per call. */
+    public function testDdlRendererReturnsAFreshInstanceEveryCall(): void
+    {
+        $first = $this->dialect->ddlRenderer();
+        $second = $this->dialect->ddlRenderer();
+        $this->assertInstanceOf(PostgresDdlRenderer::class, $first);
+        $this->assertInstanceOf(PostgresDdlRenderer::class, $second);
+        $this->assertNotSame($first, $second);
     }
 }

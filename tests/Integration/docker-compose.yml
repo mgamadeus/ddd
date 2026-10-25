@@ -20,7 +20,14 @@ services:
       retries: 30
 
   postgres:
-    image: postgres:18
+    # Step 4a (dual-dialect architecture plan §6 row 4a) needs postgis + pgvector + pgvectorscale on PG 18, which
+    # the plain `postgres:18` image does not carry. `timescale/timescaledb-ha:pg18` does (verified 2026-10-25:
+    # PostGIS 3.6.4, pgvector 0.8.7, pgvectorscale 0.9.1, pg_trgm 1.6, unaccent 1.1, pg_stat_statements 1.12 — the
+    # exact versions the target cluster runs per the migration plan) and, despite the HA-sounding name, boots as a
+    # plain single-node `postgres` process here (no Patroni/etcd involved) when run with just POSTGRES_* env vars —
+    # confirmed via `docker logs`, standard `docker-entrypoint.sh`. The TimescaleDB extension itself is never
+    # CREATEd; it rides along unused.
+    image: timescale/timescaledb-ha:pg18
     environment:
       POSTGRES_PASSWORD: ddd-test
       POSTGRES_DB: ddd_test
@@ -28,9 +35,12 @@ services:
     ports:
       - "127.0.0.1:${DDD_TEST_PG_PORT:-5433}:5432"
     tmpfs:
-      # postgres:18 stores data in a major-version-specific subdirectory of /var/lib/postgresql itself now
-      # (pg_ctlcluster layout); a tmpfs at the old .../data path collides with that. See docker-library/postgres#1259.
-      - /var/lib/postgresql
+      # This image's PGDATA is /home/postgres/pgdata/data (Spilo/Patroni-style layout, not the docker-library
+      # postgres layout), so the tmpfs target differs from a plain `postgres:*` image. The image's `postgres` user
+      # is a fixed uid/gid 1000:1000 that already owns this directory on the image's own filesystem layer; a bare
+      # tmpfs mount defaults to root:root and the entrypoint (running as uid 1000) then fails with EACCES on
+      # `mkdir /home/postgres/pgdata/data` — uid/gid/mode here replicate the image's own ownership on the mount.
+      - /home/postgres/pgdata:uid=1000,gid=1000,mode=0755
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ddd_test"]
       interval: 2s

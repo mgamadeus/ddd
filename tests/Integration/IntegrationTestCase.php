@@ -21,10 +21,14 @@ use ReflectionProperty;
  * Base of the integration suite: runs with DDD_TEST_DRIVER=pdo_mysql|pdo_pgsql against the throwaway database of
  * tests/Integration/docker-compose.yml (a PHPUnit 9 bootstrap cannot skip a suite, so the gate sits here). The
  * fixture tables come from the generator's DDL, are created once per test class, emptied before every test and
- * dropped afterwards — on MariaDB only (§6 step 1): the generator's DDL is MariaDB-specific SQL, and the PostgreSQL
- * fixture DDL lands in step 4a of the dual-dialect architecture plan. Until then, every test in every subclass is
- * skipped under pdo_pgsql ({@see self::fixtureTablesSupported()}); the bare connection boot itself is instead
- * checked by {@see \DDD\Tests\Integration\Harness\ConnectionBootTest}, which needs no fixture tables.
+ * dropped afterwards — on MariaDB only, via {@see \DDD\Domain\Base\Repo\DB\Database\DatabaseModel::getSql()}
+ * directly (unchanged since before §6 step 1, deliberately not routed through `MariaDbDdlRenderer`: see that
+ * class's docblock). `PostgresDdlRenderer`'s CREATE path exists since step 4a and is proven against a real server
+ * by {@see \DDD\Tests\Integration\Harness\PostgresDdlBootstrapTest} (`@group bootstrap`) — but every test in every
+ * OTHER subclass of this base is still skipped under pdo_pgsql ({@see self::fixtureTablesSupported()}), because
+ * those tests exercise writes and QueryOptions reads, both still MariaDB-only dialects (steps 4/5). The bare
+ * connection boot itself is checked separately by {@see \DDD\Tests\Integration\Harness\ConnectionBootTest}, which
+ * needs no fixture tables at all.
  */
 abstract class IntegrationTestCase extends TestCase
 {
@@ -42,8 +46,12 @@ abstract class IntegrationTestCase extends TestCase
     }
 
     /**
-     * MariaDB only until step 4a: the fixture DDL below is `DatabaseModel::getSql()`, MariaDB-specific SQL
-     * (`AUTO_INCREMENT`, `ENGINE=InnoDB`, …) that a PostgreSQL server refuses outright.
+     * MariaDB only: this base class's fixture setup is `DatabaseModel::getSql()`, MariaDB-specific SQL
+     * (`AUTO_INCREMENT`, `ENGINE=InnoDB`, …) that a PostgreSQL server refuses outright — and even routed through
+     * `PostgresDdlRenderer` instead, every subclass here exercises writes and QueryOptions reads, which are still
+     * MariaDB-only dialects (steps 4/5 of the dual-dialect architecture plan). `PostgresDdlRenderer`'s own CREATE
+     * path is proven under pdo_pgsql by {@see \DDD\Tests\Integration\Harness\PostgresDdlBootstrapTest} instead,
+     * independently of this gate.
      */
     protected static function fixtureTablesSupported(): bool
     {
@@ -99,8 +107,9 @@ abstract class IntegrationTestCase extends TestCase
         }
         if (!static::fixtureTablesSupported()) {
             $this->markTestSkipped(
-                'PostgreSQL fixture DDL lands in step 4a of the dual-dialect architecture plan; '
-                . static::class . ' needs real fixture tables.'
+                'PostgreSQL writes and QueryOptions reads land in steps 4/5 of the dual-dialect architecture plan '
+                . '(PostgresDdlRenderer\'s CREATE path itself is already covered, under pdo_pgsql, by '
+                . 'PostgresDdlBootstrapTest\'s @group bootstrap); ' . static::class . ' needs the full write/query dialect.'
             );
         }
         (new ReflectionProperty(LazyLoadRepo::class, 'defaultRepoType'))->setValue(null, LazyLoadRepo::DB);

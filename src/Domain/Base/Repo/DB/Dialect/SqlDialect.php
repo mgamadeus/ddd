@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo\DB\Dialect;
 
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlRenderer;
 use Doctrine\ORM\Configuration;
 
 /**
@@ -32,4 +33,7 @@ interface SqlDialect
 
     /** Quotes a single identifier for raw SQL on this engine (`` `x` `` | `"x"`). */
     public function quote(string $identifier): string;
+
+    /** Step 4a: the CREATE-path schema renderer (§4.10). ALTER/introspection land in step 7. */
+    public function ddlRenderer(): DdlRenderer;
 }

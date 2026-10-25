@@ -73,6 +73,9 @@ use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\PolygonType;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\UnescapedJsonType;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\VectorType;
 
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlRenderer;
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\MariaDbDdlRenderer;
+
 use DoctrineExtensions\Query\Mysql\DateAdd;
 use DoctrineExtensions\Query\Mysql\Field;
 use DoctrineExtensions\Query\Mysql\IfNull;
@@ -235,5 +238,10 @@ final class MariaDbDialect implements SqlDialect
     public function quote(string $identifier): string
     {
         return '`' . $identifier . '`';
+    }
+
+    public function ddlRenderer(): DdlRenderer
+    {
+        return new MariaDbDdlRenderer();
     }
 }
