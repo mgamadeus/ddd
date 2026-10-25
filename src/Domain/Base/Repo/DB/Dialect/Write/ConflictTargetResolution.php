@@ -18,7 +18,7 @@ namespace DDD\Domain\Base\Repo\DB\Dialect\Write;
  */
 final class ConflictTargetResolution
 {
-    private function __construct(
+    protected function __construct(
         public readonly array $columns,
         public readonly bool $needsNullableFallback,
         public readonly array $candidateKeys,
