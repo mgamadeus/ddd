@@ -22,6 +22,12 @@ use Throwable;
  */
 class BatchUpsertTest extends IntegrationTestCase
 {
+    protected static function unsupportedOnCurrentDriverReason(): ?string
+    {
+        return 'PostgreSQL write path (upsert/merge/batch) is §6 steps 3/4 of the dual-dialect architecture '
+            . 'plan, not built yet; this class exercises batchUpdate() -> upsertMultiple() directly.';
+    }
+
     protected function batchUpdateCounterRows(CounterRow ...$counterRows): void
     {
         $counterRowSet = new CounterRows();

@@ -18,6 +18,12 @@ use DDD\Tests\Integration\IntegrationTestCase;
  */
 class PartialUpdateTest extends IntegrationTestCase
 {
+    protected static function unsupportedOnCurrentDriverReason(): ?string
+    {
+        return 'PostgreSQL write path (upsert/merge/batch) is §6 steps 3/4 of the dual-dialect architecture '
+            . 'plan, not built yet; this class exercises updatePartialIgnoringRights() and upsert() directly.';
+    }
+
     protected function insertCounterRow(array $columns): int
     {
         static::connection()->insert('CounterRows', $columns);

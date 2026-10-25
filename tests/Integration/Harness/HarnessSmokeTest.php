@@ -12,6 +12,14 @@ use DDD\Tests\Integration\IntegrationTestCase;
  */
 class HarnessSmokeTest extends IntegrationTestCase
 {
+    protected static function unsupportedOnCurrentDriverReason(): ?string
+    {
+        // Both methods: the round trip writes via update() (ON DUPLICATE KEY UPDATE, §6 steps 3/4); the
+        // @@sql_mode assertion is MariaDB/MySQL-only (also @group mariadb) with no PostgreSQL equivalent to assert.
+        return 'The entity round trip here writes via update() (ON DUPLICATE KEY UPDATE is §6 steps 3/4, not '
+            . 'built yet); the @@sql_mode assertion is MariaDB/MySQL-only.';
+    }
+
     public function testAnEntityRoundTripsThroughItsRepo(): void
     {
         $counterRow = new CounterRow();

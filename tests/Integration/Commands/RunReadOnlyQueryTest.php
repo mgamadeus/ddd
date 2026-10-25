@@ -19,6 +19,15 @@ use Symfony\Component\Console\Tester\CommandTester;
  */
 class RunReadOnlyQueryTest extends IntegrationTestCase
 {
+    protected static function unsupportedOnCurrentDriverReason(): ?string
+    {
+        // Already @group mariadb at the class level (CREATE FUNCTION … MODIFIES SQL DATA, SHOW TABLES,
+        // @@in_transaction, UUID()); the PostgreSQL part of app:db:read is §6 step 9, not this task's scope.
+        // Self-skip too so the class is robust to a run that does not pass --exclude-group mariadb.
+        return 'app:db:read\'s PostgreSQL part is §6 step 9; this class\'s fixtures are MariaDB/MySQL syntax '
+            . '(@group mariadb).';
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

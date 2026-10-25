@@ -4,20 +4,26 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo\DB\Dialect;
 
+use DDD\Domain\Base\Repo\DB\Dialect\Identifiers\AlwaysQuoteStrategy;
 use DDD\Domain\Base\Repo\DB\Dialect\Identifiers\IdentifierPolicy;
+use DDD\Domain\Base\Repo\DB\Dialect\Runtime\AbortedTransactionGuard;
+use DDD\Domain\Base\Repo\DB\Dialect\Runtime\BacktickQuoteMiddleware;
+use DDD\Domain\Base\Repo\DB\Dialect\Runtime\ValueNormalizerMiddleware;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\PostgresDdlRenderer;
 use Doctrine\ORM\Configuration;
 use PDO;
 
 /**
- * PostgreSQL dialect skeleton (§6 build step 2 explicitly keeps the full dialect — upsert/pagination/schema
- * introspection — out of scope; that lands in steps 4/5/7). Step 4a (this revision) completes the CREATE-path
- * schema surface: `connectionParams()` (D4.4 — charset must never reach DBAL's pgsql driver, `server_version` maps
- * to `serverVersion`), a no-op `configureOrm()` (DQL functions/types are step 4/5), `quote()` (D1's always-quote
- * identifier policy, needed by the harness's own setUp/tearDown SQL since step 1), and now `ddlRenderer()`, backed
- * by a fresh {@see IdentifierPolicy} per render run (schema-wide PostgreSQL index/constraint names, §4.5) — one
- * `ddlRenderer()` call is one render run, so its duplicate-name bookkeeping never conflates two unrelated renders.
+ * PostgreSQL dialect — identifiers + the runtime middlewares (§6 step 4, read-path slice; upsert/pagination/DQL
+ * functions are step 4/5's remaining, write/query-side scope). `connectionParams()` (D4.4 — charset must never
+ * reach DBAL's pgsql driver, `server_version` maps to `serverVersion`), `configureOrm()` (D1: registers {@see
+ * AlwaysQuoteStrategy} so every table/column/join-column name the ORM emits is quoted in its declared case —
+ * PostgreSQL folds an unquoted mixed-case identifier to lowercase, MariaDB does not — and the three PostgreSQL-only
+ * DBAL middlewares, §4.5/§4.7), `quote()` (D1's always-quote identifier policy, needed by the harness's own
+ * setUp/tearDown SQL since step 1), and `ddlRenderer()`, backed by a fresh {@see IdentifierPolicy} per render run
+ * (schema-wide PostgreSQL index/constraint names, §4.5) — one `ddlRenderer()` call is one render run, so its
+ * duplicate-name bookkeeping never conflates two unrelated renders.
  */
 final class PostgresDialect implements SqlDialect
 {
@@ -32,9 +38,25 @@ final class PostgresDialect implements SqlDialect
         return new Capabilities(self::POSTGRES);
     }
 
-    /** No-op until step 4/5 register PostgreSQL DQL functions and types. */
+    /**
+     * D1 (identifiers) + §4.5/§4.7 (runtime middlewares). DQL functions/types and the walkers/pagination strategy
+     * (query side) and the upsert builders (write side) are step 4/5's remaining scope, not this read-path slice.
+     *
+     * Middleware order (DBAL folds {@see Configuration::getMiddlewares()} outside-in, last entry wrapping
+     * everything registered before it, so the LAST entry here is the one the application calls first):
+     * {@see BacktickQuoteMiddleware} runs first, rewriting raw SQL before anything else inspects it;
+     * {@see ValueNormalizerMiddleware} wraps the result that comes back; {@see AbortedTransactionGuard} sits
+     * innermost, right next to the real driver, so it observes every statement DBAL actually sends and every error
+     * the server actually raises.
+     */
     public function configureOrm(Configuration $configuration): void
     {
+        $configuration->setQuoteStrategy(new AlwaysQuoteStrategy());
+        $configuration->setMiddlewares([
+            new AbortedTransactionGuard(),
+            new ValueNormalizerMiddleware(),
+            new BacktickQuoteMiddleware(),
+        ]);
     }
 
     public function connectionParams(array $params): array
