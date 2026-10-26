@@ -167,6 +167,9 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
 
         // Apply only filters and expand from QueryOptions
         self::applyQueryOptionsForCount($queryBuilder);
+        // The expand joins stay for the filters, but their aliases leave the select (an entity alias next to an
+        // aggregate is a DQL error), and a root that qualifies through several joined children is one root.
+        $queryBuilder->select("COUNT(DISTINCT $baseOrmModelAlias.id)");
         return (int) $queryBuilder->getQuery()->getSingleScalarResult();
     }
 

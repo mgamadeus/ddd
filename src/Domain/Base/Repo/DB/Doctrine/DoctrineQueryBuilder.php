@@ -223,9 +223,14 @@ class DoctrineQueryBuilder extends QueryBuilder
         // Check if there are any joins and if there's a limit or offset set
         $hasLimitOrOffset = $this->getMaxResults() !== null || $this->getFirstResult();
         $hasJoins = count($this->getDQLPart('join')) > 0;
+        // A WHERE on a query that fetch-joins a collection decides which ROOTS qualify; it must not cut the fetched
+        // collections down to the matching children (OData: the filter selects, the expand loads everything — a
+        // collection is filtered by the expand's own filter, in its join condition). So such a query takes the same
+        // two-step path as a paginated one: the qualifying root ids first, then the roots with their joins, unfiltered.
+        $filtersFetchJoinedCollection = $this->getDQLPart('where') !== null && $this->hasFetchJoinedCollection();
 
         // If no joins or no limit/offset, return the result directly
-        if (!$hasLimitOrOffset || !$hasJoins) {
+        if (!$hasJoins || (!$hasLimitOrOffset && !$filtersFetchJoinedCollection)) {
             $query = $this->getQuery();
             // $refresh (a set-load with useEntityRegistrCache=false) must FORCE a fresh hydration: Doctrine's identity
             // map otherwise returns the already-managed entity — with its STALE field/embedded-VO values from an earlier
@@ -248,6 +253,53 @@ class DoctrineQueryBuilder extends QueryBuilder
         $dialect = DialectResolver::forConnection($this->getEntityManager()->getConnection());
 
         return $dialect->pagination()->paginate($this, $refresh);
+    }
+
+    /**
+     * Whether the query fetch-joins a collection-valued association: a join whose alias is selected (as an entity or a
+     * partial) and whose association is to-many. Joins on an entity class (no association path) are not inspected.
+     */
+    public function hasFetchJoinedCollection(): bool
+    {
+        $selectedAliases = [];
+        foreach ($this->getDQLPart('select') as $selectExpression) {
+            foreach ($selectExpression->getParts() as $selectPart) {
+                $selectPart = trim((string)$selectPart);
+                if (preg_match('/^partial\s+([A-Za-z0-9_]+)\./i', $selectPart, $partialMatch)) {
+                    $selectPart = $partialMatch[1];
+                }
+                $selectedAliases[$selectPart] = true;
+            }
+        }
+        $entityClassByAlias = [];
+        foreach ($this->getDQLPart('from') as $fromExpression) {
+            $entityClassByAlias[$fromExpression->getAlias()] = $fromExpression->getFrom();
+        }
+        foreach ($this->getDQLPart('join') as $joinsOfRootAlias) {
+            foreach ($joinsOfRootAlias as $joinExpression) {
+                $joinPath = $joinExpression->getJoin();
+                if (!str_contains($joinPath, '.')) {
+                    continue;
+                }
+                [$parentAlias, $associationName] = explode('.', $joinPath, 2);
+                $parentEntityClass = $entityClassByAlias[$parentAlias] ?? null;
+                if ($parentEntityClass === null) {
+                    continue;
+                }
+                $parentClassMetadata = $this->em->getClassMetadata($parentEntityClass);
+                if (!$parentClassMetadata->hasAssociation($associationName)) {
+                    continue;
+                }
+                $entityClassByAlias[$joinExpression->getAlias()] = $parentClassMetadata->getAssociationTargetClass($associationName);
+                if (
+                    isset($selectedAliases[$joinExpression->getAlias()])
+                    && $parentClassMetadata->isCollectionValuedAssociation($associationName)
+                ) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**

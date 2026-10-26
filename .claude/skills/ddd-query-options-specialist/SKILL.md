@@ -280,6 +280,15 @@ Filters and ordering can reference expanded entity properties using dot-notation
 ?expand=business&filters=business.name ft 'kfc arad'&orderBy=business.nameScore desc
 ```
 
+**A root filter selects roots; it never cuts an expanded collection.** `?expand=orderItems&filters=orderItems.name eq
+'Pizza'` returns the orders that have a Pizza item, each with ALL its items. To return only the matching children,
+filter in the expand: `?expand=orderItems(filters=name eq 'Pizza')` (every order, only its Pizza items). Combine both
+for "orders with a Pizza, showing only their Pizza items". Several conditions on the same collection in one root
+filter hold for one and the same child. Mechanism: a query that filters and fetch-joins a collection selects the
+qualifying root ids in a subquery and loads the roots with their joins without the WHERE
+(`DoctrineQueryBuilder::applyDistinctSubqueryIfNeededAndGetResult()`, paginated or not); the expand's own filter sits
+in the join's ON clause. `count()` counts distinct roots.
+
 ### The `expand()` Method on Entities
 
 After loading entities, call `$entity->expand()` or `$entitySet->expand()` to trigger lazy loading per the expand options set on the entity's QueryOptions. This method:
