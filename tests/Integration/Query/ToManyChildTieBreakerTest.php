@@ -320,6 +320,31 @@ class ToManyChildTieBreakerTest extends IntegrationTestCase
         $this->assertSame([$parentIds['order-c'], $parentIds['order-b']], $actualRootIds);
     }
 
+    /**
+     * Children loaded through an expand with a select are partial: a later find of a child by id must load the whole
+     * row, not the partial child the expand mapped (entity registry key = the plain find by id).
+     */
+    public function testAnExpandWithASelectDoesNotServeItsPartialChildrenToALaterFind(): void
+    {
+        static::insertRow('TieBreakerParents', ['businessKey' => 'expand-select']);
+        $parentId = $this->findParentIdByBusinessKey('expand-select');
+        $childId = $parentId * 1000 + 1;
+        static::insertRow('TieBreakerChildren', ['id' => $childId, 'tieBreakerParentId' => $parentId, 'label' => 'full']);
+
+        TieBreakerParents::setDefaultQueryOptionsSnapshot();
+        try {
+            $expandOptions = ExpandOptions::fromString('tieBreakerChildren(select=id)');
+            TieBreakerParents::getDefaultQueryOptions()->setExpand($expandOptions);
+            TieBreakerParent::getService()->findAll();
+        } finally {
+            TieBreakerParents::restoreDefaultQueryOptionsSnapshot();
+        }
+        \DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory::clearAllInstanceCaches();
+        $child = TieBreakerChild::getService()->find($childId);
+
+        $this->assertSame('full', $child->label);
+    }
+
     // ───────────────────────────────────────────────────────── lazy-loaded EntitySet (no join, root tie-breaker only)
 
     /**

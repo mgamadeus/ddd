@@ -201,8 +201,12 @@ abstract class DatabaseRepoEntity extends RepoEntity
 
         $this->ormInstance = $ormInstance;
         $entityInstance = $this->mapToEntity($useEntityRegistrCache, $initiatorClasses);
-        $entityRegistry->add($entityInstance, static::class, $queryBuilder, $deferredCaching);
-        //}
+        // The registry key is the plain find of this id. A model a caller loaded with a select (a list with
+        // `select=…`, an expand with `select=…`, a partial DQL) lacks the unselected columns: registered under that key,
+        // it would be served to every later find of the id — and with the extended registry cache to other requests.
+        if (!$loadedOrmInstance || !$this->isPartiallyLoadedOrmInstance($loadedOrmInstance)) {
+            $entityRegistry->add($entityInstance, static::class, $queryBuilder, $deferredCaching);
+        }
         // Entity Manager's unit of work cache of various types especially loaded DoctrineModels can end up using
         // the whole allocated memory, so if the memory usage is high, we clear it
         if (DDDService::instance()->isMemoryUsageHigh()) {
@@ -210,6 +214,26 @@ abstract class DatabaseRepoEntity extends RepoEntity
         }
         // post processing needs to happen after storage!!!
         return $this->postProcessAfterMapping($entityInstance);
+    }
+
+    /**
+     * Whether Doctrine hydrated only some of the model's mapped columns (a select-restricted load): its original entity
+     * data — the columns the hydration actually read — lacks a mapped field. A model the entity manager does not manage
+     * counts as partial, so it is never registered on a guess.
+     */
+    protected function isPartiallyLoadedOrmInstance(DoctrineModel $ormInstance): bool
+    {
+        $entityManager = EntityManagerFactory::getInstance();
+        $originalEntityData = $entityManager->getUnitOfWork()->getOriginalEntityData($ormInstance);
+        if ($originalEntityData === []) {
+            return true;
+        }
+        foreach ($entityManager->getClassMetadata($ormInstance::class)->getFieldNames() as $fieldName) {
+            if (!array_key_exists($fieldName, $originalEntityData)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

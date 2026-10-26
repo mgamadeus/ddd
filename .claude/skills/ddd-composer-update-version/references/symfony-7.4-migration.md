@@ -177,3 +177,8 @@ order; every item cost one of those apps time.
   2.71.0 gets them by applying the `ddd_text` statements `app:entity:show-sql` prints, or by the schema phase of
   `app:db:copy-to-postgres`); `STRING_AGG_ORDERED` without `GROUP BY` no longer gets an `ORDER BY id`; DQL `DATE_BUCKET(x, 'month')`
   gives the first of the month (`YYYY-MM-01`) like the facade. MariaDB unchanged.
+- 2.71.2 — a list or expand loaded with a `select` no longer puts its partial entities into the entity registry under
+  the key of the plain find by id. A later `find($id)` — in the same request, or for up to the entity's
+  `#[EntityCache(useExtendedRegistryCache: true)]` TTL in any request of the same container — returned the entity with
+  every unselected property missing (settings read from it silently fell back to their defaults). No app change;
+  restart the containers after the update to drop already poisoned APCu entries.
