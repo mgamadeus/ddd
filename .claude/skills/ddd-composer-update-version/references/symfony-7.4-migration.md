@@ -165,3 +165,15 @@ order; every item cost one of those apps time.
     production host / port read from `DB_PRODUCTION_HOSTS` / `DB_PRODUCTION_PORTS` (comma-separated), and refuses
     every connection while both are empty (fails closed). A dev or spike checkout on a branch or path install sets
     them in `.env.local`; a tagged release is never checked.
+  - **`#[DatabaseTrigger]` without its source file** fails model SQL generation on both dialects (it used to render
+    no trigger): `{Entity}{Order}{Operations}Trigger.sql` next to the entity's repo, plus `….pgsql.sql` for a
+    PostgreSQL scope.
+  - **A paginated query with to-many joins on PostgreSQL** (`$top` / `$skip` with an `$expand` of a collection): the
+    filter decides which roots are on the page, and those roots come back with ALL their children. MariaDB applies
+    the filter to the children as well, so a filter on a child property returns only the matching children there.
+- 2.71.1 — PostgreSQL fixes: a paginated query with to-many joins returns the page's roots in the requested order
+  (2.71.0 returned them in id order); `SqlDialect::stringAgg()` and DQL `STRING_AGG_ORDERED` aggregate ints and
+  booleans in MariaDB's text form through new `ddd_text()` functions (part of `ensure()`: a database set up with
+  2.71.0 gets them by applying the `ddd_text` statements `app:entity:show-sql` prints, or by the schema phase of
+  `app:db:copy-to-postgres`); `STRING_AGG_ORDERED` without `GROUP BY` no longer gets an `ORDER BY id`; DQL `DATE_BUCKET(x, 'month')`
+  gives the first of the month (`YYYY-MM-01`) like the facade. MariaDB unchanged.

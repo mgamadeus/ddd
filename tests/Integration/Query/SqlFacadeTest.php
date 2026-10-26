@@ -10,6 +10,8 @@ use DDD\Domain\Base\Repo\DB\Dialect\Write\ColumnWrite;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\ColumnWrites;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpdatePolicy;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertSpec;
+use DDD\Tests\Integration\Fixtures\Repo\DB\CounterRows\DBCounterRow;
+use DDD\Tests\Integration\Fixtures\Repo\DB\CounterRows\DBCounterRowModel;
 use DDD\Tests\Integration\IntegrationTestCase;
 
 /**
@@ -85,6 +87,47 @@ class SqlFacadeTest extends IntegrationTestCase
         $expr = $dialect->stringAgg($label, ' | ', $businessKey);
         $value = static::connection()->fetchOne("SELECT $expr FROM $table");
         $this->assertSame('alpha | beta | gamma', $value);
+    }
+
+    /** string_agg() takes text only on PostgreSQL: ints and booleans aggregate in MariaDB's implicit text form. */
+    public function testStringAggOverIntAndBoolColumnsMatchesMariaDbsTextForm(): void
+    {
+        static::connection()->executeStatement('DELETE FROM ' . static::dialect()->quote('CounterRows'));
+        static::insertRow('CounterRows', ['businessKey' => 'c', 'label' => 'gamma', 'amount' => 3, 'isActive' => 0, 'occurredAt' => null]);
+        static::insertRow('CounterRows', ['businessKey' => 'a', 'label' => 'alpha', 'amount' => 1, 'isActive' => 1, 'occurredAt' => null]);
+        static::insertRow('CounterRows', ['businessKey' => 'b', 'label' => 'beta', 'amount' => 2, 'isActive' => 1, 'occurredAt' => null]);
+
+        $dialect = static::dialect();
+        $businessKey = $dialect->quote('businessKey');
+        $table = $dialect->quote('CounterRows');
+        $amounts = static::connection()->fetchOne('SELECT ' . $dialect->stringAgg($dialect->quote('amount'), ',', $businessKey) . " FROM $table");
+        $flags = static::connection()->fetchOne('SELECT ' . $dialect->stringAgg($dialect->quote('isActive'), ',', $businessKey) . " FROM $table");
+
+        $this->assertSame('1,2,3', $amounts);
+        $this->assertSame('1,1,0', $flags);
+    }
+
+    /** The DQL functions render what the facade renders: STRING_AGG_ORDERED over an int, DATE_BUCKET by month. */
+    public function testTheDqlStringAggAndDateBucketMatchTheFacade(): void
+    {
+        if (static::currentDriver() !== 'pdo_pgsql') {
+            $this->markTestSkipped('STRING_AGG_ORDERED and DATE_BUCKET are registered on PostgreSQL only.');
+        }
+        static::connection()->executeStatement('DELETE FROM ' . static::dialect()->quote('CounterRows'));
+        static::insertRow('CounterRows', ['businessKey' => 'b', 'label' => 'beta', 'amount' => 2, 'isActive' => 1, 'occurredAt' => '2026-03-04 15:30:00']);
+        static::insertRow('CounterRows', ['businessKey' => 'a', 'label' => 'alpha', 'amount' => 1, 'isActive' => 1, 'occurredAt' => '2026-03-04 15:30:00']);
+
+        $alias = DBCounterRowModel::MODEL_ALIAS;
+        $queryBuilder = DBCounterRow::createQueryBuilder(true);
+        $queryBuilder->select("STRING_AGG_ORDERED($alias.amount, ',', $alias.businessKey) AS amounts");
+        $this->assertSame('1,2', $queryBuilder->getQuery()->getSingleScalarResult());
+
+        $queryBuilder = DBCounterRow::createQueryBuilder(true);
+        $queryBuilder->select("DATE_BUCKET($alias.occurredAt, 'month') AS bucket")->setMaxResults(1);
+        $this->assertSame(
+            (string)static::connection()->fetchOne('SELECT ' . static::dialect()->dateBucket("'2026-03-04 15:30:00'", 'month')),
+            $queryBuilder->getQuery()->getSingleScalarResult()
+        );
     }
 
     public function testCurrentDatabaseReturnsTheConnectedDatabaseName(): void

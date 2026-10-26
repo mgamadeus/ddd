@@ -18,7 +18,7 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
  *
  * DQL: `DATE_BUCKET(expr, 'day'|'week'|'month')`
  * SQL: day -> `to_char(expr, 'YYYY-MM-DD')`; week -> `to_char(date_trunc('week', expr), 'YYYY-MM-DD')`;
- *      month -> `to_char(expr, 'YYYY-MM')`
+ *      month -> `to_char(date_trunc('month', expr), 'YYYY-MM-DD')` (the first of the month, like the facade)
  */
 class DateBucket extends FunctionNode
 {
@@ -43,7 +43,7 @@ class DateBucket extends FunctionNode
         return match ($this->bucket) {
             'day' => "to_char($expressionSql, 'YYYY-MM-DD')",
             'week' => "to_char(date_trunc('week', $expressionSql), 'YYYY-MM-DD')",
-            'month' => "to_char($expressionSql, 'YYYY-MM')",
+            'month' => "to_char(date_trunc('month', $expressionSql), 'YYYY-MM-DD')",
             default => throw new InternalErrorException("DATE_BUCKET: unknown bucket \"$this->bucket\" (expected day|week|month)."),
         };
     }

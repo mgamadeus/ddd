@@ -12,8 +12,8 @@ use Doctrine\ORM\Query\TokenType;
 /**
  * Mig §3.6 ("aggregates over booleans, string_agg over ints" — `GROUP_CONCAT(id ORDER BY …)`): mirrors the facade
  * helper `SqlDialect::stringAgg()` (architecture plan §4.3), which wraps the aggregated expression in `ddd_text()`
- * (MariaDB's implicit text form of an int/bool; `ddd_text()` itself is registered by `ensure()`, §6 step 8 — this
- * class renders the call, the function body lands with that step) and leaves the `ORDER BY` expression untouched.
+ * (MariaDB's implicit text form of an int/bool; the `ddd_text()` overloads are created by `ensure()`) and leaves
+ * the `ORDER BY` expression untouched.
  * PostgreSQL only; registered by {@see \DDD\Domain\Base\Repo\DB\Dialect\PostgresDialect::configureOrm()}.
  *
  * DQL: `STRING_AGG_ORDERED(expr, separator, orderExpr)`

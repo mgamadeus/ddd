@@ -90,6 +90,8 @@ class DefaultOrderTreeWalker extends TreeWalkerAdapter
         MinFunction::class,
         MaxFunction::class,
         SumFunction::class,
+        // the framework's own aggregate DQL function (PostgreSQL's string_agg)
+        StringAggOrdered::class,
     ];
 
     /** @var class-string[] FunctionNode classes whose result must stay the LAST ORDER BY item (ANN index use) */

@@ -39,9 +39,10 @@ use RuntimeException;
  *    roots are on this page, and NOT reapplying the filter here is what keeps a to-many expand's filtered-on-child
  *    predicate from silently hiding sibling child rows of a root that qualified through a DIFFERENT child.
  * 3. The id page SQL is injected as `INNER JOIN (<id SQL>) page ON page.<idAlias> = <root>.id` right after the
- *    main query's `FROM <table> <rootAlias>`, and `page.<idAlias>` is prepended to the main query's own
- *    `ORDER BY` (or appended as a new one) so roots come back in page order, ties broken by the existing child
- *    order — `ORDER BY page.<idAlias>, <child order>`.
+ *    main query's `FROM <table> <rootAlias>`, and the page rank `page.dctrn_minrownum` (`page.<idAlias>` when the
+ *    query has no ORDER BY) is prepended to the main query's own `ORDER BY` (or appended as a new one) so roots
+ *    come back in the requested order, ties broken by the existing child order —
+ *    `ORDER BY page.dctrn_minrownum, <child order>`.
  * 4. Both fragments' `?` placeholders are renamed to deterministic named tokens before assembly (mirroring
  *    {@see MariaDbDistinctSubqueryPagination}'s own technique) so the final combined SQL can be rescanned in
  *    appearance order to build one ordered parameter/type array, then run as a SINGLE
@@ -164,8 +165,8 @@ class RowNumberPagePagination implements PaginationStrategy
 
     /**
      * Injects `INNER JOIN (<idSql>) page ON page.<idAlias> = <rootTableAlias>.id` right after the main query's
-     * `FROM <table> <rootTableAlias>`, and sorts by `page.<idAlias>` first (the existing `ORDER BY`, if any,
-     * becomes the tie-breaker).
+     * `FROM <table> <rootTableAlias>`, and sorts by the page rank first — `page.dctrn_minrownum` when the id page
+     * carries one, `page.<idAlias>` otherwise (the existing `ORDER BY`, if any, becomes the tie-breaker).
      */
     protected function injectIdPageJoin(string $mainSql, string $idSql, string $idAlias, string $rootTableAlias): string
     {
@@ -174,7 +175,9 @@ class RowNumberPagePagination implements PaginationStrategy
         // text would hit THAT one first (it appears first, textually, once the join is injected right after
         // $mainSql's `FROM`) — corrupting it with `page.<idAlias>` where `page` is not yet in scope ("missing
         // FROM-clause entry for table \"page\"").
-        $pageOrder = "page.$idAlias";
+        // The id page ranks its roots by the requested ORDER BY in `dctrn_minrownum` (present whenever the query
+        // has one); sorting by the root id instead would return the page's roots in id order.
+        $pageOrder = preg_match('/\bAS\s+dctrn_minrownum\b/i', $idSql) ? 'page.dctrn_minrownum' : "page.$idAlias";
         if (preg_match('/\bORDER\s+BY\s+/i', $mainSql)) {
             $mainSql = (string)preg_replace('/\bORDER\s+BY\s+/i', 'ORDER BY ' . $pageOrder . ', ', $mainSql, 1);
         } else {

@@ -25,8 +25,7 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
  *
  * **An empty token list is the caller's responsibility, not this class's**: Mig §3.5 says "an empty list renders
  * `1 = 0` on both", but a DQL AST node cannot see the bound parameter's PHP array at parse/render time (only at
- * execution, after SQL text is fixed) to special-case it — the same constraint the raw-SQL facade
- * `SqlDialect::tokenMatch()` must observe in PHP before calling this. A caller with a possibly-empty token list
+ * execution, after SQL text is fixed) to special-case it. A caller with a possibly-empty token list
  * must check for that in PHP and substitute a plain `1 = 0` filter instead of calling `TOKEN_MATCH` — `CAST(ARRAY[]
  * AS text[]) @> …` would otherwise be vacuously true for `ALL`/`ANY` (an empty array is a subset of everything).
  */

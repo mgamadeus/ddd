@@ -214,9 +214,42 @@ class PostgresDdlRenderer implements DdlRenderer
                 AS $ddd$ SELECT $1::text $ddd$
             SQL;
 
+        // ddd_text(x): MariaDB's implicit text form of a value, for string_agg() over non-text columns
+        // (SqlDialect::stringAgg(), DQL STRING_AGG_ORDERED) — a boolean renders as '1' / '0' like MariaDB's
+        // TINYINT(1), anything else as its ::text. The text overload exists so an untyped string literal resolves
+        // (without it, ddd_text('x') is "not unique" between the boolean and the anyelement overloads).
+        $textOfBooleanFunction = <<<'SQL'
+            CREATE OR REPLACE FUNCTION ddd_text(boolean) RETURNS text
+                LANGUAGE sql IMMUTABLE PARALLEL SAFE
+                SET search_path = public, pg_catalog
+                AS $ddd$ SELECT CASE WHEN $1 THEN '1' WHEN NOT $1 THEN '0' END $ddd$
+            SQL;
+        $textOfTextFunction = <<<'SQL'
+            CREATE OR REPLACE FUNCTION ddd_text(text) RETURNS text
+                LANGUAGE sql IMMUTABLE PARALLEL SAFE
+                SET search_path = public, pg_catalog
+                AS $ddd$ SELECT $1 $ddd$
+            SQL;
+        $textOfAnyElementFunction = <<<'SQL'
+            CREATE OR REPLACE FUNCTION ddd_text(anyelement) RETURNS text
+                LANGUAGE sql IMMUTABLE PARALLEL SAFE
+                SET search_path = public, pg_catalog
+                AS $ddd$ SELECT $1::text $ddd$
+            SQL;
+
         return DdlStatements::fromStatements(...array_map(
             static fn (string $sql): DdlStatement => new DdlStatement(sql: $sql, phase: DdlStatement::PHASE_FUNCTION),
-            [$nowFunction, $unaccentFunction, $foldFunction, $translatableTextFunction, $jsonMergePatchFunction, $vecToTextFunction]
+            [
+                $nowFunction,
+                $unaccentFunction,
+                $foldFunction,
+                $translatableTextFunction,
+                $jsonMergePatchFunction,
+                $vecToTextFunction,
+                $textOfBooleanFunction,
+                $textOfTextFunction,
+                $textOfAnyElementFunction,
+            ]
         ));
     }
 

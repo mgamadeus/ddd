@@ -366,7 +366,8 @@ class PostgresDialect implements SqlDialect
     public function stringAgg(string $exprSql, string $separator, string $orderBySql): string
     {
         $quotedSeparator = "'" . str_replace("'", "''", $separator) . "'";
-        return "string_agg($exprSql, $quotedSeparator ORDER BY $orderBySql)";
+        // ddd_text(): string_agg() takes text only; MariaDB's GROUP_CONCAT takes any value in its implicit text form
+        return "string_agg(ddd_text($exprSql), $quotedSeparator ORDER BY $orderBySql)";
     }
 
     public function currentDatabase(): string

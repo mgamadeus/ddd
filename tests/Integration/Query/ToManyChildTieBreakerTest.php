@@ -285,6 +285,41 @@ class ToManyChildTieBreakerTest extends IntegrationTestCase
         }
     }
 
+    /**
+     * A page's roots come back in the REQUESTED order, not in id order: the id page ranks roots by the requested
+     * ORDER BY, and the main query must sort by that rank. `businessKey desc` is the reverse of the id order here,
+     * so sorting the page by root id (the 2.71.0 PostgreSQL behaviour) returns the page backwards.
+     */
+    public function testPaginationWithJoinsReturnsThePageInTheRequestedRootOrderOnBothEngines(): void
+    {
+        $parentIds = [];
+        foreach (['order-a', 'order-b', 'order-c'] as $businessKey) {
+            static::insertRow('TieBreakerParents', ['businessKey' => $businessKey]);
+            $parentIds[$businessKey] = $this->findParentIdByBusinessKey($businessKey);
+            static::insertRow('TieBreakerChildren', [
+                'id' => $parentIds[$businessKey] * 1000 + 1,
+                'tieBreakerParentId' => $parentIds[$businessKey],
+                'label' => 'only',
+            ]);
+        }
+
+        TieBreakerParents::setDefaultQueryOptionsSnapshot();
+        try {
+            $appliedOptions = TieBreakerParents::getDefaultQueryOptions();
+            $expandOptions = ExpandOptions::fromString('tieBreakerChildren');
+            $appliedOptions->setExpand($expandOptions);
+            $orderByOptions = \DDD\Domain\Base\Entities\QueryOptions\OrderByOptions::fromString('businessKey desc');
+            $appliedOptions->setOrderBy($orderByOptions);
+            $page = TieBreakerParent::getService()->findAll(offset: 0, limit: 2);
+        } finally {
+            TieBreakerParents::restoreDefaultQueryOptionsSnapshot();
+        }
+
+        $this->assertNotNull($page);
+        $actualRootIds = array_map(static fn(TieBreakerParent $parent): int => $parent->id, $page->getElements());
+        $this->assertSame([$parentIds['order-c'], $parentIds['order-b']], $actualRootIds);
+    }
+
     // ───────────────────────────────────────────────────────── lazy-loaded EntitySet (no join, root tie-breaker only)
 
     /**
