@@ -150,3 +150,18 @@ order; every item cost one of those apps time.
 - 2.70.11 — every JWT is signed and verified with `JWT_HASH_KEY` / `JWT_HASH_METHOD`. `AUTH_JWT_HASH_KEY` /
   `AUTH_JWT_HASH_METHOD` are read only while `JWT_HASH_*` is empty (one deprecation per process) and go in the next
   minor: make sure `JWT_HASH_*` is set (same values), then delete the `AUTH_JWT_HASH_*` lines and vault fields.
+- 2.71.0 — PostgreSQL as a second dialect next to MariaDB. A MariaDB / `pdo_mysql` app needs no change: the
+  generated SQL is byte-identical and no public signature changed. What applies when you touch the new surface:
+  - **PostgreSQL scope** (`pdo_pgsql`): set `DB_<SCOPE>_DIRECT_HOST` (and `DB_<SCOPE>_DIRECT_PORT` when it differs
+    from the pooled port) — the direct, non-pooled host named locks (`LockService`) run on; without it the scope
+    refuses to boot. Restart every worker after deploying a release that changes the query walkers: the Doctrine query
+    cache keys on the walker class and a running worker keeps the old SQL.
+  - **Code written against the pre-release `postgres` branch**: `UpsertSpec::$columns` is a `ColumnWrites` set —
+    `new UpsertSpec($table, ColumnWrites::fromColumnWrites(...$columnWrites))`, emptiness is `->count() === 0`. The
+    `DdlRenderer` methods return `DdlStatements` (`withPhase()`, `withoutPhase()`, `sortedByPhase()`,
+    `getSqlList()`; the static `DdlStatement::sortByPhase()` is gone), `LockKey::internalKey()` returns an
+    `AdvisoryLockKeyPair`, and the copy service returns `CopyTableResults`.
+  - **Unreleased installs** (`dev-*` or path repository), on every driver: the guard refuses a connection to a
+    production host / port read from `DB_PRODUCTION_HOSTS` / `DB_PRODUCTION_PORTS` (comma-separated), and refuses
+    every connection while both are empty (fails closed). A dev or spike checkout on a branch or path install sets
+    them in `.env.local`; a tagged release is never checked.
