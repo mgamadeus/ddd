@@ -10,9 +10,7 @@ use DDD\Domain\Base\Entities\Interfaces\IsEmptyInterface;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
-use DDD\Infrastructure\Reflection\ReflectionArrayType;
 use DDD\Infrastructure\Reflection\ReflectionClass;
-use DDD\Infrastructure\Reflection\ReflectionNamedType;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
 use DDD\Infrastructure\Reflection\ReflectionUnionType;
 use DDD\Infrastructure\Traits\Serializer\SerializerRegistry;
@@ -67,7 +65,7 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
     public function getElementsSlice(int $start, int $count): static
     {
         $objectSet = new static();
-        $elementsSlice = $slice = array_slice($this->elements, $start, $count);
+        $elementsSlice = array_slice($this->elements, $start, $count);
         $objectSet->add(...$elementsSlice);
         return $objectSet;
     }
@@ -220,11 +218,9 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
                 foreach ($arrayType->getTypes() as $type) {
                     $typeName = $type->getName();
                     if (!$type->isBuiltin()) {
-                        $allowsObject = true;
                     }
                     if ($typeName) {
                         if (isset(ReflectionClass::SCALAR_BASE_TYPES[$typeName])) {
-                            $allowsScalar = true;
                         }
                         $allowedTypes[$typeName] = $type;
                     }
@@ -233,10 +229,8 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
                 $typeName = $arrayType->getName();
                 $allowedTypes[$typeName] = $arrayType;
                 if (!$arrayType->isBuiltin()) {
-                    $allowsObject = true;
                 }
                 if (isset(ReflectionClass::SCALAR_BASE_TYPES[$typeName])) {
-                    $allowsScalar = true;
                 }
                 $allowedTypes[$typeName] = $arrayType;
             }
@@ -435,13 +429,6 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
         return false;
     }
 
-    protected function resetIteratorPosition()
-    {
-        if ($this->iteratorPosition > $this->elementCount - 1) {
-            $this->iteratorPosition = 0;
-        }
-    }
-
     /**
      * Set addAsChild, this determines if when adding elements they are also added as children or not. This needs to set to false for
      * children ObjectSet in ParentChildrenTrait as we otherwise run into a recursion
@@ -489,38 +476,6 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
             return false;
         }
         return true;
-    }
-
-    /**
-     * Returns true if set contains same elements in the same order
-     * @param ObjectSet $other
-     * @return bool
-     */
-    public function containsSameElementsInSameOrder(ObjectSet $other): bool
-    {
-        $thisKeys = '';
-        $otherKeys = '';
-        foreach ($this->getElements() as $element) {
-            $thisKeys .= $element->uniqueKey();
-        }
-        foreach ($other->getElements() as $element) {
-            $otherKeys .= $element->uniqueKey();
-        }
-        return $thisKeys == $otherKeys;
-    }
-
-    /**
-     * Returns Reflection type of elements array
-     * @return ReflectionNamedType|ReflectionUnionType
-     * @throws ReflectionException
-     */
-    public function getElementType(): ReflectionNamedType|ReflectionUnionType
-    {
-        $reflectionClass = ReflectionClass::instance(static::class);
-        $reflectionProperty = $reflectionClass->getProperty('elements');
-        /** @var ReflectionArrayType $arrayType */
-        $arrayType = $reflectionProperty->getType();
-        return $arrayType->getArrayType();
     }
 
     public function isEmpty(): bool

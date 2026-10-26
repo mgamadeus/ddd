@@ -8,6 +8,7 @@
     <testsuites>
         <testsuite name="ddd">
             <directory>tests</directory>
+            <exclude>tests/Integration</exclude>
         </testsuite>
     </testsuites>
 </phpunit>

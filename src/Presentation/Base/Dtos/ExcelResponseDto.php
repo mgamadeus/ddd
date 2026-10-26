@@ -6,7 +6,6 @@ namespace DDD\Presentation\Base\Dtos;
 
 use DDD\Domain\Common\Entities\MediaItems\ExcelDocument;
 use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
-use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 
 class ExcelResponseDto extends FileResponseDto

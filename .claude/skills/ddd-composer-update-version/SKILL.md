@@ -1,6 +1,6 @@
 ---
 name: ddd-composer-update-version
-description: Bump composer.json version, commit, push, and tag to trigger Packagist, then update consuming apps. Covers the platform-flag policy (apps pin config.platform.php, so plain composer update -W is correct; the broad --ignore-platform-reqs is a footgun that can poison the lock), the vendor-copy cwd hazard (git inside vendor/mgamadeus operates on the APP repo — never release from there), a one-liner patch release, the 7-module dependency-order release list, the dependency-floor cascade rule (downstream fix propagation = raise each dependent's require floor to the exact fixed version and re-release, not just composer update), and troubleshooting when a new version does not land (composer prohibits, composer clear-cache). Use when releasing any DDD package (core or module), running composer update in a consuming app, choosing platform-req flags, propagating a bugfix through the module chain, or diagnosing why a freshly tagged version is not picked up.
+description: "Bump composer.json version, commit, push, and tag to trigger Packagist, then update consuming apps. Covers the platform-flag policy (apps pin config.platform.php, so plain composer update -W is correct; the broad --ignore-platform-reqs is a footgun that can poison the lock), the vendor-copy cwd hazard (git inside vendor/mgamadeus operates on the APP repo — never release from there), a one-liner patch release, the 7-module dependency-order release list, the dependency-floor cascade rule (downstream fix propagation = raise each dependent's require floor to the exact fixed version and re-release, not just composer update), and troubleshooting when a new version does not land (composer prohibits, composer clear-cache). Use when moving an app to Symfony 7.4 (upgrade checklist inside), releasing any DDD package (core or module), running composer update in a consuming app, choosing platform-req flags, propagating a bugfix through the module chain, or diagnosing why a freshly tagged version is not picked up."
 metadata:
   author: mgamadeus
   version: "1.0.0"
@@ -38,6 +38,23 @@ git log --oneline -3
 ```
 
 Ensure all changes are committed. If there are uncommitted changes, commit them first before bumping the version.
+
+**Prod-mode compile gate (Core releases that touch Symfony constraints, attributes, the kernel, bundles or DI).**
+Dev mode hides a whole class of failures: Symfony >= 7.4 instantiates constraint attributes while compiling the
+container ONLY when `kernel.debug` is off, so a constructor that reaches the container fatals in prod and nowhere
+else. Unit tests, a class-load sweep, `lint:container` in dev and a dev workspace all stay green — v2.70.0 shipped
+exactly that way and broke the first prod build. Before tagging, compile one consuming app in prod mode into a
+scratch cache, with the changed Core files placed in its vendor for the duration and restored afterwards:
+
+```bash
+APP_ENV=prod APP_DEBUG=0 APP_CACHE_DIR=/abs/scratch/prod-cache php bin/console cache:clear     # must print [OK]
+APP_ENV=prod APP_DEBUG=0 APP_CACHE_DIR=/abs/scratch/prod-cache php bin/console lint:container  # must print [OK]
+```
+
+`APP_CACHE_DIR` (absolute path, read by `DDDKernel`) keeps the app's own `var/cache` untouched. The cache dir must
+start EMPTY — a dump left by an earlier build keeps its error tags.
+
+**Moving an app to Symfony 7.4 / ddd 2.70.x:** follow [references/symfony-7.4-migration.md](references/symfony-7.4-migration.md) — every trap the Radbonus and RankingCoach upgrades hit, in order.
 
 ### Step 2: Determine Version Bump
 
@@ -237,6 +254,7 @@ See the `ddd-module-orchestrator` skill for the complete module ecosystem, depen
 
 ## Rules
 
+- **Consumers never patch `mgamadeus/*`.** No cweagans `extra.patches`, no hand-edited `vendor/mgamadeus/` files in a consuming app. A DDD bug is fixed in the DDD repo and released as a patch version; the app updates. An unavoidable short-lived workaround lives in APP code with a TODO naming the target release — never in `vendor/`. A patch found in an app is an ingest candidate: upstream it, release, then the app drops the patch.
 - **Never** push a tag without first committing the version bump to `composer.json`
 - The tag version (`vX.Y.Z`) must match `composer.json` version (`X.Y.Z`)
 - Always include `Co-Authored-By` in commits

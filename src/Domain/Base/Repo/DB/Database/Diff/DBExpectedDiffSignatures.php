@@ -60,21 +60,4 @@ class DBExpectedDiffSignatures extends ObjectSet
         return $narrowed;
     }
 
-    /**
-     * Builds a set from a flat string→string map. Tolerates the empty case (returns an empty set);
-     * callers that want "null = bypass gate" semantics must handle that one level up.
-     *
-     * @param array<string,string> $map
-     */
-    public static function fromMap(array $map): self
-    {
-        $set = new self();
-        foreach ($map as $sqlTableName => $signature) {
-            $entry = new DBExpectedDiffSignature();
-            $entry->sqlTableName = (string)$sqlTableName;
-            $entry->signature = (string)$signature;
-            $set->add($entry);
-        }
-        return $set;
-    }
 }

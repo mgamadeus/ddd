@@ -6,6 +6,7 @@ namespace DDD\Domain\Base\Repo\DB\Database;
 
 use Attribute;
 use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
+use DDD\Domain\Base\Entities\Attributes\PreserveOnOmission;
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
@@ -27,6 +28,7 @@ use DDD\Infrastructure\Reflection\ReflectionProperty;
 use ReflectionAttribute;
 use ReflectionNamedType;
 use ReflectionUnionType;
+use DDD\Infrastructure\Validation\Constraints\Choice as DDDChoice;
 use Symfony\Component\Validator\Constraints\Choice;
 use Symfony\Component\Validator\Constraints\Length;
 use Symfony\Component\Validator\Constraints\NotNull;
@@ -300,12 +302,12 @@ class DatabaseColumn extends ValueObject
     public DatabaseVirtualColumns $virtualColumnsBasedOnCurrentColumn;
 
     public function __construct(
-        string $sqlType = null,
-        bool $allowsNull = null,
-        bool $hasAutoIncrement = null,
-        bool $isUnsigned = null,
-        int $varCharLength = null,
-        int $vectorDimensions = null,
+        ?string $sqlType = null,
+        ?bool $allowsNull = null,
+        ?bool $hasAutoIncrement = null,
+        ?bool $isUnsigned = null,
+        ?int $varCharLength = null,
+        ?int $vectorDimensions = null,
         bool $encrypted = false,
         ?string $encryptionScope = null,
         ?string $onUpdateAction = null,
@@ -398,7 +400,11 @@ class DatabaseColumn extends ValueObject
             }
             $databaseColum->sqlType = self::SQL_TYPE_ALLOCATION[$type->getName()];
             if ($reflectionProperty->getDefaultValue() !== null) {
-                $databaseColum->phpDefaultValue = $reflectionProperty->getDefaultValue();
+                // a property preserved on omission must stay uninitialized on the model until something sets it —
+                // upsert() skips only uninitialized model fields — so it gets the SQL DEFAULT but no PHP default
+                if (!PreserveOnOmission::isPropertyPreservedOnOmission($reflectionClass->getName(), $propertyName)) {
+                    $databaseColum->phpDefaultValue = $reflectionProperty->getDefaultValue();
+                }
                 if ($type->getName() == ReflectionClass::BOOL) {
                     $databaseColum->sqlDefaultValue = (int)$reflectionProperty->getDefaultValue();
                 } elseif ($type->getName() == ReflectionClass::INTEGER) {
@@ -421,7 +427,7 @@ class DatabaseColumn extends ValueObject
                     ',',
                     array_map(function (string $el) {
                         return "'$el'";
-                    }, $choicesAttributeInstance->choices)
+                    }, DDDChoice::getChoicesResolvedFromConstraint($choicesAttributeInstance))
                 ) . ')';
         } // handle length limits
         elseif (
@@ -478,7 +484,6 @@ class DatabaseColumn extends ValueObject
         if ($propertyName == 'id') {
             $databaseColum->hasIndex = false;
             $databaseColum->allowsNull = false;
-            $index = false;
         }
 
         // if DatabaseColumn attribute is present, we overwrite definitions from attribute

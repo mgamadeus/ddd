@@ -56,7 +56,7 @@ class ClassFinder
     {
         $files = scandir($dir);
 
-        foreach ($files as $key => $value) {
+        foreach ($files as $value) {
             if (in_array($value, $excludedFiles)) {
                 continue;
             }
@@ -112,58 +112,4 @@ class ClassFinder
         return new ClassWithNamespace($className, $namespace, $fileName, $type);
     }
 
-    /**
-     * returns Class name from within a file if present
-     * @param string $file
-     * @return null|ClassWithNamespace
-     */
-    protected static function getClassFromFileasd(string $file): ?ClassWithNamespace
-    {
-        //echo $file . '<br />';
-        $fp = fopen($file, 'r');
-        $class = $buffer = '';
-        $i = 0;
-        $namespace = '';
-        while (!$class) {
-            if (feof($fp)) {
-                break;
-            }
-
-            $buffer .= fread($fp, 5012);
-            $tokens = token_get_all($buffer);
-            //var_dump($tokens);
-
-            if (strpos($buffer, '{') === false) {
-                continue;
-            }
-            for (; $i < count($tokens); $i++) {
-                if (
-                    in_array($tokens[$i][0], [T_CLASS, T_TRAIT, T_INTERFACE]) || (isset($tokens[$i][1]) && in_array(
-                            $tokens[$i][1],
-                            ['class', 'trait', 'interface']
-                        ))
-                ) {
-                    for ($j = $i + 1; $j < count($tokens); $j++) {
-                        if ($tokens[$j] == '{' && !empty($tokens[$i + 2][1])) {
-                            $class = $tokens[$i + 2][1];
-                            break;
-                        }
-                    }
-                }
-                if ($tokens[$i][0] == T_NAMESPACE || (isset($tokens[$i][1]) && $tokens[$i][1] == 'namespace')) {
-                    if (isset($tokens[$i + 2])) {
-                        $namespace = $tokens[$i + 2][1];
-                    }
-                }
-                if ($class) {
-                    break;
-                }
-            }
-        }
-        if (!$class) {
-            return null;
-        }
-        $classWithName = new ClassWithNamespace($class, $namespace, $file);
-        return $classWithName;
-    }
 }

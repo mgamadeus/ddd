@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace DDD\Infrastructure\Libs;
 
 use DDD\Infrastructure\Traits\SingletonTrait;
-use RuntimeException;
 
 class Config
 {
@@ -93,7 +92,6 @@ class Config
     }
 
     /**
-     * @param array $configRoots
      * @param string $searchString
      * @param bool $prioritizeDirectorySearch
      * @return mixed
@@ -128,7 +126,6 @@ class Config
     }
 
     /**
-     * @param array $configRoots
      * @param string $searchString
      * @param bool $prioritizeDirectorySearch
      * @return array|null

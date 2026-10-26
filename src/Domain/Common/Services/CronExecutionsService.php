@@ -8,15 +8,9 @@ use DDD\Domain\Base\Services\EntitiesService;
 use DDD\Domain\Common\Entities\Crons\Cron;
 use DDD\Domain\Common\Entities\Crons\CronExecution;
 use DDD\Domain\Common\Entities\Crons\CronExecutions;
-use DDD\Domain\Common\Repo\DB\Crons\DBCronExecution;
 use DDD\Domain\Common\Repo\DB\Crons\DBCronExecutions;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
-use DDD\Infrastructure\Exceptions\NotFoundException;
-use DDD\Infrastructure\Services\Service;
-use Doctrine\ORM\Exception\ORMException;
-use Doctrine\ORM\NonUniqueResultException;
-use Doctrine\ORM\OptimisticLockException;
 use Psr\Cache\InvalidArgumentException;
 use ReflectionException;
 

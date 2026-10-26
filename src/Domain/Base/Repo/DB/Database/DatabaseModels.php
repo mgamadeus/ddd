@@ -37,11 +37,6 @@ class DatabaseModels extends ObjectSet
         parent::add(...$elements);
     }
 
-    public function getModelByModelClassName(string $modelClassName): ?DatabaseModel
-    {
-        return $this->getByUniqueKey(DatabaseModel::uniqueKeyStatic($modelClassName));
-    }
-
     public function getModelByEntityClass(string $entityClass): ?DatabaseModel
     {
         return $this->modelsByEntityClass[$entityClass] ?? null;

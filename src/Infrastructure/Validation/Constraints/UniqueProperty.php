@@ -3,9 +3,7 @@
 namespace DDD\Infrastructure\Validation\Constraints;
 
 use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
-use Symfony\Component\Validator\Attribute\HasNamedArguments;
 use Symfony\Component\Validator\Constraint;
-use Symfony\Component\Validator\Exception\InvalidArgumentException;
 
 /**
  * Constraint attribute that validates a property value is unique across all entities of the same type in the database.
@@ -29,6 +27,6 @@ class UniqueProperty extends Constraint
      */
     public function __construct(?array $groups = null, mixed $payload = null)
     {
-        parent::__construct([], $groups, $payload);
+        parent::__construct(null, $groups, $payload);
     }
 }

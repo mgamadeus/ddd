@@ -112,7 +112,6 @@ class Path
         $controllerClass = $controllerReflectionClass->getName();
         $beforeMethods = $controllerClass::getBeforeAndAfterMethods(Before::class);
         foreach ($beforeMethods as $beforeMethod) {
-            $beforeMethodName = $beforeMethod->getName();
             $beforeMethodParameters = $beforeMethod->getParameters();
             foreach ($beforeMethodParameters as $beforeMethodParameter) {
                 $type = $beforeMethodParameter->getType()->getName();
@@ -161,18 +160,6 @@ class Path
                     $acceptsParameterOrBody = true;
                 }
             }
-            /*
-            //iterate through all Path Paramters of the Route's path in order to check if they are specified in RequestDto
-            foreach ($route->getRouteParams() as $routeParamName) {
-                if (!$this->hasParamter($routeParamName)) {
-                    throw new TypeDefinitionMissingOrWrong(
-                        'Route param {' . $routeParamName . '} defined in Route Path Definition for Route ' . $route->getFullPath(
-                        ) . ':' . $route->requestMethod . ' (Controller: ' . $route->controller . '->' . $route->controllerMethod . ') missing as property defined with in:path attribute in ' . $requestDtoReflectionClass->getName(
-                        )
-                    );
-                }
-            }*/
-
             // on get and delete requests we have no Request Body
             if ($httpMethod == Request::METHOD_GET) {
                 unset($this->requestBody);
@@ -204,12 +191,6 @@ class Path
             } else {
                 $this->responses = [200 => new PathResponse($responseDtoReflectionClass)];
             }
-            // if route requires authentication, we also provide a Unauthorized response
-            /*
-            if ($route->requiresAuth()) {
-                $exceptionReflectionClass = UnauthorizedException::getReflectionClass();
-                $this->responses[Exception::CODE_UNAUTHORIZED] = new Response($exceptionReflectionClass);
-            }*/
             // if we have throw clauses on the controller method, that extend Exception, we preovide the corresponding error responses
             if ($throwDeclarations) {
                 foreach ($throwDeclarations as $throwDeclaration) {
@@ -286,13 +267,4 @@ class Path
         $this->parametersByName[$paramter->name] = $paramter;
     }
 
-    /**
-     * returns if paramter with $paramterName exists
-     * @param string $paramterName
-     * @return bool
-     */
-    public function hasParamter(string $paramterName): bool
-    {
-        return isset($this->parametersByName[$paramterName]);
-    }
 }

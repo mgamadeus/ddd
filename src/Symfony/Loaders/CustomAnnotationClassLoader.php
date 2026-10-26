@@ -8,11 +8,12 @@ use ReflectionClass;
 use ReflectionMethod;
 use Symfony\Bundle\FrameworkBundle\Routing\AttributeRouteControllerLoader;
 use Symfony\Component\Config\Resource\FileResource;
-use Symfony\Component\Routing\Annotation\Route;
-use Symfony\Component\Routing\Annotation\Route as RouteAnnotation;
+use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Routing\RouteCollection;
 
+use function in_array;
 use function is_int;
+use function is_string;
 
 class CustomAnnotationClassLoader extends AttributeRouteControllerLoader
 {
@@ -56,16 +57,16 @@ class CustomAnnotationClassLoader extends AttributeRouteControllerLoader
         $allGlobals = $this->getGlobals($class);
 
         foreach ($allGlobals as $globals) {
-            if ($globals['env'] && $this->env !== $globals['env']) {
+            if ($globals['env'] && !in_array($this->env, $globals['env'], true)) {
                 return $collection;
             }
             /** @var Route $annot */
             foreach ($class->getMethods() as $method) {
                 $this->defaultRouteIndex = 0;
                 foreach ($this->getAnnotations($method) as $annot) {
-                    if (!$annot->getName()) {
-                        //$annot->setName(implode(',', $annot->getMethods()) . ':' . $globals['path'] . $annot->getPath());
-                        $annot->setName($class->getName() . ':'.$method->getName() . '__' . implode(',', $annot->getMethods()) . ':' . $globals['path'] . $annot->getPath());
+                    if (!$annot->name) {
+                        $annot->name = $class->getName() . ':' . $method->getName() . '__'
+                            . implode(',', $annot->methods) . ':' . $globals['path'] . $this->getStringPath($annot);
                     }
                     $this->addRoute($collection, $annot, $globals, $class, $method);
                 }
@@ -74,8 +75,8 @@ class CustomAnnotationClassLoader extends AttributeRouteControllerLoader
             if (0 === $collection->count() && $class->hasMethod('__invoke')) {
                 $globals = $this->resetGlobals();
                 foreach ($this->getAnnotations($class) as $annot) {
-                    if (!$annot->getName()) {
-                        $annot->setName(implode(',', $annot->getMethods()) . ':' . $globals['path'] . $annot->getPath());
+                    if (!$annot->name) {
+                        $annot->name = implode(',', $annot->methods) . ':' . $globals['path'] . $this->getStringPath($annot);
                     }
                     $this->addRoute($collection, $annot, $globals, $class, $class->getMethod('__invoke'));
                 }
@@ -88,7 +89,7 @@ class CustomAnnotationClassLoader extends AttributeRouteControllerLoader
     /**
      * @param ReflectionClass|ReflectionMethod $reflection
      *
-     * @return iterable<int, RouteAnnotation>
+     * @return iterable<int, Route>
      */
     protected function getAnnotations(ReflectionClass|ReflectionMethod $reflection): iterable
     {
@@ -100,7 +101,6 @@ class CustomAnnotationClassLoader extends AttributeRouteControllerLoader
     protected function getGlobals(ReflectionClass $class): array
     {
         //echo $class->getName() . '<br />';die();
-        $annot = null;
         $attributes = $class->getAttributes($this->routeAnnotationClass, ReflectionAttribute::IS_INSTANCEOF) ?? null;
 
         $allGlobals = [];
@@ -112,46 +112,49 @@ class CustomAnnotationClassLoader extends AttributeRouteControllerLoader
                 /** @var Route $attribute */
 
                 $globals = $this->resetGlobals();
-                if (null !== $attribute->getName()) {
-                    $globals['name'] = $attribute->getName();
+                if (null !== $attribute->name) {
+                    $globals['name'] = $attribute->name;
                 }
 
-                if (null !== $attribute->getPath()) {
-                    $globals['path'] = $attribute->getPath();
+                // a string is the path; an array holds the localized paths (Symfony 7.4 dropped $localizedPaths)
+                if (is_string($attribute->path)) {
+                    $globals['path'] = $attribute->path;
+                    $globals['localized_paths'] = [];
+                } else {
+                    $globals['localized_paths'] = $attribute->path ?? [];
                 }
 
-                $globals['localized_paths'] = $attribute->getLocalizedPaths();
-
-                if (null !== $attribute->getRequirements()) {
-                    $globals['requirements'] = $attribute->getRequirements();
+                if (null !== $attribute->requirements) {
+                    $globals['requirements'] = $attribute->requirements;
                 }
 
-                if (null !== $attribute->getOptions()) {
-                    $globals['options'] = $attribute->getOptions();
+                if (null !== $attribute->options) {
+                    $globals['options'] = $attribute->options;
                 }
 
-                if (null !== $attribute->getDefaults()) {
-                    $globals['defaults'] = $attribute->getDefaults();
+                if (null !== $attribute->defaults) {
+                    $globals['defaults'] = $attribute->defaults;
                 }
 
-                if (null !== $attribute->getSchemes()) {
-                    $globals['schemes'] = $attribute->getSchemes();
+                if (null !== $attribute->schemes) {
+                    $globals['schemes'] = $attribute->schemes;
                 }
 
-                if (null !== $attribute->getMethods()) {
-                    $globals['methods'] = $attribute->getMethods();
+                if (null !== $attribute->methods) {
+                    $globals['methods'] = $attribute->methods;
                 }
 
-                if (null !== $attribute->getHost()) {
-                    $globals['host'] = $attribute->getHost();
+                if (null !== $attribute->host) {
+                    $globals['host'] = $attribute->host;
                 }
 
-                if (null !== $attribute->getCondition()) {
-                    $globals['condition'] = $attribute->getCondition();
+                if (null !== $attribute->condition) {
+                    $globals['condition'] = $attribute->condition;
                 }
 
-                $globals['priority'] = $attribute->getPriority() ?? 0;
-                $globals['env'] = $attribute->getEnv();
+                $globals['priority'] = $attribute->priority ?? 0;
+                // a list of environments since Symfony 7.4 (was a single ?string through getEnv())
+                $globals['env'] = $attribute->envs;
 
                 foreach ($globals['requirements'] as $placeholder => $requirement) {
                     if (is_int($placeholder)) {
@@ -169,5 +172,15 @@ class CustomAnnotationClassLoader extends AttributeRouteControllerLoader
             }
         }
         return $allGlobals;
+    }
+
+    /**
+     * The route's path as a string for the generated route name; empty for a localized (array) path.
+     * @param Route $route
+     * @return string
+     */
+    protected function getStringPath(Route $route): string
+    {
+        return is_string($route->path) ? $route->path : '';
     }
 }

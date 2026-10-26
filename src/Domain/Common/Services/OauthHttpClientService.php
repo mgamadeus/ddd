@@ -36,7 +36,6 @@ class OauthHttpClientService extends HttpClientService
      * @param string $tokenRefreshUrl URL for token refresh.
      * @param string $accessToken Current access token.
      * @param string $refreshToken Current refresh token.
-     * @param callable $onTokenRefresn Closure to handle new token data.
      * @param callable $onInvalidCredentials Closure executed if OAuth credentials are invalid. e.g. function (TokenInterface $token) use ($someConnectionObject) {var_dump($token);}
      */
     public function setOauthConfig(

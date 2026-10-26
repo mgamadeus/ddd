@@ -178,15 +178,34 @@ MD;
     }
 
     /**
+     * The column an orderBy on $propertyName sorts: the virtual search column for a
+     * #[Translatable(fullTextIndex: true)] property (its folded text, in that column's collation), the property's own
+     * column otherwise — a plain Translatable keeps sorting its JSON text as before.
+     *
+     * @param string $modelClass The Doctrine model the property belongs to
+     * @param string $propertyName The orderBy property
+     * @return string
+     * @throws ReflectionException
+     */
+    protected static function getOrderByColumnName(string $modelClass, string $propertyName): string
+    {
+        /** @var DoctrineModel $modelClass */
+        $searchColumnName = FiltersOptions::getTranslatableSearchColumnName($modelClass::ENTITY_CLASS, $propertyName);
+        if ($searchColumnName && $modelClass::isValidDatabaseExpression($modelClass::MODEL_ALIAS . ".$searchColumnName")) {
+            return $searchColumnName;
+        }
+        return $propertyName;
+    }
+
+    /**
      * Applies orderBy options to query builder
      * @param DoctrineQueryBuilder $queryBuilder
-     * @param string $baseAlias
      * @return DoctrineQueryBuilder
      */
     public function applyOrderByToDoctrineQueryBuilder(
         DoctrineQueryBuilder &$queryBuilder,
         string $baseModelClass = '',
-        callable $mappingFunction = null
+        ?callable $mappingFunction = null
     ): DoctrineQueryBuilder {
         foreach ($this->getElements() as $orderByOption) {
             // if orderBy is based on a filter property that comes from an expand property, alias has to be empty as otherwise the base alias would be
@@ -223,7 +242,6 @@ MD;
                 $queryOptionPropertyMapping = $mappingFunction($propertyName);
                 $propertyName = $queryOptionPropertyMapping->propertyName;
             }
-            $orderByExpression = null;
             if (($strRightPos = strrpos($propertyName, '.')) !== false) {
                 $propertyNameInExpandPath = substr($orderByOption->propertyName, $strRightPos + 1);
                 if ($joinAlias = $orderByOption?->getExpandOption()?->joinAlias ?? null) {
@@ -234,6 +252,7 @@ MD;
                         continue;
                     }
                     $verifyModelAlias = $verifyModelClass::MODEL_ALIAS;
+                    $propertyNameInExpandPath = self::getOrderByColumnName($verifyModelClass, $propertyNameInExpandPath);
                     if (!$verifyModelClass::isValidDatabaseExpression("$verifyModelAlias.$propertyNameInExpandPath")) {
                         continue;
                     }
@@ -244,6 +263,9 @@ MD;
             } else {
                 $baseAlias = $baseModelClass::MODEL_ALIAS;
                 $baseAlias = $orderByOption?->getFiltersDefinition()?->getExpandDefinition() ? '' : $baseAlias;
+                if ($baseAlias) {
+                    $propertyName = self::getOrderByColumnName($baseModelClass, $propertyName);
+                }
                 $orderByExpression = ($baseAlias ? $baseAlias . '.' : '') . $propertyName;
                 /** @var DoctrineModel $baseModelClass */
                 if (!$baseModelClass::isValidDatabaseExpression($orderByExpression, $baseModelClass)) {

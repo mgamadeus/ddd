@@ -84,7 +84,7 @@ class PhoneNumber extends ContactInfo
             $this->countryShortCode = strtolower($phoneUtil->getRegionCodeForCountryCode($phoneNumber->getCountryCode()));
             $this->value = $phoneUtil->format($phoneNumber, self::DEFAULT_FORMAT);
             return;
-        } catch (Throwable $throwable) {
+        } catch (Throwable) {
         }
         try {
             $phoneNumber = $phoneUtil->parse($number, $countryShortCode ? strtoupper($countryShortCode) : null);
@@ -104,7 +104,7 @@ class PhoneNumber extends ContactInfo
                 }
             }
             $this->value = $phoneUtil->format($phoneNumber, self::DEFAULT_FORMAT);
-        } catch (Throwable $throwable) {
+        } catch (Throwable) {
             $this->value = trim($number);
         }
     }

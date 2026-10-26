@@ -244,7 +244,6 @@ class DoctrineQueryBuilder extends QueryBuilder
         $this->setFirstResult(null);
 
         // Duplicate the main query to create a subquery
-        $mainQueryDQL = $this->getDQL();
         $query = $this->getQuery();
         $query->setHint(Query::HINT_FORCE_PARTIAL_LOAD, true);
         $query->setHint(Query::HINT_INCLUDE_META_COLUMNS, false);
@@ -1430,15 +1429,14 @@ class DoctrineQueryBuilder extends QueryBuilder
      *         ->andWhere('u.is_active = 1');
      * </code>
      *
-     * @param mixed $where The query restrictions.
      *
+     * @param mixed $where The query restrictions, one or more.
      * @return $this
      * @see where()
-     *
      */
-    public function andWhere()
+    public function andWhere(mixed ...$where)
     {
-        $args = func_get_args();
+        $args = $where;
         $where = $this->getDQLPart('where');
 
         if ($where instanceof Expr\Andx) {
@@ -1463,15 +1461,14 @@ class DoctrineQueryBuilder extends QueryBuilder
      *         ->orWhere('u.id = 2');
      * </code>
      *
-     * @param mixed $where The WHERE statement.
      *
+     * @param mixed $where The WHERE statements, one or more.
      * @return $this
      * @see where()
-     *
      */
-    public function orWhere()
+    public function orWhere(mixed ...$where)
     {
-        $args = func_get_args();
+        $args = $where;
         $where = $this->getDQLPart('where');
 
         if ($where instanceof Expr\Orx) {

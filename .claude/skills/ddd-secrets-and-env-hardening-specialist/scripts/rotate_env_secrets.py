@@ -5,7 +5,8 @@ keeping mirrored pairs identical. A timestamped backup of the file is written fi
 
 Default keys (mgamadeus/ddd apps):
   APP_SECRET ENCRYPTION_COOKIE_PASSWORD JWT_HASH_KEY AUTH_JWT_HASH_KEY PASSWORD_HASH AUTH_PASSWORD_HASH_KEY
-Default mirror: JWT_HASH_KEY == AUTH_JWT_HASH_KEY (the framework reads both; they MUST match).
+Default mirror: AUTH_JWT_HASH_KEY := JWT_HASH_KEY. Since ddd 2.70.11 only JWT_HASH_KEY is read (AUTH_JWT_HASH_KEY is a
+deprecated fallback); the mirror keeps a file that still carries the old key consistent until it is deleted.
 
 !! AUTH_PASSWORD_HASH_KEY: only rotate it when the app hashes passwords with Argon2id/bcrypt
 !! (password_hash). If the app uses hash_hmac(..., AUTH_PASSWORD_HASH_KEY) the key is a live

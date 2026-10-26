@@ -25,6 +25,7 @@ use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
 use PHPUnit\TextUI\ReflectionException;
 use ReflectionAttribute;
 use ReflectionUnionType;
+use DDD\Infrastructure\Validation\Constraints\Choice as DDDChoice;
 use Symfony\Component\Validator\Constraints\Choice;
 
 /**
@@ -67,6 +68,12 @@ class FiltersDefinitions extends ObjectSet
      * collected alongside {@see self::$temporalKindsForCurrentReflection} and consumed in the same place
      */
     protected static array $fulltextCapablePropertiesForCurrentReflection = [];
+
+    /**
+     * @var string[] {@see FiltersDefinition::$columnKind} by (prefixed) property name, collected and consumed like
+     * {@see self::$temporalKindsForCurrentReflection}
+     */
+    protected static array $columnKindsForCurrentReflection = [];
 
     /**
      * Allowed filters either as string representing allowed property name or
@@ -116,16 +123,18 @@ class FiltersDefinitions extends ObjectSet
         // we only generate filters for all property names if the class has a Lazyload repo of type DB
         /** @var Entity $referenceClassName */
         $repoClass = $referenceClassName::getRepoClass(LazyLoadRepo::DB);
-        $reflectionClass = ReflectionClass::instance($referenceClassName);
         if ($repoClass) {
             $filtersDefinitions->referenceClassName = $referenceClassName;
             self::$temporalKindsForCurrentReflection = [];
             self::$fulltextCapablePropertiesForCurrentReflection = [];
+            self::$columnKindsForCurrentReflection = [];
             $filtersProperties = self::getFilterPropertiesForClass($referenceClassName);
             $temporalKinds = self::$temporalKindsForCurrentReflection;
             $fulltextCapableProperties = self::$fulltextCapablePropertiesForCurrentReflection;
+            $columnKinds = self::$columnKindsForCurrentReflection;
             self::$temporalKindsForCurrentReflection = [];
             self::$fulltextCapablePropertiesForCurrentReflection = [];
+            self::$columnKindsForCurrentReflection = [];
             if ($filtersProperties) {
                 foreach ($filtersProperties as $filterPropertyName => $options) {
                     $filterDefinition = new FiltersDefinition(
@@ -133,33 +142,58 @@ class FiltersDefinitions extends ObjectSet
                     );
                     $filterDefinition->temporalKind = $temporalKinds[$filterPropertyName] ?? null;
                     $filterDefinition->supportsFulltext = $fulltextCapableProperties[$filterPropertyName] ?? false;
+                    $filterDefinition->columnKind = $columnKinds[$filterPropertyName] ?? null;
                     $filtersDefinitions->add($filterDefinition);
                 }
             }
-            /*
-            $expandDefinitions = ExpandDefinitions::getExpandDefinitionsForReferenceClass(
-                $referenceClassName,
-                $depth
-            );
-
-            foreach ($expandDefinitions->getElements() as $expandDefinition) {
-                // check property of expand definition
-                if ($expandDefinition->filtersDefinitions ?? null) {
-                    foreach ($expandDefinition->filtersDefinitions->getElements() as $filtersDefinition) {
-                        $filterDefinition = new FiltersDefinition(
-                            $expandDefinition->propertyName . '.' . $filtersDefinition->propertyName,
-                            $filtersDefinition->options ?? null,
-                            $expandDefinition
-                        );
-                        $filtersDefinitions->add($filterDefinition);
-
-                        $filtersProperties[$expandDefinition->propertyName . '.' . $filtersDefinition->propertyName] = $filtersDefinition->options ?? true;
-                    }
-                }
-            }*/
         }
         self::$filtersDefinitionsForClass[$referenceClassName] = $filtersDefinitions;
         return $filtersDefinitions;
+    }
+
+    /**
+     * The column kind of a filterable property, from its declared type and its Translatable attribute. `int|string`
+     * (with or without null — the inherited id) is an int: DDD ids are ints and the generated models map them so.
+     * Any other union, `mixed` and every non-builtin type except the framework Date / DateTime get no kind.
+     *
+     * @param ReflectionProperty $reflectionProperty The filterable property
+     * @param Translatable|null $translatableAttribute Its Translatable attribute, when it has one
+     * @return string|null One of the FiltersDefinition::COLUMN_KIND_* constants, or null
+     */
+    protected static function getColumnKindForProperty(
+        ReflectionProperty $reflectionProperty,
+        ?Translatable $translatableAttribute
+    ): ?string {
+        if ($translatableAttribute) {
+            return $translatableAttribute->fullTextIndex
+                ? FiltersDefinition::COLUMN_KIND_TRANSLATABLE_SEARCHABLE
+                : FiltersDefinition::COLUMN_KIND_TRANSLATABLE;
+        }
+        $type = $reflectionProperty->getType();
+        if ($type instanceof ReflectionUnionType) {
+            $memberNames = [];
+            foreach ($type->getTypes() as $memberType) {
+                if ($memberType instanceof \ReflectionNamedType && $memberType->getName() !== 'null') {
+                    $memberNames[] = $memberType->getName();
+                }
+            }
+            sort($memberNames);
+            return $memberNames === ['int', 'string'] ? FiltersDefinition::COLUMN_KIND_INT : null;
+        }
+        if (!$type instanceof \ReflectionNamedType) {
+            return null;
+        }
+        if (!$type->isBuiltin()) {
+            return is_a($type->getName(), DateTime::class, true) ? FiltersDefinition::COLUMN_KIND_DATETIME : null;
+        }
+        return match ($type->getName()) {
+            'int' => FiltersDefinition::COLUMN_KIND_INT,
+            'float' => FiltersDefinition::COLUMN_KIND_FLOAT,
+            'bool' => FiltersDefinition::COLUMN_KIND_BOOL,
+            'string' => FiltersDefinition::COLUMN_KIND_STRING,
+            'array' => FiltersDefinition::COLUMN_KIND_JSON,
+            default => null,
+        };
     }
 
     /**
@@ -248,7 +282,7 @@ class FiltersDefinitions extends ObjectSet
                 /** @var Choice $choiceAttribute */
                 $choiceAttribute = $reflectionProperty->getAttributeInstance(Choice::class);
                 $propertyName = $propertyPrefix . $reflectionProperty->getName();
-                $allowedPropertyValue = $choiceAttribute ? $choiceAttribute->choices : true;
+                $allowedPropertyValue = $choiceAttribute ? DDDChoice::getChoicesResolvedFromConstraint($choiceAttribute) : true;
 
                 if ($databaseVirtualColumnAttribute) {
                     $allowedFilterProperties[$propertyPrefix . DatabaseVirtualColumn::getVirtualColumnName(
@@ -275,6 +309,10 @@ class FiltersDefinitions extends ObjectSet
                     continue;
                 }
                 $allowedFilterProperties[$propertyPrefix . $reflectionProperty->getName()] = $allowedPropertyValue;
+                $columnKind = self::getColumnKindForProperty($reflectionProperty, $translatableAttribute);
+                if ($columnKind !== null) {
+                    self::$columnKindsForCurrentReflection[$propertyName] = $columnKind;
+                }
                 if (!$type->isBuiltin() && is_a($type->getName(), DateTime::class, true)) {
                     // a calendar day never carries a time, so it is never zone-converted
                     self::$temporalKindsForCurrentReflection[$propertyName] = is_a($type->getName(), Date::class, true)
@@ -301,6 +339,7 @@ class FiltersDefinitions extends ObjectSet
                     $modifiedColumn = $changeHistoryAttributeInstance?->getModifiedColumn();
                     if ($createdColumn) {
                         $allowedFilterProperties[$propertyPrefix . $createdColumn] = true;
+                        self::$columnKindsForCurrentReflection[$propertyPrefix . $createdColumn] = FiltersDefinition::COLUMN_KIND_DATETIME;
                         // ChangeHistory writes DateTime values (createdTime / modifiedTime), so these columns are
                         // MOMENT filters like any other reflected DateTime property — they are added here by hand
                         // rather than through the property loop, so the temporal kind has to be recorded here too.
@@ -309,6 +348,7 @@ class FiltersDefinitions extends ObjectSet
                     }
                     if ($modifiedColumn) {
                         $allowedFilterProperties[$propertyPrefix . $modifiedColumn] = true;
+                        self::$columnKindsForCurrentReflection[$propertyPrefix . $modifiedColumn] = FiltersDefinition::COLUMN_KIND_DATETIME;
                         self::$temporalKindsForCurrentReflection[$propertyPrefix . $modifiedColumn] =
                             FiltersDefinition::TEMPORAL_KIND_MOMENT;
                     }
@@ -321,7 +361,7 @@ class FiltersDefinitions extends ObjectSet
                 // excluded (the "we do not include ObjectSets" rule above); Entities keep their guarded recursion below.
                 elseif (DefaultObject::isEntity($type)) {
                     // we do not add lazyloaded Entities as filters
-                    if ($lazyloadAttribute = $reflectionProperty->getAttributes(LazyLoad::class, ReflectionAttribute::IS_INSTANCEOF)[0] ?? null) {
+                    if ($reflectionProperty->getAttributes(LazyLoad::class, ReflectionAttribute::IS_INSTANCEOF)[0] ?? null) {
                         continue;
                     }
                     $subObjectFilters = self::getFilterPropertiesForClass(
@@ -380,7 +420,36 @@ class FiltersDefinitions extends ObjectSet
                 return true;
             }
         }
-        return false;
+        return self::propertyGetsDefaultFulltextIndex($reflectionClass, $reflectionProperty);
+    }
+
+    /**
+     * Whether the model generator gives this property's column a FULLTEXT index on its own: a property without any
+     * property-level #[DatabaseIndex] (one of those replaces the default, TYPE_NONE included) whose column is TEXT /
+     * MEDIUMTEXT / LONGTEXT gets the default index of its SQL type
+     * ({@see DatabaseColumn::SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS}). Same column derivation as the generator.
+     *
+     * @param ReflectionClass $reflectionClass The entity
+     * @param ReflectionProperty $reflectionProperty The filterable property
+     * @return bool
+     */
+    protected static function propertyGetsDefaultFulltextIndex(
+        ReflectionClass $reflectionClass,
+        ReflectionProperty $reflectionProperty
+    ): bool {
+        if ($reflectionProperty->getAttributes(DatabaseIndex::class, ReflectionAttribute::IS_INSTANCEOF)) {
+            return false;
+        }
+        try {
+            $databaseColumn = DatabaseColumn::createFromReflectionProperty($reflectionClass, $reflectionProperty);
+        } catch (\Throwable) {
+            return false;
+        }
+        if (!$databaseColumn || !isset($databaseColumn->sqlType) || !$databaseColumn->hasIndex || $databaseColumn->ignoreProperty) {
+            return false;
+        }
+        return (DatabaseColumn::SQL_TYPES_TO_DEFAULT_INDEX_TYPE_ALLOCATIONS[$databaseColumn->sqlType] ?? null)
+            === DatabaseIndex::TYPE_FULLTEXT;
     }
 
     public function getFilterDefinitionForPropertyName(string $propertyName): ?FiltersDefinition

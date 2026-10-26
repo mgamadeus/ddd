@@ -26,7 +26,12 @@ class AccountsService extends EntitiesService
     public function __construct(public ?RequestStack $requestStack = null) {}
 
     /**
-     * @param string|int|null $accountId
+     * The account by id; an empty id loads the AUTHENTICATED account. Nobody authenticated → null, or NotFoundException
+     * when throwErrors is set. (Up to 2.70.4 an empty id crashed: the fallback wrote the auth account id into an unused
+     * variable and handed null on to the repository, which accepts no null.)
+     *
+     * @param int|string|null $entityId The account id; null / 0 / '' loads the authenticated account
+     * @param bool $useEntityRegistrCache Passed on to the repository (false bypasses the entity registry cache)
      * @return Account|null
      * @throws BadRequestException
      * @throws InternalErrorException
@@ -38,7 +43,13 @@ class AccountsService extends EntitiesService
     public function find(int|string|null $entityId, bool $useEntityRegistrCache = true): ?Account
     {
         if (!$entityId) {
-            $accountId = AuthService::instance()->getAccount()->id;
+            $entityId = AuthService::instance()->getAccount()?->id;
+            if (!$entityId) {
+                if ($this->throwErrors) {
+                    throw new NotFoundException('Account not found or current Auth Account is not authorized to access it');
+                }
+                return null;
+            }
         }
         /** @var Account $entityClass */
         $entityClass = DDDService::instance()->getContainerServiceClassNameForClass(
@@ -46,7 +57,7 @@ class AccountsService extends EntitiesService
         );
         $repoClassInstance = $entityClass::getRepoClassInstance();
 
-        $account = $repoClassInstance->find($entityId);
+        $account = $repoClassInstance->find($entityId, $useEntityRegistrCache);
         if (!$account) {
             if ($this->throwErrors) {
                 throw new NotFoundException('Account not found or current Auth Account is not authorized to access it');
@@ -76,7 +87,6 @@ class AccountsService extends EntitiesService
      */
     public function findByEmail(string $email): ?Account
     {
-        $entityClassInstance = self::getEntityClassInstance();
         $repoClassInstance = self::getEntityClassInstance()::getRepoClassInstance();
         $queryBuilder = $repoClassInstance::createQueryBuilder();
         $alias = $repoClassInstance::getBaseModelAlias();

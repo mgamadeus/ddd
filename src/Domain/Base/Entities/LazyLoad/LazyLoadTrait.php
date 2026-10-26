@@ -281,7 +281,6 @@ trait LazyLoadTrait
                                         $lazyLoadedEntity->$propertyOfCurrentSetTypeName = $entitySetInstance;
                                         $lazyLoadedEntity->addChildren($entitySetInstance);
                                         $entitySetInstance->add($this);
-                                        $instanceAddedToParent = true;
                                     } // property of current EntitySet type exists and is already instantiated
                                     else {
                                         /** @var EntitySet $entitySetInstance */
@@ -359,7 +358,6 @@ trait LazyLoadTrait
                 StaticRegistry::$repoClassesForProperties[static::class][$propertyName]
             )
         ) {
-            $t = StaticRegistry::$repoClassesForProperties;
             return StaticRegistry::$repoClassesForProperties[static::class][$propertyName][$repoType];
         }
         $repoClass = null;

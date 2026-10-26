@@ -13,6 +13,7 @@ use Symfony\Component\Messenger\Handler\HandlersLocatorInterface;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
 use Symfony\Component\Messenger\Middleware\StackInterface;
 use Symfony\Component\Messenger\Middleware\StackMiddleware;
+use Symfony\Component\Messenger\Stamp\ConsumedByWorkerStamp;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 
 class FreshStateProbeMessage
@@ -106,9 +107,10 @@ class FreshWorkerStateMiddlewareResetHandlerClassTest extends TestCase
         $middleware->handle($envelope, new StackMiddleware([$middleware, $terminator]));
     }
 
+    /** A message as the Worker hands it on: received from a transport and consumed by the worker */
     protected function receivedEnvelope(): Envelope
     {
-        return new Envelope(new FreshStateProbeMessage(), [new ReceivedStamp('async')]);
+        return new Envelope(new FreshStateProbeMessage(), [new ReceivedStamp('async'), new ConsumedByWorkerStamp()]);
     }
 
     /**
@@ -183,6 +185,21 @@ class FreshWorkerStateMiddlewareResetHandlerClassTest extends TestCase
         );
 
         $this->passThrough($middleware, new Envelope(new FreshStateProbeMessage()));
+
+        $this->assertSame(0, ApplicationHandlerBaseProbe::$resetCalls);
+    }
+
+    /**
+     * A `sync://` transport stamps ReceivedStamp too, but the message runs inside the dispatching request: resetting
+     * there cleared the request's unit of work. Only the Worker's ConsumedByWorkerStamp counts.
+     */
+    public function testASyncTransportDispatchIsNeverReset(): void
+    {
+        $middleware = new FreshWorkerStateMiddleware(
+            $this->locatorFor([[ApplicationHandlerBaseProbe::class, 'resetWorkerStateForNewJob']])
+        );
+
+        $this->passThrough($middleware, new Envelope(new FreshStateProbeMessage(), [new ReceivedStamp('sync')]));
 
         $this->assertSame(0, ApplicationHandlerBaseProbe::$resetCalls);
     }

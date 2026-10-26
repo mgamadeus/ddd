@@ -188,12 +188,6 @@ abstract class DatabaseRepoEntity extends RepoEntity
                 $query->disableResultCache()->useQueryCache(false)->setHint(Query::HINT_REFRESH, true);
             }
             $ormInstance = $query->setMaxResults(1)->getResult();
-            /*echo $queryBuilder->getQuery()->getSQL()."\n<br />";
-            foreach ($queryBuilder->getParameters() as $parameter){
-                $parameterValue = is_array($parameter->getValue())? implode(', ', $parameter->getValue()): $parameter->getValue();
-                echo $parameter->getName() . ' ' . $parameterValue ."\n";
-            }
-            echo "\n<br />\n<br />";*/
             $ormInstance = $ormInstance[0] ?? null;
         }
         if (!$ormInstance) {
@@ -376,20 +370,6 @@ abstract class DatabaseRepoEntity extends RepoEntity
     }
 
     /**
-     * This will receive a property where we want to set a value that we are not sure exists, checks the value in the
-     * valueClass parameter, and if it exists, it sets it to our property which is passed by reference in the function.
-     * @param $property
-     * @param $value
-     * @param $valueClass
-     */
-    public function setIfExists(&$property, $value, $valueClass): void
-    {
-        if (isset($valueClass->$value)) {
-            $property = $valueClass->$value;
-        }
-    }
-
-    /**
      * The main function that should be called from a repository to save everything to the db.
      * This will map the current entity data to the repository data which will then update the db using
      * Kohana ORM. It will also update any entity that is contained in this entity.
@@ -446,13 +426,11 @@ abstract class DatabaseRepoEntity extends RepoEntity
             // in order to avoid setting some fields empty
             $translationAttributeInstance = static::getTranslationAttributeInstance();
             $entityManager = EntityManagerFactory::getInstance();
-            $reflectionClass = ReflectionClass::instance(static::class);
 
             $entityId = $entity->id ?? null;
             $hasTranslations = $translationAttributeInstance && $translationAttributeInstance->hasPropertiesToTranslate();
             $translationIsInDefaultLanguage = $translationAttributeInstance && $translationAttributeInstance::isCurrentLanguageCodeDefaultLanguage();
 
-            $modelName = static::BASE_ORM_MODEL;
             if (self::$applyRightsRestrictions) {
                 $updateRightsQueryBuilder = static::createQueryBuilder(true);
                 // INSERT (new entity, no id) is gated by CREATE rights; UPDATE (existing id) by UPDATE rights.
@@ -583,7 +561,6 @@ abstract class DatabaseRepoEntity extends RepoEntity
      */
     public static function canUpdateOrDeleteBasedOnRoles(): bool
     {
-        $rolesRequiredForUpdate = [];
         if (isset(StaticRegistry::$rolesRequiredForUpdateOnEntities[static::BASE_ENTITY_CLASS])) {
             $rolesRequiredForUpdate = StaticRegistry::$rolesRequiredForUpdateOnEntities[static::BASE_ENTITY_CLASS];
         } else {
@@ -791,7 +768,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
                     // handle translation update
                     $translationAttributeInstance = static::getTranslationAttributeInstance();
                     if ($translationAttributeInstance && !empty($translationAttributeInstance->propertiesToTranslate)) {
-                        $deleteTranslationResult = $translationAttributeInstance->deleteTranslation($entity, $this);
+                        $translationAttributeInstance->deleteTranslation($entity, $this);
                     }
 
                     $entityManager = EntityManagerFactory::getInstance();

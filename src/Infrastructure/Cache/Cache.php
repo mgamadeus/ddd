@@ -145,30 +145,15 @@ abstract class Cache
         return static::$instances[$cacheGroup];
     }
 
-    public static function getDefaultTtl(string $cacheType): int
-    {
-        $cacheConfig = self::getCacheConfig($cacheType);
-        $ttl = Config::getEnv('CACHE_DEFAULT_TTL') ?? 3600;
-
-        if (!$ttl) {
-            $ttl = Config::getEnv('CACHE_DEFAULT_TTL') ?? self::DEEFAULT_TTL;
-        }
-        if (!$ttl) {
-            $ttl = self::DEEFAULT_TTL;
-        }
-        return $ttl;
-    }
-
     /**
      * obtains values from $keys, if multiple keys are provided, it returns the results as associative array grouped by the keys,
      * otherwise it returns a single result.
      * if no result is found, returns null
-     * @param string $key
+     * @param string ...$keys
      * @return mixed
      */
     public function get(string ...$keys): mixed
     {
-        //$this->delete($keys[0]);
         $keys = array_map(function ($a) {
             return self::convertKeyToValidCacheKey($a);
         }, $keys);
@@ -199,12 +184,10 @@ abstract class Cache
     public static function convertKeyToValidCacheKey(string $key, $inverse = false): string
     {
         if (!$inverse) {
-            $replace = str_replace('\\', '_.#.#._', $key);
             $replace = str_replace(':', '_.aa.aa._', $key);
             $replace = str_replace('/', '**.-**', $replace);
             return $replace;
         } else {
-            $replace = str_replace('_.#.#._', '\\', $key);
             $replace = str_replace('_.aa.aa._', ':', $key);
             $replace = str_replace('**.-**', '/', $replace);
             return $replace;

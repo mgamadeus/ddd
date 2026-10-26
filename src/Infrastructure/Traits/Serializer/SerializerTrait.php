@@ -563,12 +563,6 @@ trait SerializerTrait
             if ($cachedResult = SerializerRegistry::getToObjectCacheForObjectId($cacheKey)) {
                 return $cachedResult;
             }
-            /* This creates problems
-            if ($entityId) {
-                if ($cachedResult = SerializerRegistry::getToObjectCacheForObjectId($entityId)) {
-                    return $cachedResult;
-                }
-            }*/
         }
 
         // on each iteration we add the current spl_object_id to the path; when trying to add the same id again,
@@ -718,10 +712,6 @@ trait SerializerTrait
         }
         if ($cached) {
             SerializerRegistry::setToObjectCacheForObjectId($cacheKey, $resultArray);
-            /*
-            if ($entityId) {
-                SerializerRegistry::setToObjectCacheForObjectId($entityId, $resultArray);
-            }*/
         }
         if (empty($resultArray)) {
             return new stdClass(); // Leeres Objekt statt leeres Array zurückgeben
@@ -941,7 +931,7 @@ trait SerializerTrait
         $lines = [$header];
         foreach ($rows as $row) {
             $values = [];
-            foreach ($aliasToPath as $alias => $path) {
+            foreach ($aliasToPath as $path) {
                 $values[] = $this->toonEncodeValue($row[$path] ?? null);
             }
             $lines[] = implode(',', $values);
@@ -1098,7 +1088,6 @@ trait SerializerTrait
     /**
      * removes marks for index
      * @param $index
-     * @param false $recursive
      */
     public function unmark($index): void
     {
@@ -1140,10 +1129,9 @@ trait SerializerTrait
             $logger = DDDService::instance()->getLogger();
 
             //dump raw properties
-            $rawState = [];
             try {
                 $rawState = get_object_vars($this);
-            } catch (Throwable $ignored) {
+            } catch (Throwable) {
                 $rawState = ['error' => 'get_object_vars failed'];
             }
 
@@ -1349,7 +1337,7 @@ trait SerializerTrait
      * @param mixed $value
      * @param $throwErrors
      * @param ReflectionClass|null $reflectionClass
-     * @param bool $rootCall
+     * @param bool $sanitizeInput
      * @return void
      * @throws BadRequestException
      * @throws InternalErrorException
@@ -1839,7 +1827,7 @@ trait SerializerTrait
                 } elseif ($typeToInstance) {
                     $this->$propertyName = new $typeToInstance();
                 }
-            } catch (Error $e) {
+            } catch (Error) {
                 throw new InternalErrorException(
                     'Property ' . static::class . '->' . $propertyName . ' is defined to be of type ' . implode(
                         '|',

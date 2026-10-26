@@ -28,7 +28,6 @@ class DBCron extends DBEntity
      */
     public static function applyReadRightsQuery(DoctrineQueryBuilder &$queryBuilder): bool
     {
-        $class = static::class;
         $cronAlias = static::getBaseModelAlias();
 
         /* only if rights restrictions are active, we limit the access */
@@ -53,7 +52,6 @@ class DBCron extends DBEntity
      */
     public static function applyUpdateRightsQuery(DoctrineQueryBuilder &$queryBuilder): bool
     {
-        $class = static::class;
         $cronAlias = static::getBaseModelAlias();
 
         /* only if rights restrictions are active, we limit the access */

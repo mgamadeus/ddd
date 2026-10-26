@@ -21,10 +21,10 @@ class PunctuationLimitConstraint extends Constraint
     public string $tooManyPunctuationsMessage;
     public int $maxPunctuations = 0;
 
-    public function __construct(int $maxPunctuations, array $groups = null, mixed $payload = null)
+    public function __construct(int $maxPunctuations, ?array $groups = null, mixed $payload = null)
     {
         $this->maxPunctuations = $maxPunctuations;
         $this->tooManyPunctuationsMessage = 'This field contains too many punctuations. The maximum allowed is ' . $maxPunctuations . '.';
-        parent::__construct([], $groups, $payload);
+        parent::__construct(null, $groups, $payload);
     }
 }

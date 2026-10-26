@@ -85,7 +85,7 @@ class AuthService
     }
 
     /**
-     * @param Account $account
+     * @param int $accountId
      */
     public function setAccountId(int &$accountId): void
     {
@@ -111,11 +111,6 @@ class AuthService
         self::$adminAccount = $adminAccount;
     }
 
-    public function isLoggedIn(): bool
-    {
-        return isset(self::$account);
-    }
-
     /**
      * @param string|null $authToken
      * @param string|null $authTokenType
@@ -126,7 +121,6 @@ class AuthService
     public function checkLogin(?string $authToken = null, ?string $authTokenType = null): bool
     {
         $tokenTypeJwt = Config::getEnv('AUTH_JWT_HASH_TOKEN_TYPE_JWT');
-        $tokenTypeBasic = Config::getEnv('AUTH_JWT_HASH_TOKEN_TYPE_BASIC');
         return match ($authTokenType) {
             $tokenTypeJwt => $this->validateJwt($authToken),
             default => $this->checkRedisAuthLogin()
@@ -146,7 +140,7 @@ class AuthService
         try {
             $decoded = JWT::decode(
                 $jwt,
-                new Key(Config::getEnv('AUTH_JWT_HASH_KEY'), Config::getEnv('AUTH_JWT_HASH_METHOD'))
+                new Key(JWTPayload::getHashKey(), JWTPayload::getHashMethod())
             );
 
             if ($decoded->user_id) {
@@ -155,7 +149,7 @@ class AuthService
                 DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
                 self::setAccount($account);
             }
-        } catch (Exception $e) {
+        } catch (Exception) {
             return false;
         }
         return true;

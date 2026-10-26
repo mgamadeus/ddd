@@ -456,6 +456,7 @@ Without the gate, a caller asking for "lite Entity without `setting`" pays an N-
 - `#[HideProperty]` -- Exclude from serialization
 - `#[HidePropertyOnSystemSerialization]` -- Exclude from DB persistence
 - `#[NoRecursiveUpdate]` -- Prevent cascade updates from parent
+- `#[PreserveOnOmission]` -- An update payload that omits the property keeps its stored value (no PHP default on the generated model)
 - `#[RolesRequiredForUpdate]` -- Role-based write authorization
 - `#[SubclassIndicator]` -- Single Table Inheritance (discriminator pattern)
 - `#[DatabaseTrigger]` -- SQL trigger integration
@@ -497,6 +498,8 @@ Without the gate, a caller asking for "lite Entity without `setting`" pays an N-
 | Module compiler pass | `src/Symfony/CompilerPasses/ModuleCompilerPass.php` |
 | DDDBundle | `src/DDDBundle.php` |
 | DDDKernel | `src/Symfony/Kernels/DDDKernel.php` |
+| Unit tests | `tests/` (`vendor/bin/phpunit`) |
+| Integration tests (real MariaDB) | `tests/Integration/` — `docker compose -f tests/Integration/docker-compose.yml up -d --wait`, then `DDD_TEST_DRIVER=pdo_mysql vendor/bin/phpunit -c phpunit.integration.xml`; fixture models via `php tests/Integration/generate-fixture-models.php` |
 
 ---
 
@@ -743,7 +746,7 @@ When a patch arrives from a consuming application (Tavlo, Radbonus, ...) tagged 
 7. **Pass entity objects, not IDs** -- domain logic operates on rich objects
 8. **Entities own domain logic** -- services own only repo-dependent logic for their own entity type
 9. **Never cache services in properties** -- always resolve inline from the container
-10. **Never manually edit `DB*Model.php`** -- they are auto-generated from entity attributes
+10. **Never manually edit `DB*Model.php`** -- they are auto-generated from entity attributes; a deviation the model needs is declared on the entity (`#[PreserveOnOmission]`, `#[NotNull]`, `#[DatabaseColumn]`)
 11. **Vet incoming patches against framework standards** -- see [Ingest Discipline](#ingest-discipline-patches-from-consumer-apps); do not faithfully reproduce non-conforming external work
 
 ---

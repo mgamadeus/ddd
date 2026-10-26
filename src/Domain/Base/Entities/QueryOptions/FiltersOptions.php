@@ -40,8 +40,6 @@ class FiltersOptions extends ObjectSet
 
     public const string JOIN_OPERATOR_OR = 'or';
 
-    public const array JOIN_OPERATORS = [self::JOIN_OPERATOR_AND, self::JOIN_OPERATOR_OR];
-
     /** @var string Equal */
     public const string OPERATOR_EQUAL = 'eq';
 
@@ -115,12 +113,11 @@ class FiltersOptions extends ObjectSet
     public const array FULLTEXT_OPERATORS = [self::OPERATOR_FULLTEXT, self::OPERATOR_FULLTEXT_BOOLEAN];
 
     /**
-     * @var string Container parameter (default OFF): when true, a fulltext operator on a property whose definition
-     * does not declare {@see FiltersDefinition::$supportsFulltext} is refused during validation with a
-     * BadRequestException instead of reaching the database, which answers error 1191 ("Can't find FULLTEXT index
-     * matching the column list"). OFF by default on purpose: this framework does not manage the schema, so an
-     * index created by hand without a #[DatabaseIndex] declaration would make the check refuse a filter that
-     * actually works. Turn it on in an app whose indexes are fully declared.
+     * @var string Container parameter (default ON): a fulltext operator on a property whose definition does not
+     * declare {@see FiltersDefinition::$supportsFulltext} is refused during validation with a BadRequestException
+     * (HTTP 400) instead of reaching the database, which answers error 1191 ("Can't find FULLTEXT index matching the
+     * column list", HTTP 500). The support is read from the entity attributes: an app that created a FULLTEXT index
+     * by hand without declaring it sets this parameter to false — or, better, declares the index.
      */
     public const string FULLTEXT_STRICT_PARAMETER = 'ddd.queryoptions.strict_fulltext_operators';
 
@@ -169,6 +166,12 @@ class FiltersOptions extends ObjectSet
 
     /** @var FiltersDefinition The definition the filter is based on */
     protected ?FiltersDefinition $filtersDefinition = null;
+
+    /**
+     * @var bool Whether {@see self::validateAgainstDefinitions()} checked the value against the definition's column
+     * kind; only then is it bound typed (an unvalidated filter, e.g. set with setFilters(…, false), binds as before)
+     */
+    protected bool $valueValidatedAgainstColumnKind = false;
 
     /** @var ExpandOption The expandOption the filter refers to in case of expanded properties */
     protected ?ExpandOption $expandOption = null;
@@ -322,7 +325,7 @@ MD;
 
     /**
      * Recursively sets definitions to FilterOptions so earch FilterOption has access to it's corresponding definition
-     * @param FiltersDefinition $filtersDefinition
+     * @param FiltersDefinition $filtersDefinitions
      */
     public function setFiltersDefinitionsForAllFilterOptions(FiltersDefinitions $filtersDefinitions): void
     {
@@ -584,7 +587,6 @@ MD;
         if (!($filterDefinition = $filtersDefinitions->getFilterDefinitionForPropertyName($this->property))) {
             // First check if we have a nested filter, e.g. account.email eq ...
             $filterPropertyExploded = explode('.', $this->property);
-            $valid = false;
             if (count($filterPropertyExploded) > 1) {
                 $firstPropertyComponent = $filterPropertyExploded[0];
                 if ($expandOptions && $expandOption = $expandOptions->getExpandOptionByPropertyName($firstPropertyComponent)) {
@@ -595,8 +597,15 @@ MD;
                             $remainingFilterPropertyExploded = array_slice($filterPropertyExploded, 1);
                             $remainingFiltersOptions->property = implode('.', $remainingFilterPropertyExploded);
                             $remainingFiltersOptions->value = $this->value;
+                            // the operator decides the checks (fulltext, value kind) — without it the typed property
+                            // was read uninitialized and every expanded filter ended in an Error (HTTP 500)
+                            $remainingFiltersOptions->operator = $this->operator;
                             $subExpandOptions = $expandOption->expandOptions ?? null;
                             $valid = $remainingFiltersOptions->validateAgainstDefinitions($filtersDefinitionsForTargetProperty, $subExpandOptions);
+                            if ($valid && isset($remainingFiltersOptions->filtersDefinition)) {
+                                $this->filtersDefinition = $remainingFiltersOptions->filtersDefinition;
+                                $this->valueValidatedAgainstColumnKind = $remainingFiltersOptions->valueValidatedAgainstColumnKind;
+                            }
                             if (count($remainingFilterPropertyExploded) == 1) {
                                 // we are on the second deepest lavel of a account.world.id => currrent level = world and remaining is id
                                 // the recurive call $remainingFiltersOptions->validateAgainstDefinitions will execute in the root level of this function
@@ -638,6 +647,7 @@ MD;
                 . ' documented as fulltext-searchable.'
             );
         }
+        $this->validateValueAgainstColumnKind($filterDefinition);
         if ($expandDefinition = $filterDefinition->getExpandDefinition()) {
             $expandOption = $expandOptions->getExpandOptionByPropertyName($expandDefinition->propertyName);
             if ($expandDefinition && !$expandOption) {
@@ -659,7 +669,7 @@ MD;
                 ) . ']'
             );
         } elseif ($filterDefinition->options && is_array($this->value)) {
-            $arrayDiff = $diff = array_diff($this->value, $filterDefinition->options);
+            $arrayDiff = array_diff($this->value, $filterDefinition->options);
             if (!empty($arrayDiff)) {
                 throw new BadRequestException(
                     "The following Filters applied to property name '$this->property' are not allowed: [" . implode(
@@ -673,6 +683,179 @@ MD;
             }
         }
         return true;
+    }
+
+    /**
+     * Checks the value against the column kind of the definition ({@see FiltersDefinition::$columnKind}), by content
+     * — a quoted literal is the normal form, so `id eq '12'` is an int. Throws a 400 for a filter the database cannot
+     * answer (a comparison on a JSON column never matches its JSON text) or a value that does not fit the column
+     * (`id eq 'abc'` used to be cast or to fail as a 500). Untouched: definitions without a kind, the fulltext operators
+     * (their value is search text), `eq` / `ne` with null or 'null' in any case (IS [NULL]), and a value containing `*`
+     * on a scalar kind or with eq / ne on a plain Translatable — it keeps its LIKE.
+     *
+     * @param FiltersDefinition $filterDefinition The definition this filter resolved to
+     * @return void
+     * @throws BadRequestException
+     */
+    protected function validateValueAgainstColumnKind(FiltersDefinition $filterDefinition): void
+    {
+        $columnKind = $filterDefinition->columnKind;
+        if ($columnKind === null || in_array($this->operator, self::FULLTEXT_OPERATORS, true)) {
+            return;
+        }
+        $value = $this->value ?? null;
+        $isNullComparison = in_array($this->operator, [self::OPERATOR_EQUAL, self::OPERATOR_NOT_EQUAL], true)
+            && ($value === null || (is_string($value) && strtoupper($value) === 'NULL'));
+        if ($isNullComparison) {
+            return;
+        }
+        $valueUsesWildcard = is_string($value) && str_contains($value, '*');
+        if ($columnKind === FiltersDefinition::COLUMN_KIND_JSON) {
+            throw new BadRequestException(
+                "The operator '$this->operator' is not available for property name '$this->property': it is a JSON column,"
+                . " whose stored JSON text no comparison matches."
+            );
+        }
+        if ($columnKind === FiltersDefinition::COLUMN_KIND_TRANSLATABLE) {
+            if ($valueUsesWildcard && in_array($this->operator, [self::OPERATOR_EQUAL, self::OPERATOR_NOT_EQUAL], true)) {
+                return;
+            }
+            throw new BadRequestException(
+                "The operator '$this->operator' is not available for property name '$this->property': it holds the"
+                . " translations of all languages as JSON. Use a wildcard (eq '*term*') or a fulltext operator on a"
+                . " property declared with #[Translatable(fullTextIndex: true)]."
+            );
+        }
+        if ($valueUsesWildcard) {
+            return;
+        }
+        if ($columnKind === FiltersDefinition::COLUMN_KIND_TRANSLATABLE_SEARCHABLE) {
+            $columnKind = FiltersDefinition::COLUMN_KIND_STRING;
+        }
+        foreach (is_array($value) ? $value : [$value] as $valueElement) {
+            if (!self::isFilterValueValidForColumnKind($valueElement, $columnKind)) {
+                $printedValue = is_scalar($valueElement) ? (string)$valueElement : json_encode($valueElement);
+                throw new BadRequestException(
+                    "Filter value '$printedValue' for property name '$this->property' is not a valid $columnKind."
+                );
+            }
+        }
+        $this->valueValidatedAgainstColumnKind = true;
+    }
+
+    /**
+     * Whether one filter value fits a scalar column kind. A non-string is judged by its string form: the parser
+     * returns an unquoted numeral as a float (7 → 7.0 → "7").
+     *
+     * @param mixed $value One filter value (an element of an in / ni / bw list, or the scalar value)
+     * @param string $columnKind A scalar FiltersDefinition::COLUMN_KIND_*
+     * @return bool
+     */
+    public static function isFilterValueValidForColumnKind(mixed $value, string $columnKind): bool
+    {
+        if ($value === null) {
+            return true;
+        }
+        $stringValue = self::getFilterValueAsString($value);
+        if ($stringValue === null) {
+            return false;
+        }
+        return match ($columnKind) {
+            // a decimal literal is accepted on an int column and compared numerically (bound untyped)
+            FiltersDefinition::COLUMN_KIND_INT => (bool)preg_match('/^-?\d+(\.\d+)?$/', $stringValue),
+            FiltersDefinition::COLUMN_KIND_FLOAT => (bool)preg_match('/^-?\d+(\.\d+)?$/', $stringValue),
+            FiltersDefinition::COLUMN_KIND_BOOL => (bool)preg_match('/^(1|0|true|false)$/i', $stringValue),
+            FiltersDefinition::COLUMN_KIND_DATETIME => self::isFilterDateTimeLiteral($stringValue),
+            default => true,
+        };
+    }
+
+    /**
+     * The string form of a filter value: a whole float without its fraction, a bool as 1 / 0.
+     *
+     * @param mixed $value
+     * @return string|null Null for a value with no string form (an array, an object)
+     */
+    protected static function getFilterValueAsString(mixed $value): ?string
+    {
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+        if (is_float($value) && floor($value) === $value && abs($value) < PHP_INT_MAX) {
+            return (string)(int)$value;
+        }
+        return is_scalar($value) ? (string)$value : null;
+    }
+
+    /**
+     * A date-time filter literal: one of {@see DateTime::MODEL_INPUT_FORMATS} (offset or Z accepted) or a plain Y-m-d,
+     * which clients send on DateTime columns too. A date the formats parse but the calendar lacks (2026-13-45) fails.
+     *
+     * @param string $value
+     * @return bool
+     */
+    protected static function isFilterDateTimeLiteral(string $value): bool
+    {
+        foreach ([...DateTime::MODEL_INPUT_FORMATS, 'Y-m-d'] as $dateTimeFormat) {
+            $parsedDateTime = \DateTime::createFromFormat('!' . $dateTimeFormat, $value);
+            $parseErrors = \DateTime::getLastErrors();
+            if ($parsedDateTime !== false
+                && ($parseErrors === false || ($parseErrors['warning_count'] === 0 && $parseErrors['error_count'] === 0))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The value bound for a comparison: typed when it was validated against an int / float / bool column, else as it
+     * came (a decimal on an int column stays a string, MariaDB compares it numerically).
+     *
+     * @param mixed $value The value after wildcard handling
+     * @return mixed
+     */
+    protected function getTypedFilterValueForBinding(mixed $value): mixed
+    {
+        if (!$this->valueValidatedAgainstColumnKind || !isset($this->filtersDefinition)) {
+            return $value;
+        }
+        $columnKind = $this->filtersDefinition->columnKind;
+        $typeValue = static function (mixed $valueElement) use ($columnKind): mixed {
+            $stringValue = self::getFilterValueAsString($valueElement);
+            if ($valueElement === null || $stringValue === null) {
+                return $valueElement;
+            }
+            return match ($columnKind) {
+                FiltersDefinition::COLUMN_KIND_INT => preg_match('/^-?\d+$/', $stringValue) ? (int)$stringValue : $valueElement,
+                FiltersDefinition::COLUMN_KIND_FLOAT => (float)$stringValue,
+                FiltersDefinition::COLUMN_KIND_BOOL => in_array(strtolower($stringValue), ['1', 'true'], true),
+                default => $valueElement,
+            };
+        };
+        return is_array($value) ? array_map($typeValue, $value) : $typeValue($value);
+    }
+
+    /**
+     * The virtual search column of a #[Translatable(fullTextIndex: true)] property (e.g. name → virtualNameSearch),
+     * where comparisons, wildcards and orderBy on such a property run; null for any other property.
+     *
+     * @param string $entityClass The entity the property belongs to
+     * @param string $propertyName The property
+     * @return string|null
+     * @throws ReflectionException
+     */
+    public static function getTranslatableSearchColumnName(string $entityClass, string $propertyName): ?string
+    {
+        if (!class_exists($entityClass)) {
+            return null;
+        }
+        $entityReflectionClass = ReflectionClass::instance($entityClass);
+        if (!$entityReflectionClass->hasProperty($propertyName)) {
+            return null;
+        }
+        /** @var Translatable|null $translatableAttribute */
+        $translatableAttribute = $entityReflectionClass->getProperty($propertyName)->getAttributeInstance(Translatable::class);
+        return $translatableAttribute?->fullTextIndex ? Translatable::getFullTextSearchVirtualColumnName($propertyName) : null;
     }
 
     /**
@@ -765,9 +948,23 @@ MD;
     }
 
     /**
-     * Writes one literal the way {@see FiltersOptionsParser} reads it back: an array as JSON (the parser turns single
-     * into double quotes and json_decodes), a string in single quotes with only its unescaped quotes escaped — the
-     * parser hands a string literal through verbatim, so doubling existing backslashes would change the value.
+     * One filter expression built from its parts, the value written as a literal the parser reads back exactly — so
+     * code never concatenates a value into a filter string itself (`name fb 'Villeneuve-d'Ascq'` would not parse).
+     *
+     * @param string $property The property path, e.g. 'name' or 'country.id'
+     * @param string $operator One of the OPERATOR_* constants, e.g. self::OPERATOR_FULLTEXT_BOOLEAN
+     * @param mixed $value A scalar, null or a list for in / ni / bw
+     * @return FiltersOptions
+     * @throws BadRequestException
+     */
+    public static function createExpression(string $property, string $operator, mixed $value): FiltersOptions
+    {
+        return self::fromString($property . ' ' . $operator . ' ' . self::toCanonicalLiteral($value));
+    }
+
+    /**
+     * Writes one literal the way {@see FiltersOptionsParser} reads it back: an array as JSON, a string in single quotes
+     * with its backslashes and quotes escaped (\\ and \') — the two escapes the parser resolves.
      */
     protected static function toCanonicalLiteral(mixed $value): string
     {
@@ -783,7 +980,7 @@ MD;
         if (is_array($value)) {
             return json_encode(array_values($value), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         }
-        return "'" . preg_replace('/(?<!\\\\)\'/', "\\\\'", (string)$value) . "'";
+        return "'" . str_replace(['\\', "'"], ['\\\\', "\\'"], (string)$value) . "'";
     }
 
     /**
@@ -796,11 +993,11 @@ MD;
         try {
             $container = DDDBundle::getContainer();
             if (!$container->hasParameter(self::FULLTEXT_STRICT_PARAMETER)) {
-                return false;
+                return true;
             }
             return (bool)$container->getParameter(self::FULLTEXT_STRICT_PARAMETER);
         } catch (Throwable) {
-            return false;
+            return true;
         }
     }
 
@@ -831,9 +1028,7 @@ MD;
      * @param DoctrineQueryBuilder $queryBuilder The QueryBuilder containing the joins.
      * @param string $joinString The join path (e.g. "push.world").
      * @param string $joinAlias The alias of the join (e.g. "world").
-     * @param string $baseModelClass Fully qualified model class for filter logic.
      * @param callable|null $mappingFunction Optional callback to transform property/value.
-     * @param string|null $baseModelAlias Alias of the root entity under which the join lives.
      *
      * @throws ReflectionException
      */
@@ -919,7 +1114,7 @@ MD;
      */
     protected function getFiltersExpressionForDoctrineQueryBuilder(
         DoctrineQueryBuilder &$queryBuilder,
-        callable $mappingFunction = null,
+        ?callable $mappingFunction = null,
     ): Expr\Orx|Expr\Andx|Expr\Comparison|Expr\Func|string|null {
         if ($this->type == self::TYPE_OPERATION) {
             $operator = $this->joinOperator == self::JOIN_OPERATOR_AND ? 'andX' : 'orX';
@@ -1045,7 +1240,12 @@ MD;
             }
 
             $baseModelAliasApplied = $baseModelAlias ? $baseModelAlias . '.' : '';
-            if (is_string($this->value) && (strtoupper($this->value) == 'NULL' || $value === null)) {
+            // `eq 'NULL'` / `ne 'NULL'` — and the bare `eq null` / `ne null` the parser also accepts — compare with
+            // IS [NOT] NULL. The bare form used to be bound as a parameter, i.e. `col = NULL`, which matches no row.
+            $comparesWithBareNull = $this->value === null
+                && in_array($this->operator, [self::OPERATOR_EQUAL, self::OPERATOR_NOT_EQUAL], true);
+            if ($comparesWithBareNull
+                || (is_string($this->value) && (strtoupper($this->value) == 'NULL' || $value === null))) {
                 if ($this->operator == self::OPERATOR_EQUAL) {
                     $operator = 'isNull';
                 } elseif ($this->operator == self::OPERATOR_NOT_EQUAL) {
@@ -1053,6 +1253,17 @@ MD;
                 }
                 return $queryBuilder->expr()->$operator("$baseModelAliasApplied$propertyName");
             }
+
+            // a #[Translatable(fullTextIndex: true)] property compares on its virtual search column (the folded text of
+            // all languages) — never on the JSON source column; null comparisons above stay on the source
+            $searchModelClass = ($this->expandOption && $this->expandOption->joinAlias)
+                ? $this->expandOption->getTargetPropertyModelClass()
+                : $this->getBaseModelClass();
+            if ($searchModelClass && ($searchColumnName = self::getTranslatableSearchColumnName($searchModelClass::ENTITY_CLASS, $propertyName))
+                && $searchModelClass::isValidDatabaseExpression($searchModelClass::MODEL_ALIAS . ".$searchColumnName")) {
+                $propertyName = $searchColumnName;
+            }
+            $value = $this->getTypedFilterValueForBinding($value);
 
             $parameterCount = $queryBuilder->getParameters()->count() + 1;
             $operatorParams = ["$baseModelAliasApplied$propertyName", '?' . $parameterCount];
@@ -1130,7 +1341,7 @@ MD;
 
     public function applyFiltersToDoctrineQueryBuilder(
         DoctrineQueryBuilder &$queryBuilder,
-        callable $mappingFunction = null,
+        ?callable $mappingFunction = null,
     ): DoctrineQueryBuilder {
         /** @var DoctrineModel $baseModelClass */
         $expression = $this->getFiltersExpressionForDoctrineQueryBuilder(

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace DDD\Symfony\Commands\Base\Database;
 
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\DriverException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\Table;
@@ -25,10 +27,14 @@ class RunReadOnlyQuery extends Command
     public const array ALLOWED_LEADING_KEYWORDS = ['SELECT', 'WITH', 'SHOW', 'EXPLAIN', 'DESCRIBE', 'DESC'];
 
     /**
-     * @var string[] Keywords that turn a SELECT into a file write on MySQL/MariaDB. They are the reason the leading
-     * keyword alone is not a sufficient guard.
+     * @var string[] Keyword sequences refused before the statement reaches the database: the file writes, and the
+     * shared-lock clauses a READ ONLY transaction still allows (MariaDB accepts LOCK IN SHARE MODE there; FOR SHARE is
+     * the MySQL 8 spelling). FOR UPDATE and writing stored functions are refused by the transaction itself.
      */
-    public const array REJECTED_KEYWORD_SEQUENCES = ['INTO OUTFILE', 'INTO DUMPFILE'];
+    public const array REJECTED_KEYWORD_SEQUENCES = ['INTO OUTFILE', 'INTO DUMPFILE', 'LOCK IN SHARE MODE', 'FOR SHARE'];
+
+    /** @var int MySQL/MariaDB error "Cannot execute statement in a READ ONLY transaction" */
+    public const int ERROR_CODE_READ_ONLY_TRANSACTION = 1792;
 
     /** @var string[] Statement keywords that carry their own row count and must not get a LIMIT appended */
     public const array KEYWORDS_WITHOUT_LIMIT = ['SHOW', 'EXPLAIN', 'DESCRIBE', 'DESC'];
@@ -83,9 +89,15 @@ class RunReadOnlyQuery extends Command
 
         try {
             $connection = EntityManagerFactory::getInstance($scope)->getConnection();
-            $rows = $connection->executeQuery($statementToExecute)->fetchAllAssociative();
+            $rows = $this->fetchRowsInReadOnlyTransaction($connection, $statementToExecute);
         } catch (Throwable $throwable) {
-            $output->writeln('<error>' . $throwable->getMessage() . '</error>');
+            $readOnlyRefusal = $throwable instanceof DriverException
+                && $throwable->getCode() === self::ERROR_CODE_READ_ONLY_TRANSACTION;
+            $output->writeln(
+                '<error>' . ($readOnlyRefusal
+                    ? 'The statement writes or takes locks and is refused in the read-only transaction: '
+                    : '') . $throwable->getMessage() . '</error>'
+            );
             return Command::FAILURE;
         }
 
@@ -105,12 +117,39 @@ class RunReadOnlyQuery extends Command
     }
 
     /**
+     * Runs the statement inside `START TRANSACTION READ ONLY` and rolls back afterwards, so a SELECT that calls a
+     * writing stored function or locks rows (FOR UPDATE) is refused by the database instead of committing in
+     * autocommit. Start, statement and rollback are raw statements on this one connection: a single
+     * START TRANSACTION goes to the writer through ProxySQL and pins the following statements there, where a separate
+     * "next transaction is read only" flag could be multiplexed onto another client's backend connection.
+     *
+     * @param Connection $connection The connection of the chosen scope
+     * @param string $statement The checked statement, LIMIT appended
+     * @return array<int, array<string, mixed>> The rows
+     * @throws Throwable
+     */
+    protected function fetchRowsInReadOnlyTransaction(Connection $connection, string $statement): array
+    {
+        $connection->executeStatement('START TRANSACTION READ ONLY');
+        try {
+            return $connection->executeQuery($statement)->fetchAllAssociative();
+        } finally {
+            try {
+                $connection->executeStatement('ROLLBACK');
+            } catch (Throwable) {
+                // the session is unusable (e.g. connection lost) — dropping it ends the transaction on the server
+                $connection->close();
+            }
+        }
+    }
+
+    /**
      * Names why the statement is not accepted, or null when it may run.
      *
-     * This is a keyword guard, not a security boundary: it stops the obvious write and the SELECT ... INTO OUTFILE
-     * file write, but a connection whose database user holds write rights can still be abused through a statement
-     * this method does not anticipate. The boundary belongs on the database user - point this command at a user
-     * that only holds SELECT rights.
+     * The first gate only: it stops the obvious write, the SELECT ... INTO OUTFILE file write and the shared-lock
+     * clauses. Everything that passes runs in a READ ONLY transaction ({@see self::fetchRowsInReadOnlyTransaction()}),
+     * which refuses writes and FOR UPDATE on the database side. A user that only holds SELECT rights is still the
+     * strongest boundary.
      */
     protected function getRejectionReason(string $statement): ?string
     {

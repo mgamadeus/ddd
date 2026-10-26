@@ -4,9 +4,7 @@ declare(strict_types=1);
 // src/Security/AccessDeniedHandler.php
 namespace DDD\Symfony\Commands\Base\DoctrineModels;
 
-use DDD\Domain\Common\Entities\Accounts\Account;
 use DDD\Domain\Common\Services\EntityModelGeneratorService;
-use DDD\Infrastructure\Services\DDDService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -26,8 +24,6 @@ class CreateDoctrineModels extends Command
             'Doctrine Model Generator (generates Doctrine Models based on Entities)',
             '============',
         ]);
-        //echo AppService::instance()->getContainerServiceClassNameForClass(\DDD\Symfony\Commands\Common\Crons\CronsExecute::class);
-        //die();
         $entityModelGeneratorService = new EntityModelGeneratorService();
         $classes = $entityModelGeneratorService->getAllEntityClasses();
         foreach ($classes as $classWithNamespace){

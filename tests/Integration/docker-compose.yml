@@ -1,0 +1,18 @@
+# Throwaway MariaDB for the integration suite (phpunit.integration.xml). tmpfs data dir: nothing survives a restart,
+# and no production data is ever loaded. Port via DDD_TEST_DB_PORT (default 3317).
+services:
+  mariadb:
+    image: mariadb:11.8.5
+    environment:
+      MARIADB_ROOT_PASSWORD: ddd-test
+      MARIADB_DATABASE: ddd_test
+    command: ["--sql-mode=ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"]
+    ports:
+      - "127.0.0.1:${DDD_TEST_DB_PORT:-3317}:3306"
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 5s
+      retries: 30

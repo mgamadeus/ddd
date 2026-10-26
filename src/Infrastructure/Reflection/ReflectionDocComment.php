@@ -415,15 +415,6 @@ class ReflectionDocComment
     }
 
     /**
-     * Returns the first example block (backwards compatible).
-     * Prefer using getExamples() for multiple @example tags.
-     */
-    public function getExample(): string
-    {
-        return $this->getExamples()[0] ?? '';
-    }
-
-    /**
      * Returns all @example blocks as an array (supports multiple tags and multi-line examples).
      *
      * Examples are extracted as raw text (docblock markers and leading "*" removed).
@@ -504,7 +495,7 @@ class ReflectionDocComment
      * (at)property Cat|Dog[] $propertyName => will be interpreted as array of either cat or dog
      * @return string[]|null
      */
-    public function getPropertyTypes(string $propertyName = null): ?array
+    public function getPropertyTypes(?string $propertyName = null): ?array
     {
         if (!$this->docComment) {
             return null;

@@ -30,7 +30,7 @@ class CronCommandConstraintValidator extends ConstraintValidator
         $application = DDDService::instance()->createConsoleApplicationForCurrentKernel();
         try {
             $command = $application->find($commandName);
-        } catch (CommandNotFoundException $t) {
+        } catch (CommandNotFoundException) {
             $command = null;
         }
         if (null === $command) {

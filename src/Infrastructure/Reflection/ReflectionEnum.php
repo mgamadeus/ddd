@@ -4,11 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Reflection;
 
-use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
-use DDD\Infrastructure\Libs\Config;
-use ReflectionClassConstant;
 use ReflectionException;
-use RuntimeException;
 
 class ReflectionEnum extends \ReflectionEnum
 {
@@ -21,7 +17,7 @@ class ReflectionEnum extends \ReflectionEnum
     /**
      * returns an instance of reflection class
      * instances are statically cached per className
-     * @param string $className
+     * @param string $enumClassName
      * @return mixed|ReflectionClass
      * @throws ReflectionException
      */
@@ -36,7 +32,7 @@ class ReflectionEnum extends \ReflectionEnum
             $reflection = new ReflectionEnum($enumClassName);
             self::$relectionEnumCache[$enumClassName] = $reflection;
             return $reflection;
-        } catch (ReflectionException $e) {
+        } catch (ReflectionException) {
             self::$relectionEnumCache[$enumClassName] = self::NO_REFLECTION;
             return null;
         }

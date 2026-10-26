@@ -1,7 +1,6 @@
 <?php
 namespace DDD\Symfony\CompilerPasses;
 
-use DDD\Domain\Base\Entities\StaticRegistry;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 

@@ -25,7 +25,7 @@ class CacheScopeInvalidations extends EntitySet
 
     /**
      * Returns CacheScopeInvalidation by parameters
-     * @param string $cacheScope
+     * @param array $cacheScopes
      * @param int|null $accountId
      * @param int|null $projectId
      * @param int|null $locationId

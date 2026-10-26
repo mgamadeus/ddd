@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Repo\DB\Doctrine;
 
 use DDD\Infrastructure\Reflection\ReflectionClass;
-use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\ORM\Mapping as ORM;
 use Doctrine\ORM\PersistentCollection;
@@ -60,7 +59,6 @@ abstract class DoctrineModel
      * Verifies if an expression like site_competiors.source is valid for model, if not, returns false, else true
      * This is usefull e.g. in order to assure that filters that are not DB related are not applied to DB queries
      * @param string $expression
-     * @param string $baseModelClass
      * @return bool
      * @throws ReflectionException
      */
@@ -86,24 +84,8 @@ abstract class DoctrineModel
     }
 
     /**
-     * Returns the class name of DoctrineModel of the target property name
-     * @param string $propertyName
-     * @return string|null
-     * @throws ReflectionException
-     */
-    public static function getTargetModelClassForPropertyName(string $propertyName): ?string
-    {
-        $reflectionClass = ReflectionClass::instance(static::class);
-        $reflectionProperty = $reflectionClass->getProperty($propertyName);
-        if (!$reflectionProperty) {
-            return null;
-        }
-        return static::getTargetModelClassForProperty($reflectionProperty);
-    }
-
-    /**
      * Returns the class name of DoctrineModel of the target property
-     * @param string $propertyName
+     * @param ReflectionProperty $reflectionProperty
      * @return string|null
      * @throws ReflectionException
      */
@@ -118,33 +100,6 @@ abstract class DoctrineModel
             return $oneToManyAttribueInstance->targetEntity;
         }
         return null;
-    }
-
-    /**
-     * This Function takes all the properties in a repository and maps them to the Model Object
-     * @param $entity
-     * @return $this
-     */
-    public function setPropertiesFromOtherModel($entity): DoctrineModel
-    {
-        $reflection = ReflectionClass::instance($entity::class);
-
-        foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
-            $property->setAccessible(true);
-            $propertyName = $property->getName();
-            $propertyValue = $property->isInitialized($entity) ? $property->getValue($entity) : null;
-
-            if (array_key_exists($propertyName, $this->getClassVars()) && !is_null($propertyValue)) {
-                $this->$propertyName = $propertyValue;
-            }
-        }
-
-        return $this;
-    }
-
-    public function getClassVars(): array
-    {
-        return get_class_vars($this::class);
     }
 
     /**

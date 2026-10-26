@@ -10,7 +10,6 @@ use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Repo\DB\Attributes\EntityCache;
-use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Infrastructure\Cache\Cache;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
@@ -55,10 +54,7 @@ class VirtualEntityRegistry
     /**
      * Adds entity to registry by caller uniquekey, repoclass and method name
      * If extended registry cache is defined to be used, stores the entity as well in extended entity registry cache
-     * @param DefaultObject|null $entity
      * @param string $repoClass
-     * @param string|int|DoctrineQueryBuilder $idOrQuery
-     * @param bool $deferredCaching
      * @return void
      * @throws InvalidArgumentException
      */
@@ -68,7 +64,6 @@ class VirtualEntityRegistry
         string $repoClass,
         string $method
     ) {
-        $entityCacheAttribute = null;
         $cacheIndex = $caller->uniqueKey() . '_' . $repoClass . '_' . $method;
 
         /** @var EntityCache $entityCacheAttribute */
@@ -77,7 +72,6 @@ class VirtualEntityRegistry
 
         if ($entityCacheAttribute && $entityCacheAttribute->useExtendedRegistryCache && $entityCacheAttribute->ttl) {
             $cache = Cache::instance($entityCacheAttribute->cacheGroup);
-            //$cacheValue = $result?->toJSON(true);
             $cache->set(
                 self::getCacheKey($cacheIndex),
                 $result,
@@ -93,7 +87,6 @@ class VirtualEntityRegistry
      * If extended registry cache is defined to be used, tries to find it in the cache.
      * If no result is found, returns false
      * @param string $repoClass
-     * @param string|int|DoctrineQueryBuilder $idOrQuery
      * @return Entity|EntitySet|false|null
      * @throws InternalErrorException
      * @throws BadRequestException

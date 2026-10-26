@@ -72,7 +72,10 @@ and `APP_DEBUG=0` as real env: no file can ever boot prod in debug.
 10. **`npm config set ignore-scripts true`** on every dev machine and CI. Enable a package's install
    script deliberately with `npm rebuild <pkg>`.
 11. **DB usernames are secrets** (half of the credential pair): `op://` references, checker rule `^DB_.*_USER$`.
-12. **JWT_HASH_KEY == AUTH_JWT_HASH_KEY**, always rotated as a pair. `AUTH_PASSWORD_HASH_KEY` is a live
+12. **One JWT key pair: `JWT_HASH_KEY` / `JWT_HASH_METHOD`** signs and verifies every token. `AUTH_JWT_HASH_KEY` /
+    `AUTH_JWT_HASH_METHOD` are a deprecated fallback (read only while `JWT_HASH_*` is empty, a deprecation is logged)
+    and go in the next minor — delete them from `.env` and the vault item once the app runs ddd ≥ 2.70.11.
+    `AUTH_PASSWORD_HASH_KEY` is a live
     pepper when the app uses `hash_hmac` for passwords — check before rotating (`references/rotation-and-cleanup.md`).
 13. **Never print a secret value** — in scripts, in tool output, in handoffs. Print lengths, counts, "resolved/placeholder".
 14. **Rotation is additive first, destructive last**: new key → deploy → verify → delete old. Exceptions

@@ -12,6 +12,7 @@ use DDD\Domain\Base\Entities\QueryOptions\FiltersOptions;
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptionsTrait;
 use DDD\Domain\Base\Entities\Translatable\Translatable;
 use DDD\Domain\Base\Entities\Translatable\TranslatableTrait;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseIndex;
 use DDD\Domain\Common\Repo\DB\Crons\DBCronExecution;
 use DDD\Infrastructure\Exceptions\BadRequestException;
@@ -41,6 +42,18 @@ class FulltextProbeEntity extends Entity
 
     #[DatabaseIndex(indexType: DatabaseIndex::TYPE_INDEX)]
     public string $plainlyIndexed = '';
+
+    /** a TEXT column: the generator gives it a FULLTEXT index without any #[DatabaseIndex] */
+    #[DatabaseColumn(sqlType: DatabaseColumn::SQL_TYPE_TEXT)]
+    public ?string $longText = null;
+
+    #[DatabaseColumn(sqlType: DatabaseColumn::SQL_TYPE_LONGTEXT)]
+    public ?string $veryLongText = null;
+
+    /** a TEXT column whose default index is switched off */
+    #[DatabaseColumn(sqlType: DatabaseColumn::SQL_TYPE_TEXT)]
+    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
+    public ?string $unindexedText = null;
 }
 
 class FiltersFulltextOperatorTest extends TestCase
@@ -87,6 +100,18 @@ class FiltersFulltextOperatorTest extends TestCase
         $this->assertTrue($this->supportsFulltext(Translatable::getFullTextSearchVirtualColumnName('title')));
     }
 
+    public function testATextColumnCountsThroughTheGeneratorsDefaultFulltextIndex(): void
+    {
+        $this->assertTrue($this->supportsFulltext('longText'));
+        $this->assertTrue($this->supportsFulltext('veryLongText'));
+        $this->assertTrue(FiltersOptions::fromString("longText fb 'x*'")->validateAgainstDefinitions($this->definitions));
+    }
+
+    public function testATextColumnWhoseDefaultIndexIsSwitchedOffDoesNotCount(): void
+    {
+        $this->assertFalse($this->supportsFulltext('unindexedText'));
+    }
+
     public function testAPropertyWithoutAFulltextIndexIsNotAdvertised(): void
     {
         $this->assertFalse($this->supportsFulltext('plain'));
@@ -103,9 +128,20 @@ class FiltersFulltextOperatorTest extends TestCase
         $this->assertFalse($definitions->getFilterDefinitionForPropertyName('plainOne')->supportsFulltext);
     }
 
-    public function testValidationAcceptsAFulltextOperatorByDefaultEvenWithoutAnIndex(): void
+    public function testByDefaultAFulltextOperatorWithoutAnIndexIsRefused(): void
     {
-        // default OFF: the framework does not own the schema, so an undeclared index must not turn into a refusal
+        // the parameter is absent here: refusing is the default, the database would answer 1191 (a 500)
+        $filters = FiltersOptions::fromString("plain ft 'search me'");
+
+        $this->expectException(BadRequestException::class);
+        $this->expectExceptionMessageMatches('/no FULLTEXT index/');
+        $filters->validateAgainstDefinitions($this->definitions);
+    }
+
+    public function testTheParameterSetFalseAcceptsAFulltextOperatorWithoutADeclaredIndex(): void
+    {
+        // the opt-out for an app whose FULLTEXT index exists in the database without a declaration
+        dddTestContainer()->setParameter(FiltersOptions::FULLTEXT_STRICT_PARAMETER, false);
         $filters = FiltersOptions::fromString("plain ft 'search me'");
         $this->assertTrue($filters->validateAgainstDefinitions($this->definitions));
     }

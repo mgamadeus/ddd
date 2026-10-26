@@ -30,27 +30,4 @@ class Serializer
         return ($flags & $flag) === $flag;
     }
 
-    /**
-     * Add a flag to the flags value
-     */
-    public static function addFlag(int $flags, int $flag): int
-    {
-        return $flags | $flag;
-    }
-
-    /**
-     * Remove a flag from the flags value
-     */
-    public static function removeFlag(int $flags, int $flag): int
-    {
-        return $flags & ~$flag;
-    }
-
-    /**
-     * Toggle a flag in the flags value
-     */
-    public static function toggleFlag(int $flags, int $flag): int
-    {
-        return $flags ^ $flag;
-    }
 }

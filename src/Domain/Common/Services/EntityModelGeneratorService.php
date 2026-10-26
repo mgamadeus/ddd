@@ -50,7 +50,6 @@ class EntityModelGeneratorService
         $sql = $databaseModels->getSql();
         $entityManager = EntityManagerFactory::getInstance();
         $entityManager->getConnection()->executeStatement('SET FOREIGN_KEY_CHECKS=0;');
-        //$entityManager->getConnection()->executeStatement($sql);
         $entityManager->getConnection()->executeStatement('SET FOREIGN_KEY_CHECKS=1;');
         return $sql;
     }
@@ -96,8 +95,6 @@ class EntityModelGeneratorService
                 $allClasses = array_merge($allClasses, $classesFromModule);
             }
         }
-        //header('content-type:application/json');
-        //echo json_encode($allClasses);die();
         /** @var ClassWithNamespace[] $entityClasses */
         $entityClasses = [];
         foreach ($allClasses as $class) {
@@ -214,7 +211,7 @@ class EntityModelGeneratorService
         foreach ($entityClasses as $classWithNamespace) {
             $byShortName[$classWithNamespace->name][] = $classWithNamespace;
         }
-        foreach ($byShortName as $shortName => $group) {
+        foreach ($byShortName as $group) {
             if (count($group) < 2) {
                 continue;
             }
@@ -314,17 +311,6 @@ class EntityModelGeneratorService
     }
 
     /**
-     * Generates Doctrine model class files based on all entities found
-     * @return void
-     */
-    public function generateDoctrineModelsEntities(): void
-    {
-        foreach (self::getDatabaseModels()->getElements() as $databaseModel) {
-            $this->generateModelClassFile($databaseModel);
-        }
-    }
-
-    /**
      * Generates Doctrine model php class file based on DatabseModel
      * It uses config doctrine.models.baseDirectory as root directory
      * @param DatabaseModel $databaseModel
@@ -352,21 +338,6 @@ class EntityModelGeneratorService
 
             fwrite($fp, $modelCode);
             fclose($fp);
-        }
-    }
-
-    /**
-     * Generates Doctrine model class file based on Entity class name without namespace
-     * @param string $entityClassNameWithoutNamespace
-     * @return void
-     */
-    public function generateDoctrineModelForEntityClassWithoutNameSpace(string $entityClassNameWithoutNamespace): void
-    {
-        $classes = ClassFinder::getClassesInDirectory(APP_ROOT_DIR . '/src/Domain');
-        foreach ($classes as $classWithNamespace) {
-            if ($classWithNamespace->name == $entityClassNameWithoutNamespace) {
-                $this->generateDoctrineModelForEntityClass($classWithNamespace->getNameWithNamespace());
-            }
         }
     }
 

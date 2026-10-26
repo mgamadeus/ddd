@@ -40,7 +40,7 @@ class LoginTokenAuthenticator extends AbstractAuthenticator
         if ($this->security->getUser()){
             return false;
         }
-        if (!$loginToken = $request->query->get('loginToken')){
+        if (!$request->query->get('loginToken')){
             return false;
         }
         return true;
@@ -50,7 +50,6 @@ class LoginTokenAuthenticator extends AbstractAuthenticator
     {
         $loginToken = $request->query->get('loginToken');
 
-        $authorizationHeader = $request->headers->get('Authorization');
         $accountId = (string) $this->loginTokenService->getAccountIdFromToken($loginToken);
         if (!$accountId) {
             throw new UnauthorizedException('Token authentication failed');

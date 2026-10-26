@@ -30,7 +30,7 @@ class DBEncryptionScopePasswordModel extends DoctrineModel
 	#[ORM\Column(type: 'string')]
 	public ?string $encryptionScopePassword;
 
-	#[ORM\Column(type: 'string', nullable: true)]
+	#[ORM\Column(type: 'string')]
 	public ?string $holderName;
 
 	#[ORM\Id]

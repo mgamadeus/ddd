@@ -17,7 +17,6 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Exceptions\NotFoundException;
 use DDD\Infrastructure\Exceptions\UnauthorizedException;
 use DDD\Infrastructure\Libs\Encrypt;
-use DDD\Infrastructure\Services\Service;
 use Doctrine\ORM\Exception\ORMException;
 use Doctrine\ORM\NonUniqueResultException;
 use Doctrine\ORM\OptimisticLockException;

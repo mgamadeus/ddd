@@ -14,7 +14,7 @@ class Put extends Route
     use BaseAttributeTrait;
 
     public function __construct(
-        array|string $path = null,
+        array|string|null $path = null,
         ?string $name = null,
         array $requirements = [],
         array $options = [],
@@ -24,10 +24,10 @@ class Put extends Route
         array|string $schemes = [],
         ?string $condition = null,
         ?int $priority = null,
-        string $locale = null,
-        string $format = null,
-        bool $utf8 = null,
-        bool $stateless = null,
+        ?string $locale = null,
+        ?string $format = null,
+        ?bool $utf8 = null,
+        ?bool $stateless = null,
         ?string $env = null
     ) {
         $methods = [Request::METHOD_PUT];

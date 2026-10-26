@@ -95,7 +95,7 @@ class ExpandOptions extends ObjectSet
     /**
      * Validates all defined expand options if a LazyLoad definition exists for it in target class and throws Error if invalid field names are used.
      * returns true if validation finds no issues
-     * @param FiltersDefinitions $allowedFields
+     * @param string $referenceClassName
      * @return bool
      * @throws BadRequestException
      */
@@ -406,7 +406,6 @@ MD;
             }
             if (isset($expandOption->expandOptions)) {
                 // when property is a Collection, we need its Model class
-                //$targetModel = $baseModelClass::getTargetModelClassForProperty($expandReflectionProperty);
                 $expandOption->expandOptions->applyExpandOptionsToDoctrineQueryBuilder(
                     $queryBuilder
                 );
@@ -433,7 +432,6 @@ MD;
                 // an IN-subquery and attached to the expand's LEFT JOIN ON-clause —
                 // see applyConditionsFromReadRightsQueryBuilder().
                 $rightsQueryBuilder = $targetPropertyRepoClass::createQueryBuilder(true);
-                $null = null;
                 $readRightsFiltersApplied = $targetPropertyRepoClass::applyReadRightsQuery($rightsQueryBuilder);
                 $targetPropertyModelAlias = $targetPropertyRepoClass::getBaseModelAlias();
 

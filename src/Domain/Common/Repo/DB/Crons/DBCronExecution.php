@@ -28,7 +28,6 @@ class DBCronExecution extends DBEntity
      */
     public static function applyReadRightsQuery(DoctrineQueryBuilder &$queryBuilder): bool
     {
-        $class = static::class;
         $cronExecutionAlias = static::getBaseModelAlias();
 
         /* only if rights restrictions are active, we limit the access */

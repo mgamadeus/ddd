@@ -14,6 +14,7 @@ use ReflectionException;
 use Throwable;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\StampInterface;
 use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 
 class AppMessage extends ValueObject implements SerializerInterface
@@ -95,10 +96,14 @@ class AppMessage extends ValueObject implements SerializerInterface
 
     /**
      * Dispatches the Message and processes it on the MessageQueue
+     * @param StampInterface[] $stamps Optional Messenger stamps, e.g. new DelayStamp($milliseconds) to have the transport
+     *                                 hold the message before delivering it. Passing them here keeps the accountId /
+     *                                 workspace capture below in ONE place: a caller that needs a stamp must not
+     *                                 re-implement dispatch().
      * @return void
      * @throws InternalErrorException
      */
-    public function dispatch(): void
+    public function dispatch(array $stamps = []): void
     {
         if (!isset(static::$messageHandler)) {
             throw new InternalErrorException(static::class . ' has no MessageHandler defined');
@@ -108,8 +113,7 @@ class AppMessage extends ValueObject implements SerializerInterface
         $this->dispatchedFromWorkspaceDir = DDDService::instance()->getRootDir();
         $this->dispatchedFromEnvironment = DDDService::instance()->getWorkspaceName();
         $messageBus = DDDService::instance()->getService('messenger.default_bus');
-        //$messageBus->dispatch($this, [new AmqpStamp('sync')]);
-        $messageBus->dispatch($this);
+        $messageBus->dispatch($this, $stamps);
     }
 
     /**

@@ -2,7 +2,6 @@
 
 namespace DDD\Symfony\Kernels;
 
-use BadMethodCallException;
 use InvalidArgumentException;
 use LogicException;
 use ReflectionClass;
@@ -556,7 +555,7 @@ class Kernel extends BaseKernel
             'kernel.bundles_metadata' => $bundlesMetadata,
             'kernel.charset' => $this->getCharset(),
             'kernel.container_class' => $this->getContainerClass(),
-        ];
+        ] + (null !== ($shareDir = $this->getShareDir()) ? ['kernel.share_dir' => realpath($shareDir) ?: $shareDir] : []);
     }
 
     public function getCharset(): string
@@ -806,20 +805,6 @@ class Kernel extends BaseKernel
         trigger_deprecation('symfony/http-kernel', '7.1', 'The "%s()" method is deprecated since Symfony 7.1 and will be removed in 8.0.', __METHOD__);
 
         return [];
-    }
-
-    public function __sleep(): array
-    {
-        return ['environment', 'debug'];
-    }
-
-    public function __wakeup(): void
-    {
-        if (is_object($this->environment) || is_object($this->debug)) {
-            throw new BadMethodCallException('Cannot unserialize ' . __CLASS__);
-        }
-
-        $this->__construct($this->environment, $this->debug);
     }
 
     public function __construct(

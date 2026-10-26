@@ -126,7 +126,7 @@ MD;
     public function applySelectToDoctrineQueryBuilder(
         DoctrineQueryBuilder &$queryBuilder,
         string $baseModelClass = '',
-        callable $mappingFunction = null,
+        ?callable $mappingFunction = null,
         ?string $baseModelAlias = null,
         ?string $joinPath = null,
     ): DoctrineQueryBuilder {
@@ -197,7 +197,6 @@ MD;
             }
             // Virtual Columns are named in DB different that in Entity, and property name needs to be adjusted
             if (isset($baseModelClass::$virtualColumns[$propertyName])) {
-                $entityPropertyName = DatabaseVirtualColumn::getColumnNameForVirtualColumn($propertyName);
                 $fieldsToKeepInEntity[] = DatabaseVirtualColumn::getColumnNameForVirtualColumn($propertyName);
             }
             else {

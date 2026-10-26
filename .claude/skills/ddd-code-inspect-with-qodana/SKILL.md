@@ -101,6 +101,15 @@ PHPSTORM_DIST=$(find ~/Library/Caches/JetBrains/Qodana -name "PhpStorm.app" -max
 
 ### Step 2: Run the scan
 
+**Current CLI (2025.3+), native, inside the Claude sandbox:**
+```bash
+TMPDIR=<scratchpad dir> QODANA_DIST=<extracted dir>/PhpStorm.app/Contents qodana scan \
+  --linter qodana-php --within-docker=false \
+  --only-directory src --profile-path .idea/inspectionProfiles/Project_Default.xml \
+  --results-dir <scratchpad>/results --report-dir <scratchpad>/report
+```
+Note that a scan with `QODANA_TOKEN` set uploads its report to Qodana Cloud.
+
 **With project inspection profile (preferred):**
 ```bash
 QODANA_DIST="$PHPSTORM_DIST/Contents" qodana scan \
@@ -220,6 +229,7 @@ $traceReflector = new ReflectionProperty(Exception::class, 'trace');
 | 0 problems but IntelliJ finds many | Verify the profile is real, not a disabling stub — pass `--profile-path` with a genuine project profile, or use `qodana.yaml`. A near-empty scan usually means a stub `Project_Default.xml` |
 | Scan indexes the whole monorepo | Pass `-i`/`--project-dir <app-root>` so only the nested app is scanned |
 | MCP tools not available | Restart Claude Code after MCP setup |
+| `Error while opening IDE archive … .sit: no such file or directory` (CLI ≥ 2025.3, native) | Two causes seen together. (1) Under the Claude sandbox the CLI cannot extract into `$TMPDIR` (`/var/folders`) — run with `TMPDIR=<scratchpad dir>`. (2) The CLI's own ~1.1 GB download of `qodana-QDPHP-<build>-aarch64.sit` stops early and leaves a partial file. Fetch it with `curl -L` from the URL the `--log-level debug` output prints, verify it against the `.sha256` beside it, extract with `ditto -x -k <file>.sit <dir>`, and run with `QODANA_DIST=<dir>/PhpStorm.app/Contents` so the CLI downloads nothing |
 
 ## Cross-Reference
 

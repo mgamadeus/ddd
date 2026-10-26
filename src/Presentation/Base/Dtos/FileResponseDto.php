@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace DDD\Presentation\Base\Dtos;
 
-use DDD\Domain\Common\Entities\MediaItems\PDFDocument;
 use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
@@ -29,11 +28,6 @@ class FileResponseDto extends Response
         }
 
         parent::__construct($content, $status, $headers);
-    }
-
-    public function setContentType(string $mimeType): void
-    {
-        $this->headers->set('Content-Type', $mimeType);
     }
 
     /**

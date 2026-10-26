@@ -1,6 +1,6 @@
 ---
 name: ddd-entity-specialist
-description: Create and design DDD entities, entity sets, value objects, DB repositories, lazy loading, relationships, and entity attributes in the mgamadeus/ddd framework. Covers folder layout (first-class vs child entities, repo mirror), property naming, critical rules (never redeclare id, NotNull drives NOT NULL, @var T[] feeds the API schema, framework Date/DateTime only, protected not private), loading via getService()->find(), the isset lazy-load footgun, Translatable properties, the ChangeHistory audit trait, junction entities, indexes and virtual columns, single-table inheritance via SubclassIndicator, SQL triggers via DatabaseTrigger, ReuseParentEntitySet for app subclasses, displayOrder ordering, validation (Choice, UniqueProperty), and a method reference. Use when creating or modifying entities and their persistence, placing or naming entity files, adding translatable fields or auditing, defining indexes, virtual columns, or triggers, fixing a null getService(), or debugging a lazy relation that never loads.
+description: Create and design DDD entities, entity sets, value objects, DB repositories, lazy loading, relationships, and entity attributes in the mgamadeus/ddd framework. Covers folder layout (first-class vs child entities, repo mirror), property naming, critical rules (never redeclare id, NotNull drives NOT NULL, @var T[] feeds the API schema, framework Date/DateTime only, protected not private), loading via getService()->find(), the isset lazy-load footgun, Translatable properties, the ChangeHistory audit trait, junction entities, indexes and virtual columns, single-table inheritance via SubclassIndicator, SQL triggers via DatabaseTrigger, ReuseParentEntitySet for app subclasses, displayOrder ordering, PreserveOnOmission (a partial save keeps stored values; no default on the generated model), validation (Choice, UniqueProperty), and a method reference. Use when creating or modifying entities and their persistence, placing or naming entity files, adding translatable fields or auditing, defining indexes, virtual columns, or triggers, fixing a null getService(), debugging a lazy relation that never loads, or when a partial update overwrites a stored value with the property default.
 metadata:
   author: mgamadeus
   version: "1.0.0"
@@ -563,6 +563,7 @@ class DB{EntityName}s extends DBEntitySet
 | `#[ExposePropertyInsteadOfClass('propertyName')]` | Flatten: serialize property value directly instead of wrapping in object |
 | `#[Aliases('oldName', 'legacyName')]` | Backward-compatible aliases (copies value to old property names) |
 | `#[DontPersistProperty]` | Exclude from persistence serialization (visible in API, not saved to DB) |
+| `#[PreserveOnOmission]` | An update payload that omits the property leaves its stored column untouched (see below) |
 
 ### Security Attributes
 
@@ -575,6 +576,34 @@ class Location extends Entity {
     // $location->update() WILL cascade to Location's own children
 }
 ```
+
+### Partial saves keep stored values (`#[PreserveOnOmission]`)
+
+An entity written as a full upsert persists every *initialized* property, and an inline default (`= 0`, `= true`,
+`= 'DRAFT'`) initializes the property before hydration starts. A payload that omits the key therefore wrote the default
+over the stored value — a floor-plan save reset `displayOrder`, a zone edit re-opened a closed zone.
+
+```php
+use DDD\Domain\Base\Entities\Attributes\PreserveOnOmission;
+
+#[PreserveOnOmission]
+public int $displayOrder = 0;
+```
+
+| Payload of an entity that carries an id | Result |
+|---|---|
+| key absent | property left uninitialized → column not in the UPDATE → stored value kept |
+| key present as `null` | written as NULL (a deliberate clear) |
+| key present with a value | written |
+
+- A create (no id) is never pruned: the defaults are written as before.
+- The generator emits the model property **without** an inline default (`upsert()` skips only uninitialized model
+  fields); the column keeps its SQL `DEFAULT`, so INSERTs and the schema diff are unchanged.
+- Only hydration (`setPropertiesFromObject()`, i.e. request payloads) can tell "omitted" from "sent". Code that builds
+  an entity by hand (`new X(); $x->id = 7; …->update()`) still writes every initialized property — write strictly the
+  named columns with `updatePartialIgnoringRights(...$propertyNames)` there.
+- The older entity constant `public const array PRESERVED_ON_OMISSION = ['displayOrder', …]` is honoured the same way
+  but deprecated: move the names to the attribute.
 
 ### Single Table Inheritance (`#[SubclassIndicator]`)
 

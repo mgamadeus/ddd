@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Integration suite against a throwaway MariaDB:
+    docker compose (file tests/Integration/docker-compose.yml) up, wait for healthy
+    DDD_TEST_DRIVER=pdo_mysql vendor/bin/phpunit (config phpunit.integration.xml)
+  Without DDD_TEST_DRIVER=pdo_mysql every test is skipped.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/Integration/bootstrap.php"
+         colors="true"
+         cacheResultFile=".phpunit.cache/integration-test-results"
+         convertDeprecationsToExceptions="false">
+    <testsuites>
+        <testsuite name="integration">
+            <directory>tests/Integration</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>

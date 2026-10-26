@@ -32,7 +32,6 @@ trait ReflectorTrait
     /**
      * Returns the instance of the first found class attribute of the given name
      * @param string|null $name
-     * @param int $flags
      * @return mixed|object|null
      * @throws ReflectionException
      */
@@ -114,7 +113,7 @@ trait ReflectorTrait
         try {
             $property = $this->getReflectionClass()->getProperty($key);
             return $property;
-        } catch (ReflectionException $e) {
+        } catch (ReflectionException) {
             return null;
         }
     }
@@ -134,7 +133,7 @@ trait ReflectorTrait
             $propertyName = $property->getName();
             try {
                 $instanceProperty = $instanceReflectionClass->getProperty($propertyName);
-            } catch (ReflectionException $e) {
+            } catch (ReflectionException) {
                 continue;
             }
 
@@ -156,38 +155,4 @@ trait ReflectorTrait
         return $instance;
     }
 
-    /**
-     * Creates an instance of $className if it is a child class of current class and fills it with all
-     * values from current class. Also changes parent of children (of ParentChildrenTrait) to new instance
-     * @param string $className
-     * @return $this
-     * @throws ReflectionException
-     */
-    public function downcastToClassName(string $className): static
-    {
-        if (!is_subclass_of($className, static::class)) {
-            return $this;
-        }
-        $instance = new $className();
-        $instanceReflectionClass = ReflectionClass::instance($className);
-        foreach ($this->getProperties(null, true) as $property) {
-            $propertyName = $property->getName();
-            $instanceProperty = $instanceReflectionClass->getProperty($propertyName);
-            if (isset($this->$propertyName)) {
-                $instanceProperty->setAccessible(true);
-                // class name attribute means that the value of the property contains the class
-                // name so we need to use the new class name
-                if ($property->getAttributes(ClassName::class)) {
-                    $instanceProperty->setValue($instance, $className);
-                } else {
-                    $instanceProperty->setValue($instance, $this->$propertyName);
-                }
-                $instanceProperty->setAccessible(false);
-            }
-        }
-        foreach ($this->getChildren() as $child) {
-            $child->setParent($instance);
-        }
-        return $instance;
-    }
 }

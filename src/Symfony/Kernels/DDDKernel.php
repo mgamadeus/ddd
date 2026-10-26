@@ -11,10 +11,7 @@ use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
-use Symfony\Component\HttpKernel\TerminableInterface;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 class DDDKernel extends Kernel

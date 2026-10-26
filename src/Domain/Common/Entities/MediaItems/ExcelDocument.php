@@ -69,45 +69,6 @@ class ExcelDocument extends Document
     }
 
     /**
-     * Converts the first sheet of the Excel document to HTML
-     *
-     * @return string HTML representation of the Excel document
-     * @throws InternalErrorException
-     */
-    public function toHTML(): string
-    {
-        try {
-            $spreadsheet = $this->getSpreadsheet();
-            $sheet = $spreadsheet->getActiveSheet();
-
-            $html = '<table border="1" cellpadding="5" cellspacing="0">';
-
-            // Get the highest row and column indexes
-            $highestRow = $sheet->getHighestRow();
-            $highestColumn = $sheet->getHighestColumn();
-
-            // Loop through each row
-            for ($row = 1; $row <= $highestRow; $row++) {
-                $html .= '<tr>';
-
-                // Loop through each column in the row
-                for ($col = 'A'; $col <= $highestColumn; $col++) {
-                    $cellValue = $sheet->getCell($col . $row)->getValue();
-                    $html .= '<td>' . htmlspecialchars((string)$cellValue) . '</td>';
-                }
-
-                $html .= '</tr>';
-            }
-
-            $html .= '</table>';
-
-            return $html;
-        } catch (Exception $e) {
-            throw new InternalErrorException('Error converting Excel to HTML: ' . $e->getMessage());
-        }
-    }
-
-    /**
      * Creates and populates a sheet from a data array
      *
      * @param Spreadsheet $spreadsheet
@@ -221,34 +182,6 @@ class ExcelDocument extends Document
         $excelDocument->mediaItemContent = new GenericMediaItemContent();
         $excelDocument->addChildren($excelDocument->mediaItemContent);
 
-        $writer = new Xlsx($spreadsheet);
-        ob_start();
-        $writer->save('php://output');
-        $excelDocument->mediaItemContent->body = ob_get_clean();
-
-        return $excelDocument;
-    }
-
-    /**
-     * Creates an Excel document from a PhpSpreadsheet object
-     *
-     * @param Spreadsheet $spreadsheet The spreadsheet object
-     * @param string|null $title Optional title for the document
-     * @param DateTime|null $createdDateTime Optional creation date
-     * @param DateTime|null $modifiedDateTime Optional modification date
-     * @return ExcelDocument
-     */
-    public static function fromSpreadsheet(
-        Spreadsheet $spreadsheet,
-        ?string $title = null,
-        ?DateTime $createdDateTime = null,
-        ?DateTime $modifiedDateTime = null
-    ): ExcelDocument {
-        $excelDocument = new static($title, null, $createdDateTime, $modifiedDateTime);
-        $excelDocument->mediaItemContent = new GenericMediaItemContent();
-        $excelDocument->addChildren($excelDocument->mediaItemContent);
-        $excelDocument->spreadsheet = $spreadsheet;
-        // Write to memory
         $writer = new Xlsx($spreadsheet);
         ob_start();
         $writer->save('php://output');

@@ -28,7 +28,7 @@ class PDFDocument extends Document
     /** @var GenericMediaItemContent PDF File Content */
     public GenericMediaItemContent $mediaItemContent;
 
-    public function __construct(string $fileName = null, string $title = null, string $pdfBody = null)
+    public function __construct(?string $fileName = null, ?string $title = null, ?string $pdfBody = null)
     {
         if ($pdfBody) {
             $this->mediaItemContent = new GenericMediaItemContent();
@@ -116,14 +116,12 @@ class PDFDocument extends Document
         $imagesDir = sys_get_temp_dir() . '/pdf_images_' . uniqid();
         mkdir($imagesDir);
         exec("magick convert -density 300 \"$tempPdfPath\" \"$imagesDir/image-%d.png\"", $output);
-        $test = file_get_contents($tempPdfPath);
         $images = glob("$imagesDir/*.png");
         $ocrOutputFiles = [];
         foreach ($images as $index => $imagePath) {
             $outputPath = "$imagesDir/output-$index";
             $ocrOutputFiles[] = $outputPath . '.txt';
             // Execute Tesseract OCR in the background
-            $command = "tesseract \"$imagePath\" \"$outputPath\" > /dev/null 2>&1 &";
             exec("tesseract \"$imagePath\" \"$outputPath\" > /dev/null 2>&1 &");
         }
 

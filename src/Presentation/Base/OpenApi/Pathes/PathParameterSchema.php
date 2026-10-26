@@ -24,6 +24,7 @@ use ReflectionEnum;
 use ReflectionException;
 use ReflectionNamedType;
 use ReflectionUnionType;
+use DDD\Infrastructure\Validation\Constraints\Choice as DDDChoice;
 use Symfony\Component\Validator\Constraints\Choice;
 use Symfony\Component\Validator\Constraints\Length;
 
@@ -74,7 +75,6 @@ class PathParameterSchema
                 'Type Definition Missing in ' . $requestDtoReflectionClass->getName() . '->$' . $requestDtoReflectionProperty->getName()
             );
         }
-        $type = $requestDtoReflectionProperty->getType();
         /** @var ReflectionNamedType[] $types */
         $types = [];
         $unionType = false;
@@ -124,11 +124,11 @@ class PathParameterSchema
                     if ($attributes = $requestDtoReflectionProperty->getAttributes(Choice::class, ReflectionAttribute::IS_INSTANCEOF)) {
                         /** @var Choice $choiceAttribute */
                         $choiceAttribute = $attributes[0]->newInstance();
-                        $this->enum = $choiceAttribute->choices;
+                        $this->enum = DDDChoice::getChoicesResolvedFromConstraint($choiceAttribute);
                         $choicesAssoc = [];
                         $choicesDescripton = '';
                         $constantDescriptions = $requestDtoReflectionClass->getConstantsDescriptions();
-                        foreach ($choiceAttribute->choices as $choice) {
+                        foreach ($this->enum as $choice) {
                             $choicesAssoc[$choice] = true;
                             $constantDescription = $constantDescriptions[$choice] ?? '';
                             $choicesDescripton .= "-   `$choice`" . ($constantDescription ? ': ' . $constantDescription : '') . "\n";
@@ -233,9 +233,6 @@ class PathParameterSchema
                                     'Class ' . $schemaReflectionClassName . ' uses QueryOptions without having an attribute of type ' . DtoQueryOptions::class
                                 );
                             }
-                            $baseEntityReflectionClass = ReflectionClass::instance(
-                                $dtoQueryOptionsAttributeInstane->baseEntity
-                            );
 
                             $expandDefinitions = ExpandDefinitions::getExpandDefinitionsForReferenceClass(
                                 $dtoQueryOptionsAttributeInstane->baseEntity
@@ -244,7 +241,6 @@ class PathParameterSchema
                                 $parameter->setToBeSkipped(true);
                                 continue;
                             }
-                            //$this->pattern = $queryOptions->orderBy->getRegexForOpenApi();
                             // Reset to the short summary (full grammar once at document level); then the endpoint's list.
                             $parameter->description = ExpandOptions::getParameterSummary();
                             $parameter->description .= "\n\n<details><summary>Allowed expand properties:</summary>  \n\n";
