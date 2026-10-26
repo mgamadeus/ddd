@@ -39,6 +39,13 @@ use Throwable;
  */
 final class PostgresUpsertBuilder implements UpsertBuilder
 {
+    /** DDL sqlTypes rendered as `bytea` by {@see \DDD\Domain\Base\Repo\DB\Dialect\Schema\PostgresDdlRenderer}. */
+    protected const array BLOB_SQL_TYPES = [
+        DatabaseColumn::SQL_TYPE_BLOB => true,
+        DatabaseColumn::SQL_TYPE_MEDIUMBLOB => true,
+        DatabaseColumn::SQL_TYPE_LONGBLOB => true,
+    ];
+
     public function upsert(
         DoctrineEntityManager $entityManager,
         DoctrineModel &$doctrineModel,
@@ -574,6 +581,11 @@ final class PostgresUpsertBuilder implements UpsertBuilder
             if ($value !== null) {
                 $value = json_encode($value, JSON_THROW_ON_ERROR);
             }
+        } elseif ($this->isBlobColumn($doctrineModel, $fieldName)) {
+            // A BLOB column is `bytea` on PostgreSQL, but its Doctrine field type is usually `string`: bound as text,
+            // binary content (gzip, images) fails with "invalid byte sequence for encoding UTF8". `binary` binds
+            // ParameterType::BINARY (PDO::PARAM_LOB), which pdo_pgsql sends as bytea.
+            $dbalType = 'binary';
         }
 
         $updatePolicy = UpdatePolicy::REPLACE;
@@ -590,6 +602,30 @@ final class PostgresUpsertBuilder implements UpsertBuilder
         }
 
         return new ColumnWrite($columnName, $value, $dbalType, $kind, $vectorDimensions, $updatePolicy, $rawOnUpdateAction);
+    }
+
+    /**
+     * Whether the entity property behind $fieldName declares a BLOB sqlType. The attribute sits on the entity
+     * (`#[DatabaseColumn(sqlType: …LONGBLOB)]`), not on the generated model, whose column is a plain `string`.
+     * Cached per model class and field.
+     */
+    protected function isBlobColumn(DoctrineModel $doctrineModel, string $fieldName): bool
+    {
+        static $blobColumnCache = [];
+        $cacheKey = $doctrineModel::class . '::' . $fieldName;
+        if (isset($blobColumnCache[$cacheKey])) {
+            return $blobColumnCache[$cacheKey];
+        }
+        $isBlobColumn = false;
+        $entityClass = $doctrineModel::ENTITY_CLASS;
+        if ($entityClass !== '' && class_exists($entityClass) && property_exists($entityClass, $fieldName)) {
+            /** @var DatabaseColumn|null $databaseColumnAttributeInstance */
+            $databaseColumnAttributeInstance = (new ReflectionClass($entityClass))->getProperty($fieldName)
+                ->getAttributeInstance(DatabaseColumn::class);
+            $isBlobColumn = isset(self::BLOB_SQL_TYPES[$databaseColumnAttributeInstance?->sqlType ?? '']);
+        }
+
+        return $blobColumnCache[$cacheKey] = $isBlobColumn;
     }
 
     protected function findColumnWrite(array $columnWrites, string $columnName): ?ColumnWrite
