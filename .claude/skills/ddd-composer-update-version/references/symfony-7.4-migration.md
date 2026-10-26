@@ -182,3 +182,5 @@ order; every item cost one of those apps time.
   `#[EntityCache(useExtendedRegistryCache: true)]` TTL in any request of the same container — returned the entity with
   every unselected property missing (settings read from it silently fell back to their defaults). No app change;
   restart the containers after the update to drop already poisoned APCu entries.
+- 2.71.3 — completes 2.71.2 for the same request: a `find($id)` after a select-restricted load of that row re-reads
+  the whole row instead of taking the partial model the entity manager still holds.

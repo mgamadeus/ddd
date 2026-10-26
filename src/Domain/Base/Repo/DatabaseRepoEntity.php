@@ -189,6 +189,13 @@ abstract class DatabaseRepoEntity extends RepoEntity
             }
             $ormInstance = $query->setMaxResults(1)->getResult();
             $ormInstance = $ormInstance[0] ?? null;
+            // The unit of work hands back an already managed model as it is — after a select-restricted load of the
+            // same row in this request, with the unselected columns missing. Re-read it whole.
+            if ($ormInstance && $this->isPartiallyLoadedOrmInstance($ormInstance)) {
+                $refreshQuery = $queryBuilder->getQuery();
+                $refreshQuery->disableResultCache()->useQueryCache(false)->setHint(Query::HINT_REFRESH, true);
+                $ormInstance = $refreshQuery->setMaxResults(1)->getResult()[0] ?? null;
+            }
         }
         if (!$ormInstance) {
             // store empty null result
