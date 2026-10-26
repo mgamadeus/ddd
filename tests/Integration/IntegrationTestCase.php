@@ -10,6 +10,7 @@ use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatement;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatements;
 use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityManager;
+use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityRegistry;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Tests\Integration\Fixtures\Entities\CounterRows\CounterRow;
 use DDD\Tests\Integration\Fixtures\Entities\SpatialRows\SpatialRow;
@@ -158,6 +159,10 @@ abstract class IntegrationTestCase extends TestCase
             $this->markTestSkipped($reason);
         }
         (new ReflectionProperty(LazyLoadRepo::class, 'defaultRepoType'))->setValue(null, LazyLoadRepo::DB);
+        // Every test starts with an empty entity registry and unit of work: fixture tables are recreated per class, so
+        // ids repeat across tests, and an entity registered by an earlier test would be served for a different row.
+        DoctrineEntityRegistry::clear();
+        EntityManagerFactory::clearAllInstanceCaches();
         RecordingMiddleware::wireIfEnabled();
         // A data-provider test runs this method once per data set, each with its own setUp()/tearDown() — the
         // data set must be part of the golden id, or every run after the first silently overwrites the last.
