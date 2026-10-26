@@ -261,14 +261,14 @@ class DoctrineQueryBuilder extends QueryBuilder
         return ++$this->rightsSubqueryCount;
     }
 
+    /** @var int Rights subqueries embedded so far, see {@see allocateRightsSubqueryIndex()} */
+    protected int $rightsSubqueryCount = 0;
+
     /**
      * Initializes a new <tt>QueryBuilder</tt> that uses the given <tt>EntityManager</tt>.
      *
      * @param EntityManagerInterface $em The EntityManager to use.
      */
-    /** @var int Rights subqueries embedded so far, see {@see allocateRightsSubqueryIndex()} */
-    protected int $rightsSubqueryCount = 0;
-
     public function __construct(EntityManagerInterface $em)
     {
         $this->em = $em;
