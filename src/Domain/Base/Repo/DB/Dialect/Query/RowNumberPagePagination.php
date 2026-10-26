@@ -48,7 +48,7 @@ use RuntimeException;
  *    `Connection::executeQuery()` call and hydrated via {@see DoctrineQueryBuilder::getMappedResult()} — same
  *    hydration path MariaDB's pagination already uses.
  */
-final class RowNumberPagePagination implements PaginationStrategy
+class RowNumberPagePagination implements PaginationStrategy
 {
     public function paginate(DoctrineQueryBuilder $queryBuilder, bool $refresh = false): mixed
     {
@@ -62,16 +62,16 @@ final class RowNumberPagePagination implements PaginationStrategy
             );
         }
 
-        [$idSql, $idAlias, $idParamsByToken, $idTypesByToken] = $this->buildIdPageSql($queryBuilder, $maxResults, $firstResult);
-        [$mainSql, $rootTableAlias, $mainParamsByToken, $mainTypesByToken] = $this->buildMainSqlWithoutWhereOrLimit($queryBuilder);
+        $idPageSql = $this->buildIdPageSql($queryBuilder, $maxResults, $firstResult);
+        $mainPaginationSql = $this->buildMainSqlWithoutWhereOrLimit($queryBuilder);
 
-        $combinedSql = $this->injectIdPageJoin($mainSql, $idSql, $idAlias, $rootTableAlias);
+        $combinedSql = $this->injectIdPageJoin($mainPaginationSql->sql, $idPageSql->sql, $idPageSql->alias, $mainPaginationSql->alias);
 
         // Both fragments still carry their own named tokens (`:ddd_id_param_N` / `:ddd_main_param_N`). One final
         // rescan of the now-COMBINED text, in textual appearance order, converts every token back to `?` and
         // builds the single ordered bind array `Connection::executeQuery()` needs.
-        $paramsByToken = [...$idParamsByToken, ...$mainParamsByToken];
-        $typesByToken = [...$idTypesByToken, ...$mainTypesByToken];
+        $paramsByToken = [...$idPageSql->parametersByToken, ...$mainPaginationSql->parametersByToken];
+        $typesByToken = [...$idPageSql->typesByToken, ...$mainPaginationSql->typesByToken];
         $orderedParams = [];
         $orderedTypes = [];
         $finalSql = (string)preg_replace_callback(
@@ -91,8 +91,8 @@ final class RowNumberPagePagination implements PaginationStrategy
         return $queryBuilder->getMappedResult($result, $refresh);
     }
 
-    /** @return array{0: string, 1: string, 2: array<string, mixed>, 3: array<string, mixed>} [sql, idColumnAlias, paramsByToken, typesByToken] */
-    protected function buildIdPageSql(DoctrineQueryBuilder $queryBuilder, ?int $maxResults, int $firstResult): array
+    /** @return PaginationSql The id page's named-token SQL, its id column alias as `alias`, and the bind maps */
+    protected function buildIdPageSql(DoctrineQueryBuilder $queryBuilder, ?int $maxResults, int $firstResult): PaginationSql
     {
         $idQuery = $queryBuilder->getQuery();
         $idQuery->setHint(Query::HINT_CUSTOM_OUTPUT_WALKER, PostgresLimitSubqueryOutputWalker::class);
@@ -112,18 +112,16 @@ final class RowNumberPagePagination implements PaginationStrategy
         }
         $idAlias = $match[1];
 
-        [$namedSql, $params, $types] = $this->allocateNamedPlaceholders(
+        return $this->allocateNamedPlaceholders(
             $sql,
             $idQuery->getParameterMappings(),
             $idQuery->getParameters(),
             'ddd_id_param_'
-        );
-
-        return [$namedSql, $idAlias, $params, $types];
+        )->withAlias($idAlias);
     }
 
-    /** @return array{0: string, 1: string, 2: array<string, mixed>, 3: array<string, mixed>} [sql, rootTableAlias, paramsByToken, typesByToken] */
-    protected function buildMainSqlWithoutWhereOrLimit(DoctrineQueryBuilder $queryBuilder): array
+    /** @return PaginationSql The main query's named-token SQL, its root table alias as `alias`, and the bind maps */
+    protected function buildMainSqlWithoutWhereOrLimit(DoctrineQueryBuilder $queryBuilder): PaginationSql
     {
         $savedWhere = $queryBuilder->getDQLPart('where');
         $savedMaxResults = $queryBuilder->getMaxResults();
@@ -156,14 +154,12 @@ final class RowNumberPagePagination implements PaginationStrategy
         }
         $rootTableAlias = $match[1];
 
-        [$namedSql, $params, $types] = $this->allocateNamedPlaceholders(
+        return $this->allocateNamedPlaceholders(
             $sql,
             $parameterMappings,
             $parameters,
             'ddd_main_param_'
-        );
-
-        return [$namedSql, $rootTableAlias, $params, $types];
+        )->withAlias($rootTableAlias);
     }
 
     /**
@@ -205,9 +201,9 @@ final class RowNumberPagePagination implements PaginationStrategy
      *
      * @param array<int|string, list<int>> $parameterMappings DQL parameter name/position -> SQL placeholder positions
      * @param \Doctrine\Common\Collections\Collection<int, Parameter> $parameters
-     * @return array{0: string, 1: array<string, mixed>, 2: array<string, mixed>} [namedSql, paramsByToken, typesByToken]
+     * @return PaginationSql The named-token SQL and its bind maps; `alias` is left empty for the caller to set
      */
-    protected function allocateNamedPlaceholders(string $sql, array $parameterMappings, $parameters, string $tokenPrefix): array
+    protected function allocateNamedPlaceholders(string $sql, array $parameterMappings, $parameters, string $tokenPrefix): PaginationSql
     {
         $positionToParameterName = [];
         foreach ($parameterMappings as $parameterName => $positions) {
@@ -246,9 +242,9 @@ final class RowNumberPagePagination implements PaginationStrategy
 
         // The caller concatenates this SQL with another fragment, then rescans the COMBINED text for named
         // tokens in final appearance order to build the ordered bind arrays — see the two call sites in
-        // self::paginate(). Returning (sql, paramsByToken, typesByToken) here, not yet ordered-by-position, lets
+        // self::paginate(). Returning the SQL plus both token-keyed maps here, not yet ordered-by-position, lets
         // the caller defer that rescan until both fragments are assembled, exactly like the single-fragment
         // MariaDB rewrite does in one pass.
-        return [$namedSql, $params, $types];
+        return new PaginationSql($namedSql, $params, $types);
     }
 }

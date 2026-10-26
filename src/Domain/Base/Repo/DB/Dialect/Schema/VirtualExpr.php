@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo\DB\Dialect\Schema;
 
+use DDD\Domain\Base\Entities\ValueObject;
+
 /**
  * Typed intent behind a `#[DatabaseVirtualColumn(as: …)]` raw MariaDB expression (dual-dialect architecture plan
  * `agentic-plans/backend/2026-10-24-ddd-dual-dialect-architecture.md` §4.10, build step 7). No entity ever
@@ -18,7 +20,7 @@ namespace DDD\Domain\Base\Repo\DB\Dialect\Schema;
  * {@see fromMariaDbExpression()} returns null and the caller ({@see PostgresDdlRenderer}) refuses with a message
  * naming the entity, property and expression, rather than guessing.
  */
-final readonly class VirtualExpr
+class VirtualExpr extends ValueObject
 {
     public const string INTENT_COALESCE = 'coalesce';
 
@@ -29,21 +31,28 @@ final readonly class VirtualExpr
     public const string INTENT_JSON_DECIMAL = 'jsonDecimal';
 
     protected function __construct(
-        public string $intent,
+        public readonly string $intent,
         /** The original, unmodified `as:` string — {@see renderMariaDb()} returns this verbatim. */
-        public string $mariaDbExpression,
+        public readonly string $mariaDbExpression,
         /** The column referenced inside the expression (the IFNULL argument, or the JSON source column). */
-        public string $column,
+        public readonly string $column,
         /** `coalesce` only: the literal MariaDB coalesces to, already typed (int 0, or a string). */
-        public int|string|null $literal = null,
+        public readonly int|string|null $literal = null,
         /** `jsonText` / `jsonInt` / `jsonDecimal` only: the `$.key` path segment. */
-        public ?string $jsonKey = null,
+        public readonly ?string $jsonKey = null,
         /** `jsonDecimal` only. */
-        public ?int $precision = null,
-        public ?int $scale = null,
+        public readonly ?int $precision = null,
+        public readonly ?int $scale = null,
         /** `coalesce` only: `timestamp` when the literal is a date (`dateLiteral` shape), else null. */
-        public ?string $literalType = null,
+        public readonly ?string $literalType = null,
     ) {
+        parent::__construct();
+    }
+
+    /** Every instance is its own element; nothing deduplicates virtual expressions. */
+    public function uniqueKey(): string
+    {
+        return self::uniqueKeyStatic((string)spl_object_id($this));
     }
 
     public static function coalesce(string $mariaDbExpression, string $column, int|string $literal): self

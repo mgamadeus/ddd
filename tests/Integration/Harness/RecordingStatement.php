@@ -10,10 +10,10 @@ use Doctrine\DBAL\Driver\Statement;
 use Doctrine\DBAL\ParameterType;
 
 /** Collects bound values via bindValue()/bindParam() and records the statement's SQL + final params on execute(). */
-final class RecordingStatement extends AbstractStatementMiddleware
+class RecordingStatement extends AbstractStatementMiddleware
 {
     /** @var array<int|string, mixed> */
-    private array $boundValues = [];
+    protected array $boundValues = [];
 
     public function __construct(Statement $wrappedStatement, private readonly string $sql)
     {

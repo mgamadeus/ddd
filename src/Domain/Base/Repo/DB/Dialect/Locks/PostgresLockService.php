@@ -31,7 +31,7 @@ use Doctrine\DBAL\DriverManager;
  * of the architecture plan: whether the `-rw` service tolerates this connection churn without a session-mode pool
  * in front of it — unverified by this build step, see this task's open questions).
  */
-final class PostgresLockService extends AbstractLockService
+class PostgresLockService extends AbstractLockService
 {
     protected ?Connection $directConnection = null;
 

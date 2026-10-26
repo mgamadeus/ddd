@@ -37,7 +37,7 @@ class TokenMatchAndDocumentFulltextTest extends IntegrationTestCase
         if (static::currentDriver() === 'pdo_pgsql') {
             $connection->executeStatement('DROP TABLE IF EXISTS ' . $dialect->quote('SearchRows') . ' CASCADE');
             $statements = $dialect->ddlRenderer()->renderCreate($databaseModel);
-            foreach (DdlStatement::sortByPhase($statements) as $statement) {
+            foreach ($statements->sortedByPhase() as $statement) {
                 $connection->executeStatement($statement->sql);
             }
         } else {

@@ -27,7 +27,7 @@ use DDD\Infrastructure\Reflection\ReflectionClass;
  * only of NOT NULL columns and no attribute") would otherwise force you to add anyway if every candidate were
  * NOT-NULL-backed.
  */
-final class ConflictTargetResolver
+class ConflictTargetResolver
 {
     /**
      * @param string[] $presentColumnNames The row's own (non-identifier) column names — a candidate UNIQUE key

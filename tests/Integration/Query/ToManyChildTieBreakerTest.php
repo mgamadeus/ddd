@@ -35,7 +35,7 @@ use DDD\Tests\Integration\IntegrationTestCase;
  * class docblock-level D13 gate asks for ("insert ids out of order"). MariaDB needs no such trick (InnoDB always
  * returns PK-clustered order), so both engines' assertions are the SAME expected id-ascending order.
  */
-final class ToManyChildTieBreakerTest extends IntegrationTestCase
+class ToManyChildTieBreakerTest extends IntegrationTestCase
 {
     protected const array EXTRA_FIXTURE_ENTITY_CLASSES = [
         TieBreakerParent::class,
@@ -94,7 +94,7 @@ final class ToManyChildTieBreakerTest extends IntegrationTestCase
             $dialect = static::dialect();
             $connection->executeStatement('DROP TABLE IF EXISTS ' . $dialect->quote($databaseModel->sqlTableName) . ' CASCADE');
             $statements = $dialect->ddlRenderer()->renderCreate($databaseModel);
-            foreach (DdlStatement::sortByPhase($statements) as $statement) {
+            foreach ($statements->sortedByPhase() as $statement) {
                 $connection->executeStatement($statement->sql);
             }
             return;

@@ -21,19 +21,19 @@ interface DdlRenderer
      * conditionals on the caller's side (PostgreSQL: `CREATE EXTENSION IF NOT EXISTS …`, `CREATE COLLATION IF NOT
      * EXISTS …`, `CREATE OR REPLACE FUNCTION …`). Empty on MariaDB, which has no such per-database infra objects.
      *
-     * @return DdlStatement[]
+     * @return DdlStatements
      */
-    public function ensure(): array;
+    public function ensure(): DdlStatements;
 
     /**
      * CREATE-path statements for one entity's table: columns (incl. `STORED` generated columns), primary key,
      * indexes, foreign keys. Returned already in a safe standalone execution order; `phase` + `table` additionally
-     * let a caller batch many models' statements together via {@see DdlStatement::sortByPhase()} (needed once a
+     * let a caller batch many models' statements together via {@see DdlStatements::sortedByPhase()} (needed once a
      * foreign key references a table that has not been created yet in entity-scan order — see
-     * `PostgresDdlRenderer`'s class docblock). Returns `[]` for a single-table-inheritance subclass (no table of
+     * `PostgresDdlRenderer`'s class docblock). Returns an empty set for a single-table-inheritance subclass (no table of
      * its own — mirrors {@see DatabaseModel::getSql()}).
      *
-     * @return DdlStatement[]
+     * @return DdlStatements
      */
-    public function renderCreate(DatabaseModel $databaseModel): array;
+    public function renderCreate(DatabaseModel $databaseModel): DdlStatements;
 }

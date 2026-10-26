@@ -22,7 +22,7 @@ use InvalidArgumentException;
  * Zero vs. non-zero high bits is the entire separation; neither form is compared against MariaDB, which keeps its
  * own string lock names (`GET_LOCK`) and never needs a numeric key at all.
  */
-final class LockKey
+class LockKey
 {
     protected function __construct()
     {
@@ -39,17 +39,17 @@ final class LockKey
     }
 
     /**
-     * @return array{0: int, 1: int} [namespace, id] for PostgreSQL's two-int `pg_advisory_lock(key1, key2)` form.
+     * @return AdvisoryLockKeyPair Namespace (key1) and id (key2) for PostgreSQL's two-int `pg_advisory_lock(key1, key2)` form.
      * @throws InvalidArgumentException if $namespace is 0 — that would collide with {@see applicationKey()}'s
      *     always-zero high bits.
      */
-    public static function internalKey(int $namespace, int $id): array
+    public static function internalKey(int $namespace, int $id): AdvisoryLockKeyPair
     {
         if ($namespace === 0) {
             throw new InvalidArgumentException(
                 'LockKey::internalKey() namespace must be non-zero: 0 collides with applicationKey()\'s always-zero high bits.'
             );
         }
-        return [$namespace, $id];
+        return new AdvisoryLockKeyPair($namespace, $id);
     }
 }

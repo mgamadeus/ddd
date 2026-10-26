@@ -7,6 +7,7 @@ namespace DDD\Tests\Integration\Harness;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatement;
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatements;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Tests\Integration\IntegrationTestCase;
 use PHPUnit\Framework\TestCase;
@@ -24,7 +25,7 @@ use ReflectionProperty;
  * Run: `docker compose -f tests/Integration/docker-compose.yml up -d --wait` then
  * `DDD_TEST_DRIVER=pdo_pgsql php -d memory_limit=2G vendor/bin/phpunit -c phpunit.integration.xml --group bootstrap`.
  */
-final class PostgresDdlBootstrapTest extends TestCase
+class PostgresDdlBootstrapTest extends TestCase
 {
     public static function setUpBeforeClass(): void
     {
@@ -43,7 +44,7 @@ final class PostgresDdlBootstrapTest extends TestCase
         }
     }
 
-    private static function currentDriver(): ?string
+    protected static function currentDriver(): ?string
     {
         return getenv('DDD_TEST_DRIVER') ?: ($_SERVER['DDD_TEST_DRIVER'] ?? null);
     }
@@ -80,8 +81,8 @@ final class PostgresDdlBootstrapTest extends TestCase
             }
         }
         // None of the three fixtures has a cross-table foreign key today, but sorting by phase is the documented,
-        // supported way to run a multi-table CREATE script (DdlStatement's own docblock) and costs nothing here.
-        foreach (DdlStatement::sortByPhase($statements) as $statement) {
+        // supported way to run a multi-table CREATE script (DdlStatements::sortedByPhase()) and costs nothing here.
+        foreach (DdlStatements::fromStatements(...$statements)->sortedByPhase() as $statement) {
             $connection->executeStatement($statement->sql);
         }
 

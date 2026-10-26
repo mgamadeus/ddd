@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Tests\Domain\Base\Repo\DB\Dialect\Locks;
 
+use DDD\Domain\Base\Repo\DB\Dialect\Locks\AdvisoryLockKeyPair;
 use DDD\Domain\Base\Repo\DB\Dialect\Locks\LockKey;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
@@ -13,7 +14,7 @@ use PHPUnit\Framework\TestCase;
  * {@see LockKey::internalKey()} must never collide, because PostgreSQL's single-bigint and two-int
  * `pg_advisory_lock` forms share one 64-bit keyspace (server packs key1 into the high 32 bits).
  */
-final class LockKeyTest extends TestCase
+class LockKeyTest extends TestCase
 {
     public function testApplicationKeyIsStableForTheSameName(): void
     {
@@ -41,7 +42,10 @@ final class LockKeyTest extends TestCase
 
     public function testInternalKeyReturnsTheNamespaceAndId(): void
     {
-        $this->assertSame([7, 123], LockKey::internalKey(7, 123));
+        $advisoryLockKeyPair = LockKey::internalKey(7, 123);
+        $this->assertInstanceOf(AdvisoryLockKeyPair::class, $advisoryLockKeyPair);
+        $this->assertSame(7, $advisoryLockKeyPair->namespace);
+        $this->assertSame(123, $advisoryLockKeyPair->id);
     }
 
     public function testInternalKeyRejectsAZeroNamespace(): void
@@ -64,8 +68,8 @@ final class LockKeyTest extends TestCase
 
         foreach ([1, 2, 3, 42] as $namespace) {
             foreach ([0, 1, 123, 999999] as $id) {
-                [$key1, $key2] = LockKey::internalKey($namespace, $id);
-                $packed = ($key1 << 32) | ($key2 & 0xFFFFFFFF);
+                $advisoryLockKeyPair = LockKey::internalKey($namespace, $id);
+                $packed = ($advisoryLockKeyPair->namespace << 32) | ($advisoryLockKeyPair->id & 0xFFFFFFFF);
                 $this->assertNotContains(
                     $packed,
                     $applicationPacked,

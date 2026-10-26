@@ -18,7 +18,7 @@ abstract class AbstractLockService implements LockService
     /** @var array<string, int> lock name => re-entrant depth currently held by this instance */
     protected array $depths = [];
 
-    final public function acquire(string $name, int $timeoutSeconds): bool
+    public function acquire(string $name, int $timeoutSeconds): bool
     {
         if (($this->depths[$name] ?? 0) > 0) {
             $this->depths[$name]++;
@@ -36,7 +36,7 @@ abstract class AbstractLockService implements LockService
         return $acquired;
     }
 
-    final public function release(string $name): bool
+    public function release(string $name): bool
     {
         $depth = $this->depths[$name] ?? 0;
         if ($depth === 0) {
@@ -53,7 +53,7 @@ abstract class AbstractLockService implements LockService
         return $released;
     }
 
-    final public function synchronized(string $name, int $timeoutSeconds, callable $criticalSection): mixed
+    public function synchronized(string $name, int $timeoutSeconds, callable $criticalSection): mixed
     {
         if (!$this->acquire($name, $timeoutSeconds)) {
             throw new LockTimeoutException($name, $timeoutSeconds);

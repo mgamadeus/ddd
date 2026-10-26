@@ -7,6 +7,7 @@ namespace DDD\Tests\Integration;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatement;
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatements;
 use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityManager;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
@@ -141,7 +142,7 @@ abstract class IntegrationTestCase extends TestCase
                 $statements[] = $statement;
             }
         }
-        foreach (DdlStatement::sortByPhase($statements) as $statement) {
+        foreach (DdlStatements::fromStatements(...$statements)->sortedByPhase() as $statement) {
             $connection->executeStatement($statement->sql);
         }
     }

@@ -8,7 +8,7 @@ use Doctrine\DBAL\Driver\Middleware\AbstractDriverMiddleware;
 use SensitiveParameter;
 
 /** @see AbortedTransactionGuard */
-final class AbortedTransactionGuardDriver extends AbstractDriverMiddleware
+class AbortedTransactionGuardDriver extends AbstractDriverMiddleware
 {
     public function connect(
         #[SensitiveParameter]

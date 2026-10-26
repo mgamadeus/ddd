@@ -9,9 +9,9 @@ use Doctrine\ORM\Configuration;
 use PHPUnit\Framework\TestCase;
 
 /** §6 step 2 "pure move": connectionParams() is the identity function, quote() matches today's raw backtick usage. */
-final class MariaDbDialectTest extends TestCase
+class MariaDbDialectTest extends TestCase
 {
-    private MariaDbDialect $dialect;
+    protected MariaDbDialect $dialect;
 
     protected function setUp(): void
     {

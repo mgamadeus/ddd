@@ -12,7 +12,7 @@ use PHPUnit\Framework\TestCase;
  * MariaDB `BEGIN…END` trigger body or a PostgreSQL `$tag$`-quoted function body on every semicolon inside it
  * (Arch §4.10).
  */
-final class SqlScriptLexerTest extends TestCase
+class SqlScriptLexerTest extends TestCase
 {
     public function testSimpleStatementsSplitOnSemicolon(): void
     {

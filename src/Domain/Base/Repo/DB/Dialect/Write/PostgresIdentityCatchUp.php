@@ -26,7 +26,7 @@ use Doctrine\DBAL\Connection;
  * `nextval()` is not transactional on PostgreSQL — a rolled-back write does not un-advance the sequence — so
  * this runs unconditionally right after the write succeeds, with no savepoint/transaction-boundary coordination.
  */
-final class PostgresIdentityCatchUp
+class PostgresIdentityCatchUp
 {
     /**
      * Mig §3.3/§4.6: "explicit ids above `last_value + 10 000` refused outside the copy tool and imports" — a

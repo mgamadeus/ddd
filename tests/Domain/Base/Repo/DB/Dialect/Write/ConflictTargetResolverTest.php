@@ -20,7 +20,7 @@ use PHPUnit\Framework\TestCase;
  * keys (`handle`, `code`), both always set — the real Dineful `DeviceRegistration` shape
  * (`(tokenHash, audience)` + `uuid`), minus/plus the `#[UpsertConflictKey]` that disambiguates it.
  */
-final class ConflictTargetResolverTest extends TestCase
+class ConflictTargetResolverTest extends TestCase
 {
     public function testTwoAmbiguousNotNullBackedKeysWithoutTheAttributeThrowNamingTheEntityAndBothKeys(): void
     {

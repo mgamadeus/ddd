@@ -10,7 +10,7 @@ use Doctrine\DBAL\Driver\Statement;
 use Throwable;
 
 /** @see AbortedTransactionGuard */
-final class AbortedTransactionGuardConnection extends AbstractConnectionMiddleware
+class AbortedTransactionGuardConnection extends AbstractConnectionMiddleware
 {
     protected bool $inTransaction = false;
     protected bool $rollbackOnly = false;

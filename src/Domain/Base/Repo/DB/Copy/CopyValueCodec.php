@@ -18,7 +18,7 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
  * `\x48656c6c6f` bytea literal and a JSON value that already contains a literal backslash+t both go through the
  * exact same escaping pass instead of two different ones that could disagree.
  */
-final class CopyValueCodec
+class CopyValueCodec
 {
     /**
      * `PDO::pgsqlCopyFromArray()`'s own NULL-marker configuration — verified empirically against a real PG 18

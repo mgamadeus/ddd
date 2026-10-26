@@ -9,7 +9,7 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
 use PHPUnit\Framework\TestCase;
 
 /** D1/§4.5: schema-wide PostgreSQL identifier naming, the 63-byte cut, and the schema-wide duplicate guard. */
-final class IdentifierPolicyTest extends TestCase
+class IdentifierPolicyTest extends TestCase
 {
     public function testShortNamesPassThroughUnchanged(): void
     {

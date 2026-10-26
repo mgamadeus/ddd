@@ -19,7 +19,7 @@ use Doctrine\DBAL\Driver\Middleware;
  * for writes (upsert column policies, batch binding) is a separate, write-path concern (§6 steps 3/4) and is not
  * this middleware's job — this one only ever touches values coming OUT of a result set.
  */
-final class ValueNormalizerMiddleware implements Middleware
+class ValueNormalizerMiddleware implements Middleware
 {
     public function wrap(Driver $driver): Driver
     {

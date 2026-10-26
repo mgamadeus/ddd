@@ -11,7 +11,7 @@ use Doctrine\DBAL\Connection;
  * connection, byte-identical to what called these functions directly before this class existed — this is a pure
  * move behind the facade, not a behaviour change.
  */
-final class MariaDbLockService extends AbstractLockService
+class MariaDbLockService extends AbstractLockService
 {
     public function __construct(protected Connection $connection)
     {

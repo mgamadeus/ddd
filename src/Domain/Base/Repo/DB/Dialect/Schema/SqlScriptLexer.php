@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo\DB\Dialect\Schema;
 
+use DDD\Domain\Base\Repo\DB\Dialect\Runtime\ScannedSqlSegment;
+
 /**
  * Splits one SQL script (a `{Entity}{Name}Trigger.sql` / `….pgsql.sql` file, Arch §4.10) into individually
  * executable statements, the way a real SQL client does it — NOT the naive `explode(';', …)` that
@@ -40,7 +42,7 @@ namespace DDD\Domain\Base\Repo\DB\Dialect\Schema;
  * Statements are returned trimmed, with blank/comment-only entries dropped; comments INSIDE a returned statement
  * are kept verbatim (harmless to execute, and stripping them is not this class's job).
  */
-final class SqlScriptLexer
+class SqlScriptLexer
 {
     /**
      * @return string[] Individually executable statements, in source order.
@@ -60,9 +62,8 @@ final class SqlScriptLexer
             if (($i === 0 || $script[$i - 1] === "\n") && trim($current) === '') {
                 $delimiterCommand = self::matchDelimiterCommand($script, $i);
                 if ($delimiterCommand !== null) {
-                    [$newDelimiter, $consumedLength] = $delimiterCommand;
-                    $delimiter = $newDelimiter;
-                    $i += $consumedLength;
+                    $delimiter = $delimiterCommand->text;
+                    $i = $delimiterCommand->nextIndex;
                     continue;
                 }
             }
@@ -71,7 +72,10 @@ final class SqlScriptLexer
             //    checked before dollar-quote detection so a MariaDB `DELIMITER $$` body (no PostgreSQL dollar-
             //    quoting involved at all) is not misread as a dollar-quote opener.
             if ($compoundDepth === 0 && self::matchesAt($script, $i, $delimiter)) {
-                self::pushStatement($statements, $current);
+                $statement = self::executableStatementOrNull($current);
+                if ($statement !== null) {
+                    $statements[] = $statement;
+                }
                 $current = '';
                 $i += strlen($delimiter);
                 continue;
@@ -131,10 +135,9 @@ final class SqlScriptLexer
             if (ctype_alpha($char) && ($i === 0 || !self::isWordChar($script[$i - 1]))) {
                 $keywordMatch = self::matchCompoundKeyword($script, $i, $length);
                 if ($keywordMatch !== null) {
-                    [$consumedText, $depthChange] = $keywordMatch;
-                    $current .= $consumedText;
-                    $i += strlen($consumedText);
-                    $compoundDepth = max(0, $compoundDepth + $depthChange);
+                    $current .= $keywordMatch->keywordText;
+                    $i += strlen($keywordMatch->keywordText);
+                    $compoundDepth = max(0, $compoundDepth + $keywordMatch->depthChange);
                     continue;
                 }
             }
@@ -143,24 +146,23 @@ final class SqlScriptLexer
             $i++;
         }
 
-        self::pushStatement($statements, $current);
+        $statement = self::executableStatementOrNull($current);
+        if ($statement !== null) {
+            $statements[] = $statement;
+        }
 
         return $statements;
     }
 
     /**
-     * Trims $current and appends it to $statements unless it is empty or, once its comments are stripped, blank
+     * $current trimmed, or null when it is empty or, once its comments are stripped, blank
      * (a standalone comment — e.g. a `DatabaseModel::getSql()` table-name banner line, or a trailing `-- …`
      * remark with no SQL before the next delimiter — is not an executable statement).
-     *
-     * @param string[] $statements
      */
-    protected static function pushStatement(array &$statements, string $current): void
+    protected static function executableStatementOrNull(string $current): ?string
     {
         $trimmed = trim($current);
-        if ($trimmed !== '' && !self::isBlankOrCommentOnly($trimmed)) {
-            $statements[] = $trimmed;
-        }
+        return ($trimmed !== '' && !self::isBlankOrCommentOnly($trimmed)) ? $trimmed : null;
     }
 
     protected static function isBlankOrCommentOnly(string $statement): bool
@@ -172,14 +174,15 @@ final class SqlScriptLexer
 
     /**
      * Matches `DELIMITER <token>` at exactly position $i (case-insensitive, mysql-CLI convention: the token runs
-     * to end of line). Returns [newDelimiter, consumedLength] or null.
+     * to end of line).
      *
-     * @return array{0: string, 1: int}|null
+     * @return ScannedSqlSegment|null The new delimiter token as `text` and the script index right after the whole
+     *     command as `nextIndex`, or null when no `DELIMITER` command starts at $i
      */
-    protected static function matchDelimiterCommand(string $script, int $i): ?array
+    protected static function matchDelimiterCommand(string $script, int $i): ?ScannedSqlSegment
     {
         if (preg_match('/\G[ \t]*DELIMITER[ \t]+(\S+)[ \t]*\r?\n?/i', $script, $matches, 0, $i) === 1) {
-            return [$matches[1], strlen($matches[0])];
+            return new ScannedSqlSegment($matches[1], $i + strlen($matches[0]));
         }
         return null;
     }
@@ -236,15 +239,15 @@ final class SqlScriptLexer
 
     /**
      * Matches a compound-statement opener or closer keyword at exactly position $i (case-insensitive, trailing
-     * `\b` so e.g. "BEGINNING" never matches "BEGIN"). Returns [consumedText, depthChange] or null when $i is not
-     * the start of one of these keywords.
+     * `\b` so e.g. "BEGINNING" never matches "BEGIN"). Returns null when $i is not the start of one of these
+     * keywords.
      *
-     * @return array{0: string, 1: int}|null
+     * @return CompoundKeywordMatch|null The consumed keyword text and the compound depth change it causes
      */
-    protected static function matchCompoundKeyword(string $script, int $i, int $length): ?array
+    protected static function matchCompoundKeyword(string $script, int $i, int $length): ?CompoundKeywordMatch
     {
         if (preg_match('/\G(BEGIN|CASE|LOOP|WHILE|REPEAT)\b/i', $script, $matches, 0, $i) === 1) {
-            return [$matches[0], 1];
+            return new CompoundKeywordMatch($matches[0], 1);
         }
 
         if (preg_match('/\GIF\b/i', $script, $matches, 0, $i) === 1) {
@@ -258,7 +261,7 @@ final class SqlScriptLexer
             }
             $isFunctionCall = $j < $length && $script[$j] === '(';
             $isExistsClause = preg_match('/\G(NOT[ \t]+)?EXISTS\b/i', $script, $ignored, 0, $j) === 1;
-            return [$matches[0], ($isFunctionCall || $isExistsClause) ? 0 : 1];
+            return new CompoundKeywordMatch($matches[0], ($isFunctionCall || $isExistsClause) ? 0 : 1);
         }
 
         if (preg_match('/\GEND\b/i', $script, $matches, 0, $i) === 1) {
@@ -269,7 +272,7 @@ final class SqlScriptLexer
             if (preg_match('/\G([ \t]+)(IF|CASE|LOOP|WHILE|REPEAT)\b/i', $script, $suffixMatches, 0, $i + strlen($consumed)) === 1) {
                 $consumed .= $suffixMatches[0];
             }
-            return [$consumed, -1];
+            return new CompoundKeywordMatch($consumed, -1);
         }
 
         return null;

@@ -7,6 +7,7 @@ namespace DDD\Domain\Base\Repo\DB\Dialect\Write;
 use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
+use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineBoundSql;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityManager;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Infrastructure\Exceptions\ForbiddenException;
@@ -37,7 +38,7 @@ use Throwable;
  * fixtures distinguishes the two outcomes; and the LAZY identity catch-up retry on a generated id's PK 23505
  * (see {@see PostgresIdentityCatchUp}'s docblock).
  */
-final class PostgresUpsertBuilder implements UpsertBuilder
+class PostgresUpsertBuilder implements UpsertBuilder
 {
     /** DDL sqlTypes rendered as `bytea` by {@see \DDD\Domain\Base\Repo\DB\Dialect\Schema\PostgresDdlRenderer}. */
     protected const array BLOB_SQL_TYPES = [
@@ -58,12 +59,9 @@ final class PostgresUpsertBuilder implements UpsertBuilder
 
         $rightsScopedUpdatePath = $updateRightsQueryBuilder !== null && isset($doctrineModel->id) && $doctrineModel->id;
 
-        ['columns' => $columnWrites, 'idValue' => $idValue] = $this->buildColumnWrites(
-            $metadata,
-            $doctrineModel,
-            $reflectionClass,
-            $onlyFieldNames
-        );
+        $rowWrite = $this->buildColumnWrites($metadata, $doctrineModel, $reflectionClass, $onlyFieldNames);
+        $columnWrites = $rowWrite->columnWrites;
+        $idValue = $rowWrite->idValue;
 
         if ($rightsScopedUpdatePath) {
             return $this->rightsScopedUpdate($doctrineModel, $updateRightsQueryBuilder, $columnWrites, $connection);
@@ -71,7 +69,7 @@ final class PostgresUpsertBuilder implements UpsertBuilder
 
         $table = $doctrineModel->getTableName();
         $databaseModel = DatabaseModel::fromEntityClass($doctrineModel::ENTITY_CLASS);
-        $presentColumnNames = array_map(static fn (ColumnWrite $columnWrite): string => $columnWrite->columnName, $columnWrites);
+        $presentColumnNames = $columnWrites->getColumnNames();
         $conflictResolution = ConflictTargetResolver::resolve($databaseModel, $presentColumnNames, $idValue !== null);
 
         $checkInsertRights = $updateRightsQueryBuilder !== null && !isset($doctrineModel->id);
@@ -99,7 +97,10 @@ final class PostgresUpsertBuilder implements UpsertBuilder
             );
         }
 
-        [$sql, $values, $types] = $this->renderUpsertSql($table, $columnWrites, $idValue, $conflictResolution->columns, false);
+        $upsertSql = $this->renderUpsertSql($table, $columnWrites, $idValue, $conflictResolution->columns, false);
+        $sql = $upsertSql->sql;
+        $values = $upsertSql->values;
+        $types = $upsertSql->types;
 
         if (!$checkInsertRights) {
             return WriteExecutor::runSavepointed(
@@ -161,10 +162,10 @@ final class PostgresUpsertBuilder implements UpsertBuilder
                 continue;
             }
             $columnWrite = $this->buildColumnWrite($metadata, $doctrineModel, $reflectionClass, $fieldName);
-            [$assignmentSql, $assignmentValues, $assignmentTypes] = $this->renderUpdateByIdAssignment($columnWrite);
-            $assignments[] = $assignmentSql;
-            array_push($values, ...$assignmentValues);
-            array_push($types, ...$assignmentTypes);
+            $assignment = $this->renderUpdateByIdAssignment($columnWrite);
+            $assignments[] = $assignment->sql;
+            array_push($values, ...$assignment->values);
+            array_push($types, ...$assignment->types);
         }
 
         return WriteExecutor::runSavepointed(
@@ -201,37 +202,31 @@ final class PostgresUpsertBuilder implements UpsertBuilder
         $table = $firstModel->getTableName();
         $databaseModel = DatabaseModel::fromEntityClass($firstModel::ENTITY_CLASS);
 
-        $rowShapes = [];
-        $rowColumnWrites = [];
-        $rowIdValues = [];
-        foreach ($doctrineModels as $index => $doctrineModel) {
-            ['columns' => $columnWrites, 'idValue' => $idValue] = $this->buildColumnWrites(
-                $metadata,
-                $doctrineModel,
-                $reflectionClass,
-                null
-            );
-            $fieldNames = array_map(static fn (ColumnWrite $columnWrite): string => $columnWrite->columnName, $columnWrites);
-            if ($idValue !== null) {
-                $fieldNames[] = '#id'; // "#" cannot collide with a real column name — kept out of $columnWrites itself
+        // positions in $rowShapes / $rowWrites are the batch's model indexes: the models must be a list
+        $doctrineModels = array_values($doctrineModels);
+        $rowShapes = new BatchRowShapes();
+        $rowWrites = new RowWrites();
+        foreach ($doctrineModels as $doctrineModel) {
+            $rowWrite = $this->buildColumnWrites($metadata, $doctrineModel, $reflectionClass, null);
+            $fieldNames = $rowWrite->columnWrites->getColumnNames();
+            if ($rowWrite->idValue !== null) {
+                $fieldNames[] = '#id'; // "#" cannot collide with a real column name — kept out of the column writes
             }
             $columnsToReplace = array_values(array_intersect($doctrineModel->columnsToReplaceInsteadOfMerge, $fieldNames));
             sort($columnsToReplace);
-            $rowShapes[$index] = ['fieldNames' => $fieldNames, 'columnsToReplace' => $columnsToReplace];
-            $rowColumnWrites[$index] = $columnWrites;
-            $rowIdValues[$index] = $idValue;
+            $rowShape = new BatchRowShape($fieldNames, $columnsToReplace);
+            $rowShapes->add($rowShape);
+            $rowWrites->add($rowWrite);
         }
+        $rowWriteList = $rowWrites->getElements();
 
         $conflictTargetByIndex = [];
         $conflictKeyValueByIndex = [];
         $needsFallbackByIndex = [];
         $fallbackCandidateKeysByIndex = [];
         foreach ($doctrineModels as $index => $doctrineModel) {
-            $hasId = $rowIdValues[$index] !== null;
-            $presentColumnNames = array_map(
-                static fn (ColumnWrite $columnWrite): string => $columnWrite->columnName,
-                $rowColumnWrites[$index]
-            );
+            $hasId = $rowWriteList[$index]->idValue !== null;
+            $presentColumnNames = $rowWriteList[$index]->columnWrites->getColumnNames();
             if ($useInsertIgnore) {
                 $conflictTargetByIndex[$index] = [];
                 $conflictKeyValueByIndex[$index] = null;
@@ -254,12 +249,12 @@ final class PostgresUpsertBuilder implements UpsertBuilder
                 continue;
             }
             if ($hasId) {
-                $conflictKeyValueByIndex[$index] = 'id=' . $rowIdValues[$index];
+                $conflictKeyValueByIndex[$index] = 'id=' . $rowWriteList[$index]->idValue;
                 continue;
             }
             $keyParts = [];
             foreach ($target as $columnName) {
-                $columnWrite = $this->findColumnWrite($rowColumnWrites[$index], $columnName);
+                $columnWrite = $this->findColumnWrite($rowWriteList[$index]->columnWrites, $columnName);
                 $value = $columnWrite?->value;
                 $keyParts[] = is_scalar($value) || $value === null ? (string)$value : json_encode($value);
             }
@@ -267,66 +262,65 @@ final class PostgresUpsertBuilder implements UpsertBuilder
         }
 
         $runs = BatchPlanner::planRuns($rowShapes, static fn (int $index) => $conflictKeyValueByIndex[$index]);
-        foreach ($runs as &$run) {
-            foreach ($run['modelIndexes'] as $index) {
+        foreach ($runs->getElements() as $run) {
+            foreach ($run->modelIndexes as $index) {
                 if (isset($needsFallbackByIndex[$index])) {
-                    $run['rowByRow'] = true;
+                    $run->rowByRow = true;
                     break;
                 }
             }
         }
-        unset($run);
 
         $executeRuns = function () use (
             $connection,
             $runs,
             $doctrineModels,
-            $rowColumnWrites,
-            $rowIdValues,
+            $rowWrites,
+            $rowWriteList,
             $conflictTargetByIndex,
             $needsFallbackByIndex,
             $fallbackCandidateKeysByIndex,
             $table,
             $useInsertIgnore
         ): void {
-            foreach ($runs as $run) {
-                if (!$run['rowByRow'] && count($run['modelIndexes']) > 1) {
+            foreach ($runs->getElements() as $run) {
+                if (!$run->rowByRow && count($run->modelIndexes) > 1) {
                     $this->executeBulkRun(
                         $connection,
                         $table,
-                        $run['modelIndexes'],
-                        $rowColumnWrites,
-                        $rowIdValues,
+                        $run->modelIndexes,
+                        $rowWrites,
                         $conflictTargetByIndex,
                         $useInsertIgnore
                     );
                     continue;
                 }
-                foreach ($run['modelIndexes'] as $index) {
+                foreach ($run->modelIndexes as $index) {
                     if (isset($needsFallbackByIndex[$index])) {
                         $this->upsertWithNullableFallback(
                             $connection,
                             $table,
-                            $rowColumnWrites[$index],
+                            $rowWriteList[$index]->columnWrites,
                             $fallbackCandidateKeysByIndex[$index]
                         );
                         continue;
                     }
-                    [$sql, $values, $types] = $this->renderUpsertSql(
+                    $upsertSql = $this->renderUpsertSql(
                         $table,
-                        $rowColumnWrites[$index],
-                        $rowIdValues[$index],
+                        $rowWriteList[$index]->columnWrites,
+                        $rowWriteList[$index]->idValue,
                         $conflictTargetByIndex[$index],
                         $useInsertIgnore
                     );
-                    $connection->fetchAssociative($sql, $values, $types);
+                    $connection->fetchAssociative($upsertSql->sql, $upsertSql->values, $upsertSql->types);
                 }
             }
 
             // nextval() is not transactional (§4.6) — safe to run before the caller's own commit/rollback decides
             // the batch's fate, and cheaper than one call per explicit-id row.
             $maxExplicitId = null;
-            foreach ($rowIdValues as $idValue) {
+            foreach ($rowWriteList as $rowWrite) {
+                $idValue = $rowWrite->idValue;
                 if ($idValue !== null && ($maxExplicitId === null || $idValue > $maxExplicitId)) {
                     $maxExplicitId = $idValue;
                 }
@@ -337,8 +331,8 @@ final class PostgresUpsertBuilder implements UpsertBuilder
         };
 
         $totalStatements = 0;
-        foreach ($runs as $run) {
-            $totalStatements += (!$run['rowByRow'] && count($run['modelIndexes']) > 1) ? 1 : count($run['modelIndexes']);
+        foreach ($runs->getElements() as $run) {
+            $totalStatements += (!$run->rowByRow && count($run->modelIndexes) > 1) ? 1 : count($run->modelIndexes);
         }
         if ($totalStatements <= 1) {
             $executeRuns();
@@ -373,10 +367,14 @@ final class PostgresUpsertBuilder implements UpsertBuilder
         $connection = $entityManager->getConnection();
         $metadata = $entityManager->getClassMetadata($doctrineModel::class);
         $reflectionClass = ReflectionClass::instance($doctrineModel::class);
-        ['columns' => $columnWrites, 'idValue' => $idValue] = $this->buildColumnWrites($metadata, $doctrineModel, $reflectionClass, null);
+        $rowWrite = $this->buildColumnWrites($metadata, $doctrineModel, $reflectionClass, null);
+        $idValue = $rowWrite->idValue;
         $table = $doctrineModel->getTableName();
-        [$columns, $placeholders, $values, $types] = $this->renderInsertColumnsAndValues($columnWrites, $idValue);
-        $sql = 'INSERT INTO "' . $table . '" (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $placeholders) . ') RETURNING "id"';
+        $insertColumnsAndValues = $this->renderInsertColumnsAndValues($rowWrite->columnWrites, $idValue);
+        $values = $insertColumnsAndValues->values;
+        $types = $insertColumnsAndValues->types;
+        $sql = 'INSERT INTO "' . $table . '" (' . implode(', ', $insertColumnsAndValues->quotedColumns) . ') VALUES ('
+            . implode(', ', $insertColumnsAndValues->valueExpressions) . ') RETURNING "id"';
 
         try {
             return WriteExecutor::runSavepointed(
@@ -401,7 +399,7 @@ final class PostgresUpsertBuilder implements UpsertBuilder
     protected function rightsScopedUpdate(
         DoctrineModel $doctrineModel,
         QueryBuilder $updateRightsQueryBuilder,
-        array $columnWrites,
+        ColumnWrites $columnWrites,
         Connection $connection
     ): int {
         $modelAlias = $doctrineModel::MODEL_ALIAS;
@@ -411,10 +409,10 @@ final class PostgresUpsertBuilder implements UpsertBuilder
         $values = [];
         $types = [];
         foreach ($columnWrites as $columnWrite) {
-            [$assignmentSql, $assignmentValues, $assignmentTypes] = $this->renderUpdateByIdAssignment($columnWrite);
-            $assignments[] = $assignmentSql;
-            array_push($values, ...$assignmentValues);
-            array_push($types, ...$assignmentTypes);
+            $assignment = $this->renderUpdateByIdAssignment($columnWrite);
+            $assignments[] = $assignment->sql;
+            array_push($values, ...$assignment->values);
+            array_push($types, ...$assignment->types);
         }
 
         $rightsIdQueryBuilder = clone $updateRightsQueryBuilder;
@@ -511,15 +509,18 @@ final class PostgresUpsertBuilder implements UpsertBuilder
     // ───────────────────────────────────────────────────────── column walk (shared with MariaDbUpsertBuilder's sibling logic)
 
     /**
-     * @return array{columns: ColumnWrite[], idValue: int|string|null}
+     * The row's column writes (its initialized, non-identifier, non-virtual fields; only $onlyFieldNames when given)
+     * and its explicit id.
+     *
+     * @param string[]|null $onlyFieldNames
      */
     protected function buildColumnWrites(
         ClassMetadata $metadata,
         DoctrineModel $doctrineModel,
         ReflectionClass $reflectionClass,
         ?array $onlyFieldNames
-    ): array {
-        $columns = [];
+    ): RowWrite {
+        $columns = new ColumnWrites();
         $idValue = null;
         foreach ($metadata->getFieldNames() as $fieldName) {
             if (isset($doctrineModel::$virtualColumns[$fieldName])) {
@@ -539,9 +540,10 @@ final class PostgresUpsertBuilder implements UpsertBuilder
             if (!$reflectionProperty->isInitialized($doctrineModel)) {
                 continue;
             }
-            $columns[] = $this->buildColumnWrite($metadata, $doctrineModel, $reflectionClass, $fieldName);
+            $columnWrite = $this->buildColumnWrite($metadata, $doctrineModel, $reflectionClass, $fieldName);
+            $columns->add($columnWrite);
         }
-        return ['columns' => $columns, 'idValue' => $idValue];
+        return new RowWrite($columns, $idValue);
     }
 
     protected function buildColumnWrite(
@@ -628,7 +630,7 @@ final class PostgresUpsertBuilder implements UpsertBuilder
         return $blobColumnCache[$cacheKey] = $isBlobColumn;
     }
 
-    protected function findColumnWrite(array $columnWrites, string $columnName): ?ColumnWrite
+    protected function findColumnWrite(ColumnWrites $columnWrites, string $columnName): ?ColumnWrite
     {
         foreach ($columnWrites as $columnWrite) {
             if ($columnWrite->columnName === $columnName) {
@@ -657,13 +659,13 @@ final class PostgresUpsertBuilder implements UpsertBuilder
      * "counted and logged" ({@see self::$nullableFallbackLookupCount}, `error_log()`) because every hit is an
      * extra two round trips this entity's shape could avoid entirely with a declared `#[UpsertConflictKey]`.
      *
-     * @param ColumnWrite[] $columnWrites
+     * @param ColumnWrites $columnWrites
      * @param string[][] $candidateKeys
      */
-    protected function upsertWithNullableFallback(Connection $connection, string $table, array $columnWrites, array $candidateKeys): int
+    protected function upsertWithNullableFallback(Connection $connection, string $table, ColumnWrites $columnWrites, array $candidateKeys): int
     {
-        [$sql, $values, $types] = $this->renderUpsertSql($table, $columnWrites, null, [], true);
-        $row = $connection->fetchAssociative($sql, $values, $types);
+        $upsertSql = $this->renderUpsertSql($table, $columnWrites, null, [], true);
+        $row = $connection->fetchAssociative($upsertSql->sql, $upsertSql->values, $upsertSql->types);
         if ($row !== false && isset($row['id'])) {
             return (int)$row['id'];
         }
@@ -695,10 +697,10 @@ final class PostgresUpsertBuilder implements UpsertBuilder
             $updateValues = [];
             $updateTypes = [];
             foreach ($columnWrites as $columnWrite) {
-                [$assignmentSql, $assignmentValues, $assignmentTypes] = $this->renderUpdateByIdAssignment($columnWrite);
-                $assignments[] = $assignmentSql;
-                array_push($updateValues, ...$assignmentValues);
-                array_push($updateTypes, ...$assignmentTypes);
+                $assignment = $this->renderUpdateByIdAssignment($columnWrite);
+                $assignments[] = $assignment->sql;
+                array_push($updateValues, ...$assignment->values);
+                array_push($updateTypes, ...$assignment->types);
             }
             if ($assignments !== []) {
                 $connection->executeStatement(
@@ -726,24 +728,24 @@ final class PostgresUpsertBuilder implements UpsertBuilder
 
     // ───────────────────────────────────────────────────────── SQL rendering
 
-    /** @return array{0: string, 1: mixed, 2: bool} [SQL fragment for the `?` slot, the value to bind, whether a value is bound at all] */
-    protected function valueExpressionFor(ColumnWrite $columnWrite): array
+    /** The SQL fragment for the column's `?` slot, the value to bind and whether a value is bound at all. */
+    protected function valueExpressionFor(ColumnWrite $columnWrite): BindValueExpression
     {
         if ($columnWrite->kind === BindExpressionKind::GEOMETRY) {
             return $columnWrite->value !== null
-                ? ['ST_GeomFromText(?, 0)', $columnWrite->value, true]
-                : ['?', null, true];
+                ? new BindValueExpression('ST_GeomFromText(?, 0)', $columnWrite->value, true)
+                : new BindValueExpression('?', null, true);
         }
         if ($columnWrite->kind === BindExpressionKind::VECTOR) {
             if ($columnWrite->value !== null) {
-                return ['?::vector', $columnWrite->value, true];
+                return new BindValueExpression('?::vector', $columnWrite->value, true);
             }
             if (($columnWrite->vectorDimensions ?? 0) > 0) {
-                return [$this->postgresNullVectorLiteral($columnWrite->vectorDimensions), null, false];
+                return new BindValueExpression($this->postgresNullVectorLiteral($columnWrite->vectorDimensions), null, false);
             }
-            return ['?', null, true];
+            return new BindValueExpression('?', null, true);
         }
-        return ['?', $columnWrite->value, true];
+        return new BindValueExpression('?', $columnWrite->value, true);
     }
 
     protected function postgresNullVectorLiteral(int $dimensions): string
@@ -751,8 +753,7 @@ final class PostgresUpsertBuilder implements UpsertBuilder
         return "'[" . implode(',', array_fill(0, $dimensions, '0')) . "]'::vector";
     }
 
-    /** @return array{0: string[], 1: string[], 2: array, 3: string[]} [quoted columns, value expressions, values, types] */
-    protected function renderInsertColumnsAndValues(array $columnWrites, int|string|null $idValue): array
+    protected function renderInsertColumnsAndValues(ColumnWrites $columnWrites, int|string|null $idValue): InsertColumnsAndValues
     {
         $columns = [];
         $placeholders = [];
@@ -765,7 +766,8 @@ final class PostgresUpsertBuilder implements UpsertBuilder
             $types[] = 'integer';
         }
         foreach ($columnWrites as $columnWrite) {
-            [$expr, $value, $bound] = $this->valueExpressionFor($columnWrite);
+            $valueExpression = $this->valueExpressionFor($columnWrite);
+            [$expr, $value, $bound] = [$valueExpression->sql, $valueExpression->value, $valueExpression->bindsValue];
             $columns[] = '"' . $columnWrite->columnName . '"';
             $placeholders[] = $expr;
             if ($bound) {
@@ -773,19 +775,22 @@ final class PostgresUpsertBuilder implements UpsertBuilder
                 $types[] = $columnWrite->dbalType;
             }
         }
-        return [$columns, $placeholders, $values, $types];
+        return new InsertColumnsAndValues($columns, $placeholders, $values, $types);
     }
 
-    /** @return array{0: string, 1: array, 2: string[]} [SQL, values, types] */
+    /**
+     * @param string[] $conflictTargetColumns
+     */
     protected function renderUpsertSql(
         string $table,
-        array $columnWrites,
+        ColumnWrites $columnWrites,
         int|string|null $idValue,
         array $conflictTargetColumns,
         bool $useInsertIgnore
-    ): array {
-        [$columns, $placeholders, $values, $types] = $this->renderInsertColumnsAndValues($columnWrites, $idValue);
-        $sql = 'INSERT INTO "' . $table . '" AS t (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $placeholders) . ')';
+    ): DoctrineBoundSql {
+        $insertColumnsAndValues = $this->renderInsertColumnsAndValues($columnWrites, $idValue);
+        $sql = 'INSERT INTO "' . $table . '" AS t (' . implode(', ', $insertColumnsAndValues->quotedColumns) . ') VALUES ('
+            . implode(', ', $insertColumnsAndValues->valueExpressions) . ')';
 
         if ($useInsertIgnore) {
             $sql .= ' ON CONFLICT DO NOTHING';
@@ -801,22 +806,21 @@ final class PostgresUpsertBuilder implements UpsertBuilder
         }
 
         $sql .= ' RETURNING "id"';
-        return [$sql, $values, $types];
+        return new DoctrineBoundSql($sql, $insertColumnsAndValues->values, $insertColumnsAndValues->types);
     }
 
     protected function executeBulkRun(
         Connection $connection,
         string $table,
         array $modelIndexes,
-        array $rowColumnWrites,
-        array $rowIdValues,
+        RowWrites $rowWrites,
         array $conflictTargetByIndex,
         bool $useInsertIgnore
     ): void {
+        $rowWriteList = $rowWrites->getElements();
         $firstIndex = $modelIndexes[0];
-        /** @var ColumnWrite[] $columnWritesTemplate */
-        $columnWritesTemplate = $rowColumnWrites[$firstIndex];
-        $hasId = $rowIdValues[$firstIndex] !== null;
+        $columnWritesTemplate = $rowWriteList[$firstIndex]->columnWrites;
+        $hasId = $rowWriteList[$firstIndex]->idValue !== null;
         $conflictTarget = $conflictTargetByIndex[$firstIndex];
 
         $columnNames = [];
@@ -834,11 +838,12 @@ final class PostgresUpsertBuilder implements UpsertBuilder
             $rowExpressions = [];
             if ($hasId) {
                 $rowExpressions[] = '?';
-                $values[] = $rowIdValues[$index];
+                $values[] = $rowWriteList[$index]->idValue;
                 $types[] = 'integer';
             }
-            foreach ($rowColumnWrites[$index] as $columnWrite) {
-                [$expr, $value, $bound] = $this->valueExpressionFor($columnWrite);
+            foreach ($rowWriteList[$index]->columnWrites as $columnWrite) {
+                $valueExpression = $this->valueExpressionFor($columnWrite);
+                [$expr, $value, $bound] = [$valueExpression->sql, $valueExpression->value, $valueExpression->bindsValue];
                 $rowExpressions[] = $expr;
                 if ($bound) {
                     $values[] = $value;
@@ -854,7 +859,7 @@ final class PostgresUpsertBuilder implements UpsertBuilder
         } elseif ($conflictTarget !== []) {
             $assignments = array_map(
                 fn (ColumnWrite $columnWrite): string => $this->renderConflictUpdateAssignment($columnWrite),
-                $columnWritesTemplate
+                $columnWritesTemplate->getElements()
             );
             $targetColumns = implode(', ', array_map(static fn (string $c): string => '"' . $c . '"', $conflictTarget));
             $sql .= $assignments === []
@@ -876,23 +881,24 @@ final class PostgresUpsertBuilder implements UpsertBuilder
         };
     }
 
-    /** @return array{0: string, 1: array, 2: string[]} [assignment SQL, values, types] */
-    protected function renderUpdateByIdAssignment(ColumnWrite $columnWrite): array
+    /** The column's assignment in an `UPDATE … SET` with its bound values and types. */
+    protected function renderUpdateByIdAssignment(ColumnWrite $columnWrite): DoctrineBoundSql
     {
         if ($columnWrite->updatePolicy === UpdatePolicy::RAW_ACTION) {
             return $this->renderRawActionForUpdateForm($columnWrite);
         }
-        [$expr, $value, $bound] = $this->valueExpressionFor($columnWrite);
+        $valueExpression = $this->valueExpressionFor($columnWrite);
+        [$expr, $value, $bound] = [$valueExpression->sql, $valueExpression->value, $valueExpression->bindsValue];
         $column = '"' . $columnWrite->columnName . '"';
         $values = $bound ? [$value] : [];
         $types = $bound ? [$columnWrite->dbalType] : [];
         if ($columnWrite->updatePolicy === UpdatePolicy::MERGE_PATCH) {
-            return ["$column = ddd_json_merge_patch(COALESCE($column,'{}'), $expr)", $values, $types];
+            return new DoctrineBoundSql("$column = ddd_json_merge_patch(COALESCE($column,'{}'), $expr)", $values, $types);
         }
         if ($columnWrite->updatePolicy === UpdatePolicy::KEEP_CREATED) {
-            return ["$column = COALESCE($expr, $column)", $values, $types];
+            return new DoctrineBoundSql("$column = COALESCE($expr, $column)", $values, $types);
         }
-        return ["$column = $expr", $values, $types];
+        return new DoctrineBoundSql("$column = $expr", $values, $types);
     }
 
     /**
@@ -925,13 +931,14 @@ final class PostgresUpsertBuilder implements UpsertBuilder
      * {@see \DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityManager::buildOnUpdateActionAssignment()}'s MariaDB
      * form. A bare `` `col` `` with no `VALUES()` binds nothing (self-reference, a no-op).
      *
-     * @return array{0: string, 1: array, 2: string[]}
+     * @return DoctrineBoundSql
      */
-    protected function renderRawActionForUpdateForm(ColumnWrite $columnWrite): array
+    protected function renderRawActionForUpdateForm(ColumnWrite $columnWrite): DoctrineBoundSql
     {
         $values = [];
         $types = [];
-        [$expr, $value, $bound] = $this->valueExpressionFor($columnWrite);
+        $valueExpression = $this->valueExpressionFor($columnWrite);
+        [$expr, $value, $bound] = [$valueExpression->sql, $valueExpression->value, $valueExpression->bindsValue];
         $translated = preg_replace_callback(
             '/VALUES\s*\(\s*`' . preg_quote($columnWrite->columnName, '/') . '`\s*\)/i',
             function () use ($expr, $value, $bound, $columnWrite, &$values, &$types): string {
@@ -944,6 +951,6 @@ final class PostgresUpsertBuilder implements UpsertBuilder
             (string)$columnWrite->rawOnUpdateAction
         );
         $translated = preg_replace('/`([A-Za-z0-9_]+)`/', '"$1"', $translated);
-        return ['"' . $columnWrite->columnName . '" = ' . $translated, $values, $types];
+        return new DoctrineBoundSql('"' . $columnWrite->columnName . '" = ' . $translated, $values, $types);
     }
 }

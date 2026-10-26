@@ -19,7 +19,7 @@ use WeakMap;
  * `WeakMap<Connection, SqlDialect>` per plan rule 3 (never process-global): the map holds no state that outlives a
  * connection, and both dialect instances are themselves stateless so sharing them across connections is safe.
  */
-final class DialectResolver
+class DialectResolver
 {
     protected static ?MariaDbDialect $mariaDb = null;
     protected static ?PostgresDialect $postgres = null;

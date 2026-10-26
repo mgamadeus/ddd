@@ -27,7 +27,7 @@ use Doctrine\ORM\Mapping\QuoteStrategy;
  * `PostgreSQLPlatform` — an unquoted lowercase-only identifier already folds to the exact string the hydrator
  * looks the result column up by, so quoting it would change nothing.
  */
-final class AlwaysQuoteStrategy implements QuoteStrategy
+class AlwaysQuoteStrategy implements QuoteStrategy
 {
     use SQLResultCasing;
 

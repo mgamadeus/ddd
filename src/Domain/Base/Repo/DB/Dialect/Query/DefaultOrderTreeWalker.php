@@ -69,7 +69,7 @@ use Doctrine\ORM\Query\TreeWalkerAdapter;
  * default {@see PostgresSqlWalker}, no output-walker override) still gets the full root + child tie-breaker chain
  * — that query carries every join and is what the children's final order is read from.
  */
-final class DefaultOrderTreeWalker extends TreeWalkerAdapter
+class DefaultOrderTreeWalker extends TreeWalkerAdapter
 {
     /**
      * `COUNT`/`AVG`/`MIN`/`MAX`/`SUM` parse through DQL's generic function dispatch (`Parser::SelectExpression()`'s
@@ -146,8 +146,8 @@ final class DefaultOrderTreeWalker extends TreeWalkerAdapter
             return;
         }
 
-        foreach ($this->findToManyJoinedAliasesInOrder($rootDeclaration, $queryComponents) as [$childAlias, $childIdField]) {
-            $this->appendIdOrderByItem($AST, $childAlias, $childIdField);
+        foreach ($this->findToManyJoinedAliasesInOrder($rootDeclaration, $queryComponents) as $joinedAliasIdentifier) {
+            $this->appendIdOrderByItem($AST, $joinedAliasIdentifier->alias, $joinedAliasIdentifier->identifierFieldName);
         }
     }
 
@@ -185,17 +185,17 @@ final class DefaultOrderTreeWalker extends TreeWalkerAdapter
     /**
      * Walks the root's flattened join list (DQL has no nested `FROM`, so `root → child → grandchild` joins all sit
      * on the same {@see AST\IdentificationVariableDeclaration}, parent before child, in written/generated order)
-     * and returns one `[alias, idField]` pair per to-many association join (`ONE_TO_MANY`/`MANY_TO_MANY`) — an
+     * and returns one alias + identifier field per to-many association join (`ONE_TO_MANY`/`MANY_TO_MANY`) — an
      * explicit `JOIN Entity alias WITH …` (no association behind it, `relation` stays `null` in the query
      * component) and a to-one join are both skipped; a to-many join onto a composite-key entity is skipped too (no
      * composite-key support here, same limit the root tie-breaker already has).
      *
      * @param array<string, array<string, mixed>> $queryComponents
-     * @return list<array{0: string, 1: string}>
+     * @return JoinedAliasIdentifiers In join order, parent before child
      */
-    protected function findToManyJoinedAliasesInOrder(AST\IdentificationVariableDeclaration $rootDeclaration, array $queryComponents): array
+    protected function findToManyJoinedAliasesInOrder(AST\IdentificationVariableDeclaration $rootDeclaration, array $queryComponents): JoinedAliasIdentifiers
     {
-        $pairs = [];
+        $joinedAliasIdentifiers = new JoinedAliasIdentifiers();
         foreach ($rootDeclaration->joins as $join) {
             if (!$join instanceof AST\Join) {
                 continue;
@@ -219,10 +219,11 @@ final class DefaultOrderTreeWalker extends TreeWalkerAdapter
                 continue;
             }
 
-            $pairs[] = [$alias, $childMetadata->identifier[0]];
+            $joinedAliasIdentifier = new JoinedAliasIdentifier($alias, $childMetadata->identifier[0]);
+            $joinedAliasIdentifiers->add($joinedAliasIdentifier);
         }
 
-        return $pairs;
+        return $joinedAliasIdentifiers;
     }
 
     protected function selectsAnAggregate(AST\SelectStatement $AST): bool

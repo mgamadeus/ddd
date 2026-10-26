@@ -10,7 +10,7 @@ use Doctrine\DBAL\Driver\Statement;
 use Throwable;
 
 /** @see AbortedTransactionGuard */
-final class AbortedTransactionGuardStatement extends AbstractStatementMiddleware
+class AbortedTransactionGuardStatement extends AbstractStatementMiddleware
 {
     public function __construct(
         Statement $wrappedStatement,

@@ -13,9 +13,9 @@ use PDO;
 use PHPUnit\Framework\TestCase;
 
 /** D4.4: charset never reaches DBAL's pgsql driver, utf8mb4 is refused outright, server_version maps to serverVersion. */
-final class PostgresDialectTest extends TestCase
+class PostgresDialectTest extends TestCase
 {
-    private PostgresDialect $dialect;
+    protected PostgresDialect $dialect;
 
     protected function setUp(): void
     {

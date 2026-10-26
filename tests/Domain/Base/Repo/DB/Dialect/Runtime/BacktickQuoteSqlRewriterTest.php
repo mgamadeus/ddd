@@ -8,7 +8,7 @@ use DDD\Domain\Base\Repo\DB\Dialect\Runtime\BacktickQuoteSqlRewriter;
 use PHPUnit\Framework\TestCase;
 
 /** D1/§4.5: backticks -> double quotes outside string literals, comments and $tag$ bodies. */
-final class BacktickQuoteSqlRewriterTest extends TestCase
+class BacktickQuoteSqlRewriterTest extends TestCase
 {
     public function testNoBacktickIsReturnedUnchangedByTheFastPath(): void
     {

@@ -83,7 +83,7 @@ use PDO;
  * (schema-wide PostgreSQL index/constraint names, §4.5) — one `ddlRenderer()` call is one render run, so its
  * duplicate-name bookkeeping never conflates two unrelated renders.
  */
-final class PostgresDialect implements SqlDialect
+class PostgresDialect implements SqlDialect
 {
     /**
      * One {@see PostgresLockService} per scope, for this process's whole lifetime (§4.12 fix: "a per-process

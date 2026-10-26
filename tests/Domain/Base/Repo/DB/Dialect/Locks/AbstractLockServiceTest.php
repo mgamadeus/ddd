@@ -13,7 +13,7 @@ use RuntimeException;
  * {@see FakeLockService} so no real connection is needed. The real engines are proven by the integration suite
  * (tests/Integration/Locks); this covers the depth-map logic itself, which is identical code for both.
  */
-final class AbstractLockServiceTest extends TestCase
+class AbstractLockServiceTest extends TestCase
 {
     protected function setUp(): void
     {

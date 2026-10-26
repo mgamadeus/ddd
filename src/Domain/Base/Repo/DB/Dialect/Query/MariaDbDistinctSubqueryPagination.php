@@ -18,7 +18,7 @@ use Doctrine\ORM\Query\Parameter;
  * {@see \DDD\Domain\Base\Repo\DB\Dialect\PostgresDialect::pagination()}'s PostgreSQL sibling,
  * {@see RowNumberPagePagination}.
  */
-final class MariaDbDistinctSubqueryPagination implements PaginationStrategy
+class MariaDbDistinctSubqueryPagination implements PaginationStrategy
 {
     public function paginate(DoctrineQueryBuilder $queryBuilder, bool $refresh = false): mixed
     {

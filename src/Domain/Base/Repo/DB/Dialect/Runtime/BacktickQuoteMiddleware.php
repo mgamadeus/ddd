@@ -15,7 +15,7 @@ use Doctrine\DBAL\Driver\Middleware;
  * {@see \DDD\Domain\Base\Repo\DB\Dialect\PostgresDialect::configureOrm()}; MariaDB's raw SQL already matches its
  * own quoting, so this middleware never runs there.
  */
-final class BacktickQuoteMiddleware implements Middleware
+class BacktickQuoteMiddleware implements Middleware
 {
     public function wrap(Driver $driver): Driver
     {

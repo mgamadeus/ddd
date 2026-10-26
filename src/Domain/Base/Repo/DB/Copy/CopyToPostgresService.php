@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Repo\DB\Copy;
 
 use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseColumns;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseModels;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatement;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\PostgresDdlRenderer;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
@@ -27,20 +29,19 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * schema-diff-based verify item 4, no smoke/API-sample verify items 6-7. Every phase is otherwise real: it runs
  * against a live MariaDB source and a live PostgreSQL target, not a dry simulation (unless `--dry-run`).
  */
-final class CopyToPostgresService
+class CopyToPostgresService
 {
-    /** @var DatabaseModel[] */
-    protected array $databaseModels;
+    protected DatabaseModels $databaseModels;
 
     protected PostgresDdlRenderer $renderer;
 
     /**
-     * @param DatabaseModel[] $databaseModels Already filtered by --table; one DatabaseModel per entity to copy.
+     * @param DatabaseModels $databaseModels Already filtered by --table; one DatabaseModel per entity to copy.
      */
     public function __construct(
         protected readonly Connection $source,
         protected readonly Connection $target,
-        array $databaseModels,
+        DatabaseModels $databaseModels,
         protected readonly SymfonyStyle $io,
         protected readonly int $chunkSize = 5000,
         protected readonly bool $dryRun = false,
@@ -74,11 +75,11 @@ final class CopyToPostgresService
      * columns + inline `PRIMARY KEY`; indexes/FKs are separate, later-phase statements the renderer returns
      * alongside it) — no renderer change was needed to get a clean PK-only CREATE TABLE out of it.
      *
-     * @return array<string, array{seconds: float}>
+     * @return CopyTableResults One result per table, with $seconds set.
      */
-    public function runSchema(): array
+    public function runSchema(): CopyTableResults
     {
-        $results = [];
+        $results = new CopyTableResults();
         if ($this->dryRun) {
             foreach ($this->renderer->ensure() as $statement) {
                 $this->io->text('[dry-run] ' . $statement->sql);
@@ -91,18 +92,16 @@ final class CopyToPostgresService
 
         foreach ($this->databaseModels as $databaseModel) {
             $start = microtime(true);
-            $tableStatements = array_values(array_filter(
-                $this->renderer->renderCreate($databaseModel),
-                static fn (DdlStatement $statement): bool => $statement->phase === DdlStatement::PHASE_CREATE_TABLE
-            ));
-            foreach (DdlStatement::sortByPhase($tableStatements) as $statement) {
+            $tableStatements = $this->renderer->renderCreate($databaseModel)->withPhase(DdlStatement::PHASE_CREATE_TABLE);
+            foreach ($tableStatements->sortedByPhase() as $statement) {
                 if ($this->dryRun) {
                     $this->io->text('[dry-run] ' . $statement->sql);
                 } else {
                     $this->target->executeStatement($statement->sql);
                 }
             }
-            $results[$databaseModel->sqlTableName] = ['seconds' => microtime(true) - $start];
+            $tableResult = new CopyTableResult(table: $databaseModel->sqlTableName, seconds: microtime(true) - $start);
+            $results->add($tableResult);
         }
         return $results;
     }
@@ -112,21 +111,24 @@ final class CopyToPostgresService
      * `PDO::pgsqlCopyFromArray()` (COPY text). Restartable per table: a restart truncates the target table first
      * (Mig §5.1 "Parallel and restartable per table (a restart truncates)").
      *
-     * @return array<string, array{rows: int, seconds: float}>
+     * @return CopyTableResults One result per table, with $rows and $seconds set ($absentInSource for a table the
+     *      source never had).
      */
-    public function runData(): array
+    public function runData(): CopyTableResults
     {
-        $results = [];
+        $results = new CopyTableResults();
         foreach ($this->databaseModels as $databaseModel) {
             if (!$this->sourceHasTable($databaseModel->sqlTableName)) {
                 // An entity table the source database never had (e.g. a DDD core entity the app does not use):
                 // created empty by the schema phase, nothing to copy or verify.
-                $results[$databaseModel->sqlTableName] = ['rows' => 0, 'seconds' => 0.0, 'absentInSource' => true];
+                $tableResult = new CopyTableResult(table: $databaseModel->sqlTableName, seconds: 0.0, rows: 0, absentInSource: true);
+                $results->add($tableResult);
                 continue;
             }
             $start = microtime(true);
             $rows = $this->copyTable($databaseModel);
-            $results[$databaseModel->sqlTableName] = ['rows' => $rows, 'seconds' => microtime(true) - $start];
+            $tableResult = new CopyTableResult(table: $databaseModel->sqlTableName, seconds: microtime(true) - $start, rows: $rows);
+            $results->add($tableResult);
         }
         return $results;
     }
@@ -146,13 +148,6 @@ final class CopyToPostgresService
     /** @var array<string, array<string, bool>> Source column names per table. */
     protected array $sourceColumns = [];
 
-    /**
-     * The entity's persisted columns that also exist in the source table. A column the entity declares but the
-     * source never had (schema drift, e.g. Radbonus CacheScopeInvalidations.locationId) is reported once and left to
-     * the target's DEFAULT / NULL — the copy moves what exists, it does not invent data.
-     *
-     * @return DatabaseColumn[]
-     */
     /** Target bytes per chunk: rows are fetched buffered, so a chunk must fit comfortably in PHP's memory. */
     public const int CHUNK_TARGET_BYTES = 32 * 1024 * 1024;
 
@@ -188,7 +183,12 @@ final class CopyToPostgresService
         return $this->chunkSizes[$table];
     }
 
-    protected function columnsPresentInSource(DatabaseModel $databaseModel): array
+    /**
+     * The entity's persisted columns that also exist in the source table. A column the entity declares but the
+     * source never had (schema drift, e.g. Radbonus CacheScopeInvalidations.locationId) is reported once and left to
+     * the target's DEFAULT / NULL — the copy moves what exists, it does not invent data.
+     */
+    protected function columnsPresentInSource(DatabaseModel $databaseModel): DatabaseColumns
     {
         $table = $databaseModel->sqlTableName;
         if (!isset($this->sourceColumns[$table])) {
@@ -206,18 +206,20 @@ final class CopyToPostgresService
                 $this->io->note("\"$table\": column(s) absent in the source, left to the target default: " . implode(', ', $missing));
             }
         }
-        return array_values(array_filter(
-            $databaseModel->columns->getElements(),
-            fn (DatabaseColumn $column): bool => !$column->ignoreProperty && isset($this->sourceColumns[$table][$column->name])
-        ));
+        $presentColumns = new DatabaseColumns();
+        foreach ($databaseModel->columns->getElements() as $column) {
+            if (!$column->ignoreProperty && isset($this->sourceColumns[$table][$column->name])) {
+                $presentColumns->add($column);
+            }
+        }
+        return $presentColumns;
     }
 
     protected function copyTable(DatabaseModel $databaseModel): int
     {
         $table = $databaseModel->sqlTableName;
-        /** @var DatabaseColumn[] $columns */
         $columns = $this->columnsPresentInSource($databaseModel);
-        $fieldNames = array_map(static fn (DatabaseColumn $column): string => $column->name, $columns);
+        $fieldNames = array_map(static fn (DatabaseColumn $column): string => $column->name, $columns->getElements());
 
         if ($this->dryRun) {
             $count = (int)$this->source->fetchOne("SELECT COUNT(*) FROM `$table`");
@@ -229,7 +231,7 @@ final class CopyToPostgresService
 
         $selectExpressions = implode(
             ', ',
-            array_map(static fn (DatabaseColumn $column): string => CopyValueCodec::mariaDbSelectExpression($column), $columns)
+            array_map(static fn (DatabaseColumn $column): string => CopyValueCodec::mariaDbSelectExpression($column), $columns->getElements())
         );
         $quotedFields = implode(',', array_map(static fn (string $name): string => '"' . $name . '"', $fieldNames));
 
@@ -280,18 +282,15 @@ final class CopyToPostgresService
      * e.g. the Radbonus Track trigger would otherwise refuse rows the bulk copy inserts unconditionally. Then the
      * identity reset per table.
      *
-     * @return array<string, array{seconds: float}>
+     * @return CopyTableResults One result per table, with $seconds set.
      */
-    public function runFinalise(): array
+    public function runFinalise(): CopyTableResults
     {
-        $results = [];
+        $results = new CopyTableResults();
         foreach ($this->databaseModels as $databaseModel) {
             $start = microtime(true);
-            $statements = array_values(array_filter(
-                $this->renderer->renderCreate($databaseModel),
-                static fn (DdlStatement $statement): bool => $statement->phase !== DdlStatement::PHASE_CREATE_TABLE
-            ));
-            foreach (DdlStatement::sortByPhase($statements) as $statement) {
+            $statements = $this->renderer->renderCreate($databaseModel)->withoutPhase(DdlStatement::PHASE_CREATE_TABLE);
+            foreach ($statements->sortedByPhase() as $statement) {
                 if ($this->dryRun) {
                     $this->io->text('[dry-run] ' . $statement->sql);
                 } else {
@@ -301,7 +300,8 @@ final class CopyToPostgresService
             if (!$this->dryRun) {
                 $this->resetIdentity($databaseModel);
             }
-            $results[$databaseModel->sqlTableName] = ['seconds' => microtime(true) - $start];
+            $tableResult = new CopyTableResult(table: $databaseModel->sqlTableName, seconds: microtime(true) - $start);
+            $results->add($tableResult);
         }
         return $results;
     }
@@ -334,34 +334,35 @@ final class CopyToPostgresService
      * Phase `verify` (Mig §5.5 items 1-3 only — see class docblock for 4-7): per table, equal id sets, equal
      * canonicalised row hash, and the identity next value at least covering both sides' max id.
      *
-     * @return array<string, array{idSetMatches: bool, rowMismatches: string[], identityOk: bool, rows: int}>
+     * @return CopyTableResults One result per table present in the source, with $rows, $idSetMatches,
+     *      $rowMismatches and $identityOk set.
      */
-    public function runVerify(): array
+    public function runVerify(): CopyTableResults
     {
-        $results = [];
+        $results = new CopyTableResults();
         foreach ($this->databaseModels as $databaseModel) {
             if (!$this->sourceHasTable($databaseModel->sqlTableName)) {
                 continue; // absent in the source: nothing was copied, nothing to compare
             }
-            $results[$databaseModel->sqlTableName] = $this->verifyTable($databaseModel);
+            $tableResult = $this->verifyTable($databaseModel);
+            $results->add($tableResult);
         }
         return $results;
     }
 
-    /** @return array{idSetMatches: bool, rowMismatches: string[], identityOk: bool, rows: int} */
-    protected function verifyTable(DatabaseModel $databaseModel): array
+    /** @return CopyTableResult The table's verify outcome: $rows, $idSetMatches, $rowMismatches and $identityOk set. */
+    protected function verifyTable(DatabaseModel $databaseModel): CopyTableResult
     {
         $table = $databaseModel->sqlTableName;
-        /** @var DatabaseColumn[] $columns */
         $columns = $this->columnsPresentInSource($databaseModel);
 
         $sourceSelect = implode(
             ', ',
-            array_map(static fn (DatabaseColumn $c): string => CopyValueCodec::mariaDbVerifySelectExpression($c), $columns)
+            array_map(static fn (DatabaseColumn $c): string => CopyValueCodec::mariaDbVerifySelectExpression($c), $columns->getElements())
         );
         $targetSelect = implode(
             ', ',
-            array_map(static fn (DatabaseColumn $c): string => CopyValueCodec::postgresSelectExpression($c), $columns)
+            array_map(static fn (DatabaseColumn $c): string => CopyValueCodec::postgresSelectExpression($c), $columns->getElements())
         );
 
         // Keyset windows over the source ids, each covering the CONTIGUOUS id range (previous last id, this last id]
@@ -439,16 +440,20 @@ final class CopyToPostgresService
             $identityOk = $targetNextValue >= $expectedMinimum;
         }
 
-        return [
-            'idSetMatches' => $idSetMatches,
-            'rowMismatches' => $mismatches,
-            'identityOk' => $identityOk,
-            'rows' => $sourceRowCount,
-        ];
+        return new CopyTableResult(
+            table: $table,
+            rows: $sourceRowCount,
+            idSetMatches: $idSetMatches,
+            identityOk: $identityOk,
+            rowMismatches: $mismatches,
+        );
     }
 
-    /** @param DatabaseColumn[] $columns @return array<string, string|null> */
-    protected function canonicalRow(array $columns, array $row, bool $fromPostgres): array
+    /**
+     * @param DatabaseColumns $columns
+     * @return array<string, string|null> Canonical value per column name.
+     */
+    protected function canonicalRow(DatabaseColumns $columns, array $row, bool $fromPostgres): array
     {
         $canonical = [];
         foreach ($columns as $column) {

@@ -40,10 +40,10 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
  * its indexes, then its foreign keys). Rendering a WHOLE entity set additionally needs every table created before
  * any foreign key that references it — entity-class scan order gives no such guarantee (a referenced table can sort
  * after its referrer). The console-command caller therefore collects every model's statements across the whole set
- * and runs them through {@see DdlStatement::sortByPhase()} once, so every `PHASE_CREATE_TABLE` statement executes
+ * and runs them through {@see DdlStatements::sortedByPhase()} once, so every `PHASE_CREATE_TABLE` statement executes
  * before any `PHASE_CREATE_FOREIGN_KEY` statement, system-wide.
  */
-final class PostgresDdlRenderer implements DdlRenderer
+class PostgresDdlRenderer implements DdlRenderer
 {
     /** Mig §3.4: every varchar/text column gets this ICU nondeterministic collation unless overridden. */
     public const string DEFAULT_COLLATION = 'ddd_ci_ai';
@@ -51,13 +51,13 @@ final class PostgresDdlRenderer implements DdlRenderer
     /** `DatabaseColumn::COLLATION_UTF8MB4_BIN` maps to PostgreSQL's deterministic, byte-exact "C" collation. */
     public const string BINARY_COLLATION = 'C';
 
-    public function __construct(private readonly IdentifierPolicy $identifierPolicy = new IdentifierPolicy())
+    public function __construct(protected readonly IdentifierPolicy $identifierPolicy = new IdentifierPolicy())
     {
     }
 
     // ───────────────────────────────────────────────────────── ensure()
 
-    public function ensure(): array
+    public function ensure(): DdlStatements
     {
         $statements = [];
 
@@ -81,11 +81,10 @@ final class PostgresDdlRenderer implements DdlRenderer
             $statements[] = $statement;
         }
 
-        return $statements;
+        return DdlStatements::fromStatements(...$statements);
     }
 
-    /** @return DdlStatement[] */
-    protected function ensureFunctionStatements(): array
+    protected function ensureFunctionStatements(): DdlStatements
     {
         // Every ddd_* function below pins `SET search_path = public, pg_catalog` (verified against a real PG 18
         // container 2026-10-25). Without it, a SQL-language function that calls another by its bare name — exactly
@@ -215,19 +214,19 @@ final class PostgresDdlRenderer implements DdlRenderer
                 AS $ddd$ SELECT $1::text $ddd$
             SQL;
 
-        return array_map(
+        return DdlStatements::fromStatements(...array_map(
             static fn (string $sql): DdlStatement => new DdlStatement(sql: $sql, phase: DdlStatement::PHASE_FUNCTION),
             [$nowFunction, $unaccentFunction, $foldFunction, $translatableTextFunction, $jsonMergePatchFunction, $vecToTextFunction]
-        );
+        ));
     }
 
     // ───────────────────────────────────────────────────────── renderCreate()
 
-    public function renderCreate(DatabaseModel $databaseModel): array
+    public function renderCreate(DatabaseModel $databaseModel): DdlStatements
     {
         if ($databaseModel->parentEntityCLassWithNamespace) {
             // Single-table-inheritance subclass: the parent entity's table already carries every column.
-            return [];
+            return new DdlStatements();
         }
 
         $table = $databaseModel->sqlTableName;
@@ -287,7 +286,7 @@ final class PostgresDdlRenderer implements DdlRenderer
             }
         }
 
-        return $statements;
+        return DdlStatements::fromStatements(...$statements);
     }
 
     // ───────────────────────────────────────────────────────── triggers
@@ -299,21 +298,21 @@ final class PostgresDdlRenderer implements DdlRenderer
      * own, a single statement {@see \Doctrine\DBAL\Connection::executeStatement()} can run — it goes through
      * prepare+execute, which forbids a multi-statement query), every one on {@see DdlStatement::PHASE_CREATE_TRIGGER}.
      *
-     * @return DdlStatement[]
+     * @return DdlStatements
      */
-    protected function renderTrigger(DatabaseModel $databaseModel, DatabaseTrigger $trigger): array
+    protected function renderTrigger(DatabaseModel $databaseModel, DatabaseTrigger $trigger): DdlStatements
     {
         $table = $databaseModel->sqlTableName;
         $sql = $trigger->getSqlForDialect($databaseModel->entityClassWithNamespace, SqlDialect::POSTGRES);
 
-        return array_map(
+        return DdlStatements::fromStatements(...array_map(
             static fn (string $statement): DdlStatement => new DdlStatement(
                 sql: $statement,
                 phase: DdlStatement::PHASE_CREATE_TRIGGER,
                 table: $table,
             ),
             SqlScriptLexer::splitStatements($sql)
-        );
+        ));
     }
 
     // ───────────────────────────────────────────────────────── columns
@@ -362,8 +361,8 @@ final class PostgresDdlRenderer implements DdlRenderer
         $propertyName = $virtualColumn->referenceColumn?->name ?? $columnName;
 
         if ($virtualColumn->asPostgres !== null) {
-            [$type, $collation] = $this->columnDefinitionForReferenceColumn($virtualColumn);
-            return '"' . $columnName . '" ' . $type . $collation . ' GENERATED ALWAYS AS (' . $virtualColumn->asPostgres . ') STORED';
+            $columnTypeDefinition = $this->columnDefinitionForReferenceColumn($virtualColumn);
+            return '"' . $columnName . '" ' . $columnTypeDefinition->type . $columnTypeDefinition->collationClause . ' GENERATED ALWAYS AS (' . $virtualColumn->asPostgres . ') STORED';
         }
 
         $virtualExpr = VirtualExpr::fromMariaDbExpression($virtualColumn->as);
@@ -376,7 +375,9 @@ final class PostgresDdlRenderer implements DdlRenderer
         }
 
         if ($virtualExpr->intent === VirtualExpr::INTENT_COALESCE) {
-            [$type, $collation] = $this->columnDefinitionForReferenceColumn($virtualColumn);
+            $columnTypeDefinition = $this->columnDefinitionForReferenceColumn($virtualColumn);
+            $type = $columnTypeDefinition->type;
+            $collation = $columnTypeDefinition->collationClause;
         } else {
             $type = $virtualExpr->postgresColumnType();
             // Only jsonText produces a text-shaped result; jsonInt/jsonDecimal are numeric, never collated.
@@ -392,9 +393,9 @@ final class PostgresDdlRenderer implements DdlRenderer
      * `coalesce` and `asPostgres:` both carry over the type of the property's own reference column (a passthrough
      * of an existing id/string column, e.g. `IFNULL(locationId, 0)` is still an id, `bigint`/`integer`-shaped).
      *
-     * @return array{0: string, 1: string} [type, collation clause]
+     * @return ColumnTypeDefinition The reference column's PostgreSQL type and its collation clause ('' when uncollated)
      */
-    protected function columnDefinitionForReferenceColumn(DatabaseVirtualColumn $virtualColumn): array
+    protected function columnDefinitionForReferenceColumn(DatabaseVirtualColumn $virtualColumn): ColumnTypeDefinition
     {
         $referenceColumn = $virtualColumn->referenceColumn;
         if ($referenceColumn === null) {
@@ -405,7 +406,7 @@ final class PostgresDdlRenderer implements DdlRenderer
         }
         $type = $this->mapColumnType($referenceColumn);
         $collation = $this->collationClause($referenceColumn->sqlType, $referenceColumn->encrypted, $referenceColumn->collation);
-        return [$type, $collation];
+        return new ColumnTypeDefinition($type, $collation);
     }
 
     protected function mapColumnType(DatabaseColumn $column): string

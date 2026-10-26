@@ -11,7 +11,7 @@ use Composer\InstalledVersions;
  * repo/test harness, not a consuming app) it reports a released-looking "0.0.0" — the guard is for consuming apps
  * running unreleased DDD code against a production database, not DDD's own harness, and must stay a no-op here.
  */
-final class ComposerInstalledPackageInfo implements InstalledPackageInfo
+class ComposerInstalledPackageInfo implements InstalledPackageInfo
 {
     protected const string PACKAGE_NAME = 'mgamadeus/ddd';
 

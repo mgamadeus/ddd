@@ -6,7 +6,6 @@ namespace DDD\Symfony\Commands\Base\Database;
 
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
 use DDD\Domain\Base\Repo\DB\Dialect\DialectResolver;
-use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatement;
 use DDD\Domain\Common\Services\EntityModelGeneratorService;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -44,7 +43,7 @@ class ShowEntitySql extends Command
             null,
             InputOption::VALUE_NONE,
             '--dialect=postgres only: renders the CREATE-only script (every ensure() infra statement, then every '
-            . 'entity\'s table/indexes/foreign keys, phase-ordered across the whole set via DdlStatement::sortByPhase() '
+            . 'entity\'s table/indexes/foreign keys, phase-ordered across the whole set via DdlStatements::sortedByPhase() '
             . 'so a forward-referenced foreign key still lands after its target table). No-op for --dialect=mysql, '
             . 'which only ever had a CREATE-path renderer to begin with.'
         );
@@ -109,9 +108,7 @@ class ShowEntitySql extends Command
         /** @var DatabaseModel $databaseModel */
         foreach ($databaseModels->getElements() as $databaseModel) {
             try {
-                foreach ($renderer->renderCreate($databaseModel) as $statement) {
-                    $statements[] = $statement;
-                }
+                $statements = $statements->withStatementsOf($renderer->renderCreate($databaseModel));
             } catch (InternalErrorException $exception) {
                 $refusals[] = $databaseModel->sqlTableName . ': ' . $exception->getMessage();
             }
@@ -125,15 +122,12 @@ class ShowEntitySql extends Command
             return Command::FAILURE;
         }
 
-        if ($statements === []) {
+        if ($statements->count() === 0) {
             $output->writeln('-- (no entities found)', OutputInterface::OUTPUT_RAW);
             return Command::SUCCESS;
         }
 
-        $sql = implode(
-            ";\n\n",
-            array_map(static fn (DdlStatement $statement): string => $statement->sql, DdlStatement::sortByPhase($statements))
-        ) . ";\n";
+        $sql = implode(";\n\n", $statements->sortedByPhase()->getSqlList()) . ";\n";
         $output->writeln($sql, OutputInterface::OUTPUT_RAW);
         return Command::SUCCESS;
     }

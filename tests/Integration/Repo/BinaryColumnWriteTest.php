@@ -29,7 +29,7 @@ class BinaryColumnWriteTest extends IntegrationTestCase
         $databaseModel = DatabaseModel::fromEntityClass(BlobRow::class);
         $connection->executeStatement('DROP TABLE IF EXISTS ' . static::quoteIdentifier($databaseModel->sqlTableName));
         if (static::currentDriver() === 'pdo_pgsql') {
-            foreach (DdlStatement::sortByPhase(static::dialect()->ddlRenderer()->renderCreate($databaseModel)) as $statement) {
+            foreach (static::dialect()->ddlRenderer()->renderCreate($databaseModel)->sortedByPhase() as $statement) {
                 $connection->executeStatement($statement->sql);
             }
             return;

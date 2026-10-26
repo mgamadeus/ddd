@@ -25,7 +25,7 @@ use Throwable;
  *   AFTER it was taken, so this always takes its own savepoint/transaction rather than reusing
  *   `runSavepointed()`'s (which would already have committed-in-spirit by the time the rights check runs).
  */
-final class WriteExecutor
+class WriteExecutor
 {
     protected static int $savepointCounter = 0;
 

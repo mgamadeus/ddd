@@ -25,7 +25,7 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
  * duplicate — two different source names that collide after prefixing/shortening — instead of silently emitting a
  * second `CREATE INDEX` PostgreSQL would then reject at apply time with a confusing "already exists" error.
  */
-final class IdentifierPolicy
+class IdentifierPolicy
 {
     /** PostgreSQL's NAMEDATALEN is 64, so the last usable identifier byte is index 62 (63 bytes total). */
     public const int MAX_LENGTH = 63;

@@ -9,9 +9,9 @@ namespace DDD\Domain\Base\Repo\DB\Dialect;
  * Grows per build step as features become engine-conditional (fulltext mode rendering, vector index kind, …);
  * step 1/2 only need to tell the two engines apart.
  */
-final class Capabilities
+class Capabilities
 {
-    public function __construct(private readonly string $driver)
+    public function __construct(protected readonly string $driver)
     {
     }
 

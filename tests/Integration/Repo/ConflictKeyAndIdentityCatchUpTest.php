@@ -8,6 +8,7 @@ use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatement;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\BindExpressionKind;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\ColumnWrite;
+use DDD\Domain\Base\Repo\DB\Dialect\Write\ColumnWrites;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpdatePolicy;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertSpec;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
@@ -29,9 +30,9 @@ use DDD\Tests\Integration\IntegrationTestCase;
  * two extra tables instead ({@see self::createExtraFixtureTable()}), on top of the three parent::setUpBeforeClass()
  * already creates (which is where {@see CounterRow}, used by the identity-catch-up tests, comes from).
  */
-final class ConflictKeyAndIdentityCatchUpTest extends IntegrationTestCase
+class ConflictKeyAndIdentityCatchUpTest extends IntegrationTestCase
 {
-    private const array EXTRA_FIXTURE_ENTITY_CLASSES = [AmbiguousConflictRow::class, ConflictAttributeRow::class];
+    protected const array EXTRA_FIXTURE_ENTITY_CLASSES = [AmbiguousConflictRow::class, ConflictAttributeRow::class];
 
     public static function setUpBeforeClass(): void
     {
@@ -74,7 +75,7 @@ final class ConflictKeyAndIdentityCatchUpTest extends IntegrationTestCase
             $dialect = static::dialect();
             $connection->executeStatement('DROP TABLE IF EXISTS ' . $dialect->quote($databaseModel->sqlTableName) . ' CASCADE');
             $statements = $dialect->ddlRenderer()->renderCreate($databaseModel);
-            foreach (DdlStatement::sortByPhase($statements) as $statement) {
+            foreach ($statements->sortedByPhase() as $statement) {
                 $connection->executeStatement($statement->sql);
             }
             return;
@@ -218,9 +219,9 @@ final class ConflictKeyAndIdentityCatchUpTest extends IntegrationTestCase
         $explicitId = $baseline->id + 1;
         $spec = new UpsertSpec(
             table: 'CounterRows',
-            columns: [
+            columns: ColumnWrites::fromColumnWrites(
                 new ColumnWrite('businessKey', 'raw-catchup-explicit', 'string', BindExpressionKind::PLAIN, null, UpdatePolicy::REPLACE, null),
-            ],
+            ),
             idValue: $explicitId,
             conflictTargetColumns: ['id'],
         );

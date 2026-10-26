@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace DDD\Symfony\Commands\Base\Database;
 
+use DDD\Domain\Base\Repo\DB\Copy\CopyModelSelection;
+use DDD\Domain\Base\Repo\DB\Copy\CopyTableResults;
 use DDD\Domain\Base\Repo\DB\Copy\CopyToPostgresService;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseModels;
 use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Domain\Common\Services\EntityModelGeneratorService;
@@ -111,8 +114,10 @@ class CopyToPostgres extends Command
         }
 
         $tableFilter = $input->getOption('table');
-        [$databaseModels, $skippedTables] = $this->resolveDatabaseModels($sourceConnection, $targetDbName, $tableFilter, $symfonyStyle);
-        if ($databaseModels === []) {
+        $copyModelSelection = $this->resolveDatabaseModels($sourceConnection, $targetDbName, $tableFilter, $symfonyStyle);
+        $databaseModels = $copyModelSelection->databaseModels;
+        $skippedTables = $copyModelSelection->unmatchedSourceTables;
+        if ($databaseModels->count() === 0) {
             $symfonyStyle->error('app:db:copy-to-postgres: no matching entity to copy.');
             return Command::FAILURE;
         }
@@ -176,9 +181,9 @@ class CopyToPostgres extends Command
 
     /**
      * @param string[] $tableFilter
-     * @return array{0: DatabaseModel[], 1: string[]} [models to copy, source tables with no matching entity]
+     * @return CopyModelSelection The models to copy and the source tables with no matching entity.
      */
-    protected function resolveDatabaseModels(Connection $source, string $targetDbName, array $tableFilter, SymfonyStyle $io): array
+    protected function resolveDatabaseModels(Connection $source, string $targetDbName, array $tableFilter, SymfonyStyle $io): CopyModelSelection
     {
         $entityClassNames = $this->entityClassNames ?? array_map(
             static fn ($classWithNamespace): string => $classWithNamespace->getNameWithNamespace(),
@@ -205,59 +210,59 @@ class CopyToPostgres extends Command
             $io->warning('app:db:copy-to-postgres: could not list source tables to report unmatched ones: ' . $throwable->getMessage());
         }
 
+        $selectedModels = new DatabaseModels();
         if ($tableFilter === []) {
-            return [array_values($allModels), $skipped];
+            foreach ($allModels as $databaseModel) {
+                $selectedModels->add($databaseModel);
+            }
+            return new CopyModelSelection($selectedModels, $skipped);
         }
-        $filtered = [];
         foreach ($tableFilter as $table) {
             if (isset($allModels[$table])) {
-                $filtered[] = $allModels[$table];
+                $selectedModels->add($allModels[$table]);
             } else {
                 $io->warning("app:db:copy-to-postgres: --table \"$table\" matches no entity; skipped.");
             }
         }
-        return [$filtered, $skipped];
+        return new CopyModelSelection($selectedModels, $skipped);
     }
 
-    /** @param array<string, array{seconds: float}> $rows */
-    protected function renderTimingTable(SymfonyStyle $io, string $firstHeader, string $secondHeader, array $rows): bool
+    protected function renderTimingTable(SymfonyStyle $io, string $firstHeader, string $secondHeader, CopyTableResults $rows): bool
     {
         $table = new Table($io);
         $table->setHeaders([$firstHeader, $secondHeader]);
-        foreach ($rows as $tableName => $row) {
-            $table->addRow([$tableName, number_format($row['seconds'], 3)]);
+        foreach ($rows as $row) {
+            $table->addRow([$row->table, number_format($row->seconds, 3)]);
         }
         $table->render();
         return true;
     }
 
-    /** @param array<string, array{rows: int, seconds: float}> $rows */
-    protected function renderDataTable(SymfonyStyle $io, array $rows): bool
+    protected function renderDataTable(SymfonyStyle $io, CopyTableResults $rows): bool
     {
         $table = new Table($io);
         $table->setHeaders(['Table', 'Rows', 'Seconds']);
-        foreach ($rows as $tableName => $row) {
-            $table->addRow([$tableName, $row['rows'], number_format($row['seconds'], 3)]);
+        foreach ($rows as $row) {
+            $table->addRow([$row->table, $row->rows, number_format($row->seconds, 3)]);
         }
         $table->render();
         return true;
     }
 
-    /** @param array<string, array{idSetMatches: bool, rowMismatches: string[], identityOk: bool, rows: int}> $rows */
-    protected function renderVerifyTable(SymfonyStyle $io, array $rows): bool
+    protected function renderVerifyTable(SymfonyStyle $io, CopyTableResults $rows): bool
     {
         $table = new Table($io);
         $table->setHeaders(['Table', 'Rows', 'Id sets', 'Row hashes', 'Identity', 'Result']);
         $allPassed = true;
-        foreach ($rows as $tableName => $row) {
-            $passed = $row['idSetMatches'] && $row['rowMismatches'] === [] && $row['identityOk'];
+        foreach ($rows as $row) {
+            $passed = $row->idSetMatches && $row->rowMismatches === [] && $row->identityOk;
             $allPassed = $allPassed && $passed;
             $table->addRow([
-                $tableName,
-                $row['rows'],
-                $row['idSetMatches'] ? 'OK' : 'MISMATCH',
-                $row['rowMismatches'] === [] ? 'OK' : ('MISMATCH: ' . implode('; ', array_slice($row['rowMismatches'], 0, 5))),
-                $row['identityOk'] ? 'OK' : 'BEHIND',
+                $row->table,
+                $row->rows,
+                $row->idSetMatches ? 'OK' : 'MISMATCH',
+                $row->rowMismatches === [] ? 'OK' : ('MISMATCH: ' . implode('; ', array_slice($row->rowMismatches, 0, 5))),
+                $row->identityOk ? 'OK' : 'BEHIND',
                 $passed ? 'PASS' : 'FAIL',
             ]);
         }

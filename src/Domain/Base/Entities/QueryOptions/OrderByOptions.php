@@ -185,17 +185,16 @@ MD;
      *
      * @param string $modelClass The Doctrine model the property belongs to
      * @param string $propertyName The orderBy property
-     * @return array{0: string, 1: bool} [columnName, routedToSearchColumn]
      * @throws ReflectionException
      */
-    protected static function getOrderByColumnName(string $modelClass, string $propertyName): array
+    protected static function getOrderByColumn(string $modelClass, string $propertyName): OrderByColumn
     {
         /** @var DoctrineModel $modelClass */
         $searchColumnName = FiltersOptions::getTranslatableSearchColumnName($modelClass::ENTITY_CLASS, $propertyName);
         if ($searchColumnName && $modelClass::isValidDatabaseExpression($modelClass::MODEL_ALIAS . ".$searchColumnName")) {
-            return [$searchColumnName, true];
+            return new OrderByColumn($searchColumnName, true);
         }
-        return [$propertyName, false];
+        return new OrderByColumn($propertyName, false);
     }
 
     /**
@@ -301,7 +300,9 @@ MD;
                         continue;
                     }
                     $verifyModelAlias = $verifyModelClass::MODEL_ALIAS;
-                    [$propertyNameInExpandPath, $routedToSearchColumn] = self::getOrderByColumnName($verifyModelClass, $propertyNameInExpandPath);
+                    $orderByColumn = self::getOrderByColumn($verifyModelClass, $propertyNameInExpandPath);
+                    $propertyNameInExpandPath = $orderByColumn->columnName;
+                    $routedToSearchColumn = $orderByColumn->routedToSearchColumn;
                     if (!$verifyModelClass::isValidDatabaseExpression("$verifyModelAlias.$propertyNameInExpandPath")) {
                         continue;
                     }
@@ -317,7 +318,9 @@ MD;
                 $baseAlias = $orderByOption?->getFiltersDefinition()?->getExpandDefinition() ? '' : $baseAlias;
                 $routedToSearchColumn = false;
                 if ($baseAlias) {
-                    [$propertyName, $routedToSearchColumn] = self::getOrderByColumnName($baseModelClass, $propertyName);
+                    $orderByColumn = self::getOrderByColumn($baseModelClass, $propertyName);
+                    $propertyName = $orderByColumn->columnName;
+                    $routedToSearchColumn = $orderByColumn->routedToSearchColumn;
                 }
                 $orderByExpression = ($baseAlias ? $baseAlias . '.' : '') . $propertyName;
                 /** @var DoctrineModel $baseModelClass */

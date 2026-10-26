@@ -17,6 +17,7 @@ use DDD\Domain\Base\Repo\DB\Database\FullTextMode;
 use DDD\Domain\Base\Repo\DB\Database\VectorIndexProfile;
 use DDD\Domain\Base\Repo\DB\Dialect\Identifiers\IdentifierPolicy;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatement;
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatements;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\PostgresDdlRenderer;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use PHPUnit\Framework\TestCase;
@@ -29,9 +30,9 @@ use PHPUnit\Framework\TestCase;
  * collation-mapping refusal. Models are built by hand (not via `DatabaseModel::fromEntityClass()`) so each test
  * isolates exactly the shape it names.
  */
-final class PostgresDdlRendererTest extends TestCase
+class PostgresDdlRendererTest extends TestCase
 {
-    private PostgresDdlRenderer $renderer;
+    protected PostgresDdlRenderer $renderer;
 
     protected function setUp(): void
     {
@@ -44,7 +45,7 @@ final class PostgresDdlRendererTest extends TestCase
      * `DatabaseColumn::createFromReflectionProperty()`'s explicit post-construction assignment. This helper mirrors
      * that for hand-built test fixtures instead of every test re-deriving it.
      */
-    private function column(string $name, string $sqlType): DatabaseColumn
+    protected function column(string $name, string $sqlType): DatabaseColumn
     {
         $column = new DatabaseColumn();
         $column->name = $name;
@@ -54,7 +55,7 @@ final class PostgresDdlRendererTest extends TestCase
         return $column;
     }
 
-    private function model(string $table, DatabaseColumns $columns): DatabaseModel
+    protected function model(string $table, DatabaseColumns $columns): DatabaseModel
     {
         $model = new DatabaseModel();
         $model->sqlTableName = $table;
@@ -65,7 +66,7 @@ final class PostgresDdlRendererTest extends TestCase
         return $model;
     }
 
-    private function findStatement(array $statements, string $phase): DdlStatement
+    protected function findStatement(DdlStatements $statements, string $phase): DdlStatement
     {
         foreach ($statements as $statement) {
             if ($statement->phase === $phase) {
@@ -393,15 +394,9 @@ final class PostgresDdlRendererTest extends TestCase
     }
 
     /** @return string[] every CREATE_FOREIGN_KEY statement's SQL, in declaration order */
-    private function foreignKeyStatementSqls(DatabaseModel $model): array
+    protected function foreignKeyStatementSqls(DatabaseModel $model): array
     {
-        return array_values(array_map(
-            static fn (DdlStatement $statement): string => $statement->sql,
-            array_filter(
-                $this->renderer->renderCreate($model),
-                static fn (DdlStatement $statement): bool => $statement->phase === DdlStatement::PHASE_CREATE_FOREIGN_KEY
-            )
-        ));
+        return $this->renderer->renderCreate($model)->withPhase(DdlStatement::PHASE_CREATE_FOREIGN_KEY)->getSqlList();
     }
 
     /**
@@ -665,7 +660,7 @@ final class PostgresDdlRendererTest extends TestCase
         $parentClass = new \DDD\Infrastructure\Reflection\ClassWithNamespace('Post', 'DDD\\Tests\\Fixtures', 'Post.php');
         $model->parentEntityCLassWithNamespace = $parentClass;
 
-        $this->assertSame([], $this->renderer->renderCreate($model));
+        $this->assertSame(0, $this->renderer->renderCreate($model)->count());
     }
 
     // ───────────────────────────────────────────────────────── ensure()
@@ -673,7 +668,7 @@ final class PostgresDdlRendererTest extends TestCase
     public function testEnsureDeclaresEveryRequiredExtensionCollationAndFunction(): void
     {
         $statements = $this->renderer->ensure();
-        $sql = implode("\n", array_map(static fn (DdlStatement $s): string => $s->sql, $statements));
+        $sql = implode("\n", $statements->getSqlList());
 
         foreach (['pg_trgm', 'unaccent', 'postgis', 'vector', 'vectorscale', 'pg_stat_statements'] as $extension) {
             $this->assertStringContainsString("CREATE EXTENSION IF NOT EXISTS \"$extension\"", $sql);
@@ -691,8 +686,8 @@ final class PostgresDdlRendererTest extends TestCase
         $columns->add($column);
         $model = $this->model('Widgets', $columns);
 
-        $all = array_merge($this->renderer->ensure(), $this->renderer->renderCreate($model));
-        $sorted = DdlStatement::sortByPhase($all);
+        $all = $this->renderer->ensure()->withStatementsOf($this->renderer->renderCreate($model));
+        $sorted = $all->sortedByPhase()->getElements();
 
         $phases = array_map(static fn (DdlStatement $s): string => $s->phase, $sorted);
         $firstCreateTableIndex = array_search(DdlStatement::PHASE_CREATE_TABLE, $phases, true);

@@ -7,6 +7,7 @@ namespace DDD\Tests\Integration\Query;
 use DDD\Domain\Base\Repo\DB\Dialect\UpdateFromJoinSpec;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\BindExpressionKind;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\ColumnWrite;
+use DDD\Domain\Base\Repo\DB\Dialect\Write\ColumnWrites;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpdatePolicy;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertSpec;
 use DDD\Tests\Integration\IntegrationTestCase;
@@ -166,12 +167,12 @@ class SqlFacadeTest extends IntegrationTestCase
 
         $spec = new UpsertSpec(
             table: 'CounterRows',
-            columns: [
+            columns: ColumnWrites::fromColumnWrites(
                 new ColumnWrite('businessKey', 'facade-row', 'string'),
                 new ColumnWrite('amount', 1, 'integer'),
                 new ColumnWrite('isActive', true, 'boolean'),
                 new ColumnWrite('displayOrder', 0, 'integer'),
-            ],
+            ),
             conflictTargetColumns: ['businessKey'],
         );
         $firstResult = $dialect->upsert(static::connection(), $spec);
@@ -180,12 +181,12 @@ class SqlFacadeTest extends IntegrationTestCase
 
         $updateSpec = new UpsertSpec(
             table: 'CounterRows',
-            columns: [
+            columns: ColumnWrites::fromColumnWrites(
                 new ColumnWrite('businessKey', 'facade-row', 'string'),
                 new ColumnWrite('amount', 7, 'integer'),
                 new ColumnWrite('isActive', true, 'boolean'),
                 new ColumnWrite('displayOrder', 0, 'integer'),
-            ],
+            ),
             conflictTargetColumns: ['businessKey'],
         );
         $secondResult = $dialect->upsert(static::connection(), $updateSpec);
@@ -205,24 +206,24 @@ class SqlFacadeTest extends IntegrationTestCase
         $dialect = static::dialect();
         $winnerSpec = new UpsertSpec(
             table: 'CounterRows',
-            columns: [
+            columns: ColumnWrites::fromColumnWrites(
                 new ColumnWrite('businessKey', 'race', 'string'),
                 new ColumnWrite('amount', 1, 'integer'),
                 new ColumnWrite('isActive', true, 'boolean'),
                 new ColumnWrite('displayOrder', 0, 'integer'),
-            ],
+            ),
         );
         $winnerId = $dialect->insertOrNull(static::connection(), $winnerSpec);
         $this->assertIsInt($winnerId);
 
         $loserSpec = new UpsertSpec(
             table: 'CounterRows',
-            columns: [
+            columns: ColumnWrites::fromColumnWrites(
                 new ColumnWrite('businessKey', 'race', 'string'),
                 new ColumnWrite('amount', 999, 'integer'),
                 new ColumnWrite('isActive', true, 'boolean'),
                 new ColumnWrite('displayOrder', 0, 'integer'),
-            ],
+            ),
         );
         $this->assertNull($dialect->insertOrNull(static::connection(), $loserSpec));
 
@@ -240,7 +241,7 @@ class SqlFacadeTest extends IntegrationTestCase
 
         $spec = new UpsertSpec(
             table: 'CounterRows',
-            columns: [
+            columns: ColumnWrites::fromColumnWrites(
                 new ColumnWrite('businessKey', 'counted', 'string'),
                 new ColumnWrite(
                     'counter',
@@ -251,7 +252,7 @@ class SqlFacadeTest extends IntegrationTestCase
                 ),
                 new ColumnWrite('isActive', true, 'boolean'),
                 new ColumnWrite('displayOrder', 0, 'integer'),
-            ],
+            ),
             conflictTargetColumns: ['businessKey'],
         );
         $dialect->upsert(static::connection(), $spec);

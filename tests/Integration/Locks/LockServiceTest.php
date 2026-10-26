@@ -28,7 +28,7 @@ use RuntimeException;
  * SECOND, independent connection per test to simulate a second process contending for the same name — reusing the
  * fixture base's single shared connection would not prove mutual exclusion across sessions.
  */
-final class LockServiceTest extends TestCase
+class LockServiceTest extends TestCase
 {
     /** @var Connection[] opened by {@see secondConnection()}, closed in tearDown() */
     protected array $openedConnections = [];

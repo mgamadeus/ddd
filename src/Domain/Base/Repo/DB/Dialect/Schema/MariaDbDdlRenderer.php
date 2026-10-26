@@ -16,33 +16,33 @@ use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
  *
  * `getSql()`'s one string already interleaves CREATE TABLE, the virtual-column ALTER, every index and every foreign
  * key for one table — MariaDB's own ordering, unchanged since v2.70.10. Splitting that blob into separate
- * per-phase `DdlStatement`s (so it could take part in {@see DdlStatement::sortByPhase()} cross-table batching the
+ * per-phase `DdlStatement`s (so it could take part in {@see DdlStatements::sortedByPhase()} cross-table batching the
  * way `PostgresDdlRenderer` does) is step 7 work, alongside the rest of the ALTER-path renderer; doing it now would
  * mean re-deriving MariaDB's phase boundaries from a plain SQL string with no gate yet to prove the split is
  * lossless. One `DdlStatement` per table, phase `PHASE_CREATE_TABLE`, is therefore the entire mapping: correct, and
  * exactly as safe as the string it wraps.
  */
-final class MariaDbDdlRenderer implements DdlRenderer
+class MariaDbDdlRenderer implements DdlRenderer
 {
-    public function ensure(): array
+    public function ensure(): DdlStatements
     {
-        return [];
+        return new DdlStatements();
     }
 
-    public function renderCreate(DatabaseModel $databaseModel): array
+    public function renderCreate(DatabaseModel $databaseModel): DdlStatements
     {
         $sql = $databaseModel->getSql();
         if ($sql === '') {
             // Single-table-inheritance subclass: no table of its own (DatabaseModel::getSql() docblock).
-            return [];
+            return new DdlStatements();
         }
 
-        return [
+        return DdlStatements::fromStatements(
             new DdlStatement(
                 sql: $sql,
                 phase: DdlStatement::PHASE_CREATE_TABLE,
                 table: $databaseModel->sqlTableName
             ),
-        ];
+        );
     }
 }

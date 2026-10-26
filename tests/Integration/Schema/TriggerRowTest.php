@@ -33,19 +33,19 @@ use Throwable;
  * `DDD_TEST_DRIVER=pdo_mysql|pdo_pgsql php -d memory_limit=2G vendor/bin/phpunit -c phpunit.integration.xml
  * tests/Integration/Schema/TriggerRowTest.php`.
  */
-final class TriggerRowTest extends TestCase
+class TriggerRowTest extends TestCase
 {
-    private static function currentDriver(): ?string
+    protected static function currentDriver(): ?string
     {
         return getenv('DDD_TEST_DRIVER') ?: ($_SERVER['DDD_TEST_DRIVER'] ?? null);
     }
 
-    private static function isEnabled(): bool
+    protected static function isEnabled(): bool
     {
         return in_array(self::currentDriver(), ['pdo_mysql', 'pdo_pgsql'], true);
     }
 
-    private static function table(): string
+    protected static function table(): string
     {
         return DatabaseModel::fromEntityClass(TriggerRow::class)->sqlTableName;
     }
@@ -67,7 +67,7 @@ final class TriggerRowTest extends TestCase
             foreach ($renderer->ensure() as $statement) {
                 $connection->executeStatement($statement->sql);
             }
-            foreach (DdlStatement::sortByPhase($renderer->renderCreate($databaseModel)) as $statement) {
+            foreach ($renderer->renderCreate($databaseModel)->sortedByPhase() as $statement) {
                 $connection->executeStatement($statement->sql);
             }
         } else {
@@ -107,7 +107,7 @@ final class TriggerRowTest extends TestCase
         $connection->executeStatement('DELETE FROM ' . $quote . self::table() . $quote);
     }
 
-    private function insert(string $code, bool $active): void
+    protected function insert(string $code, bool $active): void
     {
         $dialect = EntityManagerFactory::getDialect();
         $connection = EntityManagerFactory::getInstance()->getConnection();

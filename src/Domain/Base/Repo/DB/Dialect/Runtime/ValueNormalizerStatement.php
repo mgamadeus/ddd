@@ -8,7 +8,7 @@ use Doctrine\DBAL\Driver\Middleware\AbstractStatementMiddleware;
 use Doctrine\DBAL\Driver\Result;
 
 /** @see ValueNormalizerMiddleware */
-final class ValueNormalizerStatement extends AbstractStatementMiddleware
+class ValueNormalizerStatement extends AbstractStatementMiddleware
 {
     public function execute($params = null): Result
     {

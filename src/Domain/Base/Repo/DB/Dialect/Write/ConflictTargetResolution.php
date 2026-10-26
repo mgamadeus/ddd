@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo\DB\Dialect\Write;
 
+use DDD\Domain\Base\Entities\ValueObject;
+
 /**
  * {@see ConflictTargetResolver::resolve()}'s outcome (dual-dialect architecture plan §4.6, Mig §3.3). Either:
  * - a single arbiter {@see self::$columns} ready for `ON CONFLICT (<columns>)` (empty means a plain `INSERT`,
@@ -16,13 +18,14 @@ namespace DDD\Domain\Base\Repo\DB\Dialect\Write;
  *   itself lives in {@see PostgresUpsertBuilder} (it needs a live connection); this object only carries the
  *   candidate keys to try.
  */
-final class ConflictTargetResolution
+class ConflictTargetResolution extends ValueObject
 {
     protected function __construct(
         public readonly array $columns,
         public readonly bool $needsNullableFallback,
         public readonly array $candidateKeys,
     ) {
+        parent::__construct();
     }
 
     /** @param string[] $columns */
@@ -35,5 +38,11 @@ final class ConflictTargetResolution
     public static function nullableFallback(array $candidateKeys): self
     {
         return new self([], true, $candidateKeys);
+    }
+
+    /** Every instance is its own element: identical values may legitimately repeat, and insertion order matters. */
+    public function uniqueKey(): string
+    {
+        return self::uniqueKeyStatic((string)spl_object_id($this));
     }
 }

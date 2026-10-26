@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo\DB\Dialect;
 
+use DDD\Domain\Base\Entities\ValueObject;
+
 /**
  * Dialect-neutral description of an "UPDATE one table from a join" statement (dual-dialect architecture plan
  * §4.3 `SqlDialect::updateFromJoin()`) — app code that writes `UPDATE t JOIN j ON … SET t.c = j.c WHERE …`
@@ -12,7 +14,7 @@ namespace DDD\Domain\Base\Repo\DB\Dialect;
  * {@see SqlDialect::quote()}, values already bound as `?` placeholders in `$whereSql`/`$setAssignments`/
  * `$joinOnSql` by the caller) — this value object only carries WHERE each fragment goes, not how it is built.
  */
-final class UpdateFromJoinSpec
+class UpdateFromJoinSpec extends ValueObject
 {
     /**
      * @param array<string, string> $setAssignments unquoted target column name => value SQL expression (may
@@ -27,5 +29,12 @@ final class UpdateFromJoinSpec
         public readonly array $setAssignments,
         public readonly ?string $whereSql = null,
     ) {
+        parent::__construct();
+    }
+
+    /** Every instance is its own element: identical values may legitimately repeat, and insertion order matters. */
+    public function uniqueKey(): string
+    {
+        return self::uniqueKeyStatic((string)spl_object_id($this));
     }
 }

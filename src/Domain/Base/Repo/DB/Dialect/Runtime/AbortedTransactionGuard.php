@@ -21,7 +21,7 @@ use Doctrine\DBAL\Driver\Middleware;
  * Registered only by {@see \DDD\Domain\Base\Repo\DB\Dialect\PostgresDialect::configureOrm()}; MariaDB has no
  * equivalent aborted-transaction state and is untouched.
  */
-final class AbortedTransactionGuard implements Middleware
+class AbortedTransactionGuard implements Middleware
 {
     public function wrap(Driver $driver): Driver
     {

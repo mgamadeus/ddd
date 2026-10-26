@@ -9,7 +9,7 @@ use Doctrine\DBAL\Driver\Result;
 use Doctrine\DBAL\Driver\Statement;
 
 /** @see ValueNormalizerMiddleware */
-final class ValueNormalizerConnection extends AbstractConnectionMiddleware
+class ValueNormalizerConnection extends AbstractConnectionMiddleware
 {
     public function prepare(string $sql): Statement
     {

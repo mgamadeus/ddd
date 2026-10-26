@@ -37,12 +37,12 @@ use RuntimeException;
  * Nondeterministic values are replaced by a placeholder before being written — see {@see self::normalizeValue()}
  * — so two captures of the same run are byte-identical; see `tests/golden/README.md`.
  */
-final class RecordingMiddleware implements MiddlewareInterface
+class RecordingMiddleware implements MiddlewareInterface
 {
-    private static ?string $currentTestId = null;
+    protected static ?string $currentTestId = null;
 
     /** @var string[] Buffered "sql\n-- params: ...\n-- ---" entries for the current test */
-    private static array $buffer = [];
+    protected static array $buffer = [];
 
     public static function isEnabled(): bool
     {
@@ -159,7 +159,7 @@ final class RecordingMiddleware implements MiddlewareInterface
         return $value;
     }
 
-    private static function sanitizeTestId(string $testId): string
+    protected static function sanitizeTestId(string $testId): string
     {
         $sanitized = str_replace('::', '__', $testId);
         $sanitized = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $sanitized);

@@ -103,7 +103,7 @@ use Doctrine\ORM\Configuration;
  * byte-for-byte, so the T0 golden stays identical. No new behaviour; `connectionParams()`/`quote()` mirror today's
  * (absence of) handling.
  */
-final class MariaDbDialect implements SqlDialect
+class MariaDbDialect implements SqlDialect
 {
     public function name(): string
     {

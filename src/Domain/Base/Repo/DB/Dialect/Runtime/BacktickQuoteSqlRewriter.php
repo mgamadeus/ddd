@@ -15,7 +15,7 @@ namespace DDD\Domain\Base\Repo\DB\Dialect\Runtime;
  * Kept as its own class with a single static entry point so the lexer logic is unit-testable without a DBAL
  * connection; {@see BacktickQuoteConnection} is the only caller in production code.
  */
-final class BacktickQuoteSqlRewriter
+class BacktickQuoteSqlRewriter
 {
     /** Fast path (§4.5): most statements carry no backtick at all, so skip the scan entirely. */
     public static function rewrite(string $sql): string
@@ -32,14 +32,16 @@ final class BacktickQuoteSqlRewriter
             $char = $sql[$i];
 
             if ($char === "'") {
-                [$consumed, $i] = self::consumeQuoted($sql, $i, $length, "'");
-                $result .= $consumed;
+                $scannedSegment = self::consumeQuoted($sql, $i, $length, "'");
+                $result .= $scannedSegment->text;
+                $i = $scannedSegment->nextIndex;
                 continue;
             }
 
             if ($char === '"') {
-                [$consumed, $i] = self::consumeQuoted($sql, $i, $length, '"');
-                $result .= $consumed;
+                $scannedSegment = self::consumeQuoted($sql, $i, $length, '"');
+                $result .= $scannedSegment->text;
+                $i = $scannedSegment->nextIndex;
                 continue;
             }
 
@@ -53,16 +55,18 @@ final class BacktickQuoteSqlRewriter
             }
 
             if ($char === '/' && $i + 1 < $length && $sql[$i + 1] === '*') {
-                [$consumed, $i] = self::consumeBlockComment($sql, $i, $length);
-                $result .= $consumed;
+                $scannedSegment = self::consumeBlockComment($sql, $i, $length);
+                $result .= $scannedSegment->text;
+                $i = $scannedSegment->nextIndex;
                 continue;
             }
 
             if ($char === '$') {
                 $delimiter = self::matchDollarTagOpening($sql, $i);
                 if ($delimiter !== null) {
-                    [$consumed, $i] = self::consumeDollarQuoted($sql, $i, $length, $delimiter);
-                    $result .= $consumed;
+                    $scannedSegment = self::consumeDollarQuoted($sql, $i, $length, $delimiter);
+                    $result .= $scannedSegment->text;
+                    $i = $scannedSegment->nextIndex;
                     continue;
                 }
                 $result .= $char;
@@ -83,8 +87,8 @@ final class BacktickQuoteSqlRewriter
         return $result;
     }
 
-    /** @return array{0: string, 1: int} [the consumed text incl. both quote chars, the index right after it] */
-    protected static function consumeQuoted(string $sql, int $start, int $length, string $quoteChar): array
+    /** @return ScannedSqlSegment The consumed text incl. both quote chars, and the index right after it */
+    protected static function consumeQuoted(string $sql, int $start, int $length, string $quoteChar): ScannedSqlSegment
     {
         $i = $start + 1;
         while ($i < $length) {
@@ -100,11 +104,11 @@ final class BacktickQuoteSqlRewriter
             $i++;
         }
 
-        return [substr($sql, $start, $i - $start), $i];
+        return new ScannedSqlSegment(substr($sql, $start, $i - $start), $i);
     }
 
-    /** @return array{0: string, 1: int} */
-    protected static function consumeBlockComment(string $sql, int $start, int $length): array
+    /** @return ScannedSqlSegment The consumed comment incl. its delimiters (nested comments included), and the index right after it */
+    protected static function consumeBlockComment(string $sql, int $start, int $length): ScannedSqlSegment
     {
         $i = $start + 2;
         $depth = 1;
@@ -122,7 +126,7 @@ final class BacktickQuoteSqlRewriter
             $i++;
         }
 
-        return [substr($sql, $start, $i - $start), $i];
+        return new ScannedSqlSegment(substr($sql, $start, $i - $start), $i);
     }
 
     /** The opening `$tag$` (tag optionally empty) at $sql[$pos], or null when $pos is just a bare '$' (a bind placeholder). */
@@ -135,17 +139,17 @@ final class BacktickQuoteSqlRewriter
         return null;
     }
 
-    /** @return array{0: string, 1: int} */
-    protected static function consumeDollarQuoted(string $sql, int $start, int $length, string $delimiter): array
+    /** @return ScannedSqlSegment The consumed body incl. both `$tag$` delimiters, and the index right after it */
+    protected static function consumeDollarQuoted(string $sql, int $start, int $length, string $delimiter): ScannedSqlSegment
     {
         $bodyStart = $start + strlen($delimiter);
         $closingAt = strpos($sql, $delimiter, $bodyStart);
         if ($closingAt === false) {
             // Unterminated — copy the rest verbatim rather than risk rewriting a backtick that is really inside it.
-            return [substr($sql, $start), $length];
+            return new ScannedSqlSegment(substr($sql, $start), $length);
         }
         $end = $closingAt + strlen($delimiter);
 
-        return [substr($sql, $start, $end - $start), $end];
+        return new ScannedSqlSegment(substr($sql, $start, $end - $start), $end);
     }
 }

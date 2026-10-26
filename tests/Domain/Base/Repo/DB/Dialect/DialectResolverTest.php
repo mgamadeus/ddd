@@ -12,7 +12,7 @@ use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 
 /** D10: resolution from the driver param, cached per connection, no round trip (works without a reachable server). */
-final class DialectResolverTest extends TestCase
+class DialectResolverTest extends TestCase
 {
     public function testForDriverResolvesMariaDb(): void
     {

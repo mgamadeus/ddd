@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo\DB\Dialect\Write;
 
+use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineBoundSql;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 
@@ -15,19 +16,19 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
  * {@see \DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder} (which is keyed on a `DoctrineModel`, not a bare
  * table/column map).
  *
- * Deliberately NOT the same class as {@see MariaDbUpsertBuilder}/{@see PostgresUpsertBuilder} (both `final`, both
- * keyed on `DoctrineModel`) — this is the app-facing raw-SQL sibling, sharing only the dialect-neutral vocabulary
+ * Deliberately NOT the same class as {@see MariaDbUpsertBuilder}/{@see PostgresUpsertBuilder} (both keyed on
+ * `DoctrineModel`) — this is the app-facing raw-SQL sibling, sharing only the dialect-neutral vocabulary
  * ({@see UpsertSpec}, {@see ColumnWrite}, {@see UpdatePolicy}, {@see BindExpressionKind}). The `RAW_ACTION`
  * translation below mirrors {@see PostgresUpsertBuilder::renderRawActionForConflictForm()} byte-for-byte (same
  * `VALUES(`col`)` → `EXCLUDED."col"`, remaining backticks → `t."col"` rule, verified against the same 42702
  * ambiguity the import'd docblock there explains) rather than diverging on a second implementation of it.
  */
-final class RawUpsertExecutor
+class RawUpsertExecutor
 {
     public static function upsertMariaDb(Connection $connection, UpsertSpec $spec): UpsertResult
     {
-        [$sql, $values, $types] = self::renderMariaDb($spec);
-        $connection->executeStatement($sql, $values, $types);
+        $boundSql = self::renderMariaDb($spec);
+        $connection->executeStatement($boundSql->sql, $boundSql->values, $boundSql->types);
         $id = $spec->idValue ?? (int)$connection->lastInsertId();
         // ROW_COUNT() is 1 for a fresh INSERT, 2 for a row ODKU actually changed, 0 when ODKU found the row
         // already equal (no-op update) — the last case answers "not a fresh insert" correctly even though it
@@ -40,9 +41,9 @@ final class RawUpsertExecutor
     /** @throws \Doctrine\DBAL\Exception */
     public static function insertOrNullMariaDb(Connection $connection, UpsertSpec $spec): ?int
     {
-        [$sql, $values, $types] = self::renderMariaDb($spec, forInsertOrNull: true);
+        $boundSql = self::renderMariaDb($spec, forInsertOrNull: true);
         try {
-            $connection->executeStatement($sql, $values, $types);
+            $connection->executeStatement($boundSql->sql, $boundSql->values, $boundSql->types);
         } catch (UniqueConstraintViolationException) {
             return null;
         }
@@ -51,11 +52,11 @@ final class RawUpsertExecutor
 
     public static function upsertPostgres(Connection $connection, UpsertSpec $spec): UpsertResult
     {
-        [$sql, $values, $types] = self::renderPostgres($spec);
+        $boundSql = self::renderPostgres($spec);
         // §4.9 scratch-verified against a real PG 18 container: a fresh INSERT's returned row has xmax = 0; the
         // conflict branch's DO UPDATE replaces the tuple with a new version whose xmax is the CURRENT
         // transaction's id, not 0 — `xmax = 0` reliably tells the two apart within the SAME statement.
-        $row = $connection->fetchAssociative($sql, $values, $types);
+        $row = $connection->fetchAssociative($boundSql->sql, $boundSql->values, $boundSql->types);
         if ($spec->hasId()) {
             // nextval() is not transactional (§4.6) — safe unconditionally, whichever branch (insert/update) ran.
             PostgresIdentityCatchUp::afterExplicitIdInsert($connection, $spec->table, (int)$spec->idValue);
@@ -66,9 +67,9 @@ final class RawUpsertExecutor
     /** @throws \Doctrine\DBAL\Exception */
     public static function insertOrNullPostgres(Connection $connection, UpsertSpec $spec): ?int
     {
-        [$sql, $values, $types] = self::renderPostgres($spec, forInsertOrNull: true);
+        $boundSql = self::renderPostgres($spec, forInsertOrNull: true);
         try {
-            $row = $connection->fetchAssociative($sql, $values, $types);
+            $row = $connection->fetchAssociative($boundSql->sql, $boundSql->values, $boundSql->types);
         } catch (UniqueConstraintViolationException) {
             return null;
         }
@@ -81,8 +82,7 @@ final class RawUpsertExecutor
         return (int)$row['id'];
     }
 
-    /** @return array{0: string, 1: array, 2: string[]} */
-    protected static function renderMariaDb(UpsertSpec $spec, bool $forInsertOrNull = false): array
+    protected static function renderMariaDb(UpsertSpec $spec, bool $forInsertOrNull = false): DoctrineBoundSql
     {
         $columns = [];
         $placeholders = [];
@@ -103,8 +103,8 @@ final class RawUpsertExecutor
 
         $sql = 'INSERT INTO `' . $spec->table . '` (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $placeholders) . ')';
 
-        if ($forInsertOrNull || $spec->columns === []) {
-            return [$sql, $values, $types];
+        if ($forInsertOrNull || $spec->columns->count() === 0) {
+            return new DoctrineBoundSql($sql, $values, $types);
         }
 
         $assignments = [];
@@ -126,7 +126,7 @@ final class RawUpsertExecutor
         }
         $sql .= ' ON DUPLICATE KEY UPDATE ' . implode(', ', $assignments);
 
-        return [$sql, $values, $types];
+        return new DoctrineBoundSql($sql, $values, $types);
     }
 
     protected static function bindExpressionMariaDb(ColumnWrite $columnWrite): string
@@ -138,8 +138,7 @@ final class RawUpsertExecutor
         };
     }
 
-    /** @return array{0: string, 1: array, 2: string[]} */
-    protected static function renderPostgres(UpsertSpec $spec, bool $forInsertOrNull = false): array
+    protected static function renderPostgres(UpsertSpec $spec, bool $forInsertOrNull = false): DoctrineBoundSql
     {
         $columns = [];
         $placeholders = [];
@@ -161,7 +160,7 @@ final class RawUpsertExecutor
         $sql = 'INSERT INTO "' . $spec->table . '" AS t (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $placeholders) . ')';
 
         if ($forInsertOrNull || $spec->conflictTargetColumns === []) {
-            return [$sql . ' RETURNING "id"', $values, $types];
+            return new DoctrineBoundSql($sql . ' RETURNING "id"', $values, $types);
         }
 
         $conflictTarget = implode(', ', array_map(static fn(string $c): string => '"' . $c . '"', $spec->conflictTargetColumns));
@@ -179,7 +178,7 @@ final class RawUpsertExecutor
         }
         $sql .= ' RETURNING "id", (xmax = 0) AS inserted';
 
-        return [$sql, $values, $types];
+        return new DoctrineBoundSql($sql, $values, $types);
     }
 
     protected static function bindExpressionPostgres(ColumnWrite $columnWrite): string

@@ -14,45 +14,45 @@ namespace DDD\Domain\Base\Repo\DB\Dialect\Write;
  * `rowByRow`, so the caller executes that run's models one statement at a time, in input order, instead of one
  * multi-row INSERT.
  */
-final class BatchPlanner
+class BatchPlanner
 {
     /**
-     * @param array<int, array{fieldNames: string[], columnsToReplace: string[]}> $rowShapes Keyed by the
-     *   original model index (0-based, contiguous) — the shape (initialized field names + which of them replace
-     *   instead of merge) that decides a run boundary.
+     * @param BatchRowShapes $rowShapes One per row, in input order — the shape (initialized field names + which of
+     *   them replace instead of merge) that decides a run boundary. A row's position is its model index.
      * @param callable(int): (string|null) $conflictKeyForIndex Returns a stable string identifying the row's
      *   conflict-target VALUE (e.g. `"id=5"` or the key column values joined), or null when the row has no
      *   resolvable target (nothing to collide on).
-     * @return array<int, array{modelIndexes: int[], rowByRow: bool}> Runs in input order.
+     * @return BatchRuns Runs in input order.
      */
-    public static function planRuns(array $rowShapes, callable $conflictKeyForIndex): array
+    public static function planRuns(BatchRowShapes $rowShapes, callable $conflictKeyForIndex): BatchRuns
     {
-        $runs = [];
+        $runs = new BatchRuns();
+        $currentRun = null;
         $currentKey = null;
-        foreach ($rowShapes as $index => $shape) {
-            $key = implode(',', $shape['fieldNames']) . '|' . implode(',', $shape['columnsToReplace']);
-            if ($key !== $currentKey || $runs === []) {
-                $runs[] = ['modelIndexes' => [], 'rowByRow' => false];
+        foreach ($rowShapes->getElements() as $index => $shape) {
+            $key = $shape->getShapeKey();
+            if ($key !== $currentKey || $currentRun === null) {
+                $currentRun = new BatchRun();
+                $runs->add($currentRun);
                 $currentKey = $key;
             }
-            $runs[array_key_last($runs)]['modelIndexes'][] = $index;
+            $currentRun->modelIndexes[] = $index;
         }
 
-        foreach ($runs as &$run) {
+        foreach ($runs->getElements() as $run) {
             $seenConflictKeys = [];
-            foreach ($run['modelIndexes'] as $index) {
+            foreach ($run->modelIndexes as $index) {
                 $conflictKey = $conflictKeyForIndex($index);
                 if ($conflictKey === null) {
                     continue;
                 }
                 if (isset($seenConflictKeys[$conflictKey])) {
-                    $run['rowByRow'] = true;
+                    $run->rowByRow = true;
                     break;
                 }
                 $seenConflictKeys[$conflictKey] = true;
             }
         }
-        unset($run);
 
         return $runs;
     }

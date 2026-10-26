@@ -7,7 +7,7 @@ namespace DDD\Domain\Base\Repo\DB\Dialect\Runtime;
 use Doctrine\DBAL\Driver\Middleware\AbstractResultMiddleware;
 
 /** @see ValueNormalizerMiddleware */
-final class ValueNormalizerResult extends AbstractResultMiddleware
+class ValueNormalizerResult extends AbstractResultMiddleware
 {
     public function fetchNumeric()
     {

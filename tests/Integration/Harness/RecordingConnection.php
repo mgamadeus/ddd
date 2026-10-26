@@ -9,7 +9,7 @@ use Doctrine\DBAL\Driver\Result;
 use Doctrine\DBAL\Driver\Statement;
 
 /** Wraps every prepared statement in {@see RecordingStatement}; records direct query()/exec() SQL immediately. */
-final class RecordingConnection extends AbstractConnectionMiddleware
+class RecordingConnection extends AbstractConnectionMiddleware
 {
     public function prepare(string $sql): Statement
     {

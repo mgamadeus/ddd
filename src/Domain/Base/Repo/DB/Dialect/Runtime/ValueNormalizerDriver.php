@@ -8,7 +8,7 @@ use Doctrine\DBAL\Driver\Middleware\AbstractDriverMiddleware;
 use SensitiveParameter;
 
 /** @see ValueNormalizerMiddleware */
-final class ValueNormalizerDriver extends AbstractDriverMiddleware
+class ValueNormalizerDriver extends AbstractDriverMiddleware
 {
     public function connect(
         #[SensitiveParameter]

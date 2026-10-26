@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo\DB\Dialect\Schema;
 
+use DDD\Domain\Base\Entities\ValueObject;
+
 /**
  * One executable DDL statement, dialect-agnostic (dual-dialect architecture plan
  * `agentic-plans/backend/2026-10-24-ddd-dual-dialect-architecture.md` §4.10/§6 row 4a). A {@see DdlRenderer} hands
@@ -12,7 +14,7 @@ namespace DDD\Domain\Base\Repo\DB\Dialect\Schema;
  *
  * `phase` + `table` enable **cross-table phase batching**: rendering a whole entity set runs every table's `phase`
  * before any table's `phase`-successor (every `CREATE_TABLE` before any `CREATE_INDEX`, every `CREATE_INDEX` before
- * any `CREATE_FOREIGN_KEY`) via {@see sortByPhase()}, which is what lets a foreign key reference a table created
+ * any `CREATE_FOREIGN_KEY`) via {@see DdlStatements::sortedByPhase()}, which is what lets a foreign key reference a table created
  * later in entity-class scan order. A single model's own `renderCreate()` list is already safe to run standalone in
  * the order returned (table, then its indexes, then its foreign keys) without this sort.
  *
@@ -21,7 +23,7 @@ namespace DDD\Domain\Base\Repo\DB\Dialect\Schema;
  * `transactional: true` statements (brand-new objects, nothing to lock, no `CONCURRENTLY` index needed on an empty
  * table) but the fields exist now so step 7 is additive, not a reshape of callers already holding a `DdlStatement[]`.
  */
-final readonly class DdlStatement
+class DdlStatement extends ValueObject
 {
     // ─── Phases, in CREATE-path execution order (§6 row 4a scope: create path only) ───
     public const string PHASE_EXTENSION = 'EXTENSION';
@@ -45,7 +47,7 @@ final readonly class DdlStatement
     public const string PHASE_CREATE_TRIGGER = 'CREATE_TRIGGER';
 
     /**
-     * @var string[] Execution order for {@see sortByPhase()}. Step 7 (ALTER/DROP phases, aligned with
+     * @var string[] Execution order for {@see DdlStatements::sortedByPhase()}. Step 7 (ALTER/DROP phases, aligned with
      *      `DatabaseSchemaDiffService`'s 13-phase assembler where it makes sense) extends this list; it does not
      *      reorder the entries already here.
      */
@@ -69,33 +71,18 @@ final readonly class DdlStatement
     public const string LOCK_ACCESS_EXCLUSIVE = 'ACCESS_EXCLUSIVE';
 
     public function __construct(
-        public string $sql,
-        public string $phase,
-        public string $lockClass = self::LOCK_NONE,
-        public bool $transactional = true,
-        public ?string $table = null,
+        public readonly string $sql,
+        public readonly string $phase,
+        public readonly string $lockClass = self::LOCK_NONE,
+        public readonly bool $transactional = true,
+        public readonly ?string $table = null,
     ) {
+        parent::__construct();
     }
 
-    /**
-     * Stable sort by {@see CREATE_PHASE_ORDER}; statements with an unrecognised phase sort last, in encounter
-     * order. Does not rely on PHP's sort stability (explicit position tie-break) so behaviour is the same on any
-     * supported PHP version.
-     *
-     * @param DdlStatement[] $statements
-     * @return DdlStatement[]
-     */
-    public static function sortByPhase(array $statements): array
+    /** Identical statements may legitimately repeat and order matters: every instance is its own element. */
+    public function uniqueKey(): string
     {
-        $rank = array_flip(self::CREATE_PHASE_ORDER);
-        $unknownRank = count(self::CREATE_PHASE_ORDER);
-
-        $decorated = [];
-        foreach (array_values($statements) as $position => $statement) {
-            $decorated[] = [$rank[$statement->phase] ?? $unknownRank, $position, $statement];
-        }
-        usort($decorated, static fn (array $a, array $b): int => $a[0] <=> $b[0] ?: $a[1] <=> $b[1]);
-
-        return array_map(static fn (array $entry) => $entry[2], $decorated);
+        return self::uniqueKeyStatic((string)spl_object_id($this));
     }
 }

@@ -9,7 +9,7 @@ namespace DDD\Domain\Base\Repo\DB\Dialect\Write;
  * `insertIgnore` are decided by their call site before this ever runs (they never reach the generic upsert path);
  * this covers the remaining three: id present, a resolvable unique key, or neither.
  */
-final class WriteIntentSelector
+class WriteIntentSelector
 {
     public static function select(bool $hasId, array $conflictTargetColumns): WriteIntent
     {

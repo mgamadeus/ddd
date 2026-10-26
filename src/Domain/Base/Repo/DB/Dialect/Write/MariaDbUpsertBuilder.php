@@ -20,7 +20,7 @@ use Doctrine\ORM\QueryBuilder;
  * built here directly, following the same "every initialized field, same column forms" pattern as `upsert()`'s
  * INSERT branch.
  */
-final class MariaDbUpsertBuilder implements UpsertBuilder
+class MariaDbUpsertBuilder implements UpsertBuilder
 {
     public function upsert(
         DoctrineEntityManager $entityManager,

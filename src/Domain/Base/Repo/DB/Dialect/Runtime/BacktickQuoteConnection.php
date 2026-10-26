@@ -9,7 +9,7 @@ use Doctrine\DBAL\Driver\Result;
 use Doctrine\DBAL\Driver\Statement;
 
 /** @see BacktickQuoteMiddleware */
-final class BacktickQuoteConnection extends AbstractConnectionMiddleware
+class BacktickQuoteConnection extends AbstractConnectionMiddleware
 {
     public function prepare(string $sql): Statement
     {

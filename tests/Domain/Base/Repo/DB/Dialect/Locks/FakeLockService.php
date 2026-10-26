@@ -11,7 +11,7 @@ use DDD\Domain\Base\Repo\DB\Dialect\Locks\AbstractLockService;
  * Shares a single static registry of "held" names across instances so a test can simulate a second process
  * contending for the same name without a real connection.
  */
-final class FakeLockService extends AbstractLockService
+class FakeLockService extends AbstractLockService
 {
     /** @var array<string, bool> name => currently held by SOME FakeLockService instance (simulates server state) */
     public static array $serverHeld = [];

@@ -26,12 +26,12 @@ use PHPUnit\Framework\TestCase;
  * One golden file is excluded even from the DDL-only compare for a documented reason: see
  * {@see self::EXCLUDED_SET_UP_FILES}.
  */
-final class DdlGoldenTest extends TestCase
+class DdlGoldenTest extends TestCase
 {
-    private const string GOLDEN_DIR = __DIR__ . '/../golden/mariadb';
+    protected const string GOLDEN_DIR = __DIR__ . '/../golden/mariadb';
 
     /** @var string[] Every IntegrationTestCase subclass's T0 capture; setUpBeforeClass/tearDownAfterClass is identical across all six */
-    private const array GOLDEN_TEST_CLASSES = [
+    protected const array GOLDEN_TEST_CLASSES = [
         'BatchUpsertTest',
         'FilterAgainstDatabaseTest',
         'HarnessSmokeTest',
@@ -47,7 +47,7 @@ final class DdlGoldenTest extends TestCase
      * That is exactly a "live round trip" result this no-DB suite cannot reconstruct; it stays covered by the
      * live-harness re-capture diff described in the class docblock instead of being silently dropped from the gate.
      */
-    private const array EXCLUDED_SET_UP_FILES = ['RunReadOnlyQueryTest'];
+    protected const array EXCLUDED_SET_UP_FILES = ['RunReadOnlyQueryTest'];
 
     public static function fixtureEntityClasses(): array
     {
@@ -103,7 +103,7 @@ final class DdlGoldenTest extends TestCase
         );
     }
 
-    private function readGoldenFile(string $fileName): string
+    protected function readGoldenFile(string $fileName): string
     {
         $path = self::GOLDEN_DIR . '/' . $fileName;
         $this->assertFileExists($path);
@@ -111,7 +111,7 @@ final class DdlGoldenTest extends TestCase
     }
 
     /** @param string[] $statements Mirrors RecordingMiddleware::record()/endTest() with every params list empty */
-    private static function renderGoldenBuffer(array $statements): string
+    protected static function renderGoldenBuffer(array $statements): string
     {
         $buffer = array_map(
             static fn (string $sql): string => rtrim($sql) . "\n-- params: []\n-- ----------------------------------------",
@@ -122,7 +122,7 @@ final class DdlGoldenTest extends TestCase
 }
 
 /** Test-only duplicate of IntegrationTestCase::splitSqlStatements() — this suite must not need tests/Integration's heavier base. */
-final class IntegrationTestCaseSqlSplitter
+class IntegrationTestCaseSqlSplitter
 {
     /** @return string[] */
     public static function splitSqlStatements(string $sql): array

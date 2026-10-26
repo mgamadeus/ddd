@@ -12,7 +12,7 @@ use Throwable;
  * `COMMIT` -> `ROLLBACK` (its documented behaviour once a transaction is in the 25P02 "current transaction is
  * aborted" state) look like a successful commit to the caller.
  */
-final class AbortedTransactionException extends RuntimeException
+class AbortedTransactionException extends RuntimeException
 {
     public static function fromFirstError(?Throwable $firstError): self
     {

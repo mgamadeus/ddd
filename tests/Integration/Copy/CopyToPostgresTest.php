@@ -27,14 +27,14 @@ use Symfony\Component\Console\Tester\CommandTester;
  *
  * @group copy
  */
-final class CopyToPostgresTest extends TestCase
+class CopyToPostgresTest extends TestCase
 {
     /** @var string[] Deliberately NOT IntegrationTestCase::FIXTURE_ENTITY_CLASSES — see CopyRow's own docblock. */
-    private const array ENTITY_CLASSES = [CopyRow::class, CounterRow::class];
+    protected const array ENTITY_CLASSES = [CopyRow::class, CounterRow::class];
 
-    private const string ORPHAN_TABLE = 'LegacyOrphans';
+    protected const string ORPHAN_TABLE = 'LegacyOrphans';
 
-    private ?Connection $source = null;
+    protected ?Connection $source = null;
 
     public static function setUpBeforeClass(): void
     {
@@ -62,12 +62,12 @@ final class CopyToPostgresTest extends TestCase
         $this->source?->close();
     }
 
-    private static function currentDriver(): ?string
+    protected static function currentDriver(): ?string
     {
         return getenv('DDD_TEST_DRIVER') ?: ($_SERVER['DDD_TEST_DRIVER'] ?? null);
     }
 
-    private static function openSourceConnection(): Connection
+    protected static function openSourceConnection(): Connection
     {
         return DriverManager::getConnection([
             'driver' => 'pdo_mysql',
@@ -81,12 +81,12 @@ final class CopyToPostgresTest extends TestCase
     }
 
     /** @return DatabaseModel[] */
-    private static function databaseModels(): array
+    protected static function databaseModels(): array
     {
         return array_map(static fn (string $class): DatabaseModel => DatabaseModel::fromEntityClass($class), self::ENTITY_CLASSES);
     }
 
-    private function resetSourceSchema(): void
+    protected function resetSourceSchema(): void
     {
         $this->source->executeStatement('SET FOREIGN_KEY_CHECKS=0');
         foreach (self::databaseModels() as $databaseModel) {
@@ -103,7 +103,7 @@ final class CopyToPostgresTest extends TestCase
     }
 
     /** @return string[] */
-    private function splitStatements(string $sql): array
+    protected function splitStatements(string $sql): array
     {
         $withoutComments = preg_replace('/^\s*#.*$/m', '', $sql);
         $statements = [];
@@ -115,7 +115,7 @@ final class CopyToPostgresTest extends TestCase
         return $statements;
     }
 
-    private function resetTargetSchema(): void
+    protected function resetTargetSchema(): void
     {
         $target = self::targetConnection();
         foreach (self::databaseModels() as $databaseModel) {
@@ -123,12 +123,12 @@ final class CopyToPostgresTest extends TestCase
         }
     }
 
-    private static function targetConnection(): Connection
+    protected static function targetConnection(): Connection
     {
         return \DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory::getInstance()->getConnection();
     }
 
-    private function seedCopyRows(): void
+    protected function seedCopyRows(): void
     {
         $fullJson = json_encode(
             ['a' => 1, 'b' => "x\ty\nz\\slash", 'u' => "café"],
@@ -166,7 +166,7 @@ final class CopyToPostgresTest extends TestCase
         );
     }
 
-    private function seedCounterRows(): void
+    protected function seedCounterRows(): void
     {
         $this->source->executeStatement(
             'INSERT INTO `CounterRows` (`businessKey`, `counter`, `keptValue`, `label`, `amount`, `ratio`, `isActive`, `dueOn`, `occurredAt`, `displayOrder`) '
@@ -176,14 +176,14 @@ final class CopyToPostgresTest extends TestCase
     }
 
     /** @return array{0: int, 1: string} */
-    private function runCommand(array $input): array
+    protected function runCommand(array $input): array
     {
         $tester = new CommandTester(new CopyToPostgres(self::ENTITY_CLASSES));
         $exitCode = $tester->execute($input + ['--source-dsn' => $this->sourceDsn(), '--target-db-allow-pattern' => 'ddd_test']);
         return [$exitCode, $tester->getDisplay()];
     }
 
-    private function sourceDsn(): string
+    protected function sourceDsn(): string
     {
         $port = (int)($_SERVER['DDD_TEST_DB_PORT'] ?? getenv('DDD_TEST_DB_PORT') ?: 3317);
         return "mysql://root:ddd-test@127.0.0.1:$port/ddd_test";

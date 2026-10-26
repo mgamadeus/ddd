@@ -8,7 +8,7 @@ use Doctrine\DBAL\Driver\Middleware\AbstractDriverMiddleware;
 use SensitiveParameter;
 
 /** @see BacktickQuoteMiddleware */
-final class BacktickQuoteDriver extends AbstractDriverMiddleware
+class BacktickQuoteDriver extends AbstractDriverMiddleware
 {
     public function connect(
         #[SensitiveParameter]
