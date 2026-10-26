@@ -303,6 +303,20 @@ class DoctrineQueryBuilder extends QueryBuilder
     }
 
     /**
+     * The next number for a rights subquery embedded in this query
+     * ({@see \DDD\Domain\Base\Entities\QueryOptions\ExpandOptions}): each one renames its alias
+     * namespace to `_rights<N>_…`, so two of them never declare the same alias. Counted per query builder, so the same
+     * query gets the same numbers on every request.
+     */
+    public function allocateRightsSubqueryIndex(): int
+    {
+        return ++$this->rightsSubqueryCount;
+    }
+
+    /** @var int Rights subqueries embedded so far, see {@see allocateRightsSubqueryIndex()} */
+    protected int $rightsSubqueryCount = 0;
+
+    /**
      * Initializes a new <tt>QueryBuilder</tt> that uses the given <tt>EntityManager</tt>.
      *
      * @param EntityManagerInterface $em The EntityManager to use.
