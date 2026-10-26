@@ -563,11 +563,14 @@ MD;
         // `AIConversationMessage_aiConversation_rights`, and DQL (unlike SQL) rejects the re-declared alias.
         //
         // Derive the rename from $targetJoinAlias (the expand's per-PATH LEFT JOIN alias), NOT the entity's
-        // constant base alias: $targetJoinAlias is unique per expand path, so the renamed `_rights_<path>…`
-        // aliases stay distinct across sibling/nested subqueries. Replacement is byte-identical in content —
-        // only the alias tokens differ. Idempotent on its own output: the replacement starts `_rights_…`, so the
+        // constant base alias, AND number it per statement (`_rights<N>_<targetJoinAlias>`): the path alone is not
+        // unique once an expand reuses a path-shaped root rights join — the subquery join `<base>_<prop>_rights`
+        // renamed to `_rights_<join>_<prop>_rights` equalled the rename of the next subquery, whose expand reused the
+        // root's `<join>_<prop>_rights` ("already defined"). The number is allocated by the main query builder, so
+        // the DQL stays the same from request to request (query cache). Replacement is byte-identical in content —
+        // only the alias tokens differ. Idempotent on its own output: the replacement starts `_rights<N>_…`, so the
         // inner `<alias>` it may contain is preceded by `_` and the lookbehind refuses to re-match it.
-        $renamedTempBaseAlias = '_rights_' . $targetJoinAlias;
+        $renamedTempBaseAlias = '_rights' . $mainQueryBuilder->allocateRightsSubqueryIndex() . '_' . $targetJoinAlias;
         // Right-edge guard `(?![A-Za-z0-9])`: the base alias matches only when the next char is `_`, `.`, or
         // end — i.e. exactly the two real continuations `<base>_<prop>_rights` and `<base>.relation`. It must
         // NOT include `_` in the negated class (that would stop us rewriting the `<base>_<prop>` aliases this fix
@@ -629,7 +632,7 @@ MD;
         // a chat-member fetch with deep rights wraps.
         //
         // The previous `$tempBaseAlias !== $targetJoinAlias` guard is no longer needed:
-        // the renamed alias is by construction `_rights_<base>` which can never equal
+        // the renamed alias is by construction `_rights<N>_<base>` which can never equal
         // a path-derived join alias.
         $innerWhereExpression = sprintf(
             '(%s) AND %s.id = %s.id',

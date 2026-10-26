@@ -184,3 +184,7 @@ order; every item cost one of those apps time.
   restart the containers after the update to drop already poisoned APCu entries.
 - 2.71.3 — completes 2.71.2 for the same request: a `find($id)` after a select-restricted load of that row re-reads
   the whole row instead of taking the partial model the entity manager still holds.
+- 2.71.4 — rights subqueries of expands are numbered per statement (`_rights<N>_<join alias>`): an expand that reused
+  a path-shaped root rights join (`<base>_<prop>_rights`) next to a nested expand could declare the same subquery
+  alias twice ("is already defined", HTTP 500). Apps that renamed their rights joins to dodge it can keep or revert
+  the rename.
