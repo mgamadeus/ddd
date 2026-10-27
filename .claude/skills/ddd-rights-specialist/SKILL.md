@@ -504,12 +504,14 @@ If a parent's visibility legitimately depends on a child's rights, encode that *
 
 You don't have to do anything special in your `applyReadRightsQuery` — just ensure it returns `true` when it adds conditions. The framework picks the merge mechanism.
 
+A parent's own rights that leftJoin a **collection** (Pattern 2) decide which parents are visible — nothing more. When the caller expands that same collection, the expand reuses the join, but the WHERE no longer trims the expanded children: they come back complete, restricted only by the child entity's own `applyReadRightsQuery`. Children that must stay hidden need rights on the child entity.
+
 **Historical note (2026-05):** to-one used to merge rights into the main `WHERE` with `($alias.id IS NULL OR (<rights>))`, which dropped the parent when a FK-set to-one failed rights. This was asymmetric with to-many and with LazyLoad and is gone. Any older skill/code comment that says "parent with an unreadable to-one is excluded" is outdated.
 
 | Expand source | Both to-one and to-many |
 |---|---|
 | Implicit rights (`applyReadRightsQuery`) | **ON-clause via `IN (subquery)`** — child nulled on failure, parent always visible |
-| Top-level `filter=x.y eq Z` (dot-path) | WHERE — caller-intent is "filter the parent by child"; parent drops |
+| Top-level `filters=x.y eq Z` (dot-path) | WHERE — selects the parents only; an expanded collection `x` still comes back complete |
 | Expand-scoped `expand=x(filters=…)` | ON-clause via `applyFiltersToJoin` — only child filtered |
 
 ---
