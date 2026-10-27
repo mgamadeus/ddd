@@ -41,9 +41,14 @@ Unchanged:
   display the collection: they now show every child. Move the condition into the expand if only the matching
   children should be shown (keep the root filter if the roots must still be restricted).
 - **Root read rights that join a collection** (`applyReadRightsQuery` with `leftJoin` on a to-many relation + WHERE on
-  it, the `_rights` alias pattern): an `expand` of that same relation reuses the join. Its WHERE used to trim the
-  expanded collection as well; now the collection is complete, restricted only by the child entity's own read rights.
-  If the children must stay hidden, give the child entity its own `applyReadRightsQuery`.
+  it, the `_rights` alias pattern) — **check these before the update, they widen what non-admins see**: an `expand`
+  of that same relation reuses the join. Its WHERE used to trim the expanded collection as well (often to the caller's
+  own row); now the collection is complete, restricted only by the child entity's own read rights. Children that must
+  stay hidden need rights on the child entity, or the property hidden for non-admins in `mapToEntity`. Example:
+  support tickets whose rights join `supportContact.relatedAccounts` on the caller's account — a client
+  `expand=supportContact(expand=relatedAccounts)` returned the caller's account only and now returns every account of
+  the contact. The same collection was usually reachable without the rights join already (an expand from the caller's
+  own account), so audit the collection itself, not only the rights join.
 - **Hand-built query builders** that fetch-join a collection (`leftJoin` + `addSelect`) and restrict it in `andWhere`
   to load only some children: put that condition into the join (`leftJoin($path, $alias, Join::WITH, $condition)`).
   A WHERE now only selects the roots.
