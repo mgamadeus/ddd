@@ -130,6 +130,27 @@ class SqlFacadeTest extends IntegrationTestCase
         );
     }
 
+    /**
+     * An aggregate nested in an expression (`COUNT(DISTINCT x) + 1`, a ranking) still makes a single-row aggregate
+     * query: the default order must not append the root id, which PostgreSQL rejects outside a GROUP BY (42803).
+     */
+    public function testAnAggregateInsideAnArithmeticExpressionGetsNoDefaultOrder(): void
+    {
+        static::connection()->executeStatement('DELETE FROM ' . static::dialect()->quote('CounterRows'));
+        static::insertRow('CounterRows', ['businessKey' => 'a', 'label' => 'alpha', 'amount' => 3, 'isActive' => 1, 'occurredAt' => null]);
+        static::insertRow('CounterRows', ['businessKey' => 'b', 'label' => 'beta', 'amount' => 3, 'isActive' => 1, 'occurredAt' => null]);
+        static::insertRow('CounterRows', ['businessKey' => 'c', 'label' => 'gamma', 'amount' => 5, 'isActive' => 1, 'occurredAt' => null]);
+
+        $alias = DBCounterRowModel::MODEL_ALIAS;
+        $queryBuilder = DBCounterRow::createQueryBuilder(false);
+        $queryBuilder->select("COUNT(DISTINCT $alias.amount) + 1 AS rankPosition")
+            ->from(DBCounterRowModel::class, $alias)
+            ->andWhere("$alias.amount >= :minimumAmount")
+            ->setParameter('minimumAmount', 3);
+
+        $this->assertSame(3, (int)$queryBuilder->getQuery()->getSingleScalarResult());
+    }
+
     public function testCurrentDatabaseReturnsTheConnectedDatabaseName(): void
     {
         $value = static::connection()->fetchOne('SELECT ' . static::dialect()->currentDatabase());

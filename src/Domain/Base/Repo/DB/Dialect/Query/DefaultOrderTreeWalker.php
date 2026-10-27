@@ -231,11 +231,42 @@ class DefaultOrderTreeWalker extends TreeWalkerAdapter
     protected function selectsAnAggregate(AST\SelectStatement $AST): bool
     {
         foreach ($AST->selectClause->selectExpressions as $selectExpression) {
-            if ($selectExpression->expression instanceof AST\AggregateExpression) {
+            if ($this->containsAnAggregate($selectExpression->expression)) {
                 return true;
             }
-            foreach (self::AGGREGATE_FUNCTION_CLASSES as $aggregateFunctionClass) {
-                if ($selectExpression->expression instanceof $aggregateFunctionClass) {
+        }
+        return false;
+    }
+
+    /**
+     * Whether an aggregate occurs anywhere in a select expression — also nested, e.g. `COUNT(DISTINCT x) + 1` (an
+     * arithmetic expression around the aggregate) or `COALESCE(SUM(x), 0)`. A subselect is not searched: its
+     * aggregates are its own and leave the outer query row-wise.
+     */
+    protected function containsAnAggregate(mixed $expressionNode): bool
+    {
+        if ($expressionNode instanceof AST\AggregateExpression) {
+            return true;
+        }
+        foreach (self::AGGREGATE_FUNCTION_CLASSES as $aggregateFunctionClass) {
+            if ($expressionNode instanceof $aggregateFunctionClass) {
+                return true;
+            }
+        }
+        if ($expressionNode instanceof AST\Subselect) {
+            return false;
+        }
+        if (is_array($expressionNode)) {
+            foreach ($expressionNode as $childNode) {
+                if ($this->containsAnAggregate($childNode)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if ($expressionNode instanceof AST\Node) {
+            foreach (get_object_vars($expressionNode) as $childNode) {
+                if ((is_array($childNode) || $childNode instanceof AST\Node) && $this->containsAnAggregate($childNode)) {
                     return true;
                 }
             }

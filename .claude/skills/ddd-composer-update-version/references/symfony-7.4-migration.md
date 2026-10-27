@@ -188,3 +188,6 @@ order; every item cost one of those apps time.
   a path-shaped root rights join (`<base>_<prop>_rights`) next to a nested expand could declare the same subquery
   alias twice ("is already defined", HTTP 500). Apps that renamed their rights joins to dodge it can keep or revert
   the rename.
+- 2.71.5 — PostgreSQL: a query whose select nests an aggregate (`COUNT(DISTINCT x) + 1`, `COALESCE(SUM(x), 0)`) no
+  longer gets the default `ORDER BY <root>.id` (SQLSTATE 42803). Restart the workers and PHP-FPM after the deploy:
+  the Doctrine query cache keeps the SQL the old walker rendered.
