@@ -75,3 +75,6 @@ Unchanged:
 - 3.1.2 — PostgreSQL schema diff: the container-built `DatabaseSchemaDiffService` (autowired with the MariaDB
   introspection) uses the PostgreSQL introspection, so `/databaseModels/diff` answers 200; tables an extension owns
   (PostGIS `spatial_ref_sys`) are no longer offered as DROP_TABLE.
+- 3.1.3 — PostgreSQL registers the spatial DQL functions too (`ST_GeomFromText`, `ST_AsText`, `ST_X`, `ST_Within`,
+  `ST_Area`, … — the same names PostGIS has; `Dialect\Query\SpatialDqlFunctions`). DQL with them failed with
+  "Expected known function". Geometry values use SRID 0 on both engines.

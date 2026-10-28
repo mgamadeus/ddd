@@ -59,4 +59,44 @@ class SpatialTypesTest extends IntegrationTestCase
         );
         $this->assertSame([0.5, 0.25, 0.125], $results[0]->embedding);
     }
+    /**
+     * The spatial DQL functions exist on both engines (PostgreSQL registered none: "Expected known function, got
+     * 'ST_GeomFromText'"): a DQL UPDATE writes a geometry through ST_GeomFromText with SRID 0, a DQL SELECT reads it
+     * back through ST_AsText, ST_Area and ST_Within.
+     */
+    public function testSpatialDqlFunctionsWriteAndReadAGeometryOnBothEngines(): void
+    {
+        $spatialRow = new SpatialRow();
+        $spatialRow->label = 'dql';
+        $spatialRow->location = null;
+        $spatialRow->embedding = new Vector([0.0, 0.0, 1.0]);
+        $spatialRow->layout = new Polygon([new Point2D(0, 0), new Point2D(1, 0), new Point2D(1, 1), new Point2D(0, 1)]);
+        $spatialRow->amount = 1;
+        $spatialRow = $spatialRow->update();
+        $alias = DBSpatialRowModel::MODEL_ALIAS;
+
+        $updateQueryBuilder = DBSpatialRow::createQueryBuilder();
+        $updateQueryBuilder->update(DBSpatialRowModel::class, $alias)
+            ->set("$alias.layout", 'ST_GeomFromText(:layoutWkt, 0)')
+            ->where("$alias.id = :id")
+            ->setParameter('layoutWkt', 'POLYGON((0 0,4 0,4 4,0 4,0 0))')
+            ->setParameter('id', $spatialRow->id);
+        $this->assertSame(1, $updateQueryBuilder->getQuery()->execute());
+
+        $selectQueryBuilder = DBSpatialRow::createQueryBuilder();
+        $selectQueryBuilder->select(
+            "ST_AsText($alias.layout) AS layoutText",
+            "ST_Area($alias.layout) AS layoutArea",
+            "ST_Within(ST_GeomFromText(:insideWkt, 0), $alias.layout) AS containsPoint"
+        )
+            ->from(DBSpatialRowModel::class, $alias)
+            ->where("$alias.id = :id")
+            ->setParameter('insideWkt', 'POINT(1 1)')
+            ->setParameter('id', $spatialRow->id);
+        $result = $selectQueryBuilder->getQuery()->getSingleResult();
+
+        $this->assertSame('POLYGON((0 0,4 0,4 4,0 4,0 0))', $result['layoutText']);
+        $this->assertEqualsWithDelta(16.0, (float)$result['layoutArea'], 0.0001);
+        $this->assertTrue(filter_var($result['containsPoint'], FILTER_VALIDATE_BOOLEAN));
+    }
 }

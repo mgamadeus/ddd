@@ -15,6 +15,7 @@ use DDD\Domain\Base\Repo\DB\Dialect\Query\JsonFieldText;
 use DDD\Domain\Base\Repo\DB\Dialect\Query\JsonText;
 use DDD\Domain\Base\Repo\DB\Dialect\Query\MariaDbDistinctSubqueryPagination;
 use DDD\Domain\Base\Repo\DB\Dialect\Query\PaginationStrategy;
+use DDD\Domain\Base\Repo\DB\Dialect\Query\SpatialDqlFunctions;
 use DDD\Domain\Base\Repo\DB\Dialect\Query\PostgresCosineDistance;
 use DDD\Domain\Base\Repo\DB\Dialect\Query\PostgresCosineSimilarity;
 use DDD\Domain\Base\Repo\DB\Dialect\Query\PostgresCurrentDate;
@@ -175,6 +176,9 @@ class PostgresDialect implements SqlDialect
         $configuration->addCustomStringFunction('VEC_FROM_TEXT', PostgresVecFromText::class);
         $configuration->addCustomStringFunction('FULLTEXT_MATCH', FulltextMatch::class);
         $configuration->addCustomStringFunction('TOKEN_MATCH', TokenMatch::class);
+
+        // ─── Spatial functions (same names in PostGIS; ST_Distance_Sphere below is PostgreSQL's own) ───
+        SpatialDqlFunctions::register($configuration);
 
         // ─── Numeric functions ───
         $configuration->addCustomNumericFunction('INT_DIV', IntDiv::class);
