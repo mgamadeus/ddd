@@ -1,6 +1,6 @@
 ---
 name: ddd-database-schema-diff-specialist
-description: "Understand and operate the DDD live-vs-target database schema diff system: compute diffs between the entity-derived and the live schema on MariaDB and PostgreSQL, apply drift fixes per table or in bulk, and build the admin interface in a consuming app. Covers the diff value objects, the 13-phase SQL assembler, the false-positive normalisation catalog (string NULL defaults, BOOLEAN vs TINYINT, generation expressions, trigger bodies), VECTOR reset semantics, severity, the which-side-is-wrong pre-apply checklist, the large-table production guard (bypass is CLI/messenger-only, never HTTP), the diff-signature gate and apply lock, the admin-screen build guide, pt-online-schema-change FK-rename coexistence, and troubleshooting (openApi 500, DIFF_SIGNATURE_MISMATCH, DIFF_APPLY_LOCK_BUSY, stale caches). Use when computing or applying schema diffs (also on PostgreSQL), debugging false-positive MODIFYs, deciding entity-vs-DB, migrating to v2.20, wiring the diff admin screen, or reasoning about pt-osc."
+description: "Operate the DDD live-vs-target schema diff: compute diffs between the entity-derived and the live schema on MariaDB and PostgreSQL, apply drift fixes per table or in bulk, build the admin interface in a consuming app, and set up a new PostgreSQL database (app:db:postgres:install-extensions-collation-functions, pre-deploy hook). Covers the diff value objects, the 13-phase SQL assembler, the false-positive normalisation catalog, VECTOR reset semantics, severity, the which-side-is-wrong pre-apply checklist, the large-table production guard (bypass is CLI/messenger-only, never HTTP), the diff-signature gate and apply lock, the admin-screen build guide, pt-online-schema-change FK-rename coexistence, and troubleshooting (openApi 500, DIFF_SIGNATURE_MISMATCH, DIFF_APPLY_LOCK_BUSY, stale caches). Use when setting up a PostgreSQL database, computing or applying schema diffs, debugging false-positive MODIFYs, deciding entity-vs-DB, migrating to v2.20, wiring the diff admin screen, or reasoning about pt-osc."
 metadata:
   author: mgamadeus
   version: "2.0.0"
@@ -122,13 +122,46 @@ Same service, same phases, same value objects — dialect-dispatched inside `Dat
 - Not yet: the online-safe forms (`CREATE INDEX CONCURRENTLY`, `NOT VALID` + `VALIDATE`, rewrite classification per
   operation) — the guard blocks a direct apply on a large table meanwhile.
 
-### Framework functions on PostgreSQL — `app:db:postgres:install-extensions-collation-functions`
+### Setting up a new PostgreSQL database
 
-The diff compares tables; the framework's PostgreSQL infrastructure — extensions, the `ddd_ci_ai` collation and the
-`ddd_*` functions (`ddd_json_merge_patch`, `ddd_fold`, `ddd_translatable_text`, …) — is not part of it. When a framework
-release changes one of them (its changelog says so), run `php bin/console app:db:postgres:install-extensions-collation-functions` once per database
-(`--dry-run` prints the statements; idempotent: `IF NOT EXISTS`, `CREATE OR REPLACE`; one transaction). MariaDB needs
-none and the command says so.
+The framework's SQL relies on PostgreSQL objects that are not tables: the extensions `pg_trgm`, `unaccent`, `postgis`,
+`vector`, `vectorscale`, `pg_stat_statements`, the case- and accent-insensitive collation `ddd_ci_ai` (every text
+column uses it), and the `ddd_*` SQL functions (`ddd_json_merge_patch` for mergeable JSON columns, `ddd_fold` /
+`ddd_unaccent` for fulltext, `ddd_translatable_text` for search columns, `ddd_now` for change history, …). The schema
+diff compares tables, not these. Order for a new database:
+
+1. **Role and database** — created by the operator (not the framework); the role owns the database.
+2. **`php bin/console app:db:postgres:install-extensions-collation-functions`** — creates the extensions and the
+   collation if missing, creates or replaces the `ddd_*` functions. PostgreSQL only (on MariaDB it does nothing),
+   idempotent (`IF NOT EXISTS`, `CREATE OR REPLACE`, one transaction), `--dry-run` prints the statements. Creating
+   `postgis` / `vectorscale` needs a role allowed to create extensions (superuser, or the extensions pre-installed).
+3. **Tables** — the schema diff (`computeDiffs` + apply, or the admin screen), or the generated SQL.
+
+Run step 2 **on every deploy**, as a pre-deploy step — e.g. a Kubernetes / Argo CD `PreSync` hook job running the
+command with the new image — and in any job that creates or refreshes a database from a template: a framework release
+that changes a `ddd_*` function (its changelog says so) then reaches every database without a manual step. The schema
+diff's PostgreSQL apply also runs these statements first, each in a savepoint (one the role may not run — an
+extension it cannot create, a function another role owns — is skipped, not an error), so a diff never applies
+against a missing function or collation; the command run by a privileged role stays the primary path.
+
+```yaml
+# Argo CD PreSync hook: install / update the framework's PostgreSQL objects before the new pods start
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: app-db-postgres-install
+  annotations: { argocd.argoproj.io/hook: PreSync, argocd.argoproj.io/hook-delete-policy: BeforeHookCreation }
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: install
+          image: <app image of this release>
+          command: ["php", "bin/console", "app:db:postgres:install-extensions-collation-functions"]
+          envFrom: [{ secretRef: { name: app-database } }]
+```
 
 ## Phase-Ordered SQL Assembly
 

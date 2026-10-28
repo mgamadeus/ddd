@@ -406,6 +406,9 @@ Database tables and schema changes are managed **manually and separately** by th
 - No migration files
 
 **What the framework DOES:**
+- On PostgreSQL, installs its own infrastructure — extensions, the `ddd_ci_ai` collation, the `ddd_*` SQL functions — via
+  `app:db:postgres:install-extensions-collation-functions` (idempotent, run before the tables and on every deploy; see
+  the `ddd-database-schema-diff-specialist` skill, "Setting up a new PostgreSQL database")
 - Creates PHP entity files
 - Creates PHP repository files
 - Creates PHP service files

@@ -49,6 +49,7 @@ use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\Config;
+use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception;
 use ReflectionException;
 
@@ -944,6 +945,7 @@ class DatabaseSchemaDiffService
         $connection->beginTransaction();
         try {
             $connection->executeStatement("SET LOCAL lock_timeout = '" . self::POSTGRES_APPLY_LOCK_TIMEOUT . "'");
+            $this->installPostgresExtensionsCollationFunctions($connection);
             foreach ([...$statements, ...$foreignKeyStatements] as $singleStatement) {
                 $connection->executeStatement($singleStatement);
             }
@@ -953,6 +955,27 @@ class DatabaseSchemaDiffService
                 $connection->rollBack();
             }
             throw $throwable;
+        }
+    }
+
+    /**
+     * What `app:db:postgres:install-extensions-collation-functions` installs, before the diff's own statements: a diff
+     * never applies against a missing `ddd_*` function, collation or extension. Each statement runs in its own
+     * savepoint — one this database user may not run (an extension it cannot create, a function another role owns) is
+     * skipped, never fails the apply; the command run by a privileged role is the primary path.
+     */
+    protected function installPostgresExtensionsCollationFunctions(Connection $connection): void
+    {
+        $ensureStatements = EntityManagerFactory::getDialect()->ddlRenderer()->ensure()->sortedByPhase();
+        foreach ($ensureStatements->getElements() as $index => $ensureStatement) {
+            $savepointName = 'ddd_install_infrastructure_' . $index;
+            $connection->createSavepoint($savepointName);
+            try {
+                $connection->executeStatement($ensureStatement->sql);
+                $connection->releaseSavepoint($savepointName);
+            } catch (\Throwable) {
+                $connection->rollbackSavepoint($savepointName);
+            }
         }
     }
 

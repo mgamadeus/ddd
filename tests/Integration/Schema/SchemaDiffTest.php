@@ -229,6 +229,25 @@ class SchemaDiffTest extends IntegrationTestCase
         $this->applyAndAssertConverged($tableDiffs);
     }
 
+    /** The PostgreSQL apply installs the framework's functions first: a diff never applies against a missing one. */
+    public function testTheApplyOnPostgresRestoresAMissingFrameworkFunction(): void
+    {
+        if (!$this->isPostgres()) {
+            $this->markTestSkipped('The ddd_* functions are PostgreSQL objects.');
+        }
+        static::connection()->executeStatement('DROP FUNCTION IF EXISTS ddd_json_merge_patch(json, json)');
+        static::connection()->executeStatement(
+            'ALTER TABLE ' . static::quoteIdentifier('TieBreakerChildren') . ' DROP COLUMN ' . static::quoteIdentifier('label')
+        );
+
+        $this->applyAndAssertConverged($this->fixtureDiffs($this->diffService()));
+
+        $this->assertSame(
+            '{"de": "Hallo"}',
+            (string)static::connection()->fetchOne("SELECT ddd_json_merge_patch('[]'::json, '{\"de\": \"Hallo\"}'::json)")
+        );
+    }
+
     public function testAChangedTypeLengthAndNullabilityIsAlteredBack(): void
     {
         static::connection()->executeStatement($this->isPostgres()

@@ -159,3 +159,7 @@ Unchanged:
   after 3.7.3). `app:issues:sync` → `app:issues:sync-registry-from-log-backend`, `app:issues:health` →
   `app:issues:check-registry-job-and-collector-health`; the old two names stay as deprecated aliases (running
   deployments and probes keep working) — switch the manifests to the new names.
+- 3.7.5 — setting up a PostgreSQL database is documented (README, AGENTS.md, `ddd-database-schema-diff-specialist`
+  "Setting up a new PostgreSQL database": role + database → `app:db:postgres:install-extensions-collation-functions`
+  → tables; run the command on every deploy, e.g. as an Argo CD PreSync job). The schema diff's PostgreSQL apply
+  installs the same objects first (each in a savepoint; one the role may not create is skipped).
