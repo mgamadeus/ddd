@@ -41,6 +41,14 @@ class MariaDbUpsertBuilder implements UpsertBuilder
         $entityManager->upsertMultiple($doctrineModels, $useInsertIgnore);
     }
 
+    public function insert(
+        DoctrineEntityManager $entityManager,
+        DoctrineModel &$doctrineModel,
+        ?QueryBuilder $createRightsQueryBuilder = null
+    ): int {
+        return $entityManager->insert($doctrineModel, $createRightsQueryBuilder);
+    }
+
     public function insertOrNull(DoctrineEntityManager $entityManager, DoctrineModel &$doctrineModel): ?int
     {
         $connection = $entityManager->getConnection();

@@ -191,3 +191,8 @@ order; every item cost one of those apps time.
 - 2.71.5 — PostgreSQL: a query whose select nests an aggregate (`COUNT(DISTINCT x) + 1`, `COALESCE(SUM(x), 0)`) no
   longer gets the default `ORDER BY <root>.id` (SQLSTATE 42803). Restart the workers and PHP-FPM after the deploy:
   the Doctrine query cache keeps the SQL the old walker rendered.
+- 2.72.0 — strict `insert()` next to `update()`: `$entity->insert()`, `EntitiesService::insert()`,
+  `DBEntity::insert($entity, $depth)`, `DoctrineEntityManager::insert($model, $createRightsQueryBuilder)`. A plain
+  `INSERT` (no `ON DUPLICATE KEY UPDATE`, no `ON CONFLICT`), never an update; a unique-key or primary-key collision
+  throws `UniqueConstraintViolationException` unchanged. No change to `update()`. Code that implements
+  `Dialect\Write\UpsertBuilder` itself adds `insert()`. Same feature as 3.1.0.
