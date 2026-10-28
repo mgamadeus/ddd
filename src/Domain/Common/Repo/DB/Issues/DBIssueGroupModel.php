@@ -46,6 +46,9 @@ class DBIssueGroupModel extends DoctrineModel
 	public ?string $environment;
 
 	#[ORM\Column(type: 'string')]
+	public ?string $workspace;
+
+	#[ORM\Column(type: 'string')]
 	public ?string $sampleEventId;
 
 	#[ORM\Column(type: 'datetime')]

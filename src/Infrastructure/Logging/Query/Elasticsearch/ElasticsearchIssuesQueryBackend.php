@@ -199,6 +199,7 @@ class ElasticsearchIssuesQueryBackend implements IssuesQueryBackend
             'route_name' => $issueEventSearch->routeName,
             'error.group_hash' => $issueEventSearch->groupHash,
             'error.issue_hash' => $issueEventSearch->issueHash,
+            'service.workspace' => $issueEventSearch->workspace,
         ] as $field => $value) {
             if ($value !== null && $value !== '') {
                 $filterClauses[] = ['term' => [$fieldNames->keyword($field) => $value]];

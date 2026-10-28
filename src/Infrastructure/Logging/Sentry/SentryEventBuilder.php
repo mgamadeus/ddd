@@ -37,6 +37,7 @@ class SentryEventBuilder
         'section' => 'section',
         'route_name' => 'route',
         'account.id' => 'account_id',
+        'service.workspace' => 'workspace',
     ];
 
     /** Fields already mapped elsewhere, not repeated in `extra` */

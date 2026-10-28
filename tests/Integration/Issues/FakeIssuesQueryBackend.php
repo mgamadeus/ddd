@@ -33,6 +33,7 @@ class FakeIssuesQueryBackend implements IssuesQueryBackend
         int $occurrences = 1,
         ?string $release = 'r1',
         string $message = 'Something failed',
+        ?string $workspace = null,
     ): void {
         $this->storedEvents[] = [
             new IssueEvent(
@@ -47,6 +48,7 @@ class FakeIssuesQueryBackend implements IssuesQueryBackend
                 slug: 'runtime-exception-' . substr($groupHash, 0, 6),
                 environment: 'test',
                 release: $release,
+                workspace: $workspace,
             ),
             $occurrences,
         ];
@@ -82,7 +84,8 @@ class FakeIssuesQueryBackend implements IssuesQueryBackend
         foreach ($this->storedEvents as [$issueEvent]) {
             if (!$this->isInWindow($issueEvent, $issueEventSearch->from, $issueEventSearch->to)
                 || ($issueEventSearch->groupHash !== null && $issueEvent->groupHash !== $issueEventSearch->groupHash)
-                || ($issueEventSearch->issueHash !== null && $issueEvent->issueHash !== $issueEventSearch->issueHash)) {
+                || ($issueEventSearch->issueHash !== null && $issueEvent->issueHash !== $issueEventSearch->issueHash)
+                || ($issueEventSearch->workspace !== null && $issueEvent->workspace !== $issueEventSearch->workspace)) {
                 continue;
             }
             $matchingEvents[] = $issueEvent;

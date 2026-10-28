@@ -25,10 +25,19 @@ class IssuesLogLineWriter
      */
     public static function writeLines(RouterInterface $router, array $additionalContext, Throwable ...$throwables): array
     {
+        return self::writeLinesForWorkspace(null, $router, $additionalContext, ...$throwables);
+    }
+
+    /**
+     * @param array<string, mixed> $additionalContext
+     * @return string[]
+     */
+    public static function writeLinesForWorkspace(?string $workspace, RouterInterface $router, array $additionalContext, Throwable ...$throwables): array
+    {
         $logFile = sys_get_temp_dir() . '/ddd-issues-lines-' . bin2hex(random_bytes(6)) . '.log';
         $streamHandler = new StreamHandler($logFile);
         $streamHandler->setFormatter(new ElasticCommonSchemaFormatter());
-        IssuesLogService::setSettings(new IssuesLogSettings(serviceName: 'ddd-it', release: 'r-test'));
+        IssuesLogService::setSettings(new IssuesLogSettings(serviceName: 'ddd-it', release: 'r-test', workspace: $workspace));
         try {
             $issuesLogService = new IssuesLogService(new Logger('issues', [$streamHandler]), new RequestStack(), $router);
             foreach ($throwables as $throwable) {

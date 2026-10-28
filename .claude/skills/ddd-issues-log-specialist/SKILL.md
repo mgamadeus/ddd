@@ -1,9 +1,9 @@
 ---
 name: ddd-issues-log-specialist
-description: "Log, cluster, ship and track production errors with the mgamadeus/ddd issues log: IssuesLogService::logThrowable (log-once), the issues channel sinks (ISSUES_LOG_TARGET file/stderr/none, ECS JSON), capture subscriber, redaction, hashes error.group_hash / error.issue_hash; the registry (app:issues:sync over Loki, Elasticsearch / OpenSearch or Sentry, seed mode, explosion guard, regressions, Slack alerts, app:issues:health); agent CLI app:issues:list / show / search / resolve --format=json; RuntimeErrorsService and app:runtime-errors:extract / probe (rankingCoach-compatible, ES_LOGS_* fallback, .keyword config); app:issues:forward-sentry; admin boilerplate; DevOps examples (Kubernetes, VM, job). Use when logging an exception, nobody sees production errors, configuring where errors go or alerts, shipping logs, errors logged twice, one bug in many groups, finding and fixing production errors as an agent, querying runtime errors in Elasticsearch, forwarding to Sentry, or building an issues admin screen."
+description: "Log, cluster, ship and track errors with the mgamadeus/ddd issues log: IssuesLogService::logThrowable (log-once), the issues channel sinks (ISSUES_LOG_TARGET file/stderr/none, ECS JSON), capture, redaction, hashes error.group_hash / error.issue_hash; the registry (app:issues:sync over Loki, Elasticsearch / OpenSearch or Sentry, per environment / dev workspace, seed mode, explosion guard, regressions, Slack alerts, app:issues:health); agent CLI app:issues:list / show / search / resolve --format=json; RuntimeErrorsService and app:runtime-errors:extract / probe (rankingCoach-compatible, ES_LOGS_*); app:issues:forward-sentry; admin boilerplate; DevOps examples. Use when logging an exception, nobody sees production errors, configuring where errors go or alerts, shipping logs, errors logged twice, one bug in many groups, finding and fixing errors of an environment or workspace as an agent, querying runtime errors in Elasticsearch, forwarding to Sentry, or building an issues admin screen."
 metadata:
   author: mgamadeus
-  version: "1.2.0"
+  version: "1.3.0"
   framework: mgamadeus/ddd
 ---
 
@@ -62,13 +62,15 @@ and reads the environment at runtime:
 | `ISSUES_LOG_MAX_EVENT_BYTES` | size cap of one event | 8192 |
 | `ISSUES_SERVICE_NAME` | `service.name` | `APP_NAME`, else `symfony` |
 | `ISSUES_RELEASE` | `service.version` | `APP_VERSION` |
+| `ISSUES_WORKSPACE` | `service.workspace` | the dev workspace of the checkout path (`/dev-workspaces/<name>/`), else `APP_STAGE` |
 
 Variables are read from `.env` (Config) and from the process environment, so a container can set them directly.
 With `file`, `stderr` or `none` the records stop at the sink — they no longer reach the application's main log.
 
 **The line** (Elastic Common Schema, `Elastic\Monolog\Formatter\ElasticCommonSchemaFormatter` from `elastic/ecs-logging`):
 `@timestamp`, `log.level`, `message`, `ecs.version`, `log.logger`, plus the context — `event.id` (UUID per event),
-`service.name` / `service.environment` (`APP_STAGE`, else `APP_ENV`) / `service.version`, `host.hostname`, `section`,
+`service.name` / `service.environment` (`APP_STAGE`, else `APP_ENV`) / `service.version` / `service.workspace` (the
+dev workspace, e.g. `mgn`, or the stage — all dev workspaces share `service.environment=dev`), `host.hostname`, `section`,
 `route_name`, `http.request.method`, `http.request.id` (`X-Request-Id`), `traceparent`, `account.id`, `application`,
 `environment`, and the error fields: `error.type`, `error.kind`, `error.code`, `error.handled`, `error.stack_trace`,
 `log.origin.file.name/line`, `error.fingerprint`, `error.fingerprint_hash`, `error.fingerprint_short` (their meaning is
@@ -317,6 +319,24 @@ the commands run without rights restrictions.
 
 Counts are approximate under collector replays; first seen, the group set and the regression rule are exact.
 
+**Environments.** One job can watch several environments — production, testing, dev workspaces — each with a selector
+of its own:
+
+```dotenv
+ISSUES_QUERY_ENVIRONMENTS={"prod": "{project=\"dineful\", workspace=\"prod\"}", "testing": "{project=\"dineful\", workspace=\"testing\"}", "mgn": "{project=\"dineful\", workspace=\"mgn\"}"}
+```
+
+The names are free keys, typically the workspace codes. Unset, there is one environment: `ISSUES_QUERY_SELECTOR` under
+the name of `APP_STAGE` (else `APP_ENV`). Everything is per environment: the key (`environment` + `groupHash` on
+`IssueGroups`, `environment` + `issueHash` on `Issues`), status, alerts, regressions, the job state (one
+`IssuesJobStates` row per environment), the watermark, **seed mode** (an environment added later seeds on its own) and
+the **explosion guard** (counted and messaged per environment). An environment whose backend fails records its error
+and the run goes on with the others. One hash in two environments is two groups: resolving it in prod leaves testing
+open.
+
+From a release before environments: with one environment the job adopts the `default` job state (no new seed period)
+and the groups and issues without environment. With several, rows without environment stay as they are.
+
 | Variable | Default | Purpose |
 |---|---|---|
 | `ISSUES_QUERY_BACKEND` | `none` | `loki`, `elasticsearch`, `opensearch`, `sentry`; `none` = no registry, the application only logs |
@@ -330,7 +350,8 @@ Counts are approximate under collector replays; first seen, the group set and th
 | `ISSUES_ES_LOCATION_FIELD` / `ISSUES_ES_WORKSPACE_FIELD` | `lastLocationId` / `workspace` | "affected locations" and `--workspace` fields |
 | `ISSUES_SENTRY_DSN` | `SENTRY_DSN` | target of `app:issues:forward-sentry` |
 | `ISSUES_ALERT_WEBHOOK` | | Slack-compatible webhook; unset = no alerts |
-| `ISSUES_ALERT_LINK_TEMPLATE` | | link in the alert, `{group_hash}` replaced |
+| `ISSUES_ALERT_LINK_TEMPLATE` | | link in the alert, `{group_hash}` and `{environment}` replaced |
+| `ISSUES_QUERY_ENVIRONMENTS` | | JSON `{"<environment>": "<selector>", …}`; replaces `ISSUES_QUERY_SELECTOR` |
 | `ISSUES_DISCOVERY_WINDOW_MINUTES` | 120 | |
 | `ISSUES_SEED_HOURS` | 24 | seed mode after the first run |
 | `ISSUES_GROUP_EXPLOSION_LIMIT` | 50 | new causes per hour before the explosion message |
@@ -343,26 +364,32 @@ Every command takes `--format=json`: stdout then carries only the JSON, messages
 
 | Command | Purpose |
 |---|---|
-| `app:issues:list [--status=OPEN] [--new-since=24h] [--release=…] [--section=HTTP] [--environment=…] [--limit=50]` | groups, last seen first |
-| `app:issues:show <groupHash> [--events=3] [--since=7d]` | one group, its issues, the newest events with full context |
-| `app:issues:search [--text=…] [--level=error,warning] [--route=…] [--account=…] [--group=…] [--issue=…] [--since=1h] [--until=…] [--limit=20] [--oldest-first]` | events straight from the backend, any level |
-| `app:issues:resolve <groupHash>` / `ignore` / `reopen` | status; resolve = only a later event reopens it, ignore = never alerts again |
+| `app:issues:list [--environment=prod] [--status=OPEN] [--new-since=24h] [--release=…] [--section=HTTP] [--limit=50]` | groups, last seen first; the status counts per environment |
+| `app:issues:show <groupHash> [--environment=…] [--events=3] [--since=7d]` | one group, its issues, the newest events (from its environment's selector) with full context |
+| `app:issues:search [--environment=…] [--workspace=mgn] [--text=…] [--level=error,warning] [--route=…] [--account=…] [--group=…] [--issue=…] [--since=1h] [--until=…] [--limit=20] [--oldest-first]` | events straight from the backend, any level; every environment merged by time unless `--environment`; `--workspace` filters `service.workspace`, also without an environment for it |
+| `app:issues:resolve <groupHash> [--environment=…]` / `ignore` / `reopen` | status; resolve = only a later event reopens it, ignore = never alerts again |
 | `app:issues:sync [--loop] [--interval=60] [--seed=HOURS]` | the job |
 | `app:issues:health` | the self-monitoring (example 9) |
 | `app:issues:forward-sentry [--loop] [--interval=10] [--file=…] [--state-file=…] [--min-level=error] [--from-start]` | the Sentry forwarder (example 7) |
 
 Times are relative (`30m`, `24h`, `7d`) or absolute dates. JSON shapes:
 
-- `list` → `{"count": n, "groups": [{groupHash, status, exceptionType, sampleMessage, slug, logOrigin, section,
-  environment, sampleEventId, firstSeenAt, lastSeenAt, registeredAt, eventCount, releaseFirstSeen, releaseLastSeen,
+A hash registered in several environments needs `--environment` on `show` / `resolve` / `ignore` / `reopen` (exit 2
+otherwise, naming the environments).
+
+- `list` → `{"count": n, "groups": [{groupHash, environment, workspace, status, exceptionType, sampleMessage, slug,
+  logOrigin, section, sampleEventId, firstSeenAt, lastSeenAt, registeredAt, eventCount, releaseFirstSeen, releaseLastSeen,
   entryPoints: {"elements": [{"name": …}]}, resolvedAt, isNew, isRegression, alertPending, alertSentAt, link}]}`
-  (null fields are omitted; serialised objects also carry the framework's `objectType`).
-- `show` → `{"group": {…as above}, "issues": [{issueHash, entryPoint, firstSeenAt, lastSeenAt, eventCount}], "events":
-  [<the raw ECS lines as objects>], "eventsError": null|"…"}`.
-- `search` → `{"count": n, "events": [<raw ECS lines>]}`.
-- `resolve` / `ignore` / `reopen` → `{"groupHash": …, "status": …}`.
+  , "statusCounts": [{environment, status, count}]}` (other null fields are omitted; serialised objects also carry the
+  framework's `objectType`).
+- `show` → `{"environment", "workspace", "group": {…as above}, "issues": [{issueHash, environment, entryPoint,
+  firstSeenAt, lastSeenAt, eventCount}], "events": [<event>], "eventsError": null|"…"}`.
+- `search` → `{"environments": [...], "workspace": null|"…", "count": n, "events": [<event>]}`.
+- An `<event>` is the raw ECS line as an object with `issues.environment` (the environment it was found in) and
+  `issues.workspace` (its `service.workspace`) in front.
+- `resolve` / `ignore` / `reopen` → `{"groupHash", "environment", "workspace", "status"}`.
 - `health` → `{backendConfigured, lastSuccessfulRunAt, newestEventSeenAt, lastError, jobStalled, collectorSilent,
-  healthy}`.
+  environments: {"elements": [{…the same per environment, environment}]}, healthy}` — unhealthy when one environment is.
 
 **Fix loop for an agent:**
 
@@ -373,6 +400,10 @@ php bin/console app:issues:show <groupHash> --events=3 --format=json            
 php bin/console app:issues:resolve <groupHash> --format=json                     # a new event now = regression alert
 php bin/console app:issues:search --since=5m --format=json                       # right after running something locally
 ```
+
+**You developed on workspace X** (e.g. `mgn`): its errors are `app:issues:list --environment=mgn --format=json` when the
+registry watches it, and always `app:issues:search --workspace=mgn --since=30m --format=json` straight from the
+backend (from any environment's tooling, prod included).
 
 ## Admin UI — controller, DTO, list
 
@@ -393,10 +424,13 @@ class AdminIssuesController extends AdminController
         $responseDto = new IssueGroupsGetResponseDto();
         $responseDto->issueGroups = $issueGroupsService->listGroups(new IssueGroupsFilter(
             status: $requestDto->status,
+            environment: $requestDto->environment,
             newSince: $requestDto->newSince,
             release: $requestDto->release,
             limit: $requestDto->limit ?? 50,
         ));
+        // the environment switch and the status tabs: counts per environment and status
+        $responseDto->statusCounts = $issueGroupsService->countGroupsByEnvironmentAndStatus();
         return $responseDto;
     }
 
@@ -406,7 +440,7 @@ class AdminIssuesController extends AdminController
         IssueGroupGetRequestDto &$requestDto,
         IssueGroupsService $issueGroupsService
     ): IssueGroupGetResponseDto {
-        $issueGroup = $issueGroupsService->findByGroupHash($requestDto->groupHash)
+        $issueGroup = $issueGroupsService->findByGroupHash($requestDto->groupHash, $requestDto->environment)
             ?? throw new NotFoundException('Issue group not found');
         $issueGroup->issues->getElements();   // loads the LazyLoad issues: the cause per entry point
         $responseDto = new IssueGroupGetResponseDto();
@@ -420,7 +454,7 @@ class AdminIssuesController extends AdminController
         IssueGroupGetRequestDto &$requestDto,
         IssueGroupsService $issueGroupsService
     ): IssueGroupGetResponseDto {
-        $issueGroup = $issueGroupsService->findByGroupHash($requestDto->groupHash)
+        $issueGroup = $issueGroupsService->findByGroupHash($requestDto->groupHash, $requestDto->environment)
             ?? throw new NotFoundException('Issue group not found');
         $responseDto = new IssueGroupGetResponseDto();
         $responseDto->issueGroup = $issueGroupsService->resolve($issueGroup);   // ignore() / reopen() alike
@@ -430,6 +464,10 @@ class AdminIssuesController extends AdminController
 
 class IssueGroupsGetRequestDto extends RequestDto
 {
+    /** @var string|null The environment switch (prod, testing, mgn, …); null = all */
+    #[Parameter(in: Parameter::QUERY)]
+    public ?string $environment = null;
+
     /** @var string|null OPEN, RESOLVED or IGNORED */
     #[Parameter(in: Parameter::QUERY)]
     #[Choice(choices: IssueGroup::STATUSES)]
@@ -451,12 +489,20 @@ class IssueGroupGetRequestDto extends RequestDto
     /** @var string error.group_hash of the group */
     #[Parameter(in: Parameter::PATH, required: true)]
     public string $groupHash;
+
+    /** @var string The group's environment (one hash is one group per environment) */
+    #[Parameter(in: Parameter::QUERY, required: true)]
+    public string $environment;
 }
 
 class IssueGroupsGetResponseDto extends RestResponseDto
 {
     #[Parameter(in: Parameter::RESPONSE, required: true)]
     public IssueGroups $issueGroups;
+
+    /** @var IssueGroupStatusCounts Groups per environment and status: the switch and the tab badges */
+    #[Parameter(in: Parameter::RESPONSE, required: true)]
+    public IssueGroupStatusCounts $statusCounts;
 }
 
 class IssueGroupGetResponseDto extends RestResponseDto
@@ -467,7 +513,9 @@ class IssueGroupGetResponseDto extends RestResponseDto
 ```
 
 The repositories already return nothing to non-admins; the admin base restricts the route as well. The
-list screen: status filter tabs (Open / Resolved / Ignored), columns type · message · events · last seen · release, flags
+list screen: an environment switch (`statusCounts->getEnvironments()`, "all" = no filter), status filter tabs (Open /
+Resolved / Ignored, badges from `statusCounts->getCount($environment, $status)`), an environment column when "all" is
+selected, columns type · message · events · last seen · release, flags
 "new" and "regression", row → detail with entry points, issues and a link into the log backend
 (`{service="…"} | json | error_group_hash="<hash>"`); the same URL is the `ISSUES_ALERT_LINK_TEMPLATE`.
 

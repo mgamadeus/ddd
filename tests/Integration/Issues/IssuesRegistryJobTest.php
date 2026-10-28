@@ -266,7 +266,7 @@ class IssuesRegistryJobTest extends IssuesRegistryTestCase
         try {
             /** @var IssuesJobStatesService $issuesJobStatesService */
             $issuesJobStatesService = IssuesJobState::getService();
-            self::assertSame($this->now - 60, $issuesJobStatesService->getState()->watermark->getTimestamp());
+            self::assertSame($this->now - 60, $issuesJobStatesService->getState($issuesRegistryJobService->getEnvironmentNames()[0])->watermark->getTimestamp());
             /** @var IssuesService $issuesService */
             $issuesService = Issue::getService();
             self::assertNotNull($issuesService->findByIssueHash('group-a-route:test'));

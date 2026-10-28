@@ -30,6 +30,7 @@ class IssuesShow extends IssuesCommand
     {
         $this
             ->addArgument('groupHash', InputArgument::REQUIRED, 'error.group_hash of the group')
+            ->addEnvironmentOption()
             ->addOption('events', null, InputOption::VALUE_REQUIRED, 'Newest events to fetch from the log backend', '3')
             ->addOption('since', null, InputOption::VALUE_REQUIRED, 'Event search window (30m, 24h, 7d or a date)', '7d')
             ->addFormatOption();
@@ -37,7 +38,7 @@ class IssuesShow extends IssuesCommand
 
     protected function executeIssuesCommand(InputInterface $input, OutputInterface $output): int
     {
-        $issueGroup = $this->getGroupByHash((string)$input->getArgument('groupHash'));
+        $issueGroup = $this->getGroupByHash((string)$input->getArgument('groupHash'), $this->getEnvironmentOption($input));
         /** @var IssuesRegistryJobService $issuesRegistryJobService */
         $issuesRegistryJobService = DDDService::instance()->getService(IssuesRegistryJobService::class);
         $eventPayloads = [];
@@ -45,14 +46,15 @@ class IssuesShow extends IssuesCommand
         $eventLimit = max(0, (int)$input->getOption('events'));
         if ($eventLimit > 0 && $issuesRegistryJobService->getSettings()->hasQueryBackend()) {
             try {
-                $issueEvents = $issuesRegistryJobService->getQueryBackend()->searchEvents(new IssueEventSearch(
+                // the events of the group's environment, from that environment's selector
+                $issueEvents = $issuesRegistryJobService->getQueryBackend($issueGroup->environment)->searchEvents(new IssueEventSearch(
                     $this->parseTime((string)$input->getOption('since')),
                     DateTime::fromTimestamp(time()),
                     groupHash: $issueGroup->groupHash,
                     limit: $eventLimit,
                 ));
                 foreach ($issueEvents->getElements() as $issueEvent) {
-                    $eventPayloads[] = json_decode($issueEvent->rawJson) ?? $issueEvent->rawJson;
+                    $eventPayloads[] = $this->toEventPayload($issueEvent, $issueGroup->environment);
                 }
             } catch (Throwable $throwable) {
                 $eventsError = $throwable->getMessage();
@@ -62,11 +64,12 @@ class IssuesShow extends IssuesCommand
         foreach ($issueGroup->issues->getElements() as $issue) {
             $issuePayloads[] = $this->toPayload($issue);
         }
-        $groupPayload = $this->toPayload($issueGroup);
-        unset($groupPayload['issues']);
-        $groupPayload['link'] = $issuesRegistryJobService->getSettings()->getAlertLink($issueGroup->groupHash);
+        $groupPayload = $this->toGroupPayload($issueGroup);
+        $groupPayload['link'] = $issuesRegistryJobService->getSettings()->getAlertLink($issueGroup->groupHash, $issueGroup->environment);
         if ($this->isJsonFormat($input)) {
             $this->writeJson($output, [
+                'environment' => $issueGroup->environment,
+                'workspace' => $issueGroup->workspace,
                 'group' => $groupPayload,
                 'issues' => $issuePayloads,
                 'events' => $eventPayloads,

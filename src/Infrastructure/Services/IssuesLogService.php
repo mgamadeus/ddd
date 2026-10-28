@@ -414,6 +414,9 @@ class IssuesLogService
         $settings = static::getSettings();
         $baseContext['service.name'] = $settings->serviceName ?? (string)(Config::getEnv('APP_NAME') ?? 'symfony');
         $baseContext['service.environment'] = (string)(Config::getEnv('APP_STAGE') ?? $appEnv ?? 'unknown');
+        if ($settings->workspace !== null) {
+            $baseContext['service.workspace'] = $settings->workspace;
+        }
         if ($settings->release !== null) {
             $baseContext['service.version'] = $settings->release;
         }

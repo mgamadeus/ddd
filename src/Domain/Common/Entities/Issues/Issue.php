@@ -21,14 +21,19 @@ use DDD\Infrastructure\Base\DateTime\DateTime;
  */
 #[LazyLoadRepo(LazyLoadRepo::DB, DBIssue::class)]
 #[QueryOptions]
+#[DatabaseIndex(indexType: DatabaseIndex::TYPE_UNIQUE, indexColumns: ['environment', 'issueHash'])]
 class Issue extends Entity
 {
     use QueryOptionsTrait, ChangeHistoryTrait;
 
     /** @var string The issue hash (`error.issue_hash`) */
-    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_UNIQUE)]
+    #[DatabaseIndex]
     #[DatabaseColumn(sqlType: DatabaseColumn::SQL_TYPE_VARCHAR, varCharLength: 64)]
     public string $issueHash;
+
+    /** @var string|null The registry environment, the group's; null only on rows from before environments */
+    #[DatabaseColumn(sqlType: DatabaseColumn::SQL_TYPE_VARCHAR, varCharLength: 64)]
+    public ?string $environment = null;
 
     /** @var int The id of the root-cause group */
     public int $issueGroupId;

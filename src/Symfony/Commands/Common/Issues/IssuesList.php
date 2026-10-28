@@ -7,7 +7,8 @@ namespace DDD\Symfony\Commands\Common\Issues;
 use DDD\Domain\Common\Entities\Issues\IssueGroup;
 use DDD\Domain\Common\Entities\Issues\IssueGroupsFilter;
 use DDD\Domain\Common\Services\IssueGroupsService;
-use DDD\Infrastructure\Logging\IssuesRegistrySettings;
+use DDD\Domain\Common\Services\IssuesRegistryJobService;
+use DDD\Infrastructure\Services\DDDService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\Table;
@@ -32,7 +33,7 @@ class IssuesList extends IssuesCommand
             ->addOption('new-since', null, InputOption::VALUE_REQUIRED, 'Registered since (30m, 24h, 7d or a date)')
             ->addOption('release', null, InputOption::VALUE_REQUIRED, 'First or last seen in this release')
             ->addOption('section', null, InputOption::VALUE_REQUIRED, 'HTTP, CLI, MESSAGE_HANDLER, …')
-            ->addOption('environment', null, InputOption::VALUE_REQUIRED, 'The logging environment')
+            ->addEnvironmentOption('Only this registry environment (e.g. prod, testing, mgn); default: all')
             ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'Maximum number of groups', '50')
             ->addFormatOption();
     }
@@ -49,27 +50,48 @@ class IssuesList extends IssuesCommand
             newSince: $this->parseTime($input->getOption('new-since')),
             release: $input->getOption('release'),
             section: $input->getOption('section'),
-            environment: $input->getOption('environment'),
+            environment: $this->getEnvironmentOption($input),
             limit: (int)$input->getOption('limit'),
         );
         /** @var IssueGroupsService $issueGroupsService */
         $issueGroupsService = IssueGroup::getService();
         $issueGroups = $issueGroupsService->listGroups($issueGroupsFilter);
-        $issuesRegistrySettings = IssuesRegistrySettings::fromEnvironment();
+        $issueGroupStatusCounts = $issueGroupsService->countGroupsByEnvironmentAndStatus();
+        /** @var IssuesRegistryJobService $issuesRegistryJobService */
+        $issuesRegistryJobService = DDDService::instance()->getService(IssuesRegistryJobService::class);
+        $issuesRegistrySettings = $issuesRegistryJobService->getSettings();
         if ($this->isJsonFormat($input)) {
             $groupPayloads = [];
             foreach ($issueGroups->getElements() as $issueGroup) {
-                $groupPayload = $this->toPayload($issueGroup);
-                $groupPayload['link'] = $issuesRegistrySettings->getAlertLink($issueGroup->groupHash);
+                $groupPayload = $this->toGroupPayload($issueGroup);
+                $groupPayload['link'] = $issuesRegistrySettings->getAlertLink($issueGroup->groupHash, $issueGroup->environment);
                 $groupPayloads[] = $groupPayload;
             }
-            $this->writeJson($output, ['count' => count($groupPayloads), 'groups' => $groupPayloads]);
+            $statusCountPayloads = [];
+            foreach ($issueGroupStatusCounts->getElements() as $issueGroupStatusCount) {
+                $statusCountPayloads[] = [
+                    'environment' => $issueGroupStatusCount->environment,
+                    'status' => $issueGroupStatusCount->status,
+                    'count' => $issueGroupStatusCount->count,
+                ];
+            }
+            $this->writeJson($output, ['count' => count($groupPayloads), 'groups' => $groupPayloads, 'statusCounts' => $statusCountPayloads]);
             return Command::SUCCESS;
         }
+        foreach ($issueGroupStatusCounts->getEnvironments() as $environment) {
+            $output->writeln(sprintf(
+                '%s: %d open, %d resolved, %d ignored',
+                $environment,
+                $issueGroupStatusCounts->getCount($environment, IssueGroup::STATUS_OPEN),
+                $issueGroupStatusCounts->getCount($environment, IssueGroup::STATUS_RESOLVED),
+                $issueGroupStatusCounts->getCount($environment, IssueGroup::STATUS_IGNORED)
+            ));
+        }
         $table = new Table($output);
-        $table->setHeaders(['Group hash', 'Status', 'Exception', 'Message', 'Events', 'Last seen', 'Flags']);
+        $table->setHeaders(['Environment', 'Group hash', 'Status', 'Exception', 'Message', 'Events', 'Last seen', 'Flags']);
         foreach ($issueGroups->getElements() as $issueGroup) {
             $table->addRow([
+                $issueGroup->environment ?? '',
                 $issueGroup->groupHash,
                 $issueGroup->status,
                 $issueGroup->exceptionType ?? '',

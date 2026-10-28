@@ -156,6 +156,7 @@ class ElasticsearchIssuesBackendTest extends IssuesRegistryTestCase
         $routeEvents = $elasticsearchIssuesQueryBackend->searchEvents(new IssueEventSearch($from, $to, routeName: 'api_orders_list'));
         $warningEvents = $elasticsearchIssuesQueryBackend->searchEvents(new IssueEventSearch($from, $to, levels: ['warning']));
         $accountEvents = $elasticsearchIssuesQueryBackend->searchEvents(new IssueEventSearch($from, $to, accountId: '4183511'));
+
         $groupHash = $routeEvents->first()->groupHash;
         $groupEvents = $elasticsearchIssuesQueryBackend->searchEvents(new IssueEventSearch($from, $to, groupHash: $groupHash, oldestFirst: true));
 
@@ -166,6 +167,32 @@ class ElasticsearchIssuesBackendTest extends IssuesRegistryTestCase
         self::assertSame(2, $accountEvents->count());
         self::assertGreaterThanOrEqual(1, $groupEvents->count());
         self::assertTrue($elasticsearchIssuesQueryBackend->probe()->reachable);
+    }
+
+    public function testWorkspaceFilter(): void
+    {
+        $httpClient = new Client();
+        $httpClient->put($this->elasticsearchUrl . '/' . $this->indexName, ['json' => new \stdClass()]);
+        $router = $this->createMock(RouterInterface::class);
+        $issuesFixtureThrower = new IssuesFixtureThrower();
+        $bulkBody = '';
+        foreach ([
+            ...IssuesLogLineWriter::writeLinesForWorkspace('mgn', $router, [], $issuesFixtureThrower->runtimeError(1)),
+            ...IssuesLogLineWriter::writeLinesForWorkspace('ame', $router, [], $issuesFixtureThrower->runtimeError(1)),
+        ] as $jsonLine) {
+            $bulkBody .= json_encode(['index' => ['_index' => $this->indexName]]) . "\n" . $jsonLine . "\n";
+        }
+        $httpClient->post($this->elasticsearchUrl . '/_bulk?refresh=true', ['headers' => ['Content-Type' => 'application/x-ndjson'], 'body' => $bulkBody]);
+        $elasticsearchIssuesQueryBackend = new ElasticsearchIssuesQueryBackend($this->createSettings());
+
+        $workspaceEvents = $elasticsearchIssuesQueryBackend->searchEvents(new IssueEventSearch(
+            DateTime::fromTimestamp(time() - 600),
+            DateTime::fromTimestamp(time() + 600),
+            workspace: 'mgn',
+        ));
+
+        self::assertSame(1, $workspaceEvents->count());
+        self::assertSame('mgn', $workspaceEvents->first()->workspace);
     }
 
     public function testRuntimeErrorGroupsDetailAndTrend(): void

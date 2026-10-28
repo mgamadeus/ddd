@@ -113,7 +113,7 @@ class LokiIssuesRegistryTest extends IssuesRegistryTestCase
         $logFile = sys_get_temp_dir() . '/ddd-issues-loki-' . $this->runLabel . '.log';
         $streamHandler = new StreamHandler($logFile);
         $streamHandler->setFormatter(new ElasticCommonSchemaFormatter());
-        IssuesLogService::setSettings(new IssuesLogSettings(serviceName: 'ddd-it', release: 'r-test'));
+        IssuesLogService::setSettings(new IssuesLogSettings(serviceName: 'ddd-it', release: 'r-test', workspace: 'mgn'));
         try {
             $issuesLogService = new IssuesLogService(
                 new Logger('issues', [$streamHandler]),
@@ -211,6 +211,13 @@ class LokiIssuesRegistryTest extends IssuesRegistryTestCase
             text: 'id 43',
         ));
         self::assertSame(1, $searchedEvents->count());
+        $workspaceSearch = static fn(string $workspace): int => $lokiIssuesQueryBackend->searchEvents(new IssueEventSearch(
+            DateTime::fromTimestamp(time() - 600),
+            DateTime::fromTimestamp(time() + 600),
+            workspace: $workspace,
+        ))->count();
+        self::assertSame(3, $workspaceSearch('mgn'));
+        self::assertSame(0, $workspaceSearch('ame'));
         self::assertStringEndsWith('failed for id 43', (string)$searchedEvents->first()->message);
     }
 }

@@ -67,7 +67,7 @@ class IssuesCommandsTest extends IssuesRegistryTestCase
     {
         $resolveCommandTester = new CommandTester(new IssuesResolve());
         self::assertSame(Command::SUCCESS, $resolveCommandTester->execute(['groupHash' => 'group-a', '--format' => 'json']));
-        self::assertSame(['groupHash' => 'group-a', 'status' => 'RESOLVED'], json_decode($resolveCommandTester->getDisplay(), true));
+        self::assertSame(['groupHash' => 'group-a', 'environment' => null, 'workspace' => null, 'status' => 'RESOLVED'], json_decode($resolveCommandTester->getDisplay(), true));
 
         static::entityManager()->clear();
         $showCommandTester = new CommandTester(new IssuesShow());

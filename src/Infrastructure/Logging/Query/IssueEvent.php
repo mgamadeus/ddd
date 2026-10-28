@@ -29,6 +29,8 @@ class IssueEvent extends ValueObject
         public readonly ?string $release = null,
         public readonly ?string $routeName = null,
         public readonly ?string $accountId = null,
+        /** @var string|null `service.workspace` (older lines: `workspace`) */
+        public readonly ?string $workspace = null,
         /** @var string The whole event as JSON */
         public readonly string $rawJson = '',
     ) {
@@ -72,6 +74,7 @@ class IssueEvent extends ValueObject
             release: $field('service.version'),
             routeName: $field('route_name'),
             accountId: $field('account.id'),
+            workspace: $field('service.workspace') ?? $field('workspace'),
             rawJson: $jsonLine,
         );
     }

@@ -26,6 +26,8 @@ class IssueEventSearch extends ValueObject
         public readonly int $limit = 20,
         /** @var bool Oldest first instead of newest first */
         public readonly bool $oldestFirst = false,
+        /** @var string|null Only lines of this workspace (`service.workspace`) */
+        public readonly ?string $workspace = null,
     ) {
         parent::__construct();
     }

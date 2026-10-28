@@ -98,3 +98,13 @@ Unchanged:
   of the same name, so an app's own `app:runtime-errors:*` stays in charge until it is deleted. New
   `app:issues:forward-sentry` (files → Sentry, read positions in `.issues-sentry-forward.json` next to the logs). No
   new dependency, no schema change.
+- 3.5.0 — issues registry per environment (skill `ddd-issues-log-specialist`). `ISSUES_QUERY_ENVIRONMENTS` (JSON
+  `{"<environment>": "<selector>"}`, e.g. prod, testing, dev workspaces) replaces `ISSUES_QUERY_SELECTOR` when set; the
+  key is environment + hash, and status, alerts, seed mode, explosion guard and job state are per environment. Every
+  issues line gains `service.workspace` (`ISSUES_WORKSPACE`, else the dev workspace of the path, else `APP_STAGE`).
+  `--environment` on the registry commands, `--workspace` on `app:issues:search`, `{environment}` in
+  `ISSUES_ALERT_LINK_TEMPLATE`. **Schema** (regenerate the models, apply the diff): `IssueGroups` + `workspace`,
+  `environment` VARCHAR(64), the unique key moves from `groupHash` to (`environment`, `groupHash`); `Issues` +
+  `environment`, the unique key moves from `issueHash` to (`environment`, `issueHash`). With one environment the job
+  adopts the rows and the job state from before. `IssueGroupsService::findByGroupHash()` / `IssuesService::
+  findByIssueHash()` take an optional environment (null = the most recently seen).

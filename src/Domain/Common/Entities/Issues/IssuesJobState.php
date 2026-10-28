@@ -21,6 +21,7 @@ class IssuesJobState extends Entity
 {
     use ChangeHistoryTrait;
 
+    /** The state of the single job before environments; one environment adopts it */
     public const string DEFAULT_NAME = 'default';
 
     #[DatabaseIndex(indexType: DatabaseIndex::TYPE_UNIQUE)]

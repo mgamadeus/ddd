@@ -24,6 +24,9 @@ class DBIssueModel extends DoctrineModel
 	#[ORM\Column(type: 'string')]
 	public ?string $issueHash;
 
+	#[ORM\Column(type: 'string')]
+	public ?string $environment;
+
 	#[ORM\Column(type: 'integer')]
 	public ?int $issueGroupId;
 

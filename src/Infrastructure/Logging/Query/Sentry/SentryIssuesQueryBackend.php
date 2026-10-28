@@ -43,7 +43,7 @@ class SentryIssuesQueryBackend implements IssuesQueryBackend
 
     public const array EVENT_FIELDS = [
         'id', 'timestamp', 'message', 'level', 'error.type', 'release', 'environment',
-        'tags[group_hash]', 'tags[issue_hash]', 'tags[entry_point]', 'tags[route]', 'tags[account_id]', 'tags[section]',
+        'tags[group_hash]', 'tags[issue_hash]', 'tags[entry_point]', 'tags[route]', 'tags[account_id]', 'tags[section]', 'tags[workspace]',
     ];
 
     protected ?ClientInterface $httpClient = null;
@@ -102,6 +102,7 @@ class SentryIssuesQueryBackend implements IssuesQueryBackend
             'issue_hash' => $issueEventSearch->issueHash,
             'route' => $issueEventSearch->routeName,
             'account_id' => $issueEventSearch->accountId,
+            'workspace' => $issueEventSearch->workspace,
         ] as $tag => $value) {
             if ($value !== null && $value !== '') {
                 $queryParts[] = $tag . ':' . $this->quote($value);
@@ -166,6 +167,7 @@ class SentryIssuesQueryBackend implements IssuesQueryBackend
             release: $rowString('release'),
             routeName: $rowString('tags[route]'),
             accountId: $rowString('tags[account_id]'),
+            workspace: $rowString('tags[workspace]'),
             rawJson: (string)json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
         );
     }

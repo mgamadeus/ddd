@@ -6,7 +6,9 @@ namespace DDD\Infrastructure\Logging;
 
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Infrastructure\Libs\Config;
+use DDD\Infrastructure\Services\DDDService;
 use Psr\Log\LogLevel;
+use Throwable;
 
 /**
  * The issues-log configuration, read from the environment. Nothing set = today's behaviour: the `issues` channel goes
@@ -27,6 +29,7 @@ class IssuesLogSettings extends ValueObject
     public const string ENV_MAX_EVENT_BYTES = 'ISSUES_LOG_MAX_EVENT_BYTES';
     public const string ENV_SERVICE_NAME = 'ISSUES_SERVICE_NAME';
     public const string ENV_RELEASE = 'ISSUES_RELEASE';
+    public const string ENV_WORKSPACE = 'ISSUES_WORKSPACE';
 
     /** JSON lines into a file of {@see self::$path} */
     public const string TARGET_FILE = 'file';
@@ -66,6 +69,8 @@ class IssuesLogSettings extends ValueObject
         public readonly int $maxEventBytes = self::DEFAULT_MAX_EVENT_BYTES,
         public readonly ?string $serviceName = null,
         public readonly ?string $release = null,
+        /** @var string|null `service.workspace` of every line: the dev workspace (`mgn`) or the stage (`prod`) */
+        public readonly ?string $workspace = null,
     ) {
         parent::__construct();
     }
@@ -94,6 +99,7 @@ class IssuesLogSettings extends ValueObject
             maxEventBytes: (int)(self::stringEnv(self::ENV_MAX_EVENT_BYTES) ?? self::DEFAULT_MAX_EVENT_BYTES),
             serviceName: self::stringEnv(self::ENV_SERVICE_NAME),
             release: self::stringEnv(self::ENV_RELEASE) ?? self::stringEnv('APP_VERSION'),
+            workspace: self::stringEnv(self::ENV_WORKSPACE) ?? self::detectWorkspaceName() ?? self::stringEnv('APP_STAGE'),
         );
     }
 
@@ -125,6 +131,16 @@ class IssuesLogSettings extends ValueObject
         }
         $processValue = $_SERVER[$name] ?? getenv($name);
         return is_string($processValue) && $processValue !== '' ? $processValue : null;
+    }
+
+    /** The dev workspace this process runs in (`/dev-workspaces/<name>/` in its path), null outside one */
+    protected static function detectWorkspaceName(): ?string
+    {
+        try {
+            return DDDService::instance()->getWorkspaceName();
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     protected static function stringEnv(string $name): ?string

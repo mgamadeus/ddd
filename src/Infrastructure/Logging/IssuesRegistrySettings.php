@@ -33,6 +33,7 @@ class IssuesRegistrySettings extends ValueObject
     public const string ENV_ES_LOCATION_FIELD = 'ISSUES_ES_LOCATION_FIELD';
     public const string ENV_ES_WORKSPACE_FIELD = 'ISSUES_ES_WORKSPACE_FIELD';
     public const string ENV_SENTRY_DSN = 'ISSUES_SENTRY_DSN';
+    public const string ENV_QUERY_ENVIRONMENTS = 'ISSUES_QUERY_ENVIRONMENTS';
 
     /** The read-only Elasticsearch variables of rankingCoach's runtime-error dashboard: the fallback of the ES backend */
     public const string ENV_ES_LOGS_HOST = 'ES_LOGS_HOST';
@@ -60,6 +61,10 @@ class IssuesRegistrySettings extends ValueObject
 
     /** The link placeholder of the alert template */
     public const string LINK_GROUP_HASH_PLACEHOLDER = '{group_hash}';
+    public const string LINK_ENVIRONMENT_PLACEHOLDER = '{environment}';
+
+    /** Name of the single environment when neither ISSUES_QUERY_ENVIRONMENTS nor APP_STAGE / APP_ENV is set */
+    public const string FALLBACK_ENVIRONMENT_NAME = 'unknown';
 
     public function __construct(
         /** @var string none | loki | elasticsearch | sentry */
@@ -100,6 +105,10 @@ class IssuesRegistrySettings extends ValueObject
         public readonly string $elasticsearchWorkspaceField = self::DEFAULT_ES_WORKSPACE_FIELD,
         /** @var string|null Sentry DSN of `app:issues:forward-sentry` */
         public readonly ?string $sentryDsn = null,
+        /** @var IssuesQueryEnvironments|null The watched environments; null = one, {@see self::$defaultEnvironment} */
+        public readonly ?IssuesQueryEnvironments $queryEnvironments = null,
+        /** @var string Name of the single environment (APP_STAGE, else APP_ENV — as `service.environment` of the lines) */
+        public readonly string $defaultEnvironment = self::FALLBACK_ENVIRONMENT_NAME,
     ) {
         parent::__construct();
     }
@@ -158,6 +167,10 @@ class IssuesRegistrySettings extends ValueObject
             elasticsearchLocationField: self::readEnv(self::ENV_ES_LOCATION_FIELD) ?? self::DEFAULT_ES_LOCATION_FIELD,
             elasticsearchWorkspaceField: self::readEnv(self::ENV_ES_WORKSPACE_FIELD) ?? self::DEFAULT_ES_WORKSPACE_FIELD,
             sentryDsn: self::readEnv(self::ENV_SENTRY_DSN) ?? self::readEnv(self::ENV_SENTRY_DSN_FALLBACK),
+            queryEnvironments: ($queryEnvironmentsJson = self::readEnv(self::ENV_QUERY_ENVIRONMENTS)) !== null
+                ? IssuesQueryEnvironments::fromJson($queryEnvironmentsJson)
+                : null,
+            defaultEnvironment: self::readEnv('APP_STAGE') ?? self::readEnv('APP_ENV') ?? self::FALLBACK_ENVIRONMENT_NAME,
         );
     }
 
@@ -171,11 +184,48 @@ class IssuesRegistrySettings extends ValueObject
         return $this->queryBackend !== self::BACKEND_NONE;
     }
 
-    public function getAlertLink(string $groupHash): ?string
+    /** The alert link; `{group_hash}` and `{environment}` are replaced */
+    public function getAlertLink(string $groupHash, ?string $environment = null): ?string
     {
         return $this->alertLinkTemplate !== null
-            ? str_replace(self::LINK_GROUP_HASH_PLACEHOLDER, rawurlencode($groupHash), $this->alertLinkTemplate)
+            ? str_replace(
+                [self::LINK_GROUP_HASH_PLACEHOLDER, self::LINK_ENVIRONMENT_PLACEHOLDER],
+                [rawurlencode($groupHash), rawurlencode((string)$environment)],
+                $this->alertLinkTemplate
+            )
             : null;
+    }
+
+    /**
+     * The environments the registry watches: ISSUES_QUERY_ENVIRONMENTS, else one — {@see self::$defaultEnvironment}
+     * with ISSUES_QUERY_SELECTOR.
+     */
+    public function getQueryEnvironments(): IssuesQueryEnvironments
+    {
+        if ($this->queryEnvironments !== null && $this->queryEnvironments->count() > 0) {
+            return $this->queryEnvironments;
+        }
+        $issuesQueryEnvironments = new IssuesQueryEnvironments();
+        $issuesQueryEnvironment = new IssuesQueryEnvironment($this->defaultEnvironment, $this->querySelector);
+        $issuesQueryEnvironments->add($issuesQueryEnvironment);
+        return $issuesQueryEnvironments;
+    }
+
+    /** Whether several environments are configured (ISSUES_QUERY_ENVIRONMENTS) */
+    public function hasSeveralEnvironments(): bool
+    {
+        return $this->getQueryEnvironments()->count() > 1;
+    }
+
+    /** The same settings for one environment's selector (the backend of that environment) */
+    public function withQuerySelector(string $querySelector): static
+    {
+        $constructorArguments = [];
+        foreach ((new \ReflectionMethod(static::class, '__construct'))->getParameters() as $constructorParameter) {
+            $constructorArguments[$constructorParameter->getName()] = $this->{$constructorParameter->getName()};
+        }
+        $constructorArguments['querySelector'] = $querySelector;
+        return new static(...$constructorArguments);
     }
 
     /** The variable as set, also when set to an empty string; null = not set at all */

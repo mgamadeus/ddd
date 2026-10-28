@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Tests\Infrastructure\Logging;
 
+use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Logging\IssuesRegistrySettings;
 use PHPUnit\Framework\TestCase;
 
@@ -13,6 +14,7 @@ use PHPUnit\Framework\TestCase;
 class IssuesRegistrySettingsTest extends TestCase
 {
     public const array VARIABLES = [
+        'ISSUES_QUERY_ENVIRONMENTS', 'APP_STAGE', 'ISSUES_ALERT_LINK_TEMPLATE',
         'ISSUES_QUERY_BACKEND', 'ISSUES_QUERY_URL', 'ISSUES_QUERY_USER', 'ISSUES_QUERY_SELECTOR', 'ISSUES_ES_KEYWORD_SUFFIX',
         'ES_LOGS_HOST', 'ES_LOGS_PORT', 'ES_LOGS_SCHEME', 'ES_LOGS_USER', 'ES_LOGS_PASSWORD', 'ES_LOGS_INDEX', 'ES_LOGS_INDEX_DEV',
     ];
@@ -59,6 +61,31 @@ class IssuesRegistrySettingsTest extends TestCase
         self::assertSame('.keyword', $issuesRegistrySettings->elasticsearchKeywordSuffix);
         // the registry stays off: ES_LOGS_* alone does not turn it on
         self::assertFalse(IssuesRegistrySettings::fromEnvironment()->hasQueryBackend());
+    }
+
+    public function testEnvironments(): void
+    {
+        $_ENV['ISSUES_QUERY_BACKEND'] = 'loki';
+        $_ENV['ISSUES_QUERY_SELECTOR'] = '{service="app"}';
+        $_ENV['APP_STAGE'] = 'staging';
+        $_ENV['ISSUES_ALERT_LINK_TEMPLATE'] = 'https://admin/issues?environment={environment}&group={group_hash}';
+
+        $singleEnvironmentSettings = IssuesRegistrySettings::fromEnvironment();
+        self::assertSame(['staging'], $singleEnvironmentSettings->getQueryEnvironments()->getNames());
+        self::assertSame('{service="app"}', $singleEnvironmentSettings->getQueryEnvironments()->first()->selector);
+        self::assertFalse($singleEnvironmentSettings->hasSeveralEnvironments());
+        self::assertSame('https://admin/issues?environment=staging&group=g%2F1', $singleEnvironmentSettings->getAlertLink('g/1', 'staging'));
+
+        $_ENV['ISSUES_QUERY_ENVIRONMENTS'] = '{"prod": "{workspace=\\"prod\\"}", "mgn": "{workspace=\\"mgn\\"}"}';
+        $severalEnvironmentsSettings = IssuesRegistrySettings::fromEnvironment();
+        self::assertSame(['prod', 'mgn'], $severalEnvironmentsSettings->getQueryEnvironments()->getNames());
+        self::assertSame('{workspace="mgn"}', $severalEnvironmentsSettings->getQueryEnvironments()->getByName('mgn')->selector);
+        self::assertSame('{workspace="mgn"}', $severalEnvironmentsSettings->withQuerySelector('{workspace="mgn"}')->querySelector);
+        self::assertSame('loki', $severalEnvironmentsSettings->withQuerySelector('x')->queryBackend);
+
+        $_ENV['ISSUES_QUERY_ENVIRONMENTS'] = '["prod"]';
+        $this->expectException(InternalErrorException::class);
+        IssuesRegistrySettings::fromEnvironment();
     }
 
     public function testIssuesVariablesWinAndAnEmptySuffixIsAValue(): void

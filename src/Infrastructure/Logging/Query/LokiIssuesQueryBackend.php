@@ -80,6 +80,7 @@ class LokiIssuesQueryBackend implements IssuesQueryBackend
             'error_issue_hash' => $issueEventSearch->issueHash,
             'route_name' => $issueEventSearch->routeName,
             'account_id' => $issueEventSearch->accountId,
+            'service_workspace' => $issueEventSearch->workspace,
         ] as $label => $value) {
             if ($value !== null && $value !== '') {
                 $query .= ' | ' . $label . '=' . $this->quote($value);

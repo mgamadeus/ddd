@@ -34,10 +34,11 @@ class IssuesAlertWebhookSender
         return $this->send($this->buildGroupAlertText($issueGroup));
     }
 
-    public function sendExplosionAlert(int $newGroupCount): bool
+    public function sendExplosionAlert(int $newGroupCount, ?string $environment = null): bool
     {
         return $this->send(sprintf(
-            ':rotating_light: Issues: %d new root causes within an hour — fingerprint explosion, they are registered without one alert each.',
+            ':rotating_light: Issues%s: %d new root causes within an hour — fingerprint explosion, they are registered without one alert each.',
+            $environment !== null ? ' [' . $environment . ']' : '',
             $newGroupCount
         ));
     }
@@ -46,18 +47,19 @@ class IssuesAlertWebhookSender
     {
         $headline = $issueGroup->isRegression ? ':repeat: Regression' : ':new: New error';
         $lines = [
-            sprintf('%s: *%s*', $headline, $issueGroup->exceptionType ?? 'unknown'),
+            sprintf('%s%s: *%s*', $headline, $issueGroup->environment !== null ? ' [' . $issueGroup->environment . ']' : '', $issueGroup->exceptionType ?? 'unknown'),
             '> ' . mb_substr((string)$issueGroup->sampleMessage, 0, 300),
             'slug: `' . ($issueGroup->slug ?? $issueGroup->groupHash) . '`',
             'entry points: ' . implode(', ', $issueGroup->entryPoints?->getNames() ?? []),
             sprintf(
-                'release: %s · environment: %s · events: %d',
+                'release: %s · environment: %s · workspace: %s · events: %d',
                 $issueGroup->releaseLastSeen ?? '?',
                 $issueGroup->environment ?? '?',
+                $issueGroup->workspace ?? '?',
                 $issueGroup->eventCount
             ),
         ];
-        $link = $this->settings->getAlertLink($issueGroup->groupHash);
+        $link = $this->settings->getAlertLink($issueGroup->groupHash, $issueGroup->environment);
         if ($link !== null) {
             $lines[] = $link;
         }

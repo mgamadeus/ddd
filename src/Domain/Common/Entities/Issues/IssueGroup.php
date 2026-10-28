@@ -17,12 +17,14 @@ use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Validation\Constraints\Choice;
 
 /**
- * One root cause in the issues registry: every logged error with this `error.group_hash`. Filled by the registry job
+ * One root cause in one environment of the issues registry: every logged error with this `error.group_hash` in this
+ * environment (key: environment + group hash; status, alerts and regressions are per environment). Filled by the registry job
  * from the log backend (never on the request path); its status is set by an admin. The job alerts once when it creates
  * a group (new) and when an event after `resolvedAt` reopens a resolved one (regression).
  */
 #[LazyLoadRepo(LazyLoadRepo::DB, DBIssueGroup::class)]
 #[QueryOptions]
+#[DatabaseIndex(indexType: DatabaseIndex::TYPE_UNIQUE, indexColumns: ['environment', 'groupHash'])]
 class IssueGroup extends Entity
 {
     use QueryOptionsTrait, ChangeHistoryTrait;
@@ -33,7 +35,7 @@ class IssueGroup extends Entity
     public const array STATUSES = [self::STATUS_OPEN, self::STATUS_RESOLVED, self::STATUS_IGNORED];
 
     /** @var string The root-cause hash (`error.group_hash`) */
-    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_UNIQUE)]
+    #[DatabaseIndex]
     #[DatabaseColumn(sqlType: DatabaseColumn::SQL_TYPE_VARCHAR, varCharLength: 64)]
     public string $groupHash;
 
@@ -59,8 +61,15 @@ class IssueGroup extends Entity
     /** @var string|null HTTP, CLI or MESSENGER */
     public ?string $section = null;
 
-    /** @var string|null `service.environment` of the sample event */
+    /**
+     * @var string|null The registry environment (a key of ISSUES_QUERY_ENVIRONMENTS, e.g. `prod`, `testing`, `mgn`);
+     * null only on rows from before environments (the job adopts them)
+     */
+    #[DatabaseColumn(sqlType: DatabaseColumn::SQL_TYPE_VARCHAR, varCharLength: 64)]
     public ?string $environment = null;
+
+    /** @var string|null `service.workspace` of the sample event */
+    public ?string $workspace = null;
 
     /** @var string|null `event.id` of the sample event */
     public ?string $sampleEventId = null;

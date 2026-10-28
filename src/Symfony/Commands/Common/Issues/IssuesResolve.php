@@ -25,19 +25,25 @@ class IssuesResolve extends IssuesCommand
     {
         $this
             ->addArgument('groupHash', InputArgument::REQUIRED, 'error.group_hash of the group')
+            ->addEnvironmentOption()
             ->addFormatOption();
     }
 
     protected function executeIssuesCommand(InputInterface $input, OutputInterface $output): int
     {
-        $issueGroup = $this->getGroupByHash((string)$input->getArgument('groupHash'));
+        $issueGroup = $this->getGroupByHash((string)$input->getArgument('groupHash'), $this->getEnvironmentOption($input));
         /** @var IssueGroupsService $issueGroupsService */
         $issueGroupsService = IssueGroup::getService();
         $issueGroup = $issueGroupsService->resolve($issueGroup);
         if ($this->isJsonFormat($input)) {
-            $this->writeJson($output, ['groupHash' => $issueGroup->groupHash, 'status' => $issueGroup->status]);
+            $this->writeJson($output, [
+                'groupHash' => $issueGroup->groupHash,
+                'environment' => $issueGroup->environment,
+                'workspace' => $issueGroup->workspace,
+                'status' => $issueGroup->status,
+            ]);
         } else {
-            $output->writeln($issueGroup->groupHash . ': ' . $issueGroup->status);
+            $output->writeln(sprintf('%s [%s]: %s', $issueGroup->groupHash, $issueGroup->environment ?? '-', $issueGroup->status));
         }
         return Command::SUCCESS;
     }

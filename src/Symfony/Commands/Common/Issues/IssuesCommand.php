@@ -10,6 +10,7 @@ use DDD\Domain\Common\Services\IssueGroupsService;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\NotFoundException;
+use DDD\Infrastructure\Logging\Query\IssueEvent;
 use DDD\Infrastructure\Services\DDDService;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -27,6 +28,7 @@ abstract class IssuesCommand extends Command
     public const string OPTION_FORMAT = 'format';
     public const string FORMAT_TEXT = 'text';
     public const string FORMAT_JSON = 'json';
+    public const string OPTION_ENVIRONMENT = 'environment';
 
     /** The command's work, run without rights restrictions; invalid input and unknown groups end as INVALID */
     abstract protected function executeIssuesCommand(InputInterface $input, OutputInterface $output): int;
@@ -48,6 +50,46 @@ abstract class IssuesCommand extends Command
     {
         $this->addOption(self::OPTION_FORMAT, null, InputOption::VALUE_REQUIRED, 'text or json (stdout carries only the JSON)', self::FORMAT_TEXT);
         return $this;
+    }
+
+    protected function addEnvironmentOption(string $description = 'Registry environment (a key of ISSUES_QUERY_ENVIRONMENTS, e.g. prod, testing, mgn)'): static
+    {
+        $this->addOption(self::OPTION_ENVIRONMENT, null, InputOption::VALUE_REQUIRED, $description);
+        return $this;
+    }
+
+    protected function getEnvironmentOption(InputInterface $input): ?string
+    {
+        $environment = $input->hasOption(self::OPTION_ENVIRONMENT) ? $input->getOption(self::OPTION_ENVIRONMENT) : null;
+        return $environment !== null && trim((string)$environment) !== '' ? trim((string)$environment) : null;
+    }
+
+    /**
+     * The group payload with `environment` and `workspace` always present.
+     *
+     * @return array<string, mixed> json_encode input only
+     */
+    protected function toGroupPayload(IssueGroup $issueGroup): array
+    {
+        $groupPayload = $this->toPayload($issueGroup);
+        unset($groupPayload['issues']);
+        return $groupPayload + ['environment' => null, 'workspace' => null];
+    }
+
+    /**
+     * An event as JSON: its raw line (all fields, e.g. the stack trace) with `issues.environment` and
+     * `issues.workspace` in front; the parsed fields when the backend has no raw line.
+     *
+     * @return array<string, mixed> json_encode input only
+     */
+    protected function toEventPayload(IssueEvent $issueEvent, ?string $environment): array
+    {
+        $rawFields = json_decode($issueEvent->rawJson, true);
+        if (!is_array($rawFields)) {
+            $rawFields = $this->toPayload($issueEvent);
+            unset($rawFields['rawJson']);
+        }
+        return ['issues.environment' => $environment, 'issues.workspace' => $issueEvent->workspace] + $rawFields;
     }
 
     protected function isJsonFormat(InputInterface $input): bool
@@ -94,16 +136,34 @@ abstract class IssuesCommand extends Command
     }
 
     /**
+     * The group of a hash in one environment; without an environment the only one — a hash registered in several
+     * environments needs `--environment`.
+     *
      * @throws NotFoundException
+     * @throws BadRequestException The hash is registered in several environments
      */
-    protected function getGroupByHash(string $groupHash): IssueGroup
+    protected function getGroupByHash(string $groupHash, ?string $environment = null): IssueGroup
     {
         /** @var IssueGroupsService $issueGroupsService */
         $issueGroupsService = IssueGroup::getService();
-        $issueGroup = $issueGroupsService->findByGroupHash($groupHash);
-        if ($issueGroup === null) {
+        if ($environment !== null) {
+            $issueGroup = $issueGroupsService->findByGroupHash($groupHash, $environment);
+            if ($issueGroup === null) {
+                throw new NotFoundException(sprintf('No issue group %s in environment %s', $groupHash, $environment));
+            }
+            return $issueGroup;
+        }
+        $issueGroups = $issueGroupsService->findGroupsByGroupHash($groupHash);
+        if ($issueGroups->count() === 0) {
             throw new NotFoundException(sprintf('No issue group %s', $groupHash));
         }
-        return $issueGroup;
+        if ($issueGroups->count() > 1) {
+            throw new BadRequestException(sprintf(
+                'Issue group %s exists in several environments (%s): pass --environment',
+                $groupHash,
+                implode(', ', array_map(static fn(IssueGroup $issueGroup): string => (string)$issueGroup->environment, $issueGroups->getElements()))
+            ));
+        }
+        return $issueGroups->first();
     }
 }
