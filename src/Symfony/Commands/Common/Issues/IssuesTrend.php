@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DDD\Symfony\Commands\Common\Issues;
 
+use DDD\Domain\Common\Entities\Charts\DateTimeValue;
+use DDD\Domain\Common\Entities\Charts\TimeInterval;
 use DDD\Domain\Common\Services\IssuesRegistryJobService;
 use DDD\Domain\Common\Services\IssuesTrendService;
 use DDD\Infrastructure\Base\DateTime\DateTime;
@@ -47,17 +49,18 @@ class IssuesTrend extends IssuesCommand
             $this->getErrorOutput($output)->writeln('<error>No query backend configured (ISSUES_QUERY_BACKEND)</error>');
             return Command::FAILURE;
         }
-        $from = $this->parseTime((string)$input->getOption('since'));
-        $to = $this->parseTime($input->getOption('until')) ?? DateTime::fromTimestamp(time());
+        $interval = new TimeInterval(
+            $this->parseTime((string)$input->getOption('since')),
+            $this->parseTime($input->getOption('until')) ?? DateTime::fromTimestamp(time())
+        );
         $stepSeconds = $this->parseStep((string)$input->getOption('step'));
         /** @var IssuesTrendService $issuesTrendService */
         $issuesTrendService = DDDService::instance()->getService(IssuesTrendService::class);
         try {
-            $issueTrend = $issuesTrendService->getTrend(
+            $dateTimeValueSequence = $issuesTrendService->getTrend(
                 $this->getEnvironmentOption($input),
                 $input->getOption('group'),
-                $from,
-                $to,
+                $interval,
                 $stepSeconds
             );
         } catch (Throwable $throwable) {
@@ -65,31 +68,30 @@ class IssuesTrend extends IssuesCommand
             return Command::FAILURE;
         }
         if ($this->isJsonFormat($input)) {
-            $bucketPayloads = [];
-            foreach ($issueTrend->getElements() as $issueTrendBucket) {
-                $bucketPayloads[] = ['start' => $issueTrendBucket->start->format('Y-m-d\TH:i:s\Z'), 'count' => $issueTrendBucket->count];
-            }
             $this->writeJson($output, [
-                'environment' => $issueTrend->environment,
-                'groupHash' => $issueTrend->groupHash,
-                'from' => gmdate('Y-m-d\TH:i:s\Z', $from->getTimestamp()),
-                'to' => gmdate('Y-m-d\TH:i:s\Z', $to->getTimestamp()),
-                'stepSeconds' => $issueTrend->stepSeconds,
-                'total' => $issueTrend->getTotal(),
-                'buckets' => $bucketPayloads,
+                'environment' => $this->getEnvironmentOption($input),
+                'groupHash' => $input->getOption('group'),
+                'name' => $dateTimeValueSequence->name,
+                'interval' => [
+                    'startDate' => gmdate(DateTime::DATE_RFC3339_ZULU, $dateTimeValueSequence->interval->startDate->getTimestamp()),
+                    'endDate' => gmdate(DateTime::DATE_RFC3339_ZULU, $dateTimeValueSequence->interval->endDate->getTimestamp()),
+                ],
+                'stepSeconds' => $dateTimeValueSequence->stepSeconds,
+                'total' => (int)$dateTimeValueSequence->getTotal(),
+                'values' => array_map(static fn(DateTimeValue $dateTimeValue): array => $dateTimeValue->toObject(), $dateTimeValueSequence->getElements()),
             ]);
             return Command::SUCCESS;
         }
-        $maximumCount = max(1, ...array_map(static fn($issueTrendBucket): int => $issueTrendBucket->count, $issueTrend->getElements()));
-        foreach ($issueTrend->getElements() as $issueTrendBucket) {
+        $maximumValue = max(1.0, ...array_map(static fn(DateTimeValue $dateTimeValue): float => (float)$dateTimeValue->y, $dateTimeValueSequence->getElements()));
+        foreach ($dateTimeValueSequence->getElements() as $dateTimeValue) {
             $output->writeln(sprintf(
                 '%s  %6d  %s',
-                gmdate('Y-m-d H:i', $issueTrendBucket->start->getTimestamp()),
-                $issueTrendBucket->count,
-                str_repeat('█', (int)ceil(40 * $issueTrendBucket->count / $maximumCount))
+                gmdate('Y-m-d H:i', $dateTimeValue->x->getTimestamp()),
+                (int)$dateTimeValue->y,
+                str_repeat('█', (int)ceil(40 * (float)$dateTimeValue->y / $maximumValue))
             ));
         }
-        $output->writeln(sprintf('total %d, step %ds', $issueTrend->getTotal(), $issueTrend->stepSeconds));
+        $output->writeln(sprintf('total %d, step %ds', (int)$dateTimeValueSequence->getTotal(), $dateTimeValueSequence->stepSeconds));
         return Command::SUCCESS;
     }
 

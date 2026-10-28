@@ -3,7 +3,7 @@ name: ddd-issues-log-specialist
 description: "Log, cluster, ship and track errors with the mgamadeus/ddd issues log: IssuesLogService::logThrowable (log-once), the issues channel sinks (ISSUES_LOG_TARGET file/stderr/none, ECS JSON), capture, redaction, hashes error.group_hash / error.issue_hash; the registry (app:issues:sync over Loki, Elasticsearch / OpenSearch or Sentry, per environment / dev workspace, seed mode, explosion guard, regressions, Slack alerts, app:issues:health); agent CLI app:issues:list / show / search / resolve / trend --format=json; RuntimeErrorsService and app:runtime-errors:extract / probe (rankingCoach-compatible, ES_LOGS_*); app:issues:forward-sentry; admin boilerplate; DevOps examples. Use when logging an exception, nobody sees production errors, configuring where errors go or alerts, shipping logs, errors logged twice, one bug in many groups, finding and fixing errors of an environment or workspace as an agent, querying runtime errors in Elasticsearch, forwarding to Sentry, or building an issues admin screen."
 metadata:
   author: mgamadeus
-  version: "1.4.0"
+  version: "1.5.0"
   framework: mgamadeus/ddd
 ---
 
@@ -389,9 +389,10 @@ otherwise, naming the environments).
 - An `<event>` is the raw ECS line as an object with `issues.environment` (the environment it was found in) and
   `issues.workspace` (its `service.workspace`) in front.
 - `resolve` / `ignore` / `reopen` → `{"groupHash", "environment", "workspace", "status"}`.
-- `trend` → `{"environment": null|"…", "groupHash": null|"…", "from", "to", "stepSeconds", "total", "buckets":
-  [{"start": "2026-10-28T10:00:00Z", "count": n}]}` — `--step=auto` is 1m up to 1 h, 10m up to 6 h, 1h up to 24 h,
-  then 6h; a step too fine is coarsened to at most 2 000 buckets.
+- `trend` → `{"environment": null|"…", "groupHash": null|"…", "name", "interval": {"startDate", "endDate"},
+  "stepSeconds", "total", "values": [{"x": "2026-10-28T10:00:00Z", "y": n}]}` — the framework's
+  `DateTimeValueSequence` (chart types: `ddd-entity-specialist`); `--step=auto` is 1m up to 1 h, 10m up to 6 h, 1h up
+  to 24 h, then 6h; a step too fine is coarsened to at most 2 000 buckets.
 - `health` → `{backendConfigured, lastSuccessfulRunAt, newestEventSeenAt, lastError, jobStalled, collectorSilent,
   environments: {"elements": [{…the same per environment, environment}]}, healthy}` — unhealthy when one environment is.
 
@@ -443,10 +444,9 @@ class AdminIssuesController extends AdminController
     #[Summary('Issues Trend')]
     public function trend(IssuesTrendGetRequestDto &$requestDto, IssuesTrendService $issuesTrendService): IssuesTrendGetResponseDto
     {
-        $to = DateTime::fromTimestamp(time());
-        $from = DateTime::fromTimestamp(time() - ($requestDto->hours ?? 24) * 3600);
+        $interval = new TimeInterval(DateTime::fromTimestamp(time() - ($requestDto->hours ?? 24) * 3600), DateTime::fromTimestamp(time()));
         $responseDto = new IssuesTrendGetResponseDto();
-        $responseDto->trend = $issuesTrendService->getTrend($requestDto->environment, null, $from, $to);
+        $responseDto->trend = $issuesTrendService->getTrend($requestDto->environment, null, $interval);
         return $responseDto;
     }
 
@@ -455,10 +455,9 @@ class AdminIssuesController extends AdminController
     #[Summary('Issue Group Trend')]
     public function groupTrend(IssueGroupTrendGetRequestDto &$requestDto, IssuesTrendService $issuesTrendService): IssuesTrendGetResponseDto
     {
-        $to = DateTime::fromTimestamp(time());
-        $from = DateTime::fromTimestamp(time() - ($requestDto->hours ?? 24 * 7) * 3600);
+        $interval = new TimeInterval(DateTime::fromTimestamp(time() - ($requestDto->hours ?? 24 * 7) * 3600), DateTime::fromTimestamp(time()));
         $responseDto = new IssuesTrendGetResponseDto();
-        $responseDto->trend = $issuesTrendService->getTrend($requestDto->environment, $requestDto->groupHash, $from, $to);
+        $responseDto->trend = $issuesTrendService->getTrend($requestDto->environment, $requestDto->groupHash, $interval);
         return $responseDto;
     }
 
@@ -542,9 +541,9 @@ class IssueGroupTrendGetRequestDto extends IssuesTrendGetRequestDto
 
 class IssuesTrendGetResponseDto extends RestResponseDto
 {
-    /** @var IssueTrend Gap-free buckets {start, count} and stepSeconds */
+    /** @var DateTimeValueSequence Gap-free points {x, y}, stepSeconds and interval */
     #[Parameter(in: Parameter::RESPONSE, required: true)]
-    public IssueTrend $trend;
+    public DateTimeValueSequence $trend;
 }
 
 class IssueGroupsGetResponseDto extends RestResponseDto

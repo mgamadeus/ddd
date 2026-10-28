@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Logging\Query\Sentry;
 
+use DDD\Domain\Common\Entities\Charts\DateTimeValueSequence;
+use DDD\Domain\Common\Entities\Charts\TimeInterval;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Logging\IssuesRegistrySettings;
@@ -12,7 +14,6 @@ use DDD\Infrastructure\Logging\Query\IssueEvents;
 use DDD\Infrastructure\Logging\Query\IssueEventSearch;
 use DDD\Infrastructure\Logging\Query\IssueHashCount;
 use DDD\Infrastructure\Logging\Query\IssueHashCounts;
-use DDD\Infrastructure\Logging\Query\IssueTrend;
 use DDD\Infrastructure\Logging\Query\IssuesBackendProbe;
 use DDD\Infrastructure\Logging\Query\IssuesQueryBackend;
 use GuzzleHttp\Client;
@@ -132,8 +133,10 @@ class SentryIssuesQueryBackend implements IssuesQueryBackend
      * Sentry's `events-stats` (`yAxis=count()`) with the step as interval (`<n>m` / `<n>h` / `<n>d`; Sentry rounds
      * unsupported intervals itself).
      */
-    public function trend(DateTime $from, DateTime $to, int $stepSeconds, ?string $groupHash = null): IssueTrend
+    public function trend(TimeInterval $interval, int $stepSeconds, ?string $groupHash = null): DateTimeValueSequence
     {
+        $from = $interval->startDate;
+        $to = $interval->endDate;
         $query = $this->buildProjectQuery() . ' has:group_hash ' . self::ERROR_QUERY;
         if ($groupHash !== null && $groupHash !== '') {
             $query .= ' group_hash:' . $this->quote($groupHash);
@@ -141,7 +144,7 @@ class SentryIssuesQueryBackend implements IssuesQueryBackend
         $response = $this->requestOrganizationApi('events-stats', [
             'yAxis' => 'count()',
             'query' => trim($query),
-            'start' => $this->formatTime(DateTime::fromTimestamp(IssueTrend::alignToStep($from->getTimestamp(), $stepSeconds))),
+            'start' => $this->formatTime(DateTime::fromTimestamp(DateTimeValueSequence::alignToStep($from->getTimestamp(), $stepSeconds))),
             'end' => $this->formatTime($to),
             'interval' => $this->formatInterval($stepSeconds),
         ]);
@@ -157,7 +160,7 @@ class SentryIssuesQueryBackend implements IssuesQueryBackend
             }
             $countsByTimestamp[(int)$point[0]] = ($countsByTimestamp[(int)$point[0]] ?? 0) + $count;
         }
-        return IssueTrend::fromCounts($from, $to, $stepSeconds, $countsByTimestamp);
+        return DateTimeValueSequence::fromValuesByTimestamp($groupHash ?? 'errors', $from, $to, $stepSeconds, $countsByTimestamp);
     }
 
     protected function formatInterval(int $stepSeconds): string

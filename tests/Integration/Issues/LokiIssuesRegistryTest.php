@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Tests\Integration\Issues;
 
+use DDD\Domain\Common\Entities\Charts\TimeInterval;
 use DDD\Domain\Common\Entities\Issues\IssueGroup;
 use DDD\Domain\Common\Entities\Issues\IssueGroupsFilter;
 use DDD\Domain\Common\Services\IssueGroupsService;
@@ -221,11 +222,13 @@ class LokiIssuesRegistryTest extends IssuesRegistryTestCase
 
         $trendFrom = DateTime::fromTimestamp(time() - 600);
         $trendTo = DateTime::fromTimestamp(time() + 60);
-        $trend = $lokiIssuesQueryBackend->trend($trendFrom, $trendTo, 60);
-        self::assertSame(3, $trend->getTotal());
+        $trendInterval = new TimeInterval($trendFrom, $trendTo);
+        $trend = $lokiIssuesQueryBackend->trend($trendInterval, 60);
+        self::assertSame(3.0, $trend->getTotal());
         self::assertSame(12, $trend->count());
+        self::assertSame(60, $trend->stepSeconds);
         $groupHash = $searchedEvents->first()->groupHash;
-        self::assertSame(2, $lokiIssuesQueryBackend->trend($trendFrom, $trendTo, 60, $groupHash)->getTotal());
+        self::assertSame(2.0, $lokiIssuesQueryBackend->trend($trendInterval, 60, $groupHash)->getTotal());
         self::assertStringEndsWith('failed for id 43', (string)$searchedEvents->first()->message);
     }
 }

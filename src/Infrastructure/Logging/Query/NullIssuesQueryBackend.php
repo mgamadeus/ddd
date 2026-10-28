@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Logging\Query;
 
+use DDD\Domain\Common\Entities\Charts\DateTimeValueSequence;
+use DDD\Domain\Common\Entities\Charts\TimeInterval;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Logging\IssuesRegistrySettings;
 
@@ -27,9 +29,9 @@ class NullIssuesQueryBackend implements IssuesQueryBackend
         return new IssueEvents();
     }
 
-    public function trend(DateTime $from, DateTime $to, int $stepSeconds, ?string $groupHash = null): IssueTrend
+    public function trend(TimeInterval $interval, int $stepSeconds, ?string $groupHash = null): DateTimeValueSequence
     {
-        return IssueTrend::fromCounts($from, $to, $stepSeconds, []);
+        return DateTimeValueSequence::fromValuesByTimestamp($groupHash ?? 'errors', $interval->startDate, $interval->endDate, $stepSeconds, []);
     }
 
     public function probe(): IssuesBackendProbe

@@ -1,9 +1,9 @@
 ---
 name: ddd-entity-specialist
-description: Create and design DDD entities, entity sets, value objects, DB repositories, lazy loading, relationships and entity attributes in mgamadeus/ddd. Covers folder layout, naming, critical rules (never redeclare id, NotNull drives NOT NULL, @var T[] feeds the API schema, framework Date/DateTime only, protected not private), getService()->find(), the isset lazy-load footgun, Translatable properties, ChangeHistory, junction entities, indexes and virtual columns, SubclassIndicator inheritance, DatabaseTrigger, ReuseParentEntitySet, displayOrder, PreserveOnOmission, validation (Choice, UniqueProperty), and update() (upsert) vs strict insert() (a duplicate key throws). Use when creating or modifying entities and their persistence, placing entity files, adding translations or auditing, defining indexes, virtual columns or triggers, fixing a null getService(), a lazy relation that never loads, a partial update that overwrites a stored value, or when a write must fail on a duplicate unique key instead of merging.
+description: Create and design DDD entities, entity sets, value objects, DB repositories, lazy loading, relationships and attributes in mgamadeus/ddd. Covers folder layout, naming, critical rules (never redeclare id, NotNull → NOT NULL, @var T[] feeds the API schema, framework Date/DateTime only, protected), getService()->find(), the isset lazy-load trap, Translatable properties, ChangeHistory, junction entities, indexes, virtual columns, SubclassIndicator, DatabaseTrigger, ReuseParentEntitySet, displayOrder, PreserveOnOmission, validation (Choice, UniqueProperty), chart types (DateTimeValueSequence, TimeInterval, KeyValue), and update() (upsert) vs strict insert() (a duplicate key throws). Use when creating or modifying entities and their persistence, returning chart or time-series data, placing entity files, adding translations or auditing, defining indexes or triggers, fixing a null getService(), a lazy relation that never loads, a partial update overwriting a stored value, or a write that must fail on a duplicate key.
 metadata:
   author: mgamadeus
-  version: "1.0.0"
+  version: "1.1.0"
   framework: mgamadeus/ddd
 ---
 
@@ -656,6 +656,33 @@ class SystemConfig extends Entity { }
 Checked by `DatabaseRepoEntity::canUpdateOrDeleteBasedOnRoles()` before both `update()` and `delete()`. If the authenticated account lacks the required roles, the operation silently returns without persisting.
 
 ---
+
+## Chart & Time-Series Types (`DDD\Domain\Common\Entities\Charts`)
+
+Chart data is returned in the framework's generic types — an application does not define its own. Types missing here
+are added to Core, not to an app.
+
+| Type | Shape | Use |
+|---|---|---|
+| `DateValue` / `DateValueSequence` | `x` (`Date`, day) + `y`; named sequence | a day series (orders per day) |
+| `DateTimeValue` / `DateTimeValueSequence` | `x` (`DateTime`) + `y`; named sequence with `stepSeconds` and `interval` | a sub-day or day series (errors per 10 min / hour / day) |
+| `DateValueSequences` / `DateTimeValueSequences` | sets of sequences | stacked charts, one line per key |
+| `TimeInterval` | `startDate` / `endDate` (`DateTime`, either may be null), `getDurationSeconds()`, `stringToDateTime()` | a chart's or report's window |
+| `AbstractKeyValue` → `IntegerKeyValue` / `StringKeyValue` | `key` + typed `value` | categorical charts, breakdowns |
+
+A bucketed series from query results — step-aligned (UTC), gap-free (empty buckets 0), the step and the window on it:
+
+```php
+$valuesByTimestamp = [];   // unix timestamp => value, straight from the aggregation
+foreach ($rows as $row) {
+    $valuesByTimestamp[(int)$row['bucketStart']] = (int)$row['count'];
+}
+$dateTimeValueSequence = DateTimeValueSequence::fromValuesByTimestamp('orders', $from, $to, 3600, $valuesByTimestamp);
+```
+
+JSON: `DateValue` → `{"x": "2026-10-28", "y": 4}`; `DateTimeValue` → `{"x": "2026-10-28T10:00:00Z", "y": 4}` (UTC). As a
+response DTO property the sequence documents its points, `stepSeconds` and `interval`. The issues trend
+(`IssuesTrendService`) is one producer.
 
 ## Database Indexes & Virtual Columns
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Tests\Integration\Issues;
 
+use DDD\Domain\Common\Entities\Charts\TimeInterval;
 use DDD\Domain\Common\Entities\Issues\Issue;
 use DDD\Domain\Common\Entities\Issues\IssueGroup;
 use DDD\Domain\Common\Entities\Issues\IssuesJobState;
@@ -276,25 +277,29 @@ class IssuesRegistryEnvironmentsTest extends IssuesRegistryTestCase
         /** @var IssuesTrendService $issuesTrendService */
         $issuesTrendService = DDDService::instance()->getService(IssuesTrendService::class);
         $issuesTrendService->setCacheEnabled(false);
-        $from = DateTime::fromTimestamp($hourStart);
-        $to = DateTime::fromTimestamp($hourStart + 1199);
+        $interval = new TimeInterval(DateTime::fromTimestamp($hourStart), DateTime::fromTimestamp($hourStart + 1199));
 
-        $prodTrend = $issuesTrendService->getTrend('prod', null, $from, $to, 600);
-        $allTrend = $issuesTrendService->getTrend(null, null, $from, $to, 600);
-        $groupTrend = $issuesTrendService->getTrend('prod', 'group-a', $from, $to, 600);
+        $prodTrend = $issuesTrendService->getTrend('prod', null, $interval, 600);
+        $allTrend = $issuesTrendService->getTrend(null, null, $interval, 600);
+        $groupTrend = $issuesTrendService->getTrend('prod', 'group-a', $interval, 600);
 
-        self::assertSame([$hourStart => 4, $hourStart + 600 => 1], $prodTrend->getCountsByBucketStart());
-        self::assertSame([$hourStart => 6, $hourStart + 600 => 1], $allTrend->getCountsByBucketStart());
-        self::assertSame([$hourStart => 4, $hourStart + 600 => 0], $groupTrend->getCountsByBucketStart());
-        self::assertSame('group-a', $groupTrend->groupHash);
+        self::assertSame([$hourStart => 4.0, $hourStart + 600 => 1.0], $prodTrend->getValuesByTimestamp());
+        self::assertSame(600, $prodTrend->stepSeconds);
+        self::assertSame('prod', $prodTrend->name);
+        self::assertSame([$hourStart => 6.0, $hourStart + 600 => 1.0], $allTrend->getValuesByTimestamp());
+        self::assertSame('all', $allTrend->name);
+        self::assertSame([$hourStart => 4.0, $hourStart + 600 => 0.0], $groupTrend->getValuesByTimestamp());
+        self::assertSame('group-a', $groupTrend->name);
 
         $trendCommandTester = new CommandTester(new IssuesTrend());
         self::assertSame(Command::SUCCESS, $trendCommandTester->execute(['--environment' => 'prod', '--since' => '2h', '--step' => '1h', '--format' => 'json']));
         $payload = json_decode($trendCommandTester->getDisplay(), true);
-        self::assertSame(['environment', 'groupHash', 'from', 'to', 'stepSeconds', 'total', 'buckets'], array_keys($payload));
+        self::assertSame(['environment', 'groupHash', 'name', 'interval', 'stepSeconds', 'total', 'values'], array_keys($payload));
+        self::assertSame(['startDate', 'endDate'], array_keys($payload['interval']));
         self::assertSame(3600, $payload['stepSeconds']);
         self::assertSame(5, $payload['total']);
-        self::assertSame(['start', 'count'], array_keys($payload['buckets'][0]));
+        self::assertSame(['x', 'y'], array_keys($payload['values'][0]));
+        self::assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:00:00Z$/', $payload['values'][0]['x']);
         self::assertSame(Command::INVALID, (new CommandTester(new IssuesTrend()))->execute(['--step' => 'often']));
         $issuesTrendService->setCacheEnabled(true);
     }

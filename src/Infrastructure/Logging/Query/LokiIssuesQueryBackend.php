@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Logging\Query;
 
+use DDD\Domain\Common\Entities\Charts\DateTimeValueSequence;
+use DDD\Domain\Common\Entities\Charts\TimeInterval;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Logging\IssuesRegistrySettings;
@@ -117,8 +119,10 @@ class LokiIssuesQueryBackend implements IssuesQueryBackend
      * `sum(count_over_time(<selector> | json | <error filter> [<step>s]))` over `query_range`. Loki's point at t counts
      * (t − step, t]: the points are evaluated at bucket start + step and booked to their bucket start.
      */
-    public function trend(DateTime $from, DateTime $to, int $stepSeconds, ?string $groupHash = null): IssueTrend
+    public function trend(TimeInterval $interval, int $stepSeconds, ?string $groupHash = null): DateTimeValueSequence
     {
+        $from = $interval->startDate;
+        $to = $interval->endDate;
         $groupFilter = $groupHash !== null && $groupHash !== '' ? ' | error_group_hash=' . $this->quote($groupHash) : '';
         $query = sprintf(
             'sum(count_over_time(%s | json | error_group_hash!=""%s %s [%ds]))',
@@ -127,8 +131,8 @@ class LokiIssuesQueryBackend implements IssuesQueryBackend
             self::ERROR_FILTER,
             $stepSeconds
         );
-        $firstBucketStart = IssueTrend::alignToStep($from->getTimestamp(), $stepSeconds);
-        $lastBucketStart = IssueTrend::alignToStep($to->getTimestamp(), $stepSeconds);
+        $firstBucketStart = DateTimeValueSequence::alignToStep($from->getTimestamp(), $stepSeconds);
+        $lastBucketStart = DateTimeValueSequence::alignToStep($to->getTimestamp(), $stepSeconds);
         $response = $this->request('/loki/api/v1/query_range', [
             'query' => $query,
             'start' => (string)($firstBucketStart + $stepSeconds),
@@ -142,7 +146,7 @@ class LokiIssuesQueryBackend implements IssuesQueryBackend
                 $countsByTimestamp[$bucketStart] = ($countsByTimestamp[$bucketStart] ?? 0) + (int)round((float)$value);
             }
         }
-        return IssueTrend::fromCounts($from, $to, $stepSeconds, $countsByTimestamp);
+        return DateTimeValueSequence::fromValuesByTimestamp($groupHash ?? 'errors', $from, $to, $stepSeconds, $countsByTimestamp);
     }
 
     public function probe(): IssuesBackendProbe

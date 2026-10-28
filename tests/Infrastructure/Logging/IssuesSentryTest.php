@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Tests\Infrastructure\Logging;
 
+use DDD\Domain\Common\Entities\Charts\TimeInterval;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Logging\IssuesRegistrySettings;
@@ -264,14 +265,14 @@ class IssuesSentryTest extends TestCase
             ]])),
         ));
 
-        $issueTrend = $sentryIssuesQueryBackend->trend(
-            DateTime::fromTimestamp(1761642000),
-            DateTime::fromTimestamp(1761649200 + 1800),
+        $dateTimeValueSequence = $sentryIssuesQueryBackend->trend(
+            new TimeInterval(DateTime::fromTimestamp(1761642000), DateTime::fromTimestamp(1761649200 + 1800)),
             3600,
             'g1'
         );
 
-        self::assertSame([1761642000 => 3, 1761645600 => 0, 1761649200 => 5], $issueTrend->getCountsByBucketStart());
+        self::assertSame([1761642000 => 3.0, 1761645600 => 0.0, 1761649200 => 5.0], $dateTimeValueSequence->getValuesByTimestamp());
+        self::assertSame('g1', $dateTimeValueSequence->name);
         $request = $this->requestHistory[0]['request'];
         self::assertSame('/api/0/organizations/acme/events-stats/', $request->getUri()->getPath());
         $query = urldecode($request->getUri()->getQuery());

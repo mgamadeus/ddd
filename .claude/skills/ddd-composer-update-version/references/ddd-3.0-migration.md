@@ -118,7 +118,13 @@ Unchanged:
   parameter"), and on PostgreSQL it returns that dialect's DDL (`ensure()` plus each table's, foreign keys last)
   instead of MariaDB SQL. The PostgreSQL SQL creates (plain `CREATE TABLE`); updating an existing schema is the schema
   diff's job. `getAllEntityClasses()` no longer lists a class twice when one directory is scanned twice.
-- 3.6.0 — issues trends (skill `ddd-issues-log-specialist`): `IssuesQueryBackend::trend($from, $to, $stepSeconds,
-  ?$groupHash): IssueTrend` (Loki `query_range`, Elasticsearch / OpenSearch `date_histogram`, Sentry `events-stats`;
-  error events only, gap-free buckets), `IssuesTrendService::getTrend($environment|null, $groupHash|null, …)` with a
-  60-second cache, `app:issues:trend`. An application's own `IssuesQueryBackend` implementation adds `trend()`.
+- 3.6.0 — issues trends (`IssueTrend`); superseded by 3.7.0 before any application used it.
+- 3.7.0 — chart types in Core (`DDD\Domain\Common\Entities\Charts`, skill `ddd-entity-specialist`): new
+  `DateTimeValue` / `DateTimeValueSequence` (sub-day buckets, `stepSeconds`, `interval`, gap-free
+  `fromValuesByTimestamp()`), `DateTimeValueSequences`, and — lifted from the applications with the same names and
+  public shape — `TimeInterval`, `AbstractKeyValue`, `IntegerKeyValue`, `StringKeyValue`, `DateValueSequences`. An
+  application moves to them by changing its imports. The issues trend uses them: `IssuesQueryBackend::trend(
+  TimeInterval $interval, int $stepSeconds, ?string $groupHash): DateTimeValueSequence`, `IssuesTrendService::getTrend(
+  $environment|null, $groupHash|null, TimeInterval, ?$stepSeconds)`, `app:issues:trend` JSON `values: [{x, y}]`;
+  3.6.0's `IssueTrend` is gone. `RuntimeErrorTrend::fromDateTimeValueSequence()` adapts a series to the runtime-error
+  trend shape.

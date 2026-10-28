@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace DDD\Tests\Integration\Issues;
 
+use DDD\Domain\Common\Entities\Charts\DateTimeValueSequence;
+use DDD\Domain\Common\Entities\Charts\TimeInterval;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Logging\Query\IssueEvent;
 use DDD\Infrastructure\Logging\Query\IssueEvents;
 use DDD\Infrastructure\Logging\Query\IssueEventSearch;
 use DDD\Infrastructure\Logging\Query\IssueHashCount;
 use DDD\Infrastructure\Logging\Query\IssueHashCounts;
-use DDD\Infrastructure\Logging\Query\IssueTrend;
 use DDD\Infrastructure\Logging\Query\IssuesBackendProbe;
 use DDD\Infrastructure\Logging\Query\IssuesQueryBackend;
 
@@ -101,8 +102,10 @@ class FakeIssuesQueryBackend implements IssuesQueryBackend
         return $issueEvents;
     }
 
-    public function trend(DateTime $from, DateTime $to, int $stepSeconds, ?string $groupHash = null): IssueTrend
+    public function trend(TimeInterval $interval, int $stepSeconds, ?string $groupHash = null): DateTimeValueSequence
     {
+        $from = $interval->startDate;
+        $to = $interval->endDate;
         $countsByTimestamp = [];
         foreach ($this->storedEvents as [$issueEvent, $occurrences]) {
             if (!in_array($issueEvent->level, self::ERROR_LEVELS, true) || !$this->isInWindow($issueEvent, $from, $to)
@@ -112,7 +115,7 @@ class FakeIssuesQueryBackend implements IssuesQueryBackend
             $timestamp = $issueEvent->timestamp->getTimestamp();
             $countsByTimestamp[$timestamp] = ($countsByTimestamp[$timestamp] ?? 0) + $occurrences;
         }
-        return IssueTrend::fromCounts($from, $to, $stepSeconds, $countsByTimestamp);
+        return DateTimeValueSequence::fromValuesByTimestamp($groupHash ?? 'errors', $from, $to, $stepSeconds, $countsByTimestamp);
     }
 
     public function probe(): IssuesBackendProbe

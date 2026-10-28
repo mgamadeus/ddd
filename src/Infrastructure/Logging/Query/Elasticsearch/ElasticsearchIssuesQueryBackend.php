@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Logging\Query\Elasticsearch;
 
+use DDD\Domain\Common\Entities\Charts\DateTimeValueSequence;
+use DDD\Domain\Common\Entities\Charts\TimeInterval;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Logging\IssuesRegistrySettings;
@@ -12,7 +14,6 @@ use DDD\Infrastructure\Logging\Query\IssueEvents;
 use DDD\Infrastructure\Logging\Query\IssueEventSearch;
 use DDD\Infrastructure\Logging\Query\IssueHashCount;
 use DDD\Infrastructure\Logging\Query\IssueHashCounts;
-use DDD\Infrastructure\Logging\Query\IssueTrend;
 use DDD\Infrastructure\Logging\Query\IssuesBackendProbe;
 use DDD\Infrastructure\Logging\Query\IssuesQueryBackend;
 use GuzzleHttp\Client;
@@ -239,8 +240,10 @@ class ElasticsearchIssuesQueryBackend implements IssuesQueryBackend
      * A `date_histogram` on `@timestamp` with `fixed_interval` = the step, `min_doc_count: 0` and `extended_bounds`
      * over the window (the shape of the runtime-error trend body, with the registry's error filter).
      */
-    public function trend(DateTime $from, DateTime $to, int $stepSeconds, ?string $groupHash = null): IssueTrend
+    public function trend(TimeInterval $interval, int $stepSeconds, ?string $groupHash = null): DateTimeValueSequence
     {
+        $from = $interval->startDate;
+        $to = $interval->endDate;
         $filterClauses = [$this->buildTimeRangeClause($from, $to), $this->buildErrorClause()];
         if ($groupHash !== null && $groupHash !== '') {
             $filterClauses[] = ['term' => [$this->getFieldNames()->keyword('error.group_hash') => $groupHash]];
@@ -256,8 +259,8 @@ class ElasticsearchIssuesQueryBackend implements IssuesQueryBackend
                         'fixed_interval' => $stepSeconds . 's',
                         'min_doc_count' => 0,
                         'extended_bounds' => [
-                            'min' => IssueTrend::alignToStep($from->getTimestamp(), $stepSeconds) * 1000,
-                            'max' => IssueTrend::alignToStep($to->getTimestamp(), $stepSeconds) * 1000,
+                            'min' => DateTimeValueSequence::alignToStep($from->getTimestamp(), $stepSeconds) * 1000,
+                            'max' => DateTimeValueSequence::alignToStep($to->getTimestamp(), $stepSeconds) * 1000,
                         ],
                     ],
                 ],
@@ -268,7 +271,7 @@ class ElasticsearchIssuesQueryBackend implements IssuesQueryBackend
             $bucketStart = intdiv((int)($bucket['key'] ?? 0), 1000);
             $countsByTimestamp[$bucketStart] = ($countsByTimestamp[$bucketStart] ?? 0) + (int)($bucket['doc_count'] ?? 0);
         }
-        return IssueTrend::fromCounts($from, $to, $stepSeconds, $countsByTimestamp);
+        return DateTimeValueSequence::fromValuesByTimestamp($groupHash ?? 'errors', $from, $to, $stepSeconds, $countsByTimestamp);
     }
 
     public function probe(): IssuesBackendProbe

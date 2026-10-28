@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Logging\Query;
 
+use DDD\Domain\Common\Entities\Charts\DateTimeValueSequence;
+use DDD\Domain\Common\Entities\Charts\TimeInterval;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 
 /**
@@ -23,10 +25,10 @@ interface IssuesQueryBackend
     public function searchEvents(IssueEventSearch $issueEventSearch): IssueEvents;
 
     /**
-     * Error events (the same filter as {@see self::aggregateErrors()}) per bucket of `$stepSeconds`, gap-free
-     * ({@see IssueTrend::fromCounts()}); with a group hash only that group's.
+     * Error events (the same filter as {@see self::aggregateErrors()}) per bucket of `$stepSeconds` over the window,
+     * gap-free ({@see DateTimeValueSequence::fromValuesByTimestamp()}); with a group hash only that group's.
      */
-    public function trend(DateTime $from, DateTime $to, int $stepSeconds, ?string $groupHash = null): IssueTrend;
+    public function trend(TimeInterval $interval, int $stepSeconds, ?string $groupHash = null): DateTimeValueSequence;
 
     public function probe(): IssuesBackendProbe;
 }

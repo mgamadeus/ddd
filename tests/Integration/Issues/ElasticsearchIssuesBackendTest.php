@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Tests\Integration\Issues;
 
+use DDD\Domain\Common\Entities\Charts\TimeInterval;
 use DDD\Domain\Common\Entities\Issues\IssueGroup;
 use DDD\Domain\Common\Entities\Issues\IssueGroupsFilter;
 use DDD\Domain\Common\Services\IssueGroupsService;
@@ -168,14 +169,14 @@ class ElasticsearchIssuesBackendTest extends IssuesRegistryTestCase
         self::assertGreaterThanOrEqual(1, $groupEvents->count());
         self::assertTrue($elasticsearchIssuesQueryBackend->probe()->reachable);
 
-        $trend = $elasticsearchIssuesQueryBackend->trend($from, $to, 60);
-        self::assertSame(3, $trend->getTotal());
+        $trend = $elasticsearchIssuesQueryBackend->trend(new TimeInterval($from, $to), 60);
+        self::assertSame(3.0, $trend->getTotal());
         self::assertContains($trend->count(), [20, 21]);
         $issueHashCounts = $elasticsearchIssuesQueryBackend->aggregateErrors($from, $to);
         foreach ($issueHashCounts->getGroupHashes() as $groupHash) {
             self::assertSame(
-                $issueHashCounts->getCountForGroupHash($groupHash),
-                $elasticsearchIssuesQueryBackend->trend($from, $to, 600, $groupHash)->getTotal()
+                (float)$issueHashCounts->getCountForGroupHash($groupHash),
+                $elasticsearchIssuesQueryBackend->trend(new TimeInterval($from, $to), 600, $groupHash)->getTotal()
             );
         }
     }
