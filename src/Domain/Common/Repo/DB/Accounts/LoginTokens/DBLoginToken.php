@@ -10,6 +10,7 @@ use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Domain\Common\Entities\Accounts\LoginTokens\LoginToken;
 use DDD\Infrastructure\Base\DateTime\DateTime;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\DBAL\Exception;
 use ReflectionException;
 
@@ -30,10 +31,12 @@ class DBLoginToken extends DBEntity
      */
     public function deleteExpiredTokens(): void
     {
-        $connection = EntityManagerFactory::getInstance()->getConnection();
-        $connection->executeStatement(
-            'DELETE FROM ' . DBLoginTokenModel::getTableName() . ' WHERE usageLimit <= 0 OR validUntil < :currentDate',
-            ['currentDate' => new DateTime('now')]
-        );
+        // DQL, not raw SQL: the identifiers are quoted per engine (PostgreSQL folds unquoted mixed case to lower case)
+        EntityManagerFactory::getInstance()->createQueryBuilder()
+            ->delete(static::BASE_ORM_MODEL, 'loginToken')
+            ->where('loginToken.usageLimit <= 0 OR loginToken.validUntil < :currentDate')
+            ->setParameter('currentDate', new DateTime('now'), Types::DATETIME_MUTABLE)
+            ->getQuery()
+            ->execute();
     }
 }

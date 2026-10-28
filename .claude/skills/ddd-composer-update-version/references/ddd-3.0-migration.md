@@ -133,3 +133,8 @@ Unchanged:
   `messenger.custom_message` / `messenger.message_payload` (before: `message.custom_message` / `message.payload`) and
   no longer loses the payload on an unset typed property; neither throws out of a catch block. `ProcessCLIMessage`
   logs the failing handler's own error (unwrapped, uncaught).
+- 3.7.2 — PostgreSQL: the housekeeping deletes ran as raw SQL with unquoted mixed-case identifiers, which PostgreSQL
+  folds to lower case — `app:crons:execute` failed with `relation "cronexecutions" does not exist`. Now DQL with typed
+  parameters: `CronsService::cleanupCronExecutions()`, `DBLoginToken::deleteExpiredTokens()`,
+  `DBCacheScopeInvalidation::deleteExpiredCacheScopeInvalidations()`; `getCronsScheduledForExecution()` binds
+  `isActive` as a boolean. Raw SQL in an application: quote identifiers (`$connection->quoteIdentifier()`) or use DQL.

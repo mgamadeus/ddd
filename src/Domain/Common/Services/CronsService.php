@@ -9,12 +9,12 @@ use DDD\Domain\Base\Services\EntitiesService;
 use DDD\Domain\Common\Entities\Crons\Cron;
 use DDD\Domain\Common\Entities\Crons\CronExecution;
 use DDD\Domain\Common\Entities\Crons\Crons;
-use DDD\Domain\Common\Repo\DB\Crons\DBCronExecutionModel;
 use DDD\Domain\Common\Repo\DB\Crons\DBCronExecutions;
 use DDD\Domain\Common\Repo\DB\Crons\DBCrons;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
+use Doctrine\DBAL\Types\Types;
 use Psr\Cache\InvalidArgumentException;
 use ReflectionException;
 
@@ -64,15 +64,19 @@ class CronsService extends EntitiesService
      */
     public function cleanupCronExecutions(): void
     {
-        $connection = EntityManagerFactory::getInstance()->getConnection();
-        $connection->executeStatement(
-            'DELETE FROM ' . DBCronExecutionModel::getTableName()
-            . " WHERE (state = '" . CronExecution::STATE_RUNNING . "' AND executionStartedAt <  :nowMinus4Hours) OR (state = '" . CronExecution::STATE_ENDED . "' AND executionStartedAt <  :nowMinus14Days)",
-            [
-                'nowMinus4Hours' => (new DateTime('now'))->modify('-4 hours'),
-                'nowMinus14Days' => (new DateTime('now'))->modify('-14 days')
-            ]
-        );
+        // DQL, not raw SQL: the identifiers are quoted per engine (PostgreSQL folds unquoted CronExecutions to lower case)
+        EntityManagerFactory::getInstance()->createQueryBuilder()
+            ->delete(DBCronExecutions::getBaseModel(), 'cronExecution')
+            ->where(
+                '(cronExecution.state = :stateRunning AND cronExecution.executionStartedAt < :nowMinus4Hours)'
+                . ' OR (cronExecution.state = :stateEnded AND cronExecution.executionStartedAt < :nowMinus14Days)'
+            )
+            ->setParameter('stateRunning', CronExecution::STATE_RUNNING)
+            ->setParameter('stateEnded', CronExecution::STATE_ENDED)
+            ->setParameter('nowMinus4Hours', (new DateTime('now'))->modify('-4 hours'), Types::DATETIME_MUTABLE)
+            ->setParameter('nowMinus14Days', (new DateTime('now'))->modify('-14 days'), Types::DATETIME_MUTABLE)
+            ->getQuery()
+            ->execute();
     }
 
     /**
@@ -90,9 +94,10 @@ class CronsService extends EntitiesService
         $queryBuilder = $dbCrons::createQueryBuilder();
         $cronExecutionsModel = DBCronExecutions::getBaseModel();
         $queryBuilder->andWhere(
-            "$baseModelAlias.id NOT IN (SELECT executions.cronId from $cronExecutionsModel executions WHERE executions.state = :stateRunning) AND $baseModelAlias.nextExecutionScheduledAt <= :currentDate AND $baseModelAlias.isActive = 1"
+            "$baseModelAlias.id NOT IN (SELECT executions.cronId from $cronExecutionsModel executions WHERE executions.state = :stateRunning) AND $baseModelAlias.nextExecutionScheduledAt <= :currentDate AND $baseModelAlias.isActive = :isActive"
         );
-        $queryBuilder->setParameter('currentDate', new DateTime());
+        $queryBuilder->setParameter('isActive', true, Types::BOOLEAN);
+        $queryBuilder->setParameter('currentDate', new DateTime(), Types::DATETIME_MUTABLE);
         $queryBuilder->setParameter('stateRunning', CronExecution::STATE_RUNNING);
         return $dbCrons->find($queryBuilder);
     }
