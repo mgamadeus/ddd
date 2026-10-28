@@ -17,11 +17,17 @@ use Symfony\Component\Console\Output\OutputInterface;
  * ISSUES_COLLECTOR_SILENT_MINUTES). Without a query backend there is nothing to watch: exit 0.
  */
 #[AsCommand(
-    name: 'app:issues:health',
-    description: 'Checks the issues registry job and the log pipeline (exit 1 when stalled or silent)',
+    name: self::COMMAND_NAME,
+    description: 'Checks that the issues registry job runs and the log collector ships events (exit 1 when stalled or silent)',
+    aliases: [self::DEPRECATED_COMMAND_NAME],
 )]
 class IssuesHealth extends IssuesCommand
 {
+    public const string COMMAND_NAME = 'app:issues:check-registry-job-and-collector-health';
+
+    /** The former name, kept as an alias for running liveness probes — deprecated */
+    public const string DEPRECATED_COMMAND_NAME = 'app:issues:health';
+
     protected function configure(): void
     {
         $this->addFormatOption();

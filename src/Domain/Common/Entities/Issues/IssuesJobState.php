@@ -34,7 +34,7 @@ class IssuesJobState extends Entity
     /** @var DateTime|null First run in this database: seed mode lasts ISSUES_SEED_HOURS from here */
     public ?DateTime $activatedAt = null;
 
-    /** @var DateTime|null Seed mode until (set on demand, e.g. `app:issues:sync --seed=24`) */
+    /** @var DateTime|null Seed mode until (set on demand, e.g. `app:issues:sync-registry-from-log-backend --seed=24`) */
     public ?DateTime $seedUntil = null;
 
     public ?DateTime $lastRunStartedAt = null;

@@ -1,9 +1,9 @@
 ---
 name: ddd-issues-log-specialist
-description: "Log, cluster, ship and track errors with the mgamadeus/ddd issues log: IssuesLogService::logThrowable (log-once), the issues channel sinks (ISSUES_LOG_TARGET file/stderr/none, ECS JSON), capture, redaction, hashes error.group_hash / error.issue_hash; the registry (app:issues:sync over Loki, Elasticsearch / OpenSearch or Sentry, per environment / dev workspace, seed mode, explosion guard, regressions, Slack alerts, app:issues:health); agent CLI app:issues:list / show / search / resolve / trend --format=json; RuntimeErrorsService and app:runtime-errors:extract / probe (rankingCoach-compatible, ES_LOGS_*); app:issues:forward-sentry; admin boilerplate; DevOps examples. Use when logging an exception, nobody sees production errors, configuring where errors go or alerts, shipping logs, errors logged twice, one bug in many groups, finding and fixing errors of an environment or workspace as an agent, querying runtime errors in Elasticsearch, forwarding to Sentry, or building an issues admin screen."
+description: "Log, cluster, ship and track errors with the mgamadeus/ddd issues log: IssuesLogService::logThrowable (log-once), the issues channel sinks (ISSUES_LOG_TARGET file/stderr/none, ECS JSON), capture, redaction, hashes error.group_hash / error.issue_hash; the registry job over Loki, Elasticsearch / OpenSearch or Sentry (per environment / dev workspace, seed mode, explosion guard, regressions, Slack alerts, health check); agent CLI app:issues:list / show / search / resolve / trend --format=json; RuntimeErrorsService and app:runtime-errors:extract / probe (rankingCoach-compatible, ES_LOGS_*); app:issues:forward-sentry; admin boilerplate; DevOps examples. Use when logging an exception, nobody sees production errors, configuring where errors go or alerts, shipping logs, errors logged twice, one bug in many groups, finding and fixing errors of an environment or workspace as an agent, querying runtime errors in Elasticsearch, forwarding to Sentry, or building an issues admin screen."
 metadata:
   author: mgamadeus
-  version: "1.6.0"
+  version: "1.7.0"
   framework: mgamadeus/ddd
 ---
 
@@ -253,11 +253,11 @@ Alloy as a system service with `local.file_match` on the file path and `loki.sou
 One instance per application and environment, never in the web pods. Either a cron every minute or a worker:
 
 ```yaml
-# Kubernetes: a one-replica Deployment running the loop (or a CronJob "* * * * *" running app:issues:sync once)
+# Kubernetes: a one-replica Deployment running the loop (or a CronJob "* * * * *" running app:issues:sync-registry-from-log-backend once)
 containers:
   - name: issues-sync
     image: <app image>
-    command: ["php", "bin/console", "app:issues:sync", "--loop", "--interval=60"]
+    command: ["php", "bin/console", "app:issues:sync-registry-from-log-backend", "--loop", "--interval=60"]
     env:
       - { name: ISSUES_QUERY_BACKEND, value: loki }
       - { name: ISSUES_QUERY_URL, value: "http://loki-gateway.monitoring.svc:80" }
@@ -265,13 +265,13 @@ containers:
       - { name: ISSUES_ALERT_WEBHOOK, valueFrom: { secretKeyRef: { name: issues, key: slack-webhook } } }
       - { name: ISSUES_ALERT_LINK_TEMPLATE, value: "https://admin.example.com/issues/{group_hash}" }
     livenessProbe:
-      exec: { command: ["php", "bin/console", "app:issues:health"] }
+      exec: { command: ["php", "bin/console", "app:issues:check-registry-job-and-collector-health"] }
       periodSeconds: 300
 ```
 
 A second instance is harmless (a database lock skips concurrent runs), but costs queries. The first run starts **seed
 mode** for `ISSUES_SEED_HOURS` (24): the existing errors are registered without 200 alerts. Seed again on demand, e.g.
-after pointing the selector at a new environment: `app:issues:sync --seed=12`.
+after pointing the selector at a new environment: `app:issues:sync-registry-from-log-backend --seed=12`.
 
 ### 7. Backends
 
@@ -302,7 +302,7 @@ the causes are registered silently and one `:rotating_light:` message is sent in
 
 ### 9. Monitoring the pipeline
 
-`app:issues:health` (exit 1 = unhealthy, `--format=json`) checks two things the registry itself cannot alert on:
+`app:issues:check-registry-job-and-collector-health` (exit 1 = unhealthy, `--format=json`) checks two things the registry itself cannot alert on:
 **job stalled** (no successful run within `ISSUES_JOB_STALE_MINUTES`, 10) and **collector silent** (no event of any level
 within `ISSUES_COLLECTOR_SILENT_MINUTES`, 60 — set it above the quietest hour of the application). Wire it into the
 liveness probe of the job (example 6) and into the external uptime monitor; the job's last error is in the output.
@@ -389,8 +389,8 @@ Every command takes `--format=json`: stdout then carries only the JSON, messages
 | `app:issues:search [--environment=…] [--workspace=mgn] [--text=…] [--level=error,warning] [--route=…] [--account=…] [--group=…] [--issue=…] [--since=1h] [--until=…] [--limit=20] [--oldest-first]` | events straight from the backend, any level; every environment merged by time unless `--environment`; `--workspace` filters `service.workspace`, also without an environment for it |
 | `app:issues:resolve <groupHash> [--environment=…]` / `ignore` / `reopen` | status; resolve = only a later event reopens it, ignore = never alerts again |
 | `app:issues:trend [--environment=…] [--group=<hash>] [--since=24h] [--until=…] [--step=auto]` | error events per time bucket (gap-free), one environment or all summed, one group or all |
-| `app:issues:sync [--loop] [--interval=60] [--seed=HOURS]` | the job |
-| `app:issues:health` | the self-monitoring (example 9) |
+| `app:issues:sync-registry-from-log-backend [--loop] [--interval=60] [--seed=HOURS]` | the job (former name `app:issues:sync`, a deprecated alias) |
+| `app:issues:check-registry-job-and-collector-health` | the self-monitoring, example 9 (former name `app:issues:health`, a deprecated alias) |
 | `app:issues:forward-sentry [--loop] [--interval=10] [--file=…] [--state-file=…] [--min-level=error] [--from-start]` | the Sentry forwarder (example 7) |
 
 Times are relative (`30m`, `24h`, `7d`) or absolute dates. JSON shapes:
@@ -656,8 +656,8 @@ For the registry on top: `ISSUES_QUERY_BACKEND=elasticsearch`.
 | Lines cut at 1024 bytes (stderr) | the FPM `log_limit` |
 | Registry stays empty | `ISSUES_QUERY_BACKEND` set for the job process; `app:issues:search --since=24h` finds lines (selector, auth); only error and above or uncaught lines are registered |
 | A sync right after an event counts 0 | expected: discovery and counting stop at now − 1 min (events may still be in the collector's buffer); an event younger than a minute is registered and counted in the next run. `app:issues:search` sees it at once |
-| No alerts | seed mode (first `ISSUES_SEED_HOURS` after the first run); `ISSUES_ALERT_WEBHOOK` set; group IGNORED; explosion guard (`app:issues:sync` prints it) |
-| `app:issues:health` fails | `lastError` in its output; the job not running; the collector not shipping (collector silent) |
+| No alerts | seed mode (first `ISSUES_SEED_HOURS` after the first run); `ISSUES_ALERT_WEBHOOK` set; group IGNORED; explosion guard (`app:issues:sync-registry-from-log-backend` prints it) |
+| `app:issues:check-registry-job-and-collector-health` fails | `lastError` in its output; the job not running; the collector not shipping (collector silent) |
 | Elasticsearch: groups empty, hits not | the fields are mapped as keyword: `ISSUES_ES_KEYWORD_SUFFIX=` (empty); `app:runtime-errors:probe` shows which field names aggregate |
 | Elasticsearch: `multi_terms` unknown | ES < 7.12: COARSE grouping needs 7.12; the registry (composite aggregation) works from ES 7 |
 | Sentry forwarder sends nothing | a file seen for the first time starts at its end (`--from-start` for history); `--min-level`; state file `.issues-sentry-forward.json` next to the logs |

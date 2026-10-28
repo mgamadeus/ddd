@@ -122,11 +122,11 @@ Same service, same phases, same value objects — dialect-dispatched inside `Dat
 - Not yet: the online-safe forms (`CREATE INDEX CONCURRENTLY`, `NOT VALID` + `VALIDATE`, rewrite classification per
   operation) — the guard blocks a direct apply on a large table meanwhile.
 
-### Framework functions on PostgreSQL — `app:db:ensure`
+### Framework functions on PostgreSQL — `app:db:postgres:install-extensions-collation-functions`
 
 The diff compares tables; the framework's PostgreSQL infrastructure — extensions, the `ddd_ci_ai` collation and the
 `ddd_*` functions (`ddd_json_merge_patch`, `ddd_fold`, `ddd_translatable_text`, …) — is not part of it. When a framework
-release changes one of them (its changelog says so), run `php bin/console app:db:ensure` once per database
+release changes one of them (its changelog says so), run `php bin/console app:db:postgres:install-extensions-collation-functions` once per database
 (`--dry-run` prints the statements; idempotent: `IF NOT EXISTS`, `CREATE OR REPLACE`; one transaction). MariaDB needs
 none and the command says so.
 

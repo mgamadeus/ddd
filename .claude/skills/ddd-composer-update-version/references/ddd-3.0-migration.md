@@ -143,8 +143,8 @@ Unchanged:
     transaction stays usable (before: 25P02, AbortedTransactionException at commit). A DO NOTHING upsert (every column
     in the conflict target) returns the existing id — on MariaDB too (`id = LAST_INSERT_ID(id)`; before: 0).
   - `ddd_json_merge_patch` treats non-objects like MariaDB's JSON_MERGE_PATCH (a non-object patch is the result, a
-    non-object target is `{}`); before, a stored `[]` failed every later save. **Run `php bin/console app:db:ensure`**
-    on each PostgreSQL database — the new command (re)creates the `ddd_*` functions.
+    non-object target is `{}`); before, a stored `[]` failed every later save. **Run the new command** (named in 3.7.4)
+    on each PostgreSQL database — it (re)creates the `ddd_*` functions.
   - A save without an id merges onto a UNIQUE key containing a generated column (`virtualCountryId` over
     `IFNULL(countryId, 0)`) instead of a plain INSERT with 23505.
   - Batch upserts: keys equal under `ddd_ci_ai` (Pizza/pizza, Cafe/Café) no longer share one statement (21000).
@@ -153,3 +153,9 @@ Unchanged:
   - Messenger failures are logged as the handler's own error (unwrapped from HandlerFailedException and
     (Un)RecoverableMessageHandlingException) — once, also when the handler already logged it.
   - `#[UpsertConflictKey]` naming a real key a row does not carry no longer throws: the remaining rules decide.
+- 3.7.4 — command names say what they do: `app:db:ensure` (3.7.3) is now
+  `app:db:postgres:install-extensions-collation-functions` (PostgreSQL only, idempotent: extensions and the ddd_ci_ai
+  collation if missing, the ddd_* SQL functions created or replaced; no alias — run it once per PostgreSQL database
+  after 3.7.3). `app:issues:sync` → `app:issues:sync-registry-from-log-backend`, `app:issues:health` →
+  `app:issues:check-registry-job-and-collector-health`; the old two names stay as deprecated aliases (running
+  deployments and probes keep working) — switch the manifests to the new names.

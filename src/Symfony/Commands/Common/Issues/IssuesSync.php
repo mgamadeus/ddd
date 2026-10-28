@@ -18,11 +18,17 @@ use Throwable;
  * long-running worker. One instance at a time (a database lock); a failed run is caught up by the next one.
  */
 #[AsCommand(
-    name: 'app:issues:sync',
-    description: 'Runs the issues registry job: discovers new error groups in the log backend, counts, alerts',
+    name: self::COMMAND_NAME,
+    description: 'Runs the issues registry job: reads the log backend, registers new error groups, counts events, sends alerts',
+    aliases: [self::DEPRECATED_COMMAND_NAME],
 )]
 class IssuesSync extends IssuesCommand
 {
+    public const string COMMAND_NAME = 'app:issues:sync-registry-from-log-backend';
+
+    /** The former name, kept as an alias for running deployments — deprecated */
+    public const string DEPRECATED_COMMAND_NAME = 'app:issues:sync';
+
     public const int DEFAULT_INTERVAL_SECONDS = 60;
 
     protected function configure(): void

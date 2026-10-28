@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Tests\Integration\Query;
 
-use DDD\Symfony\Commands\Base\Database\EnsureDatabaseInfrastructure;
+use DDD\Symfony\Commands\Base\Database\InstallPostgresExtensionsCollationFunctions;
 use DDD\Tests\Integration\IntegrationTestCase;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -41,16 +41,16 @@ class JsonMergePatchTest extends IntegrationTestCase
         self::assertSame($expected, json_decode((string)$merged, true));
     }
 
-    public function testEnsureCommandAppliesTheFunctions(): void
+    public function testTheInstallCommandAppliesTheFunctions(): void
     {
-        $commandTester = new CommandTester(new EnsureDatabaseInfrastructure());
+        $commandTester = new CommandTester(new InstallPostgresExtensionsCollationFunctions());
 
         self::assertSame(Command::SUCCESS, $commandTester->execute([]));
         if (static::currentDriver() === 'pdo_pgsql') {
             self::assertStringContainsString('statements applied', $commandTester->getDisplay());
             self::assertSame('{"de": "Hallo"}', (string)static::connection()->fetchOne("SELECT ddd_json_merge_patch('[]'::json, '{\"de\": \"Hallo\"}'::json)"));
         } else {
-            self::assertStringContainsString('Nothing to do', $commandTester->getDisplay());
+            self::assertStringContainsString('PostgreSQL only', $commandTester->getDisplay());
         }
     }
 }

@@ -14,17 +14,21 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
 
 /**
- * Creates or updates the database infrastructure the framework's SQL relies on — on PostgreSQL the extensions, the
- * `ddd_ci_ai` collation and the `ddd_*` functions (`ddd_json_merge_patch`, `ddd_fold`, …); MariaDB needs none.
- * Idempotent (`IF NOT EXISTS`, `CREATE OR REPLACE`): run it after a framework update whose changelog names a changed
- * function — the schema diff compares tables, not these functions. `--dry-run` prints the statements.
+ * PostgreSQL only: installs what the framework's SQL relies on — creates the extensions (pg_trgm, unaccent, postgis,
+ * vector, vectorscale, pg_stat_statements) and the `ddd_ci_ai` collation if missing, and creates or replaces the
+ * `ddd_*` SQL functions (`ddd_json_merge_patch`, `ddd_fold`, `ddd_unaccent`, `ddd_translatable_text`, `ddd_now`, …).
+ * Idempotent (`IF NOT EXISTS`, `CREATE OR REPLACE`, one transaction): run it after a framework update whose changelog
+ * names a changed function — the schema diff compares tables, not these. `--dry-run` prints the statements. On
+ * MariaDB it does nothing.
  */
 #[AsCommand(
-    name: 'app:db:ensure',
-    description: 'Creates or updates the PostgreSQL infrastructure of the framework (extensions, collation, ddd_* functions); idempotent',
+    name: self::COMMAND_NAME,
+    description: 'PostgreSQL only, idempotent: creates the extensions and the ddd_ci_ai collation if missing, creates or replaces the ddd_* SQL functions',
 )]
-class EnsureDatabaseInfrastructure extends Command
+class InstallPostgresExtensionsCollationFunctions extends Command
 {
+    public const string COMMAND_NAME = 'app:db:postgres:install-extensions-collation-functions';
+
     protected function configure(): void
     {
         $this->addOption('dry-run', null, InputOption::VALUE_NONE, 'Print the statements instead of running them');
@@ -34,7 +38,7 @@ class EnsureDatabaseInfrastructure extends Command
     {
         $sqlDialect = EntityManagerFactory::getDialect();
         if ($sqlDialect->name() !== SqlDialect::POSTGRES) {
-            $output->writeln('Nothing to do: ' . $sqlDialect->name() . ' needs no framework infrastructure.');
+            $output->writeln('Nothing to do: PostgreSQL only (this database is ' . $sqlDialect->name() . ').');
             return Command::SUCCESS;
         }
         $statements = $sqlDialect->ddlRenderer()->ensure()->sortedByPhase();
@@ -55,7 +59,7 @@ class EnsureDatabaseInfrastructure extends Command
             $output->writeln('<error>' . $throwable->getMessage() . '</error>');
             return Command::FAILURE;
         }
-        $output->writeln(sprintf('%d statements applied (extensions, collation, ddd_* functions).', $statements->count()));
+        $output->writeln(sprintf('%d statements applied: extensions and ddd_ci_ai collation (if missing), ddd_* functions (created or replaced).', $statements->count()));
         return Command::SUCCESS;
     }
 }
