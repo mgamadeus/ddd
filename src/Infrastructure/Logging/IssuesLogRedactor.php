@@ -1,0 +1,98 @@
+<?php
+
+declare(strict_types=1);
+
+namespace DDD\Infrastructure\Logging;
+
+/**
+ * Privacy and size of an issues event, applied before any sink sees it:
+ *
+ * - context values under a secret-looking key (password, secret, token, authorization, cookie, API key, …) become
+ *   `[REDACTED]`, also nested (e.g. a messenger `message.payload`);
+ * - free text (the exception message) loses e-mail addresses, bearer/basic credentials and long digit runs;
+ * - the event is capped: the full stack trace is dropped first, then the short trace, then the message is cut.
+ */
+class IssuesLogRedactor
+{
+    public const string REDACTED = '[REDACTED]';
+
+    /** Key fragments (lower case) whose value is never logged */
+    public const array SECRET_KEY_FRAGMENTS = [
+        'password', 'passwd', 'secret', 'token', 'authorization', 'cookie', 'apikey', 'api_key', 'api-key',
+        'credential', 'private_key', 'privatekey', 'session',
+    ];
+
+    /** Context keys cut in this order when the event is too large */
+    public const array CAP_ORDER = ['error.full_stack_trace', 'error.stack_trace', 'error.fingerprint'];
+
+    /**
+     * @param array<string|int, mixed> $context
+     * @return array<string|int, mixed>
+     */
+    public function redactContext(array $context): array
+    {
+        foreach ($context as $key => $value) {
+            if (is_string($key) && $this->isSecretKey($key)) {
+                $context[$key] = self::REDACTED;
+            } elseif (is_array($value)) {
+                $context[$key] = $this->redactContext($value);
+            }
+        }
+        return $context;
+    }
+
+    public function isSecretKey(string $key): bool
+    {
+        $lowerKey = strtolower($key);
+        foreach (self::SECRET_KEY_FRAGMENTS as $fragment) {
+            if (str_contains($lowerKey, $fragment)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** E-mail addresses, bearer/basic credentials and digit runs of 9+ become placeholders */
+    public function sanitizeText(string $text): string
+    {
+        $patterns = [
+            '/\b(Bearer|Basic)\s+[A-Za-z0-9._~+\/=-]+/i' => '$1 [REDACTED]',
+            '/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/' => '[EMAIL]',
+            '/\d{9,}/' => '[NUMBER]',
+        ];
+        return (string)preg_replace(array_keys($patterns), array_values($patterns), $text);
+    }
+
+    /**
+     * Cuts the event below $maxBytes (message + JSON-encoded context): first the traces (CAP_ORDER), then the message.
+     */
+    public function capEvent(IssuesLogEvent $event, int $maxBytes): void
+    {
+        if ($maxBytes <= 0) {
+            return;
+        }
+        foreach (self::CAP_ORDER as $key) {
+            if ($this->getEventBytes($event->message, $event->context) <= $maxBytes) {
+                return;
+            }
+            if (!isset($event->context[$key])) {
+                continue;
+            }
+            $overflow = $this->getEventBytes($event->message, $event->context) - $maxBytes;
+            $value = (string)$event->context[$key];
+            $event->context[$key] = strlen($value) > $overflow + 20
+                ? substr($value, 0, strlen($value) - $overflow - 20) . '…[cut]'
+                : '[cut]';
+        }
+        $overflow = $this->getEventBytes($event->message, $event->context) - $maxBytes;
+        if ($overflow > 0) {
+            $event->message = substr($event->message, 0, max(0, strlen($event->message) - $overflow - 20)) . '…[cut]';
+        }
+    }
+
+    /** @param array<string|int, mixed> $context */
+    protected function getEventBytes(string $message, array $context): int
+    {
+        return strlen($message) + strlen((string)json_encode($context, JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    }
+}

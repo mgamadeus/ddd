@@ -6,6 +6,10 @@ namespace DDD\Infrastructure\Services;
 
 use DDD\Domain\Base\Entities\MessageHandlers\AppMessageHandler;
 use DDD\Infrastructure\Libs\Config;
+use DDD\Infrastructure\Logging\IssuesFingerprintBuilder;
+use DDD\Infrastructure\Logging\IssuesLogEvent;
+use DDD\Infrastructure\Logging\IssuesLogRedactor;
+use DDD\Infrastructure\Logging\IssuesLogSettings;
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use Error;
@@ -17,13 +21,28 @@ use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Routing\RouterInterface;
 use Throwable;
+use WeakMap;
 
 /**
- * Service for asynchronous logging to JSON files that can be picked up by Filebeat
- * and shipped to Elasticsearch without blocking the main application flow.
+ * Logs errors as structured events into the Monolog channel `issues`. Where they go is configuration
+ * ({@see IssuesLogSettings}, {@see \DDD\Infrastructure\Logging\IssuesLogSinkHandler}): unset = the application's own
+ * handlers, `file` = ECS JSON lines a collector (Alloy, Filebeat) ships, `stderr`, `none`. The request only appends a line
+ * — no network, no database on the error path.
+ *
+ * Each throwable is logged once ({@see self::wasLogged()}): a service that logs and rethrows and the capture subscriber
+ * that sees it again produce one event. Every event carries, besides the existing `error.*` / `log.origin.*` fields
+ * (whose meaning is unchanged), the stable hashes `error.group_hash` / `error.issue_hash`
+ * ({@see IssuesFingerprintBuilder}) and an `event.id`; its context is redacted and its size capped
+ * ({@see IssuesLogRedactor}) before any sink sees it.
  */
 class IssuesLogService
 {
+    /** @var WeakMap<Throwable, true>|null The throwables already logged in this process */
+    protected static ?WeakMap $loggedThrowables = null;
+
+    /** @var IssuesLogSettings|null Read from the environment on first use */
+    protected static ?IssuesLogSettings $settings = null;
+
     /** @var LoggerInterface */
     protected LoggerInterface $issuesLogger;
 
@@ -79,6 +98,10 @@ class IssuesLogService
         bool $includeFullStackTrace = false,
         string $section = self::LOG_MESSAGE_SECTION_HTTP,
     ): void {
+        if (static::wasLogged($throwable)) {
+            return;
+        }
+        static::markLogged($throwable);
         $additionalContext['section'] = $section;
         try {
             $context = $this->compileExceptionContext($throwable, $additionalContext, $includeFullStackTrace);
@@ -111,7 +134,12 @@ class IssuesLogService
         $errorFingerprintHash = $this->generateErrorFingerprintHash($errorFingerprint);
         $errorFingerprintShort = $this->generateFingerprintSlug($exception, $errorFingerprintHash);
 
+        $fingerprintBuilder = $this->getFingerprintBuilder();
+        $groupHash = $fingerprintBuilder->buildGroupHash($exception);
         $context = array_merge($additionalContext, [
+            'event.id' => $this->generateEventId(),
+            'error.group_hash' => $groupHash,
+            'error.issue_hash' => $fingerprintBuilder->buildIssueHash($exception, $groupHash, $this->determineEntryPoint($exception)),
             'error.type' => get_class($exception),
             'error.kind' => $exception instanceof Error ? 'Error' : 'Exception',
             'error.handled' => $additionalContext['error.handled'] ?? true,
@@ -347,8 +375,10 @@ class IssuesLogService
     protected function safeLog(string $level, string $message, array $context = []): void
     {
         try {
-            $enrichedContext = $this->enrichContext($context);
-            $this->issuesLogger->log($level, $message, $enrichedContext);
+            $redactor = new IssuesLogRedactor();
+            $event = new IssuesLogEvent($redactor->sanitizeText($message), $redactor->redactContext($this->enrichContext($context)));
+            $redactor->capEvent($event, static::getSettings()->maxEventBytes);
+            $this->issuesLogger->log($level, $event->message, $event->context);
         } catch (Throwable $e) {
             error_log('IssuesLogService failed: ' . $e->getMessage() . ' Original message: ' . $message);
         }
@@ -379,6 +409,50 @@ class IssuesLogService
             $baseContext['route_name'] = $request->attributes->get('_route');
         }
 
+        $settings = static::getSettings();
+        $baseContext['service.name'] = $settings->serviceName ?? (string)(Config::getEnv('APP_NAME') ?? 'symfony');
+        $baseContext['service.environment'] = (string)(Config::getEnv('APP_STAGE') ?? $appEnv ?? 'unknown');
+        if ($settings->release !== null) {
+            $baseContext['service.version'] = $settings->release;
+        }
+        $hostName = getenv('HOSTNAME') ?: gethostname();
+        if ($hostName) {
+            $baseContext['host.hostname'] = $hostName;
+        }
+        if ($request) {
+            $baseContext['http.request.method'] = $request->getMethod();
+            if ($request->headers->has('x-request-id')) {
+                $baseContext['http.request.id'] = $request->headers->get('x-request-id');
+            }
+            if ($request->headers->has('traceparent')) {
+                $baseContext['traceparent'] = $request->headers->get('traceparent');
+            }
+            if ($settings->headerPrefixes !== []) {
+                $baseContext['request_headers'] = [];
+                foreach ($request->headers->all() as $headerName => $headerValue) {
+                    foreach ($settings->headerPrefixes as $headerPrefix) {
+                        if (str_starts_with(strtolower((string)$headerName), $headerPrefix)) {
+                            $baseContext['request_headers'][$headerName] = $headerValue;
+                            break;
+                        }
+                    }
+                }
+            }
+            if ($settings->includeQueryString && $request->getQueryString() !== null) {
+                $baseContext['url.query'] = $request->getQueryString();
+            }
+            if ($settings->includeRequestBody) {
+                $baseContext['http.request.body.content'] = (string)$request->getContent();
+            }
+        }
+        try {
+            $accountId = AuthService::instance()->getAccount()?->id ?? null;
+            if ($accountId !== null) {
+                $baseContext['account.id'] = $accountId;
+            }
+        } catch (Throwable) {
+        }
+
         return array_merge($baseContext, $context);
     }
 
@@ -391,6 +465,48 @@ class IssuesLogService
      * @param string $errorFingerprint The error fingerprint string to hash.
      * @return string The generated hash of the error fingerprint.
      */
+    /** Whether this throwable was logged already in this process (a service logged it before it reached the capture) */
+    public static function wasLogged(Throwable $throwable): bool
+    {
+        return isset(static::$loggedThrowables[$throwable]);
+    }
+
+    public static function markLogged(Throwable $throwable): void
+    {
+        static::$loggedThrowables ??= new WeakMap();
+        static::$loggedThrowables[$throwable] = true;
+    }
+
+    public static function getSettings(): IssuesLogSettings
+    {
+        return static::$settings ??= IssuesLogSettings::fromEnvironment();
+    }
+
+    /** Replaces the settings read from the environment (tests, or after the environment changed) */
+    public static function setSettings(?IssuesLogSettings $settings): void
+    {
+        static::$settings = $settings;
+    }
+
+    protected function getFingerprintBuilder(): IssuesFingerprintBuilder
+    {
+        try {
+            $projectDirectory = DDDService::instance()->getRootDir();
+        } catch (Throwable) {
+            $projectDirectory = '';
+        }
+        return new IssuesFingerprintBuilder($projectDirectory);
+    }
+
+    /** A random UUID (v4) per event, for de-duplication in the backend */
+    protected function generateEventId(): string
+    {
+        $bytes = random_bytes(16);
+        $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40);
+        $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);
+        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
+    }
+
     protected function generateErrorFingerprintHash(string $errorFingerprint): string
     {
         $hashAlgorithms = hash_algos();

@@ -78,3 +78,10 @@ Unchanged:
 - 3.1.3 — PostgreSQL registers the spatial DQL functions too (`ST_GeomFromText`, `ST_AsText`, `ST_X`, `ST_Within`,
   `ST_Area`, … — the same names PostGIS has; `Dialect\Query\SpatialDqlFunctions`). DQL with them failed with
   "Expected known function". Geometry values use SRID 0 on both engines.
+- 3.2.0 — the issues log becomes configurable (skill `ddd-issues-log-specialist`). Nothing set = as before: the
+  `issues` channel reaches the application's own handlers. New: `ISSUES_LOG_TARGET` file/stderr/none (ECS JSON lines,
+  new dependency `elastic/ecs-logging`), the capture subscriber for uncaught HTTP 5xx, console, messenger and PHP
+  fatals (on by default — an app with its own capture subscriber sets `ISSUES_CAPTURE_ENABLED=0`, or every uncaught
+  error is logged twice), log-once, redaction and an 8 KB cap, the additional fields `error.group_hash`,
+  `error.issue_hash`, `event.id` and `service.*` (`error.fingerprint*` unchanged), `app:issues:test`. Symfony's own
+  "Uncaught PHP Exception" record is dropped for an error the issues log has.

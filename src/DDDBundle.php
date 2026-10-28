@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace DDD;
 
 use DDD\Infrastructure\Libs\Config;
+use DDD\Infrastructure\Logging\IssuesDuplicateRequestRecordFilterHandler;
+use DDD\Infrastructure\Logging\IssuesLogSinkHandler;
 use DDD\Infrastructure\Modules\DDDModule;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Symfony\CompilerPasses\ModuleCompilerPass;
@@ -83,6 +85,44 @@ class DDDBundle extends Bundle
         // Symfony finds an env var processor by this tag alone
         $processor->addTag('container.env_var_processor');
         $container->setDefinition(WorkspaceVhostEnvVarProcessor::class, $processor);
+
+        $this->prependIssuesLogMonologConfiguration($container);
+    }
+
+    /**
+     * The issues channel's sink and the filter that keeps Symfony's own record of an already logged uncaught exception
+     * out of the `request` channel — both first in their channel's handler stack (priority 100). Prepended, so an
+     * application's own monolog configuration still applies; with ISSUES_LOG_TARGET unset the sink handles nothing and
+     * the issues records reach the application's handlers as before.
+     */
+    protected function prependIssuesLogMonologConfiguration(ContainerBuilder $container): void
+    {
+        if (!$container->hasExtension('monolog')) {
+            return;
+        }
+        // fallback definitions — the application's own DDD service registration replaces them
+        foreach ([IssuesLogSinkHandler::class, IssuesDuplicateRequestRecordFilterHandler::class] as $handlerClass) {
+            if (!$container->hasDefinition($handlerClass)) {
+                $container->setDefinition($handlerClass, (new Definition($handlerClass))->setAutowired(true));
+            }
+        }
+        $container->prependExtensionConfig('monolog', [
+            'channels' => ['issues'],
+            'handlers' => [
+                'ddd_issues_sink' => [
+                    'type' => 'service',
+                    'id' => IssuesLogSinkHandler::class,
+                    'channels' => ['issues'],
+                    'priority' => 100,
+                ],
+                'ddd_issues_request_duplicate_filter' => [
+                    'type' => 'service',
+                    'id' => IssuesDuplicateRequestRecordFilterHandler::class,
+                    'channels' => ['request'],
+                    'priority' => 100,
+                ],
+            ],
+        ]);
     }
 
     public static function getContainer(): ContainerInterface

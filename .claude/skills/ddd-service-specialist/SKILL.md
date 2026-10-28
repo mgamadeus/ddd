@@ -738,19 +738,8 @@ $params = JWTPayload::getParametersFromJWT($token);  // false if expired
 
 ### Structured Error Logging (IssuesLogService)
 
-For error tracking with fingerprinting and entry-point detection:
-
-```php
-use DDD\Infrastructure\Services\IssuesLogService;
-
-$issuesLogService = DDDService::instance()->getService(IssuesLogService::class);
-$issuesLogService->logThrowable($exception, LogLevel::CRITICAL, [
-    'entityId' => $entity->id,
-    'operation' => 'recalculate',
-]);
-```
-
-Features: error fingerprinting for deduplication, auto-detects entry point (HTTP/CLI/Messenger), filtered stack traces showing only application code.
+`IssuesLogService::logThrowable($exception, LogLevel::ERROR, ['orderId' => $order->id])` — log or rethrow, sinks,
+capture, grouping and shipping: see `ddd-issues-log-specialist`.
 
 ---
 
