@@ -113,6 +113,38 @@ class LokiIssuesQueryBackend implements IssuesQueryBackend
         return $issueEvents;
     }
 
+    /**
+     * `sum(count_over_time(<selector> | json | <error filter> [<step>s]))` over `query_range`. Loki's point at t counts
+     * (t − step, t]: the points are evaluated at bucket start + step and booked to their bucket start.
+     */
+    public function trend(DateTime $from, DateTime $to, int $stepSeconds, ?string $groupHash = null): IssueTrend
+    {
+        $groupFilter = $groupHash !== null && $groupHash !== '' ? ' | error_group_hash=' . $this->quote($groupHash) : '';
+        $query = sprintf(
+            'sum(count_over_time(%s | json | error_group_hash!=""%s %s [%ds]))',
+            $this->getSelector(),
+            $groupFilter,
+            self::ERROR_FILTER,
+            $stepSeconds
+        );
+        $firstBucketStart = IssueTrend::alignToStep($from->getTimestamp(), $stepSeconds);
+        $lastBucketStart = IssueTrend::alignToStep($to->getTimestamp(), $stepSeconds);
+        $response = $this->request('/loki/api/v1/query_range', [
+            'query' => $query,
+            'start' => (string)($firstBucketStart + $stepSeconds),
+            'end' => (string)($lastBucketStart + $stepSeconds),
+            'step' => $stepSeconds . 's',
+        ]);
+        $countsByTimestamp = [];
+        foreach ($response['data']['result'] ?? [] as $series) {
+            foreach ($series['values'] ?? [] as [$pointTimestamp, $value]) {
+                $bucketStart = (int)round((float)$pointTimestamp) - $stepSeconds;
+                $countsByTimestamp[$bucketStart] = ($countsByTimestamp[$bucketStart] ?? 0) + (int)round((float)$value);
+            }
+        }
+        return IssueTrend::fromCounts($from, $to, $stepSeconds, $countsByTimestamp);
+    }
+
     public function probe(): IssuesBackendProbe
     {
         try {

@@ -10,6 +10,7 @@ use DDD\Infrastructure\Logging\Query\IssueEvents;
 use DDD\Infrastructure\Logging\Query\IssueEventSearch;
 use DDD\Infrastructure\Logging\Query\IssueHashCount;
 use DDD\Infrastructure\Logging\Query\IssueHashCounts;
+use DDD\Infrastructure\Logging\Query\IssueTrend;
 use DDD\Infrastructure\Logging\Query\IssuesBackendProbe;
 use DDD\Infrastructure\Logging\Query\IssuesQueryBackend;
 
@@ -98,6 +99,20 @@ class FakeIssuesQueryBackend implements IssuesQueryBackend
             $issueEvents->add($issueEvent);
         }
         return $issueEvents;
+    }
+
+    public function trend(DateTime $from, DateTime $to, int $stepSeconds, ?string $groupHash = null): IssueTrend
+    {
+        $countsByTimestamp = [];
+        foreach ($this->storedEvents as [$issueEvent, $occurrences]) {
+            if (!in_array($issueEvent->level, self::ERROR_LEVELS, true) || !$this->isInWindow($issueEvent, $from, $to)
+                || ($groupHash !== null && $issueEvent->groupHash !== $groupHash)) {
+                continue;
+            }
+            $timestamp = $issueEvent->timestamp->getTimestamp();
+            $countsByTimestamp[$timestamp] = ($countsByTimestamp[$timestamp] ?? 0) + $occurrences;
+        }
+        return IssueTrend::fromCounts($from, $to, $stepSeconds, $countsByTimestamp);
     }
 
     public function probe(): IssuesBackendProbe

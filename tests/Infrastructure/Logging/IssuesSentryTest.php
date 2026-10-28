@@ -248,4 +248,35 @@ class IssuesSentryTest extends TestCase
         self::assertStringContainsString('"boom"', $searchQuery);
         self::assertStringContainsString('per_page=5', $searchQuery);
     }
+
+    public function testSentryTrendFromEventsStats(): void
+    {
+        $issuesRegistrySettings = new IssuesRegistrySettings(
+            queryBackend: IssuesRegistrySettings::BACKEND_SENTRY,
+            queryToken: 'tok',
+            querySelector: 'acme/backend',
+        );
+        $sentryIssuesQueryBackend = new SentryIssuesQueryBackend($issuesRegistrySettings, $this->createMockClient(
+            new Response(200, [], (string)json_encode(['data' => [
+                [1761642000, [['count' => 3]]],
+                [1761645600, [['count' => 0]]],
+                [1761649200, [['count' => 5]]],
+            ]])),
+        ));
+
+        $issueTrend = $sentryIssuesQueryBackend->trend(
+            DateTime::fromTimestamp(1761642000),
+            DateTime::fromTimestamp(1761649200 + 1800),
+            3600,
+            'g1'
+        );
+
+        self::assertSame([1761642000 => 3, 1761645600 => 0, 1761649200 => 5], $issueTrend->getCountsByBucketStart());
+        $request = $this->requestHistory[0]['request'];
+        self::assertSame('/api/0/organizations/acme/events-stats/', $request->getUri()->getPath());
+        $query = urldecode($request->getUri()->getQuery());
+        self::assertStringContainsString('interval=1h', $query);
+        self::assertStringContainsString('yAxis=count()', $query);
+        self::assertStringContainsString('group_hash:"g1"', $query);
+    }
 }

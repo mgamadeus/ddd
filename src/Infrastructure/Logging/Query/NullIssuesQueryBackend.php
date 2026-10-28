@@ -27,6 +27,11 @@ class NullIssuesQueryBackend implements IssuesQueryBackend
         return new IssueEvents();
     }
 
+    public function trend(DateTime $from, DateTime $to, int $stepSeconds, ?string $groupHash = null): IssueTrend
+    {
+        return IssueTrend::fromCounts($from, $to, $stepSeconds, []);
+    }
+
     public function probe(): IssuesBackendProbe
     {
         return new IssuesBackendProbe($this->getName(), false, 'ISSUES_QUERY_BACKEND is not set');

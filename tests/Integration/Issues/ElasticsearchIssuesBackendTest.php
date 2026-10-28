@@ -167,6 +167,17 @@ class ElasticsearchIssuesBackendTest extends IssuesRegistryTestCase
         self::assertSame(2, $accountEvents->count());
         self::assertGreaterThanOrEqual(1, $groupEvents->count());
         self::assertTrue($elasticsearchIssuesQueryBackend->probe()->reachable);
+
+        $trend = $elasticsearchIssuesQueryBackend->trend($from, $to, 60);
+        self::assertSame(3, $trend->getTotal());
+        self::assertContains($trend->count(), [20, 21]);
+        $issueHashCounts = $elasticsearchIssuesQueryBackend->aggregateErrors($from, $to);
+        foreach ($issueHashCounts->getGroupHashes() as $groupHash) {
+            self::assertSame(
+                $issueHashCounts->getCountForGroupHash($groupHash),
+                $elasticsearchIssuesQueryBackend->trend($from, $to, 600, $groupHash)->getTotal()
+            );
+        }
     }
 
     public function testWorkspaceFilter(): void

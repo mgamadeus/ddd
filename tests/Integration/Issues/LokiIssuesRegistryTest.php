@@ -218,6 +218,14 @@ class LokiIssuesRegistryTest extends IssuesRegistryTestCase
         ))->count();
         self::assertSame(3, $workspaceSearch('mgn'));
         self::assertSame(0, $workspaceSearch('ame'));
+
+        $trendFrom = DateTime::fromTimestamp(time() - 600);
+        $trendTo = DateTime::fromTimestamp(time() + 60);
+        $trend = $lokiIssuesQueryBackend->trend($trendFrom, $trendTo, 60);
+        self::assertSame(3, $trend->getTotal());
+        self::assertSame(12, $trend->count());
+        $groupHash = $searchedEvents->first()->groupHash;
+        self::assertSame(2, $lokiIssuesQueryBackend->trend($trendFrom, $trendTo, 60, $groupHash)->getTotal());
         self::assertStringEndsWith('failed for id 43', (string)$searchedEvents->first()->message);
     }
 }

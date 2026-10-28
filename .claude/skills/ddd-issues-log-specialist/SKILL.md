@@ -1,9 +1,9 @@
 ---
 name: ddd-issues-log-specialist
-description: "Log, cluster, ship and track errors with the mgamadeus/ddd issues log: IssuesLogService::logThrowable (log-once), the issues channel sinks (ISSUES_LOG_TARGET file/stderr/none, ECS JSON), capture, redaction, hashes error.group_hash / error.issue_hash; the registry (app:issues:sync over Loki, Elasticsearch / OpenSearch or Sentry, per environment / dev workspace, seed mode, explosion guard, regressions, Slack alerts, app:issues:health); agent CLI app:issues:list / show / search / resolve --format=json; RuntimeErrorsService and app:runtime-errors:extract / probe (rankingCoach-compatible, ES_LOGS_*); app:issues:forward-sentry; admin boilerplate; DevOps examples. Use when logging an exception, nobody sees production errors, configuring where errors go or alerts, shipping logs, errors logged twice, one bug in many groups, finding and fixing errors of an environment or workspace as an agent, querying runtime errors in Elasticsearch, forwarding to Sentry, or building an issues admin screen."
+description: "Log, cluster, ship and track errors with the mgamadeus/ddd issues log: IssuesLogService::logThrowable (log-once), the issues channel sinks (ISSUES_LOG_TARGET file/stderr/none, ECS JSON), capture, redaction, hashes error.group_hash / error.issue_hash; the registry (app:issues:sync over Loki, Elasticsearch / OpenSearch or Sentry, per environment / dev workspace, seed mode, explosion guard, regressions, Slack alerts, app:issues:health); agent CLI app:issues:list / show / search / resolve / trend --format=json; RuntimeErrorsService and app:runtime-errors:extract / probe (rankingCoach-compatible, ES_LOGS_*); app:issues:forward-sentry; admin boilerplate; DevOps examples. Use when logging an exception, nobody sees production errors, configuring where errors go or alerts, shipping logs, errors logged twice, one bug in many groups, finding and fixing errors of an environment or workspace as an agent, querying runtime errors in Elasticsearch, forwarding to Sentry, or building an issues admin screen."
 metadata:
   author: mgamadeus
-  version: "1.3.0"
+  version: "1.4.0"
   framework: mgamadeus/ddd
 ---
 
@@ -368,6 +368,7 @@ Every command takes `--format=json`: stdout then carries only the JSON, messages
 | `app:issues:show <groupHash> [--environment=…] [--events=3] [--since=7d]` | one group, its issues, the newest events (from its environment's selector) with full context |
 | `app:issues:search [--environment=…] [--workspace=mgn] [--text=…] [--level=error,warning] [--route=…] [--account=…] [--group=…] [--issue=…] [--since=1h] [--until=…] [--limit=20] [--oldest-first]` | events straight from the backend, any level; every environment merged by time unless `--environment`; `--workspace` filters `service.workspace`, also without an environment for it |
 | `app:issues:resolve <groupHash> [--environment=…]` / `ignore` / `reopen` | status; resolve = only a later event reopens it, ignore = never alerts again |
+| `app:issues:trend [--environment=…] [--group=<hash>] [--since=24h] [--until=…] [--step=auto]` | error events per time bucket (gap-free), one environment or all summed, one group or all |
 | `app:issues:sync [--loop] [--interval=60] [--seed=HOURS]` | the job |
 | `app:issues:health` | the self-monitoring (example 9) |
 | `app:issues:forward-sentry [--loop] [--interval=10] [--file=…] [--state-file=…] [--min-level=error] [--from-start]` | the Sentry forwarder (example 7) |
@@ -388,6 +389,9 @@ otherwise, naming the environments).
 - An `<event>` is the raw ECS line as an object with `issues.environment` (the environment it was found in) and
   `issues.workspace` (its `service.workspace`) in front.
 - `resolve` / `ignore` / `reopen` → `{"groupHash", "environment", "workspace", "status"}`.
+- `trend` → `{"environment": null|"…", "groupHash": null|"…", "from", "to", "stepSeconds", "total", "buckets":
+  [{"start": "2026-10-28T10:00:00Z", "count": n}]}` — `--step=auto` is 1m up to 1 h, 10m up to 6 h, 1h up to 24 h,
+  then 6h; a step too fine is coarsened to at most 2 000 buckets.
 - `health` → `{backendConfigured, lastSuccessfulRunAt, newestEventSeenAt, lastError, jobStalled, collectorSilent,
   environments: {"elements": [{…the same per environment, environment}]}, healthy}` — unhealthy when one environment is.
 
@@ -431,6 +435,30 @@ class AdminIssuesController extends AdminController
         ));
         // the environment switch and the status tabs: counts per environment and status
         $responseDto->statusCounts = $issueGroupsService->countGroupsByEnvironmentAndStatus();
+        return $responseDto;
+    }
+
+    /** The chart above the list: errors over time, the environment switch's environment or all */
+    #[Get('/trend')]
+    #[Summary('Issues Trend')]
+    public function trend(IssuesTrendGetRequestDto &$requestDto, IssuesTrendService $issuesTrendService): IssuesTrendGetResponseDto
+    {
+        $to = DateTime::fromTimestamp(time());
+        $from = DateTime::fromTimestamp(time() - ($requestDto->hours ?? 24) * 3600);
+        $responseDto = new IssuesTrendGetResponseDto();
+        $responseDto->trend = $issuesTrendService->getTrend($requestDto->environment, null, $from, $to);
+        return $responseDto;
+    }
+
+    /** The chart in a group's drawer */
+    #[Get('/groups/{groupHash}/trend')]
+    #[Summary('Issue Group Trend')]
+    public function groupTrend(IssueGroupTrendGetRequestDto &$requestDto, IssuesTrendService $issuesTrendService): IssuesTrendGetResponseDto
+    {
+        $to = DateTime::fromTimestamp(time());
+        $from = DateTime::fromTimestamp(time() - ($requestDto->hours ?? 24 * 7) * 3600);
+        $responseDto = new IssuesTrendGetResponseDto();
+        $responseDto->trend = $issuesTrendService->getTrend($requestDto->environment, $requestDto->groupHash, $from, $to);
         return $responseDto;
     }
 
@@ -495,6 +523,30 @@ class IssueGroupGetRequestDto extends RequestDto
     public string $environment;
 }
 
+class IssuesTrendGetRequestDto extends RequestDto
+{
+    /** @var string|null The environment switch; null = all environments summed */
+    #[Parameter(in: Parameter::QUERY)]
+    public ?string $environment = null;
+
+    /** @var int|null Window in hours (default 24); the step follows (1m … 6h) */
+    #[Parameter(in: Parameter::QUERY)]
+    public ?int $hours = null;
+}
+
+class IssueGroupTrendGetRequestDto extends IssuesTrendGetRequestDto
+{
+    #[Parameter(in: Parameter::PATH, required: true)]
+    public string $groupHash;
+}
+
+class IssuesTrendGetResponseDto extends RestResponseDto
+{
+    /** @var IssueTrend Gap-free buckets {start, count} and stepSeconds */
+    #[Parameter(in: Parameter::RESPONSE, required: true)]
+    public IssueTrend $trend;
+}
+
 class IssueGroupsGetResponseDto extends RestResponseDto
 {
     #[Parameter(in: Parameter::RESPONSE, required: true)]
@@ -515,7 +567,8 @@ class IssueGroupGetResponseDto extends RestResponseDto
 The repositories already return nothing to non-admins; the admin base restricts the route as well. The
 list screen: an environment switch (`statusCounts->getEnvironments()`, "all" = no filter), status filter tabs (Open /
 Resolved / Ignored, badges from `statusCounts->getCount($environment, $status)`), an environment column when "all" is
-selected, columns type · message · events · last seen · release, flags
+selected, a trend chart above the list (`/trend`, the selected environment) and one in the drawer
+(`/groups/{hash}/trend`) — `IssuesTrendService` caches each for 60 s, columns type · message · events · last seen · release, flags
 "new" and "regression", row → detail with entry points, issues and a link into the log backend
 (`{service="…"} | json | error_group_hash="<hash>"`); the same URL is the `ISSUES_ALERT_LINK_TEMPLATE`.
 

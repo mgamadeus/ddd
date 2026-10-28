@@ -22,5 +22,11 @@ interface IssuesQueryBackend
 
     public function searchEvents(IssueEventSearch $issueEventSearch): IssueEvents;
 
+    /**
+     * Error events (the same filter as {@see self::aggregateErrors()}) per bucket of `$stepSeconds`, gap-free
+     * ({@see IssueTrend::fromCounts()}); with a group hash only that group's.
+     */
+    public function trend(DateTime $from, DateTime $to, int $stepSeconds, ?string $groupHash = null): IssueTrend;
+
     public function probe(): IssuesBackendProbe;
 }

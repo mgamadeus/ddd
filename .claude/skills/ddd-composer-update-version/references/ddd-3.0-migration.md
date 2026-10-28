@@ -118,3 +118,7 @@ Unchanged:
   parameter"), and on PostgreSQL it returns that dialect's DDL (`ensure()` plus each table's, foreign keys last)
   instead of MariaDB SQL. The PostgreSQL SQL creates (plain `CREATE TABLE`); updating an existing schema is the schema
   diff's job. `getAllEntityClasses()` no longer lists a class twice when one directory is scanned twice.
+- 3.6.0 — issues trends (skill `ddd-issues-log-specialist`): `IssuesQueryBackend::trend($from, $to, $stepSeconds,
+  ?$groupHash): IssueTrend` (Loki `query_range`, Elasticsearch / OpenSearch `date_histogram`, Sentry `events-stats`;
+  error events only, gap-free buckets), `IssuesTrendService::getTrend($environment|null, $groupHash|null, …)` with a
+  60-second cache, `app:issues:trend`. An application's own `IssuesQueryBackend` implementation adds `trend()`.

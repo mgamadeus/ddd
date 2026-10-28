@@ -8,6 +8,7 @@ use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Logging\Query\IssueEvents;
 use DDD\Infrastructure\Logging\Query\IssueEventSearch;
 use DDD\Infrastructure\Logging\Query\IssueHashCounts;
+use DDD\Infrastructure\Logging\Query\IssueTrend;
 use DDD\Infrastructure\Logging\Query\IssuesBackendProbe;
 use DDD\Infrastructure\Logging\Query\IssuesQueryBackend;
 use RuntimeException;
@@ -26,6 +27,11 @@ class FailingIssuesQueryBackend implements IssuesQueryBackend
     }
 
     public function searchEvents(IssueEventSearch $issueEventSearch): IssueEvents
+    {
+        throw new RuntimeException('backend down');
+    }
+
+    public function trend(DateTime $from, DateTime $to, int $stepSeconds, ?string $groupHash = null): IssueTrend
     {
         throw new RuntimeException('backend down');
     }

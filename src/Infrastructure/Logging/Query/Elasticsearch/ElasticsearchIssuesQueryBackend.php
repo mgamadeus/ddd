@@ -12,6 +12,7 @@ use DDD\Infrastructure\Logging\Query\IssueEvents;
 use DDD\Infrastructure\Logging\Query\IssueEventSearch;
 use DDD\Infrastructure\Logging\Query\IssueHashCount;
 use DDD\Infrastructure\Logging\Query\IssueHashCounts;
+use DDD\Infrastructure\Logging\Query\IssueTrend;
 use DDD\Infrastructure\Logging\Query\IssuesBackendProbe;
 use DDD\Infrastructure\Logging\Query\IssuesQueryBackend;
 use GuzzleHttp\Client;
@@ -232,6 +233,42 @@ class ElasticsearchIssuesQueryBackend implements IssuesQueryBackend
             }
         }
         return $issueEvents;
+    }
+
+    /**
+     * A `date_histogram` on `@timestamp` with `fixed_interval` = the step, `min_doc_count: 0` and `extended_bounds`
+     * over the window (the shape of the runtime-error trend body, with the registry's error filter).
+     */
+    public function trend(DateTime $from, DateTime $to, int $stepSeconds, ?string $groupHash = null): IssueTrend
+    {
+        $filterClauses = [$this->buildTimeRangeClause($from, $to), $this->buildErrorClause()];
+        if ($groupHash !== null && $groupHash !== '') {
+            $filterClauses[] = ['term' => [$this->getFieldNames()->keyword('error.group_hash') => $groupHash]];
+        }
+        $response = $this->search($this->getDefaultLogIndexPattern(), [
+            'size' => 0,
+            'track_total_hits' => false,
+            'query' => ['bool' => ['filter' => $filterClauses]],
+            'aggs' => [
+                'trend' => [
+                    'date_histogram' => [
+                        'field' => '@timestamp',
+                        'fixed_interval' => $stepSeconds . 's',
+                        'min_doc_count' => 0,
+                        'extended_bounds' => [
+                            'min' => IssueTrend::alignToStep($from->getTimestamp(), $stepSeconds) * 1000,
+                            'max' => IssueTrend::alignToStep($to->getTimestamp(), $stepSeconds) * 1000,
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+        $countsByTimestamp = [];
+        foreach ($response['aggregations']['trend']['buckets'] ?? [] as $bucket) {
+            $bucketStart = intdiv((int)($bucket['key'] ?? 0), 1000);
+            $countsByTimestamp[$bucketStart] = ($countsByTimestamp[$bucketStart] ?? 0) + (int)($bucket['doc_count'] ?? 0);
+        }
+        return IssueTrend::fromCounts($from, $to, $stepSeconds, $countsByTimestamp);
     }
 
     public function probe(): IssuesBackendProbe

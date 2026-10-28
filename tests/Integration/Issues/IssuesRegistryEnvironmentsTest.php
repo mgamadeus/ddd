@@ -10,6 +10,7 @@ use DDD\Domain\Common\Entities\Issues\IssuesJobState;
 use DDD\Domain\Common\Services\IssueGroupsService;
 use DDD\Domain\Common\Services\IssuesJobStatesService;
 use DDD\Domain\Common\Services\IssuesRegistryJobService;
+use DDD\Domain\Common\Services\IssuesTrendService;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Logging\IssuesQueryEnvironments;
 use DDD\Infrastructure\Logging\IssuesRegistrySettings;
@@ -19,6 +20,7 @@ use DDD\Symfony\Commands\Common\Issues\IssuesList;
 use DDD\Symfony\Commands\Common\Issues\IssuesResolve;
 use DDD\Symfony\Commands\Common\Issues\IssuesSearch;
 use DDD\Symfony\Commands\Common\Issues\IssuesShow;
+use DDD\Symfony\Commands\Common\Issues\IssuesTrend;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
 
@@ -261,5 +263,39 @@ class IssuesRegistryEnvironmentsTest extends IssuesRegistryTestCase
         $this->withoutRights(function (): void {
             self::assertSame('mgn', $this->getIssueGroupsService()->findByGroupHash('group-a', 'mgn')->workspace);
         });
+    }
+
+    public function testTrendPerEnvironmentSummedAndPerGroup(): void
+    {
+        $this->createJobService();
+        $hourStart = intdiv($this->now, 3600) * 3600 - 3600;
+        $this->fakeIssuesQueryBackends['prod']->addEvent($hourStart + 60, 'group-a', occurrences: 4);
+        $this->fakeIssuesQueryBackends['prod']->addEvent($hourStart + 700, 'group-b', occurrences: 1);
+        $this->fakeIssuesQueryBackends['prod']->addEvent($hourStart + 720, 'group-a', level: 'warning');
+        $this->fakeIssuesQueryBackends['testing']->addEvent($hourStart + 90, 'group-a', occurrences: 2);
+        /** @var IssuesTrendService $issuesTrendService */
+        $issuesTrendService = DDDService::instance()->getService(IssuesTrendService::class);
+        $issuesTrendService->setCacheEnabled(false);
+        $from = DateTime::fromTimestamp($hourStart);
+        $to = DateTime::fromTimestamp($hourStart + 1199);
+
+        $prodTrend = $issuesTrendService->getTrend('prod', null, $from, $to, 600);
+        $allTrend = $issuesTrendService->getTrend(null, null, $from, $to, 600);
+        $groupTrend = $issuesTrendService->getTrend('prod', 'group-a', $from, $to, 600);
+
+        self::assertSame([$hourStart => 4, $hourStart + 600 => 1], $prodTrend->getCountsByBucketStart());
+        self::assertSame([$hourStart => 6, $hourStart + 600 => 1], $allTrend->getCountsByBucketStart());
+        self::assertSame([$hourStart => 4, $hourStart + 600 => 0], $groupTrend->getCountsByBucketStart());
+        self::assertSame('group-a', $groupTrend->groupHash);
+
+        $trendCommandTester = new CommandTester(new IssuesTrend());
+        self::assertSame(Command::SUCCESS, $trendCommandTester->execute(['--environment' => 'prod', '--since' => '2h', '--step' => '1h', '--format' => 'json']));
+        $payload = json_decode($trendCommandTester->getDisplay(), true);
+        self::assertSame(['environment', 'groupHash', 'from', 'to', 'stepSeconds', 'total', 'buckets'], array_keys($payload));
+        self::assertSame(3600, $payload['stepSeconds']);
+        self::assertSame(5, $payload['total']);
+        self::assertSame(['start', 'count'], array_keys($payload['buckets'][0]));
+        self::assertSame(Command::INVALID, (new CommandTester(new IssuesTrend()))->execute(['--step' => 'often']));
+        $issuesTrendService->setCacheEnabled(true);
     }
 }

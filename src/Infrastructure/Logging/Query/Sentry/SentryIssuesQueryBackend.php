@@ -12,6 +12,7 @@ use DDD\Infrastructure\Logging\Query\IssueEvents;
 use DDD\Infrastructure\Logging\Query\IssueEventSearch;
 use DDD\Infrastructure\Logging\Query\IssueHashCount;
 use DDD\Infrastructure\Logging\Query\IssueHashCounts;
+use DDD\Infrastructure\Logging\Query\IssueTrend;
 use DDD\Infrastructure\Logging\Query\IssuesBackendProbe;
 use DDD\Infrastructure\Logging\Query\IssuesQueryBackend;
 use GuzzleHttp\Client;
@@ -127,6 +128,47 @@ class SentryIssuesQueryBackend implements IssuesQueryBackend
         return $issueEvents;
     }
 
+    /**
+     * Sentry's `events-stats` (`yAxis=count()`) with the step as interval (`<n>m` / `<n>h` / `<n>d`; Sentry rounds
+     * unsupported intervals itself).
+     */
+    public function trend(DateTime $from, DateTime $to, int $stepSeconds, ?string $groupHash = null): IssueTrend
+    {
+        $query = $this->buildProjectQuery() . ' has:group_hash ' . self::ERROR_QUERY;
+        if ($groupHash !== null && $groupHash !== '') {
+            $query .= ' group_hash:' . $this->quote($groupHash);
+        }
+        $response = $this->requestOrganizationApi('events-stats', [
+            'yAxis' => 'count()',
+            'query' => trim($query),
+            'start' => $this->formatTime(DateTime::fromTimestamp(IssueTrend::alignToStep($from->getTimestamp(), $stepSeconds))),
+            'end' => $this->formatTime($to),
+            'interval' => $this->formatInterval($stepSeconds),
+        ]);
+        $decoded = json_decode((string)$response->getBody(), true);
+        $countsByTimestamp = [];
+        foreach ((is_array($decoded['data'] ?? null) ? $decoded['data'] : []) as $point) {
+            if (!is_array($point) || !isset($point[0])) {
+                continue;
+            }
+            $count = 0;
+            foreach ((array)($point[1] ?? []) as $series) {
+                $count += (int)($series['count'] ?? 0);
+            }
+            $countsByTimestamp[(int)$point[0]] = ($countsByTimestamp[(int)$point[0]] ?? 0) + $count;
+        }
+        return IssueTrend::fromCounts($from, $to, $stepSeconds, $countsByTimestamp);
+    }
+
+    protected function formatInterval(int $stepSeconds): string
+    {
+        return match (true) {
+            $stepSeconds % 86400 === 0 => intdiv($stepSeconds, 86400) . 'd',
+            $stepSeconds % 3600 === 0 => intdiv($stepSeconds, 3600) . 'h',
+            default => max(1, intdiv($stepSeconds, 60)) . 'm',
+        };
+    }
+
     public function probe(): IssuesBackendProbe
     {
         try {
@@ -216,6 +258,15 @@ class SentryIssuesQueryBackend implements IssuesQueryBackend
      */
     protected function requestEvents(array $queryParameters): ResponseInterface
     {
+        return $this->requestOrganizationApi('events', $queryParameters);
+    }
+
+    /**
+     * @param array<string, string|int|string[]|null> $queryParameters Query string of the organization API
+     * @throws InternalErrorException Sentry answered with an error or was not reachable
+     */
+    protected function requestOrganizationApi(string $endpoint, array $queryParameters): ResponseInterface
+    {
         $queryString = [];
         foreach ($queryParameters as $name => $value) {
             foreach ((array)$value as $singleValue) {
@@ -225,7 +276,7 @@ class SentryIssuesQueryBackend implements IssuesQueryBackend
             }
         }
         $baseUrl = rtrim($this->settings->queryUrl !== '' ? $this->settings->queryUrl : self::DEFAULT_URL, '/');
-        $url = sprintf('%s/api/0/organizations/%s/events/?%s', $baseUrl, rawurlencode($this->getOrganizationSlug()), implode('&', $queryString));
+        $url = sprintf('%s/api/0/organizations/%s/%s/?%s', $baseUrl, rawurlencode($this->getOrganizationSlug()), $endpoint, implode('&', $queryString));
         try {
             $response = $this->getHttpClient()->request('GET', $url, [
                 'headers' => ['Authorization' => 'Bearer ' . (string)$this->settings->queryToken, 'Accept' => 'application/json'],
