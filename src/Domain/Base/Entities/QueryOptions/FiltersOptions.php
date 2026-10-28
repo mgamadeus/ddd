@@ -1228,7 +1228,9 @@ MD;
             $operator = self::OPERATORS_TO_DOCTRINE_ALLOCATION[$this->operator];
             /** @var Expr $expression */
             if (is_string($this->value) && strpos($this->value, '*') !== false) {
-                $value = str_replace('*', '%', $this->value);
+                // `*` is the only wildcard: LIKE's own `%`, `_` and its escape `\` in the value are literal (a trailing `\`
+                // raised 22025 "LIKE pattern must not end with escape character" on PostgreSQL)
+                $value = str_replace('*', '%', str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $this->value));
                 if ($this->operator == self::OPERATOR_EQUAL) {
                     $operator = 'like';
                 } elseif ($this->operator == self::OPERATOR_NOT_EQUAL) {

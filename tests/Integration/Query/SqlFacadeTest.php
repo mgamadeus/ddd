@@ -328,4 +328,61 @@ class SqlFacadeTest extends IntegrationTestCase
         );
         $this->assertSame(10, $storedCounter);
     }
+
+    public function testInsertOrNullCollisionInsideATransactionLeavesItUsable(): void
+    {
+        static::connection()->executeStatement('DELETE FROM ' . static::dialect()->quote('CounterRows'));
+        $dialect = static::dialect();
+        $spec = static fn(int $amount): UpsertSpec => new UpsertSpec(
+            table: 'CounterRows',
+            columns: ColumnWrites::fromColumnWrites(
+                new ColumnWrite('businessKey', 'slot', 'string'),
+                new ColumnWrite('amount', $amount, 'integer'),
+                new ColumnWrite('isActive', true, 'boolean'),
+                new ColumnWrite('displayOrder', 0, 'integer'),
+            ),
+            conflictTargetColumns: ['businessKey'],
+        );
+        $dialect->insertOrNull(static::connection(), $spec(1));
+
+        static::connection()->beginTransaction();
+        try {
+            // the race is lost: null, and the transaction goes on (PostgreSQL: no 25P02 on the next statement)
+            $this->assertNull($dialect->insertOrNull(static::connection(), $spec(2)));
+            $rowCount = (int)static::connection()->fetchOne('SELECT COUNT(*) FROM ' . $dialect->quote('CounterRows'));
+            static::connection()->commit();
+        } finally {
+            while (static::connection()->isTransactionActive()) {
+                static::connection()->rollBack();
+            }
+        }
+        $this->assertSame(1, $rowCount);
+    }
+
+    public function testUpsertWhoseColumnsAreAllTheConflictTargetReturnsTheExistingId(): void
+    {
+        static::connection()->executeStatement('DELETE FROM ' . static::dialect()->quote('CounterRows'));
+        $dialect = static::dialect();
+        $insertSpec = new UpsertSpec(
+            table: 'CounterRows',
+            columns: ColumnWrites::fromColumnWrites(
+                new ColumnWrite('businessKey', 'only-key', 'string'),
+                new ColumnWrite('amount', 3, 'integer'),
+                new ColumnWrite('isActive', true, 'boolean'),
+                new ColumnWrite('displayOrder', 0, 'integer'),
+            ),
+            conflictTargetColumns: ['businessKey'],
+        );
+        $insertResult = $dialect->upsert(static::connection(), $insertSpec);
+        $keyOnlySpec = new UpsertSpec(
+            table: 'CounterRows',
+            columns: ColumnWrites::fromColumnWrites(new ColumnWrite('businessKey', 'only-key', 'string')),
+            conflictTargetColumns: ['businessKey'],
+        );
+
+        $keyOnlyResult = $dialect->upsert(static::connection(), $keyOnlySpec);
+
+        $this->assertFalse($keyOnlyResult->inserted);
+        $this->assertSame((int)$insertResult->id, (int)$keyOnlyResult->id);
+    }
 }

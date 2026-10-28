@@ -19,6 +19,7 @@ require __DIR__ . '/bootstrap.php';
 $classes = [
     \DDD\Tests\Integration\Fixtures\Entities\ConflictRows\AmbiguousConflictRow::class,
     \DDD\Tests\Integration\Fixtures\Entities\ConflictRows\ConflictAttributeRow::class,
+    \DDD\Tests\Integration\Fixtures\Entities\ConflictRows\VirtualKeyRow::class,
 ];
 
 foreach ($classes as $fixtureEntityClass) {

@@ -69,8 +69,10 @@ class FulltextMatch extends FunctionNode
         $foldedColumn = "(ddd_fold($columnSql) COLLATE \"C\")";
         $strippedTerm = "regexp_replace(ddd_fold($termSql), '[+\\-*\"~]', '', 'g')";
         $terms = "unnest(regexp_split_to_array(btrim($strippedTerm), '\\s+'))";
+        // a term is a literal prefix: LIKE's `\`, `%` and `_` in it are escaped (MariaDB's MATCH had no wildcards there)
+        $likeTerm = "replace(replace(replace(ddd_term.t, '\\', '\\\\'), '%', '\\%'), '_', '\\_')";
 
         return "(NOT EXISTS (SELECT 1 FROM $terms AS ddd_term(t) WHERE ddd_term.t <> '' AND NOT "
-            . "($foldedColumn LIKE (ddd_term.t || '%') OR $foldedColumn LIKE ('% ' || ddd_term.t || '%'))))";
+            . "($foldedColumn LIKE ($likeTerm || '%') OR $foldedColumn LIKE ('% ' || $likeTerm || '%'))))";
     }
 }

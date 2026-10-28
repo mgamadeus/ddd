@@ -50,26 +50,47 @@ class RawUpsertExecutor
         return $spec->idValue !== null ? (int)$spec->idValue : (int)$connection->lastInsertId();
     }
 
+    /**
+     * Savepointed inside a caller's transaction: a failing statement (a collision on another key) aborts only the
+     * savepoint, so a caller that catches the exception can go on — as on MariaDB.
+     */
     public static function upsertPostgres(Connection $connection, UpsertSpec $spec): UpsertResult
     {
         $boundSql = self::renderPostgres($spec);
         // §4.9 scratch-verified against a real PG 18 container: a fresh INSERT's returned row has xmax = 0; the
         // conflict branch's DO UPDATE replaces the tuple with a new version whose xmax is the CURRENT
         // transaction's id, not 0 — `xmax = 0` reliably tells the two apart within the SAME statement.
-        $row = $connection->fetchAssociative($boundSql->sql, $boundSql->values, $boundSql->types);
+        $row = WriteExecutor::runSavepointed(
+            $connection,
+            static fn(): array|false => $connection->fetchAssociative($boundSql->sql, $boundSql->values, $boundSql->types)
+        );
         if ($spec->hasId()) {
             // nextval() is not transactional (§4.6) — safe unconditionally, whichever branch (insert/update) ran.
             PostgresIdentityCatchUp::afterExplicitIdInsert($connection, $spec->table, (int)$spec->idValue);
         }
+        if ($row === false) {
+            // every column is part of the conflict target: DO NOTHING returns no row for the existing one — its id,
+            // as MariaDB's ODKU no-op returns it
+            return new UpsertResult(self::findIdByConflictTargetPostgres($connection, $spec), false);
+        }
         return new UpsertResult($row['id'], (bool)$row['inserted']);
     }
 
-    /** @throws \Doctrine\DBAL\Exception */
+    /**
+     * Savepointed inside a caller's transaction: the collision (23505) rolls back to the savepoint only, so the
+     * caller's transaction stays usable and gets null — on PostgreSQL a failed statement otherwise aborts the whole
+     * transaction (25P02 on every later statement, AbortedTransactionException at commit).
+     *
+     * @throws \Doctrine\DBAL\Exception
+     */
     public static function insertOrNullPostgres(Connection $connection, UpsertSpec $spec): ?int
     {
         $boundSql = self::renderPostgres($spec, forInsertOrNull: true);
         try {
-            $row = $connection->fetchAssociative($boundSql->sql, $boundSql->values, $boundSql->types);
+            $row = WriteExecutor::runSavepointed(
+                $connection,
+                static fn(): array|false => $connection->fetchAssociative($boundSql->sql, $boundSql->values, $boundSql->types)
+            );
         } catch (UniqueConstraintViolationException) {
             return null;
         }
@@ -80,6 +101,34 @@ class RawUpsertExecutor
             PostgresIdentityCatchUp::afterExplicitIdInsert($connection, $spec->table, (int)$spec->idValue);
         }
         return (int)$row['id'];
+    }
+
+    /** The id of the row the conflict target columns of the spec name; null when there is none */
+    protected static function findIdByConflictTargetPostgres(Connection $connection, UpsertSpec $spec): ?int
+    {
+        if ($spec->hasId()) {
+            return (int)$spec->idValue;
+        }
+        $conditions = [];
+        $values = [];
+        $types = [];
+        foreach ($spec->columns as $columnWrite) {
+            if (!in_array($columnWrite->columnName, $spec->conflictTargetColumns, true)) {
+                continue;
+            }
+            $conditions[] = '"' . $columnWrite->columnName . '" = ' . self::bindExpressionPostgres($columnWrite);
+            $values[] = $columnWrite->value;
+            $types[] = $columnWrite->dbalType;
+        }
+        if ($conditions === []) {
+            return null;
+        }
+        $id = $connection->fetchOne(
+            'SELECT "id" FROM "' . $spec->table . '" WHERE ' . implode(' AND ', $conditions) . ' LIMIT 1',
+            $values,
+            $types
+        );
+        return $id !== false ? (int)$id : null;
     }
 
     protected static function renderMariaDb(UpsertSpec $spec, bool $forInsertOrNull = false): DoctrineBoundSql
@@ -107,7 +156,9 @@ class RawUpsertExecutor
             return new DoctrineBoundSql($sql, $values, $types);
         }
 
-        $assignments = [];
+        // `id` = LAST_INSERT_ID(`id`): lastInsertId() is the existing row's id in the conflict branch also when nothing
+        // changes (all columns in the target, or equal values) — plain ODKU returns 0 there
+        $assignments = ['`id` = LAST_INSERT_ID(`id`)'];
         foreach ($spec->columns as $columnWrite) {
             if (in_array($columnWrite->columnName, $spec->conflictTargetColumns, true)) {
                 continue;
@@ -119,10 +170,6 @@ class RawUpsertExecutor
                 UpdatePolicy::MERGE_PATCH => "$column = JSON_MERGE_PATCH(COALESCE($column,'{}'), VALUES($column))",
                 default => "$column = VALUES($column)",
             };
-        }
-        if ($assignments === []) {
-            // every column is part of the conflict target (nothing to update) — keep MariaDB's ODKU no-op form
-            $assignments[] = '`id` = `id`';
         }
         $sql .= ' ON DUPLICATE KEY UPDATE ' . implode(', ', $assignments);
 

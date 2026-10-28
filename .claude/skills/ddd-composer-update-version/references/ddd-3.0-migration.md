@@ -138,3 +138,18 @@ Unchanged:
   parameters: `CronsService::cleanupCronExecutions()`, `DBLoginToken::deleteExpiredTokens()`,
   `DBCacheScopeInvalidation::deleteExpiredCacheScopeInvalidations()`; `getCronsScheduledForExecution()` binds
   `isActive` as a boolean. Raw SQL in an application: quote identifiers (`$connection->quoteIdentifier()`) or use DQL.
+- 3.7.3 — PostgreSQL write and query parity (audit of a production move):
+  - `insertOrNull()` / `upsert()` of the raw facade run savepointed: a lost race returns null and the caller's
+    transaction stays usable (before: 25P02, AbortedTransactionException at commit). A DO NOTHING upsert (every column
+    in the conflict target) returns the existing id — on MariaDB too (`id = LAST_INSERT_ID(id)`; before: 0).
+  - `ddd_json_merge_patch` treats non-objects like MariaDB's JSON_MERGE_PATCH (a non-object patch is the result, a
+    non-object target is `{}`); before, a stored `[]` failed every later save. **Run `php bin/console app:db:ensure`**
+    on each PostgreSQL database — the new command (re)creates the `ddd_*` functions.
+  - A save without an id merges onto a UNIQUE key containing a generated column (`virtualCountryId` over
+    `IFNULL(countryId, 0)`) instead of a plain INSERT with 23505.
+  - Batch upserts: keys equal under `ddd_ci_ai` (Pizza/pizza, Cafe/Café) no longer share one statement (21000).
+  - NUL bytes are dropped from text binds on PostgreSQL; LIKE wildcards `%` `_` `\` in filter values and NAME-mode
+    fulltext terms are literal; a JSON / Translatable sort keeps MariaDB's NULL ordering.
+  - Messenger failures are logged as the handler's own error (unwrapped from HandlerFailedException and
+    (Un)RecoverableMessageHandlingException) — once, also when the handler already logged it.
+  - `#[UpsertConflictKey]` naming a real key a row does not carry no longer throws: the remaining rules decide.

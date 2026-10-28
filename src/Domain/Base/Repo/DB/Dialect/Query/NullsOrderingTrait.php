@@ -42,6 +42,8 @@ trait NullsOrderingTrait
 
     protected function isNullableOrderByExpression(mixed $expression): bool
     {
-        return $expression instanceof AST\PathExpression;
+        // JSON_TEXT(col): the text of a JSON / Translatable column the order-by options sort on — as nullable as
+        // the column (without it, rows without a value sorted last on PostgreSQL and first on MariaDB)
+        return $expression instanceof AST\PathExpression || $expression instanceof JsonText;
     }
 }

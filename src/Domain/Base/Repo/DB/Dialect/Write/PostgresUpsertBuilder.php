@@ -224,6 +224,7 @@ class PostgresUpsertBuilder implements UpsertBuilder
         $conflictKeyValueByIndex = [];
         $needsFallbackByIndex = [];
         $fallbackCandidateKeysByIndex = [];
+        $virtualColumnNames = ConflictTargetResolver::getVirtualColumnNames($databaseModel);
         foreach ($doctrineModels as $index => $doctrineModel) {
             $hasId = $rowWriteList[$index]->idValue !== null;
             $presentColumnNames = $rowWriteList[$index]->columnWrites->getColumnNames();
@@ -252,11 +253,21 @@ class PostgresUpsertBuilder implements UpsertBuilder
                 $conflictKeyValueByIndex[$index] = 'id=' . $rowWriteList[$index]->idValue;
                 continue;
             }
+            if (array_intersect($target, $virtualColumnNames) !== []) {
+                // a generated column's value exists only in the database: two such rows of one run may collide
+                // without equal written values — the run goes row by row (one shared key forces it)
+                $conflictKeyValueByIndex[$index] = '#virtual-target';
+                continue;
+            }
             $keyParts = [];
             foreach ($target as $columnName) {
                 $columnWrite = $this->findColumnWrite($rowWriteList[$index]->columnWrites, $columnName);
                 $value = $columnWrite?->value;
-                $keyParts[] = is_scalar($value) || $value === null ? (string)$value : json_encode($value);
+                // text keys compare under ddd_ci_ai (case- and accent-insensitive): Pizza/pizza, Cafe/Café are one key —
+                // in one multi-row ON CONFLICT DO UPDATE they raise 21000 "cannot affect row a second time"
+                $keyParts[] = is_string($value)
+                    ? self::foldLikeCaseAndAccentInsensitiveCollation($value)
+                    : (is_scalar($value) || $value === null ? (string)$value : json_encode($value));
             }
             $conflictKeyValueByIndex[$index] = implode("\0", $keyParts);
         }
@@ -545,6 +556,20 @@ class PostgresUpsertBuilder implements UpsertBuilder
         throw new ForbiddenException(
             'Account ' . $authAccountId . ' has no permission to update or create Entity ' . $doctrineModel::ENTITY_CLASS
         );
+    }
+
+    /**
+     * A text key folded at least as far as the `ddd_ci_ai` collation compares (case, accents, ß/ss): two values equal
+     * under the collation give the same string here. Folding further only costs batching, never correctness.
+     */
+    public static function foldLikeCaseAndAccentInsensitiveCollation(string $value): string
+    {
+        $folded = mb_strtolower($value);
+        if (class_exists(\Normalizer::class)) {
+            $decomposed = \Normalizer::normalize($folded, \Normalizer::FORM_KD);
+            $folded = $decomposed !== false ? (string)preg_replace('/\p{Mn}+/u', '', $decomposed) : $folded;
+        }
+        return strtr($folded, ['ß' => 'ss', 'æ' => 'ae', 'œ' => 'oe', 'ø' => 'o', 'đ' => 'd', 'ł' => 'l']);
     }
 
     // ───────────────────────────────────────────────────────── column walk (shared with MariaDbUpsertBuilder's sibling logic)

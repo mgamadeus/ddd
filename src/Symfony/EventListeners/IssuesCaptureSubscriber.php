@@ -16,6 +16,9 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
+use Symfony\Component\Messenger\Exception\HandlerFailedException;
+use Symfony\Component\Messenger\Exception\RecoverableMessageHandlingException;
+use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 use Throwable;
 
@@ -128,7 +131,7 @@ class IssuesCaptureSubscriber implements EventSubscriberInterface
         $envelope = $event->getEnvelope();
         $transportNames = $envelope->last(TransportNamesStamp::class)?->getTransportNames() ?? [$event->getReceiverName()];
         $this->issuesLogService->logThrowable(
-            $event->getThrowable(),
+            $this->unwrapHandlerThrowable($event->getThrowable()),
             LogLevel::CRITICAL,
             array_filter([
                 'messenger.message_class' => get_debug_type($envelope->getMessage()),
@@ -162,5 +165,24 @@ class IssuesCaptureSubscriber implements EventSubscriberInterface
                 section: $section
             );
         });
+    }
+
+    /**
+     * The handler's own error behind Messenger's wrappers: HandlerFailedException (thrown in Messenger's middleware —
+     * logged as is, every failing handler shared one group) and the (Un)RecoverableMessageHandlingException a handler
+     * throws around it. The unwrapped error is also the one a handler's logIssue() marked as logged, so it is not
+     * logged twice.
+     */
+    protected function unwrapHandlerThrowable(Throwable $throwable): Throwable
+    {
+        if ($throwable instanceof HandlerFailedException) {
+            $wrappedThrowables = $throwable->getWrappedExceptions();
+            $throwable = $wrappedThrowables !== [] ? $wrappedThrowables[array_key_first($wrappedThrowables)] : $throwable;
+        }
+        while (($throwable instanceof UnrecoverableMessageHandlingException || $throwable instanceof RecoverableMessageHandlingException)
+            && $throwable->getPrevious() !== null) {
+            $throwable = $throwable->getPrevious();
+        }
+        return $throwable;
     }
 }

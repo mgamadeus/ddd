@@ -250,4 +250,59 @@ class FilterAgainstDatabaseTest extends IntegrationTestCase
         $this->assertContains($arrayRowId, $orderedIds, 'the array-source row must not be dropped or error out');
         $this->assertSame([$unnamedId], $this->translatedRowIdsMatching("name eq 'NULL'"), 'a JSON array is not a SQL NULL');
     }
+
+    public function testLikeMetacharactersInAWildcardValueAreLiteral(): void
+    {
+        static::insertRow('CounterRows', ['businessKey' => 'a_c', 'amount' => 1, 'isActive' => 1, 'occurredAt' => null]);
+        static::insertRow('CounterRows', ['businessKey' => 'abc', 'amount' => 1, 'isActive' => 1, 'occurredAt' => null]);
+        static::insertRow('CounterRows', ['businessKey' => '50%', 'amount' => 1, 'isActive' => 1, 'occurredAt' => null]);
+        static::insertRow('CounterRows', ['businessKey' => 'tail\\', 'amount' => 1, 'isActive' => 1, 'occurredAt' => null]);
+
+        // `_` and `%` match themselves; a value ending in `\` is no 22025 on PostgreSQL
+        $this->assertSame(['a_c'], $this->counterRowsMatching("businessKey eq 'a_*'"));
+        $this->assertSame(['50%'], $this->counterRowsMatching("businessKey eq '*0%'"));
+        $this->assertSame(['tail\\'], $this->counterRowsMatching("businessKey eq '*tail\\\\'"));
+    }
+
+    public function testATranslatableWithoutValueSortsFirstAscendingAndLastDescending(): void
+    {
+        static::insertRow('TranslatedRows', ['name' => null, 'title' => null]);
+        $rowIds = $this->translatedRowIds();
+        $untitledId = end($rowIds);
+
+        $ascending = $this->translatedRowIdsMatching(null, 'title asc');
+        $descending = $this->translatedRowIdsMatching(null, 'title desc');
+
+        // MariaDB sorts NULL as the smallest value: first ascending, last descending — PostgreSQL alike
+        $this->assertSame($untitledId, $ascending[0]);
+        $this->assertSame($untitledId, end($descending));
+    }
+
+    public function testANulByteInATextValueIsStoredWithoutItOnPostgres(): void
+    {
+        $counterRow = new CounterRow();
+        $counterRow->businessKey = "nul\0byte";
+        $counterRow->amount = 1;
+        $counterRow->isActive = true;
+        $counterRow->displayOrder = 0;
+
+        $counterRow->update();
+
+        $stored = (string)static::connection()->fetchOne(
+            'SELECT ' . static::dialect()->quote('businessKey') . ' FROM ' . static::dialect()->quote('CounterRows')
+            . ' WHERE ' . static::dialect()->quote('id') . ' = ?',
+            [$counterRow->id]
+        );
+        // PostgreSQL rejects NUL in text (22021); MariaDB keeps the byte
+        $this->assertSame(static::currentDriver() === 'pdo_pgsql' ? 'nulbyte' : "nul\0byte", $stored);
+    }
+
+    public function testAFulltextTermIsALiteralPrefixWithoutLikeWildcards(): void
+    {
+        [, $pastaId] = $this->translatedRowIds();
+
+        $this->assertSame([$pastaId], $this->translatedRowIdsMatching("name ft 'Pasta'"));
+        // `_` was a LIKE wildcard in PostgreSQL's NAME mode ("Pas_a" matched "Pasta"); MariaDB's MATCH never did
+        $this->assertSame([], $this->translatedRowIdsMatching("name ft 'Pas_a'"));
+    }
 }

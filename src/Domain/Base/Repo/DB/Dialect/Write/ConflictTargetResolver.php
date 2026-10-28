@@ -40,6 +40,7 @@ class ConflictTargetResolver
             return ConflictTargetResolution::target($primaryKeyColumn !== null ? [$primaryKeyColumn->name] : []);
         }
 
+        $presentColumnNames = self::withPresentVirtualColumns($databaseModel, $presentColumnNames);
         $candidates = [];
         foreach ($databaseModel->indexes->getElements() as $index) {
             if ($index->indexType !== DatabaseIndex::TYPE_UNIQUE || $index->indexColumns === []) {
@@ -77,8 +78,9 @@ class ConflictTargetResolver
      * @param string[][] $candidates
      * @return string[]|null The matching candidate's column list (declaration order), or null when no
      *   `#[UpsertConflictKey]` is present on the entity at all.
-     * @throws InternalErrorException when the attribute IS present but names columns matching none of the
-     *   ambiguous candidates (typo / renamed column) — caught at the first write rather than silently ignored.
+     * @throws InternalErrorException when the attribute IS present but names columns matching no UNIQUE key of the
+     *   entity (typo / renamed column) — caught at the first write rather than silently ignored. A real key this row
+     *   does not carry gives null (the remaining rules decide).
      */
     protected static function declaredConflictKeyColumns(DatabaseModel $databaseModel, array $candidates): ?array
     {
@@ -101,12 +103,55 @@ class ConflictTargetResolver
                 return $candidate;
             }
         }
+        // a real key of the entity this row does not carry (its column not set): the attribute does not decide this
+        // row — the remaining rules do (nullable fallback, or the ambiguity error)
+        foreach ($databaseModel->indexes->getElements() as $index) {
+            if ($index->indexType !== DatabaseIndex::TYPE_UNIQUE) {
+                continue;
+            }
+            $sortedIndexColumns = $index->indexColumns;
+            sort($sortedIndexColumns);
+            if ($sortedIndexColumns === $declared) {
+                return null;
+            }
+        }
 
         throw new InternalErrorException(
             'ConflictTargetResolver: #[UpsertConflictKey] on ' . $entityClassName . ' names columns ('
             . implode(', ', $attributeInstance->columns) . ') that match none of this row\'s ambiguous UNIQUE '
             . 'candidates: ' . self::describeCandidates($candidates) . ' — check for a typo or a renamed column.'
         );
+    }
+
+    /**
+     * The present columns plus every virtual (generated) column whose source column is present: its value is computed
+     * from the written row, so a UNIQUE key containing it (`(appTranslationKeyId, languageId, virtualCountryId)` over
+     * `IFNULL(countryId, 0)`) is a usable arbiter — without this, a save without an id became a plain INSERT and
+     * raised 23505 where MariaDB's ON DUPLICATE KEY UPDATE merged.
+     *
+     * @param string[] $presentColumnNames
+     * @return string[]
+     */
+    public static function withPresentVirtualColumns(DatabaseModel $databaseModel, array $presentColumnNames): array
+    {
+        if (!isset($databaseModel->virtualColumns)) {
+            return $presentColumnNames;
+        }
+        foreach ($databaseModel->virtualColumns->getElements() as $virtualColumn) {
+            if ($virtualColumn->referenceColumn !== null && in_array($virtualColumn->referenceColumn->name, $presentColumnNames, true)) {
+                $presentColumnNames[] = $virtualColumn->getName();
+            }
+        }
+        return array_values(array_unique($presentColumnNames));
+    }
+
+    /** @return string[] The names of the model's virtual (generated) columns */
+    public static function getVirtualColumnNames(DatabaseModel $databaseModel): array
+    {
+        if (!isset($databaseModel->virtualColumns)) {
+            return [];
+        }
+        return array_map(static fn($virtualColumn): string => $virtualColumn->getName(), $databaseModel->virtualColumns->getElements());
     }
 
     /** @param string[][] $candidates */

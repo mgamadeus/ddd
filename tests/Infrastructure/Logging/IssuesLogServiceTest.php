@@ -290,4 +290,36 @@ class IssuesLogServiceTest extends TestCase
         $this->assertFalse($settings->captureEnabled);
         $this->assertSame('/var/log/app/issues', $settings->path);
     }
+
+    public function testAFailedMessageIsLoggedAsTheHandlersOwnErrorAndOnlyOnce(): void
+    {
+        $testHandler = new TestHandler();
+        $issuesLogService = $this->serviceWith($this->loggerWith($testHandler));
+        $captureSubscriber = new IssuesCaptureSubscriber($issuesLogService);
+        $envelope = new \Symfony\Component\Messenger\Envelope(new \stdClass());
+        $uncaughtError = new RuntimeException('qr scan failed');
+        $handledError = new RuntimeException('translation failed');
+        // a handler that logged its error, then gave up on the message
+        $issuesLogService->logThrowable($handledError, section: IssuesLogService::LOG_MESSAGE_SECTION_MESSENGER);
+        $unrecoverable = new \Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException('give up', 0, $handledError);
+
+        $captureSubscriber->onWorkerMessageFailed(new \Symfony\Component\Messenger\Event\WorkerMessageFailedEvent(
+            $envelope,
+            'async',
+            new \Symfony\Component\Messenger\Exception\HandlerFailedException($envelope, [$uncaughtError])
+        ));
+        $captureSubscriber->onWorkerMessageFailed(new \Symfony\Component\Messenger\Event\WorkerMessageFailedEvent(
+            $envelope,
+            'async',
+            new \Symfony\Component\Messenger\Exception\HandlerFailedException($envelope, [$unrecoverable])
+        ));
+
+        $records = $testHandler->getRecords();
+        // the handled error once (by the handler), the uncaught one as itself — not as Messenger's wrapper
+        $this->assertCount(2, $records);
+        $this->assertSame(RuntimeException::class, $records[1]->context['error.type']);
+        $this->assertSame(__FILE__, $uncaughtError->getFile());
+        $this->assertSame(basename(__FILE__), $records[1]->context['log.origin.file.name']);
+        $this->assertFalse($records[1]->context['error.handled']);
+    }
 }
