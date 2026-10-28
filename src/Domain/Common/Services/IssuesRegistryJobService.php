@@ -367,6 +367,8 @@ class IssuesRegistryJobService
             $issueGroup->firstSeenAt = $sampleEvent->timestamp;
         }
         $issueGroup->releaseLastSeen = $sampleEvent->release ?? $issueGroup->releaseLastSeen;
+        // a group whose first sample predates `service.workspace` (lines before 3.5) takes it from a newer event
+        $issueGroup->workspace ??= $sampleEvent->workspace;
         if ($sampleEvent->timestamp !== null
             && ($issueGroup->lastSeenAt === null || $sampleEvent->timestamp->getTimestamp() > $issueGroup->lastSeenAt->getTimestamp())) {
             $issueGroup->lastSeenAt = $sampleEvent->timestamp;

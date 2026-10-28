@@ -589,4 +589,4 @@ For the registry on top: `ISSUES_QUERY_BACKEND=elasticsearch`.
 | Elasticsearch: groups empty, hits not | the fields are mapped as keyword: `ISSUES_ES_KEYWORD_SUFFIX=` (empty); `app:runtime-errors:probe` shows which field names aggregate |
 | Elasticsearch: `multi_terms` unknown | ES < 7.12: COARSE grouping needs 7.12; the registry (composite aggregation) works from ES 7 |
 | Sentry forwarder sends nothing | a file seen for the first time starts at its end (`--from-start` for history); `--min-level`; state file `.issues-sentry-forward.json` next to the logs |
-| One bug, many groups | a throw site in generated code with varying function names; look at `error.group_hash` inputs (`IssuesFingerprintBuilder::getFrames()`) |
+| One bug, many groups | compare `log.origin.file.name` and the frames of two lines (`app:issues:show`): paths are relative to the project, an absolute path means a file outside the project and outside `vendor/`; a throw site in generated code with varying function names; look at `error.group_hash` inputs (`IssuesFingerprintBuilder::getFrames()`) |

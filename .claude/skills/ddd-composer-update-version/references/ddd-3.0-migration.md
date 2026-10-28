@@ -108,3 +108,8 @@ Unchanged:
   `environment`, the unique key moves from `issueHash` to (`environment`, `issueHash`). With one environment the job
   adopts the rows and the job state from before. `IssueGroupsService::findByGroupHash()` / `IssuesService::
   findByIssueHash()` take an optional environment (null = the most recently seen).
+- 3.5.1 — issues: frame paths in the hashes are resolved (`realpath`) before they are made relative, and without a
+  project directory (a fatal at shutdown) the directory that holds `vendor/` is used. An entry script invoked through a
+  symlinked or relative path (`php bin/console` from a linked checkout) gave a different `error.group_hash` than the
+  same error invoked through the real path. Groups that were keyed by such an absolute path re-key once. A group whose
+  first sample predates `service.workspace` takes the workspace from a newer event.

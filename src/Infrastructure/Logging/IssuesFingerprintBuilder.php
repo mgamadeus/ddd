@@ -29,9 +29,20 @@ class IssuesFingerprintBuilder
     /** Number of application frames the issue hash takes */
     public const int ISSUE_APPLICATION_FRAMES = 4;
 
+    /** @var array<string, string> Cache: file path as given → resolved path */
+    protected array $resolvedPaths = [];
+
+    /**
+     * @param string $projectDirectory The application root; '' = the directory that holds this package's `vendor/`
+     *                                 (the container may not be there, e.g. for a fatal error at shutdown)
+     */
     public function __construct(protected string $projectDirectory = '')
     {
-        $this->projectDirectory = rtrim($projectDirectory, '/');
+        if ($projectDirectory === '' && str_contains(__FILE__, '/vendor/')) {
+            $projectDirectory = (string)strstr(__FILE__, '/vendor/', true);
+        }
+        // the trace's paths are resolved; a project directory reached through a symlink would never match them
+        $this->projectDirectory = rtrim($projectDirectory !== '' ? (realpath($projectDirectory) ?: $projectDirectory) : '', '/');
     }
 
     public function buildGroupHash(Throwable $throwable): string
@@ -145,6 +156,12 @@ class IssuesFingerprintBuilder
         if ($this->projectDirectory !== '' && str_starts_with($file, $this->projectDirectory . '/')) {
             return substr($file, strlen($this->projectDirectory) + 1);
         }
+        // the entry script as invoked (`php bin/console` through a symlinked path, a relative path): resolve it
+        $resolvedFile = $this->resolvedPaths[$file] ??= (realpath($file) ?: $file);
+        if ($this->projectDirectory !== '' && str_starts_with($resolvedFile, $this->projectDirectory . '/')) {
+            return substr($resolvedFile, strlen($this->projectDirectory) + 1);
+        }
+        $file = $resolvedFile;
         $vendorPosition = strpos($file, '/vendor/');
         return $vendorPosition !== false ? substr($file, $vendorPosition + 1) : $file;
     }

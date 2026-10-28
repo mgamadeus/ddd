@@ -106,4 +106,27 @@ class IssuesFingerprintBuilderTest extends TestCase
             $this->assertDoesNotMatchRegularExpression('/:\d+$/', $frame);
         }
     }
+
+    public function testAPathThroughASymlinkIsTheSameFrame(): void
+    {
+        $realProjectDirectory = sys_get_temp_dir() . '/ddd-fp-real-' . bin2hex(random_bytes(4));
+        $linkedProjectDirectory = sys_get_temp_dir() . '/ddd-fp-link-' . bin2hex(random_bytes(4));
+        mkdir($realProjectDirectory . '/bin', 0777, true);
+        touch($realProjectDirectory . '/bin/console');
+        symlink($realProjectDirectory, $linkedProjectDirectory);
+        try {
+            // the project directory as Symfony resolves it, the entry script as invoked — and the other way round
+            $resolvedBuilder = new IssuesFingerprintBuilder((string)realpath($realProjectDirectory));
+            $linkedBuilder = new IssuesFingerprintBuilder($linkedProjectDirectory);
+
+            self::assertSame('bin/console', $resolvedBuilder->getRelativeFile($linkedProjectDirectory . '/bin/console'));
+            self::assertSame('bin/console', $linkedBuilder->getRelativeFile((string)realpath($realProjectDirectory . '/bin/console')));
+            self::assertSame('bin/console', $linkedBuilder->getRelativeFile($linkedProjectDirectory . '/bin/console'));
+        } finally {
+            unlink($linkedProjectDirectory);
+            unlink($realProjectDirectory . '/bin/console');
+            rmdir($realProjectDirectory . '/bin');
+            rmdir($realProjectDirectory);
+        }
+    }
 }

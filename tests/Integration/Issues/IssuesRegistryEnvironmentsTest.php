@@ -248,4 +248,18 @@ class IssuesRegistryEnvironmentsTest extends IssuesRegistryTestCase
         $healthCommandTester->execute(['--format' => 'json']);
         self::assertStringContainsString('"environment": "mgn"', $healthCommandTester->getDisplay());
     }
+
+    public function testAGroupSampledFromAnOldLineTakesTheWorkspaceFromANewerOne(): void
+    {
+        $issuesRegistryJobService = $this->createJobService('{"mgn": "{workspace=\\"mgn\\"}"}');
+        // a line from before service.workspace, then a new one
+        $this->fakeIssuesQueryBackends['mgn']->addEvent($this->now - 900, 'group-a');
+        $this->fakeIssuesQueryBackends['mgn']->addEvent($this->now - 300, 'group-a', workspace: 'mgn');
+
+        $issuesRegistryJobService->run(DateTime::fromTimestamp($this->now));
+
+        $this->withoutRights(function (): void {
+            self::assertSame('mgn', $this->getIssueGroupsService()->findByGroupHash('group-a', 'mgn')->workspace);
+        });
+    }
 }
