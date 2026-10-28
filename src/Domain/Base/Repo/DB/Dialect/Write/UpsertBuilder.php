@@ -40,4 +40,17 @@ interface UpsertBuilder
      * @throws Exception
      */
     public function insertOrNull(DoctrineEntityManager $entityManager, DoctrineModel &$doctrineModel): ?int;
+
+    /**
+     * Strict INSERT: no upsert form, never an update; a unique-key or primary-key collision throws
+     * UniqueConstraintViolationException unchanged (see {@see DoctrineEntityManager::insert()}). With a rights query the
+     * inserted row must be visible under it, otherwise the insert is reverted and a ForbiddenException thrown.
+     * @return int The id of the inserted row, also set on the model
+     * @throws Exception
+     */
+    public function insert(
+        DoctrineEntityManager $entityManager,
+        DoctrineModel &$doctrineModel,
+        ?QueryBuilder $createRightsQueryBuilder = null
+    ): int;
 }

@@ -59,3 +59,11 @@ Unchanged:
   error as soon as an expand was set.
 - A query that filters and fetch-joins a collection runs as two steps in one statement (the qualifying root ids,
   then the roots with their joins), with or without a limit — the same shape a paginated query always had.
+
+## Later 3.x releases
+
+- 3.1.0 (2.x line: 2.72.0) — strict `insert()` next to `update()`: `$entity->insert()`, `EntitiesService::insert()`,
+  `DBEntity::insert($entity, $depth)`, `DoctrineEntityManager::insert($model, $createRightsQueryBuilder)`. A plain
+  `INSERT` (no `ON DUPLICATE KEY UPDATE`, no `ON CONFLICT`), never an update; a unique-key or primary-key collision
+  throws `UniqueConstraintViolationException` unchanged. No change to `update()`. Code that implements
+  `Dialect\Write\UpsertBuilder` itself adds `insert()`.

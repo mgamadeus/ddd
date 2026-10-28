@@ -18,6 +18,9 @@ use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception;
 use Doctrine\DBAL\Exception\ConnectionLost;
+use Doctrine\DBAL\Exception\DeadlockException;
+use Doctrine\DBAL\Exception\LockWaitTimeoutException;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\Configuration;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Exception\ORMException;
@@ -107,11 +110,54 @@ class DoctrineEntityManager extends EntityManager
     public function upsert(DoctrineModel &$doctrineModel, ?QueryBuilder $updateRightsQueryBuilder = null, ?array $onlyFieldNames = null): ?int
     {
         // §6 step 3/4: PostgreSQL's write path (ON CONFLICT, not ON DUPLICATE KEY UPDATE) lives in its own
-        // builder; everything below this branch is MariaDB's ORIGINAL code, untouched, so the golden suite
-        // (byte-identical MariaDB SQL) stays valid by construction.
+        // builder; MariaDB's write is writeModelMariaDb(), whose upsert SQL is byte-identical to before (golden suite).
         if ($this->getDialect()->name() === SqlDialect::POSTGRES) {
             return $this->getDialect()->upsertBuilder()->upsert($this, $doctrineModel, $updateRightsQueryBuilder, $onlyFieldNames);
         }
+        return $this->writeModelMariaDb($doctrineModel, $updateRightsQueryBuilder, $onlyFieldNames, false);
+    }
+
+    /**
+     * Strict INSERT of a new row: `INSERT INTO <table> (…) VALUES (…)` — no `ON DUPLICATE KEY UPDATE` (PostgreSQL: no
+     * `ON CONFLICT`), never an update. Same column mapping and type conversion as the insert branch of
+     * {@see self::upsert()}. A model with an id inserts that id. With a rights query the inserted row must be visible
+     * under it, otherwise the insert is reverted and a ForbiddenException thrown (as on the upsert's insert branch).
+     *
+     * @param DoctrineModel $doctrineModel The model to insert; carries the id afterwards
+     * @param QueryBuilder|null $createRightsQueryBuilder Create rights the inserted row must satisfy
+     * @return int The id of the inserted row
+     * @throws UniqueConstraintViolationException A unique key or the primary key already exists — rethrown unchanged
+     * @throws DeadlockException A deadlock / Galera certification conflict — rethrown unchanged, the caller decides on a retry
+     * @throws LockWaitTimeoutException A lock wait timeout — rethrown unchanged
+     * @throws ForbiddenException The inserted row is not visible under the create rights (the insert is reverted)
+     * @throws Exception
+     * @throws ReflectionException
+     */
+    public function insert(DoctrineModel &$doctrineModel, ?QueryBuilder $createRightsQueryBuilder = null): int
+    {
+        if ($this->getDialect()->name() === SqlDialect::POSTGRES) {
+            return $this->getDialect()->upsertBuilder()->insert($this, $doctrineModel, $createRightsQueryBuilder);
+        }
+        $entityId = (int)$this->writeModelMariaDb($doctrineModel, $createRightsQueryBuilder, null, true);
+        $doctrineModel->id = $entityId;
+        return $entityId;
+    }
+
+    /**
+     * MariaDB write of one model: the upsert (`INSERT … ON DUPLICATE KEY UPDATE`, or the rights-scoped `UPDATE` when the
+     * model has an id and a rights query applies), or with $insertOnly the strict `INSERT` of {@see self::insert()}.
+     *
+     * @param string[]|null $onlyFieldNames See {@see self::upsert()}; null with $insertOnly
+     * @throws Exception
+     * @throws ForbiddenException
+     * @throws ReflectionException
+     */
+    protected function writeModelMariaDb(
+        DoctrineModel &$doctrineModel,
+        ?QueryBuilder $updateRightsQueryBuilder,
+        ?array $onlyFieldNames,
+        bool $insertOnly
+    ): ?int {
         $connection = $this->getConnection();
         $metadata = $this->getClassMetadata($doctrineModel::class);
         $columns = [];
@@ -130,7 +176,7 @@ class DoctrineEntityManager extends EntityManager
         // changed since last read"). No transaction-state check needed — the statement is correct with and
         // without an outer transaction. The loop below builds the plain SET assignments for it in parallel to
         // the ODKU assignments.
-        $rightsScopedUpdatePath = $updateRightsQueryBuilder && isset($doctrineModel->id) && $doctrineModel->id;
+        $rightsScopedUpdatePath = !$insertOnly && $updateRightsQueryBuilder && isset($doctrineModel->id) && $doctrineModel->id;
         $rightsScopedUpdateAssignments = [];
         $rightsScopedUpdateValues = [];
         $rightsScopedUpdateTypes = [];
@@ -353,7 +399,8 @@ class DoctrineEntityManager extends EntityManager
             return (int)$doctrineModel->id;
         }
 
-        $checkInsertRights = $updateRightsQueryBuilder && !isset($doctrineModel->id);
+        // a strict insert checks the create rights even when it inserts a given id
+        $checkInsertRights = $updateRightsQueryBuilder && ($insertOnly || !isset($doctrineModel->id));
         $checkInsertRightsInOwnTransaction = false;
         $insertRightsSavepointName = null;
         // we need a revert point to be able to roll the insert back if the post-insert rights check denies:
@@ -373,7 +420,10 @@ class DoctrineEntityManager extends EntityManager
             ) . ')' . ' VALUES (' . implode(
                 ', ',
                 $set
-            ) . ')' . ' ON DUPLICATE KEY UPDATE ' . implode(', ', $update);
+            ) . ')';
+        if (!$insertOnly) {
+            $sql .= ' ON DUPLICATE KEY UPDATE ' . implode(', ', $update);
+        }
         // EVERYTHING between our beginTransaction() and its commit() lives inside this try — the insert itself,
         // lastInsertId, and the whole post-insert rights re-check. Before this, the rights re-check query ran
         // OUTSIDE any try: a throw there (rights-join lock timeout, connection loss, schema drift) leaked the

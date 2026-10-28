@@ -394,6 +394,47 @@ class PostgresUpsertBuilder implements UpsertBuilder
         }
     }
 
+    public function insert(
+        DoctrineEntityManager $entityManager,
+        DoctrineModel &$doctrineModel,
+        ?QueryBuilder $createRightsQueryBuilder = null
+    ): int {
+        $connection = $entityManager->getConnection();
+        $metadata = $entityManager->getClassMetadata($doctrineModel::class);
+        $reflectionClass = ReflectionClass::instance($doctrineModel::class);
+        $rowWrite = $this->buildColumnWrites($metadata, $doctrineModel, $reflectionClass, null);
+        $idValue = $rowWrite->idValue;
+        $table = $doctrineModel->getTableName();
+        $insertColumnsAndValues = $this->renderInsertColumnsAndValues($rowWrite->columnWrites, $idValue);
+        $values = $insertColumnsAndValues->values;
+        $types = $insertColumnsAndValues->types;
+        $sql = 'INSERT INTO "' . $table . '" (' . implode(', ', $insertColumnsAndValues->quotedColumns) . ') VALUES ('
+            . implode(', ', $insertColumnsAndValues->valueExpressions) . ') RETURNING "id"';
+        $insertRow = static function () use ($connection, $sql, $values, $types, $idValue, $table, &$doctrineModel): int {
+            $row = $connection->fetchAssociative($sql, $values, $types);
+            $entityId = (int)$row['id'];
+            $doctrineModel->id = $entityId;
+            if ($idValue !== null) {
+                PostgresIdentityCatchUp::afterExplicitIdInsert($connection, $table, $entityId);
+            }
+            return $entityId;
+        };
+
+        // savepointed: a collision inside the caller's transaction reverts only this insert, so the caller can retry
+        // in the same transaction (PostgreSQL would otherwise abort the whole transaction)
+        if ($createRightsQueryBuilder === null) {
+            return WriteExecutor::runSavepointed($connection, $insertRow);
+        }
+        return WriteExecutor::runInOwnOrCallerTransaction(
+            $connection,
+            function () use ($insertRow, &$doctrineModel, $createRightsQueryBuilder): int {
+                $entityId = $insertRow();
+                $this->checkInsertRightsOrThrow($doctrineModel, $createRightsQueryBuilder, $entityId);
+                return $entityId;
+            }
+        );
+    }
+
     // ───────────────────────────────────────────────────────── rights-scoped update (id + rights query, never inserts)
 
     protected function rightsScopedUpdate(

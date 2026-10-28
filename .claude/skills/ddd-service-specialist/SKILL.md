@@ -1,6 +1,6 @@
 ---
 name: ddd-service-specialist
-description: Create DDD services, business logic, QueryBuilder patterns, and rights protection in the mgamadeus/ddd framework — including vector/semantic search, fulltext search over Translatable properties, concurrency-safe atomic writes, and partial writes via updatePartialIgnoringRights. Covers service instantiation (container resolution, never new, never cache), caller-side vs in-service find() paths, the null-getService() cross-namespace fix (ReuseParentEntitySet), the createQueryBuilder(true) root-alias rule, conventions (entity owns non-repo logic, pass objects not IDs, App vs DDD namespace placement), the PHPDoc @throws convention, advanced patterns (update/delete overrides, junction links, seeding, async dispatch), and infrastructure utilities (Config, Cache, Encrypt, IssuesLogService). Use when creating services, writing custom queries, implementing rights, doing vector or fulltext search, writing concurrency-safe or partial updates, or debugging a null getService() or a No-alias-was-set error.
+description: Create DDD services, business logic, QueryBuilder patterns, and rights protection in the mgamadeus/ddd framework — including vector/semantic search, fulltext search over Translatable properties, concurrency-safe atomic writes, partial writes via updatePartialIgnoringRights, and strict insert() that throws on a duplicate key. Covers service instantiation (container, never new, never cache), caller-side vs in-service find() paths, the null-getService() fix (ReuseParentEntitySet), the createQueryBuilder(true) root-alias rule, conventions (entity owns non-repo logic, objects not IDs, App vs DDD namespaces), the PHPDoc @throws convention, advanced patterns (update/delete overrides, junction links, seeding, async dispatch), and utilities (Config, Cache, Encrypt, IssuesLogService). Use when creating services, writing custom queries, implementing rights, doing vector or fulltext search, writing concurrency-safe, partial or collision-checked writes, or debugging a null getService() or a No-alias-was-set error.
 metadata:
   author: mgamadeus
   version: "1.1.0"
@@ -357,6 +357,7 @@ $message->updatePartialIgnoringRights('toolCall', 'status');           // JSON V
 | You must write… | Use |
 |---|---|
 | a whole NEW row, or an aggregate only one process owns at a time | `$entity->update()` |
+| a NEW row whose unique key may collide with a concurrent writer (sequence number, business key) — the collision must throw, not merge | `$entity->insert()` (strict INSERT; catch `UniqueConstraintViolationException`, retry with the next key) |
 | a scalar/flag/counter under concurrency, often compare-and-set | atomic raw SQL / DQL (prior section) |
 | one/few VO/JSON/vector/datetime columns of an EXISTING row, under concurrency, without detaching the live entity | `$entity->updatePartialIgnoringRights(...)` |
 
