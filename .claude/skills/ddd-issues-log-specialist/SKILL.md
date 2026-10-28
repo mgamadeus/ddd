@@ -1,9 +1,9 @@
 ---
 name: ddd-issues-log-specialist
-description: "Log, cluster and ship production errors with the mgamadeus/ddd issues log: IssuesLogService::logThrowable (log vs rethrow, log-once), the issues Monolog channel and its sinks by environment (ISSUES_LOG_TARGET file/stderr/none, ECS JSON via elastic/ecs-logging, date rotation), the capture subscriber (uncaught HTTP 5xx, console, messenger, PHP fatals; ISSUES_CAPTURE_ENABLED), redaction and size caps, the two-level hashes error.group_hash / error.issue_hash next to the unchanged error.fingerprint fields, app:issues:test, the RC-compatible configuration, and the DevOps setup as worked examples (Kubernetes Alloy DaemonSet or sidecar on an emptyDir, stderr with PHP-FPM settings, VM with Filebeat or Alloy, Loki / Elasticsearch / OpenSearch / Sentry backends). Use when logging an exception, nobody sees production errors, configuring where errors go, shipping logs from Kubernetes or a VM, an error is logged twice or not at all, hashes split one bug into many groups, or verifying the error pipeline end to end."
+description: "Log, cluster, ship and track production errors with the mgamadeus/ddd issues log: IssuesLogService::logThrowable (log-once), the issues channel sinks (ISSUES_LOG_TARGET file/stderr/none, ECS JSON), the capture subscriber (HTTP 5xx, console, messenger, fatals), redaction, the hashes error.group_hash / error.issue_hash, app:issues:test; the registry (IssueGroups / Issues tables, app:issues:sync job over Loki with seed mode, explosion guard, regressions after resolve, Slack webhook alerts, app:issues:health); the agent discovery CLI app:issues:list / show / search / resolve / ignore / reopen with --format=json; admin controller and DTO boilerplate; DevOps worked examples (Kubernetes Alloy, stderr, VM Filebeat, job deployment). Use when logging an exception, nobody sees production errors, configuring where errors go or the alert, shipping logs, an error is logged twice, one bug splits into many groups, finding and fixing current production errors as an agent, or building an issues admin screen."
 metadata:
   author: mgamadeus
-  version: "1.0.0"
+  version: "1.1.0"
   framework: mgamadeus/ddd
 ---
 
@@ -12,9 +12,15 @@ metadata:
 Every production error as one structured line, grouped by root cause, shipped by a collector. The request only appends
 one line to a local file (or stderr) — no network, no database on the error path.
 
-**In this release:** the write side, clustering, capture, `app:issues:test`, the shipping setup.
-**Next releases:** the fingerprint registry with the alert job and the Loki query backend, then the Elasticsearch /
-OpenSearch and Sentry backends with the `app:runtime-errors:*` discovery CLI.
+Three parts, each optional on top of the previous one:
+
+1. **Write side** — `IssuesLogService`, the capture subscriber, the sink, the two hashes. Always on.
+2. **Shipping** — a collector (Alloy, Filebeat) moves the lines into a log backend. Infrastructure, no code.
+3. **Registry** — a job queries the backend, keeps one row per root cause in the database, alerts a Slack webhook on new
+   causes and regressions, and serves the discovery CLI. On with `ISSUES_QUERY_BACKEND`.
+
+The Elasticsearch / OpenSearch and Sentry query backends and the `app:runtime-errors:*` aliases follow in the next
+release; Loki is the query backend today.
 
 ## Logging in code
 
@@ -101,7 +107,8 @@ No line numbers and no free-text message in either hash, so a deploy that moves 
 - **Discriminator:** the SQLSTATE of a database error, the code of a DDD exception, and only for generic engine errors
   (`Error`, `ErrorException`) the message with numbers, UUIDs, hex ids, quoted literals and timestamps replaced.
 - An application frame is one whose file is not under `vendor/`. Closure names lose their line.
-- Same bug through two routes = one group, two issues. File, line, release and message are display-only.
+- Same bug through two routes = one group, two issues. The entry point itself is `error.entry_point`. File, line,
+  release and message are display-only.
 - `error.fingerprint*` keep their old meaning (entry point + top frames with lines) for existing dashboards.
 
 ## Verify — `app:issues:test`
@@ -219,6 +226,58 @@ output.elasticsearch:
 Alloy as a system service with `local.file_match` on the file path and `loki.source.file` → Loki (or
 `otelcol.exporter.elasticsearch` → Elasticsearch).
 
+### 6. The registry job
+
+One instance per application and environment, never in the web pods. Either a cron every minute or a worker:
+
+```yaml
+# Kubernetes: a one-replica Deployment running the loop (or a CronJob "* * * * *" running app:issues:sync once)
+containers:
+  - name: issues-sync
+    image: <app image>
+    command: ["php", "bin/console", "app:issues:sync", "--loop", "--interval=60"]
+    env:
+      - { name: ISSUES_QUERY_BACKEND, value: loki }
+      - { name: ISSUES_QUERY_URL, value: "http://loki-gateway.monitoring.svc:80" }
+      - { name: ISSUES_QUERY_SELECTOR, value: '{service="dineful", environment="prod"}' }
+      - { name: ISSUES_ALERT_WEBHOOK, valueFrom: { secretKeyRef: { name: issues, key: slack-webhook } } }
+      - { name: ISSUES_ALERT_LINK_TEMPLATE, value: "https://admin.example.com/issues/{group_hash}" }
+    livenessProbe:
+      exec: { command: ["php", "bin/console", "app:issues:health"] }
+      periodSeconds: 300
+```
+
+A second instance is harmless (a database lock skips concurrent runs), but costs queries. The first run starts **seed
+mode** for `ISSUES_SEED_HOURS` (24): the existing errors are registered without 200 alerts. Seed again on demand, e.g.
+after pointing the selector at a new environment: `app:issues:sync --seed=12`.
+
+### 8. Slack alerts
+
+`ISSUES_ALERT_WEBHOOK` is a Slack (or Mattermost / Rocket.Chat-compatible) incoming webhook. One message per new root
+cause (`:new: New error`) and per regression (`:repeat: Regression`) — never per event, never per entry point. A message
+carries type, message, slug, entry points, release, environment, event count and the `ISSUES_ALERT_LINK_TEMPLATE` link.
+The message is sent after the database write; a failed send stays pending (`alertPending`) and is retried every run.
+Above `ISSUES_GROUP_EXPLOSION_LIMIT` new causes within an hour (a deploy that breaks fingerprints, a dependency outage)
+the causes are registered silently and one `:rotating_light:` message is sent instead, at most hourly.
+
+### 9. Monitoring the pipeline
+
+`app:issues:health` (exit 1 = unhealthy, `--format=json`) checks two things the registry itself cannot alert on:
+**job stalled** (no successful run within `ISSUES_JOB_STALE_MINUTES`, 10) and **collector silent** (no event of any level
+within `ISSUES_COLLECTOR_SILENT_MINUTES`, 60 — set it above the quietest hour of the application). Wire it into the
+liveness probe of the job (example 6) and into the external uptime monitor; the job's last error is in the output.
+
+### 10. Local development
+
+`tests/Integration/docker-compose.yml` of the framework carries a Loki (`docker compose … up -d loki`, port 3110). Push
+lines with Alloy or `curl` to `/loki/api/v1/push`, then run the job against it:
+
+```dotenv
+ISSUES_QUERY_BACKEND=loki
+ISSUES_QUERY_URL=http://127.0.0.1:3110
+ISSUES_QUERY_SELECTOR={service="myapp"}
+```
+
 ### 7. Backends
 
 - **Loki:** self-hosted monolithic with object storage, or a cloud stack. Query: `{service="…"} | json | error_group_hash="…"`.
@@ -226,6 +285,176 @@ Alloy as a system service with `local.file_match` on the file path and `loki.sou
   retention, a read-only API key for queries; an ingest pipeline that sets `event.ingested`.
 - **Sentry (optional):** set `ISSUES_RELEASE`; events are forwarded from the files by an async worker (next releases),
   never sent from the request.
+
+## The registry — job, tables, configuration
+
+Three tables, generated like every DDD entity (`app:generate-doctrine-models-for-entities`; the schema is the
+application's, as always): `IssueGroups` (one row per `error.group_hash`: status, sample, first/last seen, count,
+releases, entry points, alert state), `Issues` (one row per `error.issue_hash`: the cause per entry point) and
+`IssuesJobStates` (watermark and self-monitoring). The repositories are admin-only (`applyReadRightsQuery`); the job and
+the commands run without rights restrictions.
+
+**One run of `IssuesRegistryJobService::run()`:**
+
+1. **Discovery** — the backend aggregates the error events (error and above, or uncaught) per hash over the last
+   `ISSUES_DISCOVERY_WINDOW_MINUTES` (120: set it to the collector's maximum buffer age). An unknown group hash becomes
+   a group (with one sample event), an unknown issue hash an issue. Lines a collector replays late under their original
+   timestamp are still found; the unique hashes make it idempotent.
+2. **Regression** — a RESOLVED group with an event after its `resolvedAt` is reopened. A replay of older lines is not.
+3. **Counting** — over [watermark, now − 1 min]: counts aggregated by the backend (a storm of a million lines is one
+   number, not a million rows), last seen and release of the newest event. After an outage the next run counts the gap.
+4. **Alerts** (see example 8) and the job state.
+
+Counts are approximate under collector replays; first seen, the group set and the regression rule are exact.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ISSUES_QUERY_BACKEND` | `none` | `loki` (today); `none` = no registry, the application only logs |
+| `ISSUES_QUERY_URL` | | Loki base URL |
+| `ISSUES_QUERY_SELECTOR` | `{job=~".+"}` | stream selector of this application's issues lines |
+| `ISSUES_QUERY_USER` / `_TOKEN` | | user + token = basic auth, token alone = bearer |
+| `ISSUES_QUERY_TENANT` | | Loki `X-Scope-OrgID` |
+| `ISSUES_QUERY_TIMEOUT_SECONDS` | 10 | |
+| `ISSUES_ALERT_WEBHOOK` | | Slack-compatible webhook; unset = no alerts |
+| `ISSUES_ALERT_LINK_TEMPLATE` | | link in the alert, `{group_hash}` replaced |
+| `ISSUES_DISCOVERY_WINDOW_MINUTES` | 120 | |
+| `ISSUES_SEED_HOURS` | 24 | seed mode after the first run |
+| `ISSUES_GROUP_EXPLOSION_LIMIT` | 50 | new causes per hour before the explosion message |
+| `ISSUES_JOB_STALE_MINUTES` / `ISSUES_COLLECTOR_SILENT_MINUTES` | 10 / 60 | health thresholds |
+
+## Discovery CLI — the agent workflow
+
+Every command takes `--format=json`: stdout then carries only the JSON, messages go to stderr; exit 0 = success,
+1 = failure (backend unreachable, unhealthy), 2 = invalid input or unknown group.
+
+| Command | Purpose |
+|---|---|
+| `app:issues:list [--status=OPEN] [--new-since=24h] [--release=…] [--section=HTTP] [--environment=…] [--limit=50]` | groups, last seen first |
+| `app:issues:show <groupHash> [--events=3] [--since=7d]` | one group, its issues, the newest events with full context |
+| `app:issues:search [--text=…] [--level=error,warning] [--route=…] [--account=…] [--group=…] [--issue=…] [--since=1h] [--until=…] [--limit=20] [--oldest-first]` | events straight from the backend, any level |
+| `app:issues:resolve <groupHash>` / `ignore` / `reopen` | status; resolve = only a later event reopens it, ignore = never alerts again |
+| `app:issues:sync [--loop] [--interval=60] [--seed=HOURS]` | the job |
+| `app:issues:health` | the self-monitoring (example 9) |
+
+Times are relative (`30m`, `24h`, `7d`) or absolute dates. JSON shapes:
+
+- `list` → `{"count": n, "groups": [{groupHash, status, exceptionType, sampleMessage, slug, logOrigin, section,
+  environment, sampleEventId, firstSeenAt, lastSeenAt, registeredAt, eventCount, releaseFirstSeen, releaseLastSeen,
+  entryPoints: {"elements": [{"name": …}]}, resolvedAt, isNew, isRegression, alertPending, alertSentAt, link}]}`
+  (null fields are omitted; serialised objects also carry the framework's `objectType`).
+- `show` → `{"group": {…as above}, "issues": [{issueHash, entryPoint, firstSeenAt, lastSeenAt, eventCount}], "events":
+  [<the raw ECS lines as objects>], "eventsError": null|"…"}`.
+- `search` → `{"count": n, "events": [<raw ECS lines>]}`.
+- `resolve` / `ignore` / `reopen` → `{"groupHash": …, "status": …}`.
+- `health` → `{backendConfigured, lastSuccessfulRunAt, newestEventSeenAt, lastError, jobStalled, collectorSilent,
+  healthy}`.
+
+**Fix loop for an agent:**
+
+```bash
+php bin/console app:issues:list --status=OPEN --new-since=24h --format=json      # what broke
+php bin/console app:issues:show <groupHash> --events=3 --format=json             # stack trace, request, entry points
+# … fix, test, deploy …
+php bin/console app:issues:resolve <groupHash> --format=json                     # a new event now = regression alert
+php bin/console app:issues:search --since=5m --format=json                       # right after running something locally
+```
+
+## Admin UI — controller, DTO, list
+
+The registry is application data; an admin screen is a normal DDD admin endpoint in the application (conventions in
+`ddd-endpoint-specialist`; `AdminController` is the application's admin base). Boilerplate:
+
+```php
+#[Route('/admin/issues')]
+#[Tag(group: 'Admin', name: 'Issues', description: 'Production error groups')]
+class AdminIssuesController extends AdminController
+{
+    #[Get('/groups')]
+    #[Summary('Issue Groups List')]
+    public function listGroups(
+        IssueGroupsGetRequestDto &$requestDto,
+        IssueGroupsService $issueGroupsService
+    ): IssueGroupsGetResponseDto {
+        $responseDto = new IssueGroupsGetResponseDto();
+        $responseDto->issueGroups = $issueGroupsService->listGroups(new IssueGroupsFilter(
+            status: $requestDto->status,
+            newSince: $requestDto->newSince,
+            release: $requestDto->release,
+            limit: $requestDto->limit ?? 50,
+        ));
+        return $responseDto;
+    }
+
+    #[Get('/groups/{groupHash}')]
+    #[Summary('Issue Group Details')]
+    public function getGroup(
+        IssueGroupGetRequestDto &$requestDto,
+        IssueGroupsService $issueGroupsService
+    ): IssueGroupGetResponseDto {
+        $issueGroup = $issueGroupsService->findByGroupHash($requestDto->groupHash)
+            ?? throw new NotFoundException('Issue group not found');
+        $issueGroup->issues->getElements();   // loads the LazyLoad issues: the cause per entry point
+        $responseDto = new IssueGroupGetResponseDto();
+        $responseDto->issueGroup = $issueGroup;
+        return $responseDto;
+    }
+
+    #[Post('/groups/{groupHash}/resolve')]
+    #[Summary('Issue Group Resolve')]
+    public function resolveGroup(
+        IssueGroupGetRequestDto &$requestDto,
+        IssueGroupsService $issueGroupsService
+    ): IssueGroupGetResponseDto {
+        $issueGroup = $issueGroupsService->findByGroupHash($requestDto->groupHash)
+            ?? throw new NotFoundException('Issue group not found');
+        $responseDto = new IssueGroupGetResponseDto();
+        $responseDto->issueGroup = $issueGroupsService->resolve($issueGroup);   // ignore() / reopen() alike
+        return $responseDto;
+    }
+}
+
+class IssueGroupsGetRequestDto extends RequestDto
+{
+    /** @var string|null OPEN, RESOLVED or IGNORED */
+    #[Parameter(in: Parameter::QUERY)]
+    #[Choice(choices: IssueGroup::STATUSES)]
+    public ?string $status = null;
+
+    /** @var DateTime|null Registered at or after */
+    #[Parameter(in: Parameter::QUERY)]
+    public ?DateTime $newSince = null;
+
+    #[Parameter(in: Parameter::QUERY)]
+    public ?string $release = null;
+
+    #[Parameter(in: Parameter::QUERY)]
+    public ?int $limit = null;
+}
+
+class IssueGroupGetRequestDto extends RequestDto
+{
+    /** @var string error.group_hash of the group */
+    #[Parameter(in: Parameter::PATH, required: true)]
+    public string $groupHash;
+}
+
+class IssueGroupsGetResponseDto extends RestResponseDto
+{
+    #[Parameter(in: Parameter::RESPONSE, required: true)]
+    public IssueGroups $issueGroups;
+}
+
+class IssueGroupGetResponseDto extends RestResponseDto
+{
+    #[Parameter(in: Parameter::RESPONSE, required: true)]
+    public IssueGroup $issueGroup;
+}
+```
+
+The repositories already return nothing to non-admins; the admin base restricts the route as well. The
+list screen: status filter tabs (Open / Resolved / Ignored), columns type · message · events · last seen · release, flags
+"new" and "regression", row → detail with entry points, issues and a link into the log backend
+(`{service="…"} | json | error_group_hash="<hash>"`); the same URL is the `ISSUES_ALERT_LINK_TEMPLATE`.
 
 ## RC-compatible configuration
 
@@ -252,4 +481,7 @@ bypasses the log-once mark and both subscribers would log every uncaught error.
 | Every error twice | two capture subscribers (`ISSUES_CAPTURE_ENABLED=0` for the app's own), or a `logThrowable` override that skips `wasLogged()` |
 | "Uncaught PHP Exception" lines next to the issues line | the request-channel filter is not first: an app handler on `request` with a priority above 100 |
 | Lines cut at 1024 bytes (stderr) | the FPM `log_limit` |
+| Registry stays empty | `ISSUES_QUERY_BACKEND` set for the job process; `app:issues:search --since=24h` finds lines (selector, auth); only error and above or uncaught lines are registered |
+| No alerts | seed mode (first `ISSUES_SEED_HOURS` after the first run); `ISSUES_ALERT_WEBHOOK` set; group IGNORED; explosion guard (`app:issues:sync` prints it) |
+| `app:issues:health` fails | `lastError` in its output; the job not running; the collector not shipping (collector silent) |
 | One bug, many groups | a throw site in generated code with varying function names; look at `error.group_hash` inputs (`IssuesFingerprintBuilder::getFrames()`) |

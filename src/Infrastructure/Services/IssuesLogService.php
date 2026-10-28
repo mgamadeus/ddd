@@ -136,10 +136,12 @@ class IssuesLogService
 
         $fingerprintBuilder = $this->getFingerprintBuilder();
         $groupHash = $fingerprintBuilder->buildGroupHash($exception);
+        $entryPoint = $this->determineEntryPoint($exception);
         $context = array_merge($additionalContext, [
             'event.id' => $this->generateEventId(),
             'error.group_hash' => $groupHash,
-            'error.issue_hash' => $fingerprintBuilder->buildIssueHash($exception, $groupHash, $this->determineEntryPoint($exception)),
+            'error.issue_hash' => $fingerprintBuilder->buildIssueHash($exception, $groupHash, $entryPoint),
+            'error.entry_point' => $entryPoint,
             'error.type' => get_class($exception),
             'error.kind' => $exception instanceof Error ? 'Error' : 'Exception',
             'error.handled' => $additionalContext['error.handled'] ?? true,

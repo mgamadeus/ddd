@@ -85,3 +85,9 @@ Unchanged:
   error is logged twice), log-once, redaction and an 8 KB cap, the additional fields `error.group_hash`,
   `error.issue_hash`, `event.id` and `service.*` (`error.fingerprint*` unchanged), `app:issues:test`. Symfony's own
   "Uncaught PHP Exception" record is dropped for an error the issues log has.
+- 3.3.0 — the issues registry (skill `ddd-issues-log-specialist`). Off unless `ISSUES_QUERY_BACKEND` is set: then
+  `app:issues:sync` (a cron every minute or `--loop`, one instance) queries the log backend (Loki), keeps one row per
+  root cause in the new tables `IssueGroups`, `Issues`, `IssuesJobStates` (generate the models; create the tables like
+  any schema change) and posts new causes and regressions to `ISSUES_ALERT_WEBHOOK` — seed mode for the first 24 h,
+  explosion guard, `app:issues:health` for the job and the collector. Discovery CLI for agents:
+  `app:issues:list|show|search|resolve|ignore|reopen --format=json`. Each issues line gains `error.entry_point`.

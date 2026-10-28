@@ -46,3 +46,14 @@ services:
       interval: 2s
       timeout: 5s
       retries: 30
+
+  loki:
+    # The issues query backend of the issues registry tests (tests/Integration/Issues/LokiIssuesRegistryTest.php):
+    # single-binary Loki with its bundled local config (filesystem storage, auth off). Port via DDD_TEST_LOKI_PORT
+    # (default 3110); the test runs only when DDD_TEST_LOKI_URL points here.
+    image: grafana/loki:3.5.5
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    ports:
+      - "127.0.0.1:${DDD_TEST_LOKI_PORT:-3110}:3100"
+    tmpfs:
+      - /loki:uid=10001,gid=10001,mode=0755
