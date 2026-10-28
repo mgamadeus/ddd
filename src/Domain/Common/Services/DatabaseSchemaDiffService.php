@@ -11,6 +11,7 @@ use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalForeignKeys;
 use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalIndex;
 use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalIndexes;
 use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalTable;
+use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalTables;
 use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalTrigger;
 use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalTriggers;
 use DDD\Domain\Base\Repo\DB\Database\Canonical\DBCanonicalVirtualColumns;
@@ -39,9 +40,14 @@ use DDD\Domain\Base\Repo\DB\Database\Diff\DBTriggerDiff;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBTriggerDiffs;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBVirtualColumnDiff;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBVirtualColumnDiffs;
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatement;
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatements;
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\PostgresDdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\SqlScriptLexer;
+use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Exceptions\BadRequestException;
+use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\Config;
 use Doctrine\DBAL\Exception;
 use ReflectionException;
@@ -80,7 +86,109 @@ class DatabaseSchemaDiffService
      */
     public function __construct(?DatabaseSchemaIntrospectionService $introspectionService = null)
     {
-        $this->introspectionService = $introspectionService ?? new DatabaseSchemaIntrospectionService();
+        $this->introspectionService = $introspectionService
+            ?? ($this->isPostgres() ? new PostgresSchemaIntrospectionService() : new DatabaseSchemaIntrospectionService());
+    }
+
+    /** PostgreSQL: lock_timeout of every DDL statement of an apply (SET LOCAL inside the apply transaction). */
+    public const string POSTGRES_APPLY_LOCK_TIMEOUT = '10s';
+
+    /**
+     * @var DBCanonicalTables|null PostgreSQL: the target tables of the running compute, built from the entities in a
+     *      scratch schema and introspected like the live schema ({@see self::buildPostgresTargetTables()}).
+     */
+    protected ?DBCanonicalTables $postgresTargetTables = null;
+
+    /**
+     * The entity-derived target models the diff compares against — every entity of the framework, the application and
+     * its modules ({@see EntityModelGeneratorService::getDatabaseModels()}), or only $entityClasses of them.
+     *
+     * @param string[]|null $entityClasses
+     * @throws ReflectionException
+     */
+    protected function getTargetDatabaseModels(?array $entityClasses = null): DatabaseModels
+    {
+        return EntityModelGeneratorService::getDatabaseModels($entityClasses, filterOverriddenEntities: true);
+    }
+
+    protected function isPostgres(): bool
+    {
+        return EntityManagerFactory::getDialect()->name() === SqlDialect::POSTGRES;
+    }
+
+    /**
+     * PostgreSQL: builds the target tables (entity-derived) in a fresh scratch schema of the same database and
+     * introspects them like the live schema, so both sides of the comparison are normalised by PostgreSQL itself —
+     * types (`format_type`), defaults and generated expressions (`pg_get_expr`), index definitions and trigger
+     * functions. Everything runs in ONE transaction that is rolled back, so the scratch schema never persists; session
+     * state is only `SET LOCAL` (safe behind a transaction-mode pooler). The scratch schema is unique per run, so
+     * concurrent diffs on one database do not collide. Foreign keys are not built (they are compared logically);
+     * global objects — extensions and the `ddd_*` helper functions of {@see PostgresDdlRenderer::ensure()} — are
+     * taken from the live database, never created in the scratch schema.
+     *
+     * Needs the CREATE privilege on the database (for `CREATE SCHEMA`).
+     *
+     * @throws Exception
+     * @throws InternalErrorException The scratch schema cannot be created
+     * @throws ReflectionException
+     */
+    protected function buildPostgresTargetTables(DatabaseModels $databaseModels): DBCanonicalTables
+    {
+        $connection = EntityManagerFactory::getInstance()->getConnection();
+        /** @var PostgresDdlRenderer $renderer */
+        $renderer = EntityManagerFactory::getDialect()->ddlRenderer();
+        $createStatements = new DdlStatements();
+        foreach ($databaseModels->getElements() as $databaseModel) {
+            if ($databaseModel->parentEntityCLassWithNamespace !== null) {
+                continue;
+            }
+            $createStatements = $createStatements->withStatementsOf($renderer->renderCreate($databaseModel));
+        }
+        $createStatements = $createStatements->withoutPhase(DdlStatement::PHASE_CREATE_FOREIGN_KEY)->sortedByPhase();
+
+        $scratchSchemaName = 'ddd_diff_' . bin2hex(random_bytes(6));
+        $targetTables = new DBCanonicalTables();
+        $connection->beginTransaction();
+        try {
+            try {
+                $connection->executeStatement('CREATE SCHEMA "' . $scratchSchemaName . '"');
+            } catch (Exception $exception) {
+                throw new InternalErrorException(
+                    'The PostgreSQL schema diff builds the target schema in a scratch schema and needs the CREATE '
+                    . 'privilege on the database (GRANT CREATE ON DATABASE <db> TO <user>), which the connected user '
+                    . 'lacks: ' . $exception->getMessage()
+                );
+            }
+            $searchPath = (string)$connection->fetchOne('SHOW search_path');
+            $connection->executeStatement('SET LOCAL search_path TO "' . $scratchSchemaName . '", ' . $searchPath);
+            foreach ($createStatements->getElements() as $createStatement) {
+                foreach ($this->splitMultiStatementSql($createStatement->sql) as $singleStatement) {
+                    $connection->executeStatement($singleStatement);
+                }
+            }
+            $scratchIntrospectionService = new PostgresSchemaIntrospectionService($scratchSchemaName);
+            foreach ($databaseModels->getElements() as $databaseModel) {
+                $targetTable = $scratchIntrospectionService->introspectTable($databaseModel->sqlTableName);
+                if ($targetTable !== null) {
+                    $targetTables->add($targetTable);
+                }
+            }
+        } finally {
+            $connection->rollBack();
+        }
+        return $targetTables;
+    }
+
+    /**
+     * @throws InternalErrorException
+     */
+    protected function getPostgresTargetTable(string $tableName): DBCanonicalTable
+    {
+        $targetTable = $this->postgresTargetTables?->getByTableName($tableName);
+        if ($targetTable === null) {
+            throw new InternalErrorException("PostgreSQL schema diff: no target snapshot of table \"$tableName\" was built.");
+        }
+        return $targetTable;
     }
 
     /**
@@ -94,9 +202,12 @@ class DatabaseSchemaDiffService
      */
     public function computeDiffs(?array $entityClasses = null): DBTableDiffs
     {
-        $databaseModels = EntityModelGeneratorService::getDatabaseModels($entityClasses, filterOverriddenEntities: true);
+        $databaseModels = $this->getTargetDatabaseModels($entityClasses);
         $liveTableNames = $this->introspectionService->getLiveTableNames();
         $ignoredLiveTables = $this->getIgnoredLiveTables();
+        if ($this->isPostgres()) {
+            $this->postgresTargetTables = $this->buildPostgresTargetTables($databaseModels);
+        }
 
         $diffs = new DBTableDiffs();
         $targetTableNames = [];
@@ -167,7 +278,7 @@ class DatabaseSchemaDiffService
         }
         $scopeSet = array_fill_keys($sqlTableNames, true);
 
-        $databaseModels = EntityModelGeneratorService::getDatabaseModels(filterOverriddenEntities: true);
+        $databaseModels = $this->getTargetDatabaseModels();
         $liveTableNames = $this->introspectionService->getLiveTableNames();
         $ignoredLiveTables = $this->getIgnoredLiveTables();
 
@@ -180,6 +291,13 @@ class DatabaseSchemaDiffService
                 continue;
             }
             $targetByTableName[$databaseModel->sqlTableName] = $databaseModel;
+        }
+        if ($this->isPostgres()) {
+            $scopedDatabaseModels = new DatabaseModels();
+            foreach ($targetByTableName as $scopedDatabaseModel) {
+                $scopedDatabaseModels->add($scopedDatabaseModel);
+            }
+            $this->postgresTargetTables = $this->buildPostgresTargetTables($scopedDatabaseModels);
         }
 
         foreach ($sqlTableNames as $tableName) {
@@ -309,8 +427,9 @@ class DatabaseSchemaDiffService
         return "Direct apply on large table `$tableName` ($sizeShown, $rowsShown — exceeds thresholds {$sizeThreshold} MB / " . number_format($rowThreshold) . " rows) is BLOCKED.\n\n" .
             "The diff contains operations that force ALGORITHM=COPY under Galera TOI, which would block the entire cluster for the duration of the table rewrite:\n" .
             $offending . "\n\n" .
-            "Use pt-online-schema-change instead.\n\n" .
-            "Recommended: invoke the `rb-db-online-schema-update-specialist` skill via a Claude Code Agent. It bundles the pre-flight checks, triple-reasoning gate, dry-run, tmux run procedure and post-verification specific to this cluster.\n\n" .
+            ($this->isPostgres()
+                ? "Change the table online instead (expand/contract steps, CREATE INDEX CONCURRENTLY, NOT VALID + VALIDATE) following your deployment's online-schema-change runbook.\n\n"
+                : "Use pt-online-schema-change instead, following your deployment's online-schema-change runbook (pre-flight checks, dry-run, post-verification).\n\n") .
             "Programmatic-only override: call `applyDiff(\$diff, …, bypassProductionGuard: true)` from a CLI command. The admin HTTP API does NOT expose this flag by design.";
     }
 
@@ -401,16 +520,20 @@ class DatabaseSchemaDiffService
                     $this->assertSafeForDirectApply($diff);
                 }
             }
-            if ($disableForeignKeyChecks) {
-                $connection->executeStatement('SET FOREIGN_KEY_CHECKS=0;');
-            }
-            try {
-                foreach ($diffs->getElements() as $diff) {
-                    $this->executeTableDiff($diff);
-                }
-            } finally {
+            if ($this->isPostgres()) {
+                $this->executePostgresTableDiffs($diffs);
+            } else {
                 if ($disableForeignKeyChecks) {
-                    $connection->executeStatement('SET FOREIGN_KEY_CHECKS=1;');
+                    $connection->executeStatement('SET FOREIGN_KEY_CHECKS=0;');
+                }
+                try {
+                    foreach ($diffs->getElements() as $diff) {
+                        $this->executeTableDiff($diff);
+                    }
+                } finally {
+                    if ($disableForeignKeyChecks) {
+                        $connection->executeStatement('SET FOREIGN_KEY_CHECKS=1;');
+                    }
                 }
             }
             $this->introspectionService->invalidateCache();
@@ -647,6 +770,9 @@ class DatabaseSchemaDiffService
     public function getTableSizeStats(string $sqlTableName): ?DBTableSizeStats
     {
         $connection = EntityManagerFactory::getInstance()->getConnection();
+        if ($this->isPostgres()) {
+            return $this->getPostgresTableSizeStats($sqlTableName);
+        }
         try {
             $row = $connection->fetchAssociative(
                 'SELECT ROUND((data_length + index_length) / 1024 / 1024) AS size_mb,
@@ -664,6 +790,31 @@ class DatabaseSchemaDiffService
         $stats = new DBTableSizeStats();
         $stats->sizeMb = $row['size_mb'] !== null ? (int)$row['size_mb'] : null;
         $stats->rowCount = $row['row_count'] !== null ? (int)$row['row_count'] : null;
+        return $stats;
+    }
+
+    /**
+     * PostgreSQL size of the table with its indexes and TOAST (`pg_total_relation_size()`) and the planner's row
+     * estimate (`pg_class.reltuples`, -1 before the first ANALYZE → unknown).
+     */
+    protected function getPostgresTableSizeStats(string $sqlTableName): ?DBTableSizeStats
+    {
+        try {
+            $row = EntityManagerFactory::getInstance()->getConnection()->fetchAssociative(
+                "SELECT round(pg_total_relation_size(c.oid) / 1024.0 / 1024.0) AS size_mb, c.reltuples AS row_count
+                 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = current_schema() AND c.relname = :table AND c.relkind IN ('r', 'p')",
+                ['table' => $sqlTableName]
+            );
+        } catch (\Throwable) {
+            return null;
+        }
+        if (!$row) {
+            return null;
+        }
+        $stats = new DBTableSizeStats();
+        $stats->sizeMb = $row['size_mb'] !== null ? (int)$row['size_mb'] : null;
+        $stats->rowCount = $row['row_count'] !== null && (float)$row['row_count'] >= 0 ? (int)$row['row_count'] : null;
         return $stats;
     }
 
@@ -758,6 +909,49 @@ class DatabaseSchemaDiffService
     }
 
     /**
+     * PostgreSQL apply: every statement of every diff in ONE transaction (PostgreSQL DDL is transactional — a failure
+     * leaves the schema untouched), each statement bounded by `SET LOCAL lock_timeout`
+     * ({@see self::POSTGRES_APPLY_LOCK_TIMEOUT}; SET LOCAL keeps a transaction-mode pooler clean). There is no
+     * FOREIGN_KEY_CHECKS switch: foreign keys are added after every other statement of the batch, so a new table's
+     * constraint never precedes the table it references.
+     *
+     * @throws Exception
+     */
+    protected function executePostgresTableDiffs(DBTableDiffs $diffs): void
+    {
+        $connection = EntityManagerFactory::getInstance()->getConnection();
+        $statements = [];
+        $foreignKeyStatements = [];
+        foreach ($diffs->getElements() as $diff) {
+            if ($diff->sql === '') {
+                continue;
+            }
+            foreach ($diff->sqlStatements->getElements() as $statement) {
+                foreach ($this->splitMultiStatementSql($statement->sql) as $singleStatement) {
+                    if (preg_match('/^\s*ALTER\s+TABLE\s.+\sADD\s+CONSTRAINT\s.+\sFOREIGN\s+KEY\s/is', $singleStatement)) {
+                        $foreignKeyStatements[] = $singleStatement;
+                    } else {
+                        $statements[] = $singleStatement;
+                    }
+                }
+            }
+        }
+        $connection->beginTransaction();
+        try {
+            $connection->executeStatement("SET LOCAL lock_timeout = '" . self::POSTGRES_APPLY_LOCK_TIMEOUT . "'");
+            foreach ([...$statements, ...$foreignKeyStatements] as $singleStatement) {
+                $connection->executeStatement($singleStatement);
+            }
+            $connection->commit();
+        } catch (\Throwable $throwable) {
+            if ($connection->isTransactionActive()) {
+                $connection->rollBack();
+            }
+            throw $throwable;
+        }
+    }
+
+    /**
      * Splits a multi-statement SQL string into individually-executable statements via
      * {@see SqlScriptLexer::splitStatements()} (Arch §4.10) — quote/comment/`BEGIN…END`-aware, unlike the naive
      * `explode(';', …)` this replaced, which would have wrongly cut a trigger's compound-statement body
@@ -783,6 +977,20 @@ class DatabaseSchemaDiffService
         $diff->sqlTableName = $databaseModel->sqlTableName;
         $diff->entityClassWithNamespace = $databaseModel->entityClassWithNamespace;
 
+        if ($current === null && $this->isPostgres()) {
+            $diff->changeType = DBTableDiff::CHANGE_TYPE_CREATE_TABLE;
+            $createStatements = EntityManagerFactory::getDialect()->ddlRenderer()->renderCreate($databaseModel)->sortedByPhase();
+            $createStatementList = [];
+            foreach ($createStatements->getElements() as $createStatement) {
+                foreach ($this->splitMultiStatementSql($createStatement->sql) as $singleStatement) {
+                    $createStatementList[] = $singleStatement;
+                }
+            }
+            $diff->sqlStatements = DBSqlStatements::fromStringList($createStatementList);
+            $diff->sql = $createStatementList !== [] ? implode(";\n", $createStatementList) . ';' : '';
+            $diff->severity = DBTableDiff::SEVERITY_ADDITIVE;
+            return $diff;
+        }
         if ($current === null) {
             $diff->changeType = DBTableDiff::CHANGE_TYPE_CREATE_TABLE;
             $createTableSql = $databaseModel->getSql();
@@ -797,9 +1005,17 @@ class DatabaseSchemaDiffService
             return $diff;
         }
 
-        $targetColumns = $this->canonicaliseTargetColumns($databaseModel);
-        $targetVirtualColumns = $this->canonicaliseTargetVirtualColumns($databaseModel);
-        $targetIndexes = $this->canonicaliseTargetIndexes($databaseModel);
+        if ($this->isPostgres()) {
+            // both sides normalised by PostgreSQL: the target from the scratch schema built from the entities
+            $postgresTargetTable = $this->getPostgresTargetTable($databaseModel->sqlTableName);
+            $targetColumns = $postgresTargetTable->columns;
+            $targetVirtualColumns = $postgresTargetTable->virtualColumns;
+            $targetIndexes = $postgresTargetTable->indexes;
+        } else {
+            $targetColumns = $this->canonicaliseTargetColumns($databaseModel);
+            $targetVirtualColumns = $this->canonicaliseTargetVirtualColumns($databaseModel);
+            $targetIndexes = $this->canonicaliseTargetIndexes($databaseModel);
+        }
         $targetForeignKeys = $this->canonicaliseTargetForeignKeys($databaseModel);
 
         $diff->columnDiffs = $this->diffColumns($databaseModel, $targetColumns, $current->columns);
@@ -816,7 +1032,8 @@ class DatabaseSchemaDiffService
         );
         $diff->triggerDiffs = $this->diffTriggers($databaseModel, $current->triggers);
 
-        if (strcasecmp($databaseModel->collation, $current->collation) !== 0) {
+        // PostgreSQL has no table collation (column collations are part of the column comparison)
+        if (!$this->isPostgres() && strcasecmp($databaseModel->collation, $current->collation) !== 0) {
             $collationChange = new DBCollationChange();
             $collationChange->from = $current->collation;
             $collationChange->to = $databaseModel->collation;
@@ -962,11 +1179,11 @@ class DatabaseSchemaDiffService
         $upper = strtoupper(ltrim($statement));
         return match (true) {
             str_starts_with($upper, 'DROP TRIGGER')                                        => '00_drop_trigger',
-            str_contains($upper, 'DROP FOREIGN KEY')                                       => '01_drop_fk',
+            str_contains($upper, 'DROP FOREIGN KEY') || str_contains($upper, 'DROP CONSTRAINT') => '01_drop_fk',
             str_contains($upper, 'DROP INDEX')                                             => '02_drop_index',
             str_contains($upper, 'DROP COLUMN')                                            => '04_drop_column',
             str_contains($upper, 'COLLATE')                                                => '05_collate',
-            str_contains($upper, 'MODIFY COLUMN')                                          => '06_modify_column',
+            str_contains($upper, 'MODIFY COLUMN') || str_contains($upper, 'ALTER COLUMN')  => '06_modify_column',
             str_contains($upper, 'ADD COLUMN')                                             => '07_add_column',
             str_starts_with($upper, 'CREATE INDEX') || str_starts_with($upper, 'CREATE UNIQUE INDEX')
                 || str_starts_with($upper, 'CREATE FULLTEXT INDEX') || str_starts_with($upper, 'CREATE SPATIAL INDEX')
@@ -1018,7 +1235,7 @@ class DatabaseSchemaDiffService
             $needsDrop = $triggerDiff->changeKind === DBTriggerDiff::CHANGE_KIND_DROP
                 || $triggerDiff->changeKind === DBTriggerDiff::CHANGE_KIND_MODIFY;
             if ($needsDrop) {
-                $statements[] = $this->renderTriggerDropSql($triggerDiff->triggerName);
+                $statements[] = $this->renderTriggerDropSql($triggerDiff->triggerName, $tableName);
             }
         }
 
@@ -1079,7 +1296,7 @@ class DatabaseSchemaDiffService
                 continue;
             }
             if ($columnDiff->targetColumn !== null) {
-                $statements[] = $this->renderColumnModifySql($tableName, $columnDiff->targetColumn);
+                $statements[] = $this->renderColumnModifySql($tableName, $columnDiff->targetColumn, $columnDiff->changedAttributes);
             }
         }
 
@@ -1106,6 +1323,8 @@ class DatabaseSchemaDiffService
         foreach ($diff->indexDiffs->getElements() as $indexDiff) {
             if ($indexDiff->changeKind === DBIndexDiff::CHANGE_KIND_ADD && $indexDiff->targetIndex !== null) {
                 $statements[] = $this->renderIndexAddSql($tableName, $indexDiff->targetIndex);
+            } elseif ($indexDiff->changeKind === DBIndexDiff::CHANGE_KIND_ADD && $indexDiff->targetDefinitionSql !== null) {
+                $statements[] = $indexDiff->targetDefinitionSql;
             }
         }
 
@@ -1160,7 +1379,7 @@ class DatabaseSchemaDiffService
         $diff->sqlTableName = $tableName;
         $diff->changeType = DBTableDiff::CHANGE_TYPE_DROP_TABLE;
         $diff->severity = DBTableDiff::SEVERITY_DESTRUCTIVE;
-        $statement = "DROP TABLE `$tableName`";
+        $statement = $this->isPostgres() ? 'DROP TABLE "' . $tableName . '"' : "DROP TABLE `$tableName`";
         $diff->sql = $statement . ';';
         $diff->sqlStatements = DBSqlStatements::fromStringList([$statement]);
         // Signature is set by computeDiffs() after the production-guard decorator runs so live
@@ -1174,16 +1393,55 @@ class DatabaseSchemaDiffService
 
     protected function renderColumnAddSql(string $tableName, DatabaseColumn $col): string
     {
+        if ($this->isPostgres()) {
+            $targetColumn = $this->getPostgresTargetTable($tableName)->columns->getByColumnName($col->name);
+            return 'ALTER TABLE "' . $tableName . '" ADD COLUMN ' . $this->renderPostgresColumnDefinition($targetColumn);
+        }
         return sprintf('ALTER TABLE `%s` %s', $tableName, (string)$col->getSql(true));
     }
 
     protected function renderColumnDropSql(string $tableName, string $columnName): string
     {
+        if ($this->isPostgres()) {
+            return 'ALTER TABLE "' . $tableName . '" DROP COLUMN "' . $columnName . '"';
+        }
         return sprintf('ALTER TABLE `%s` DROP COLUMN `%s`', $tableName, $columnName);
     }
 
-    protected function renderColumnModifySql(string $tableName, DatabaseColumn $col): string
+    /**
+     * PostgreSQL column definition from a canonical target column (scratch schema): type, collation, identity,
+     * default, NOT NULL — or the generated-column form.
+     */
+    protected function renderPostgresColumnDefinition(DBCanonicalColumn $column): string
     {
+        $definition = '"' . $column->name . '" ' . $column->sqlType;
+        if ($column->collation !== null) {
+            $definition .= ' COLLATE "' . $column->collation . '"';
+        }
+        if ($column->isGenerated) {
+            return $definition . ' GENERATED ALWAYS AS (' . $column->generationExpression . ') STORED';
+        }
+        if ($column->hasAutoIncrement) {
+            $definition .= ' GENERATED BY DEFAULT AS IDENTITY';
+        }
+        if ($column->defaultValue !== null) {
+            $definition .= ' DEFAULT ' . $column->defaultValue;
+        }
+        if (!$column->allowsNull) {
+            $definition .= ' NOT NULL';
+        }
+        return $definition;
+    }
+
+    /**
+     * @param string[] $changedAttributes The differing canonical attributes (see compareCanonicalColumns()); PostgreSQL
+     *        alters exactly these, MariaDB re-states the whole column
+     */
+    protected function renderColumnModifySql(string $tableName, DatabaseColumn $col, array $changedAttributes = []): string
+    {
+        if ($this->isPostgres()) {
+            return $this->renderPostgresColumnModifySql($tableName, $col->name, $changedAttributes);
+        }
         // DatabaseColumn::getSql(true) prefixes with "ADD COLUMN IF NOT EXISTS ". Strip that for MODIFY.
         $columnSql = (string)preg_replace(
             '/^ADD COLUMN IF NOT EXISTS /',
@@ -1191,6 +1449,41 @@ class DatabaseSchemaDiffService
             (string)$col->getSql(true)
         );
         return sprintf('ALTER TABLE `%s` MODIFY COLUMN %s', $tableName, $columnSql);
+    }
+
+    /**
+     * PostgreSQL in-place column change: one `ALTER TABLE` with an `ALTER COLUMN` action per changed attribute —
+     * `TYPE … [COLLATE] USING`, `SET/DROP DEFAULT`, `SET/DROP NOT NULL`, `ADD/DROP IDENTITY`. Without
+     * $changedAttributes every attribute is re-stated.
+     *
+     * @param string[] $changedAttributes
+     * @throws InternalErrorException
+     */
+    protected function renderPostgresColumnModifySql(string $tableName, string $columnName, array $changedAttributes): string
+    {
+        $targetColumn = $this->getPostgresTargetTable($tableName)->columns->getByColumnName($columnName);
+        $restatesEverything = $changedAttributes === [];
+        $alterColumn = 'ALTER COLUMN "' . $columnName . '" ';
+        $actions = [];
+        if ($restatesEverything || array_intersect(['sqlType', 'length', 'vectorDimensions', 'collation'], $changedAttributes) !== []) {
+            $collation = $targetColumn->collation !== null ? ' COLLATE "' . $targetColumn->collation . '"' : '';
+            $actions[] = $alterColumn . 'TYPE ' . $targetColumn->sqlType . $collation
+                . ' USING "' . $columnName . '"::' . $targetColumn->sqlType;
+        }
+        if ($restatesEverything || in_array('hasAutoIncrement', $changedAttributes, true)) {
+            $actions[] = $targetColumn->hasAutoIncrement
+                ? $alterColumn . 'ADD GENERATED BY DEFAULT AS IDENTITY'
+                : $alterColumn . 'DROP IDENTITY IF EXISTS';
+        }
+        if ($restatesEverything || in_array('defaultValue', $changedAttributes, true)) {
+            $actions[] = $targetColumn->defaultValue !== null
+                ? $alterColumn . 'SET DEFAULT ' . $targetColumn->defaultValue
+                : $alterColumn . 'DROP DEFAULT';
+        }
+        if ($restatesEverything || in_array('allowsNull', $changedAttributes, true)) {
+            $actions[] = $alterColumn . ($targetColumn->allowsNull ? 'DROP NOT NULL' : 'SET NOT NULL');
+        }
+        return 'ALTER TABLE "' . $tableName . '" ' . implode(', ', $actions);
     }
 
     protected function renderIndexAddSql(string $tableName, DatabaseIndex $idx): string
@@ -1201,6 +1494,9 @@ class DatabaseSchemaDiffService
 
     protected function renderIndexDropSql(string $tableName, string $indexName): string
     {
+        if ($this->isPostgres()) {
+            return 'DROP INDEX "' . $indexName . '"';
+        }
         return sprintf('ALTER TABLE `%s` DROP INDEX `%s`', $tableName, $indexName);
     }
 
@@ -1213,21 +1509,37 @@ class DatabaseSchemaDiffService
      */
     protected function renderForeignKeyAddSql(string $tableName, DatabaseForeignKey $fk, ?string $constraintNameOverride = null): string
     {
+        if ($this->isPostgres()) {
+            $constraintName = $constraintNameOverride ?? substr('fk_' . $tableName . '_' . $fk->internalIdColumn, 0, 63);
+            return 'ALTER TABLE "' . $tableName . '" ADD CONSTRAINT "' . $constraintName . '" FOREIGN KEY ("'
+                . $fk->internalIdColumn . '") REFERENCES "' . $fk->foreignTable . '" ("' . $fk->foreignIdColumn . '")'
+                . ' ON DELETE ' . $fk->onDeleteAction . ' ON UPDATE ' . $fk->onUpdateAction;
+        }
         return sprintf('ALTER TABLE `%s` %s', $tableName, $fk->getSql($tableName, $constraintNameOverride));
     }
 
     protected function renderForeignKeyDropSql(string $tableName, string $constraintName): string
     {
+        if ($this->isPostgres()) {
+            return 'ALTER TABLE "' . $tableName . '" DROP CONSTRAINT "' . $constraintName . '"';
+        }
         return sprintf('ALTER TABLE `%s` DROP FOREIGN KEY `%s`', $tableName, $constraintName);
     }
 
     protected function renderVirtualColumnAddSql(string $tableName, DatabaseVirtualColumn $vc): string
     {
+        if ($this->isPostgres()) {
+            $targetColumn = $this->getPostgresTargetTable($tableName)->virtualColumns->getByColumnName($vc->getName());
+            return 'ALTER TABLE "' . $tableName . '" ADD COLUMN ' . $this->renderPostgresColumnDefinition($targetColumn);
+        }
         return sprintf('ALTER TABLE `%s` %s', $tableName, $vc->getSql(true));
     }
 
     protected function renderVirtualColumnDropSql(string $tableName, string $columnName): string
     {
+        if ($this->isPostgres()) {
+            return 'ALTER TABLE "' . $tableName . '" DROP COLUMN "' . $columnName . '"';
+        }
         return sprintf('ALTER TABLE `%s` DROP COLUMN `%s`', $tableName, $columnName);
     }
 
@@ -1252,6 +1564,10 @@ class DatabaseSchemaDiffService
     protected function renderVectorResetSql(string $tableName, string $columnName, int $dimensions): string
     {
         $dimensions = max(1, $dimensions);
+        if ($this->isPostgres()) {
+            return 'UPDATE "' . $tableName . '" SET "' . $columnName . '" = (\'[\' || repeat(\'0,\', ' . ($dimensions - 1)
+                . ') || \'0]\')::vector';
+        }
         $zeros = implode(',', array_fill(0, $dimensions, '0'));
         return sprintf(
             "UPDATE `%s` SET `%s` = VEC_FromText('[%s]')",
@@ -1265,8 +1581,12 @@ class DatabaseSchemaDiffService
      * Triggers live in the schema namespace (not the table namespace), so DROP TRIGGER never
      * takes a table reference. IF EXISTS keeps reruns idempotent.
      */
-    protected function renderTriggerDropSql(string $triggerName): string
+    protected function renderTriggerDropSql(string $triggerName, ?string $tableName = null): string
     {
+        if ($this->isPostgres()) {
+            // PostgreSQL triggers belong to their table; the trigger function stays (CREATE OR REPLACE on re-create)
+            return 'DROP TRIGGER IF EXISTS "' . $triggerName . '" ON "' . $tableName . '"';
+        }
         return sprintf('DROP TRIGGER IF EXISTS `%s`', $triggerName);
     }
 
@@ -1557,7 +1877,7 @@ class DatabaseSchemaDiffService
                     : $drop;
             } else {
                 $diff->sql = $diff->targetColumn !== null
-                    ? $this->renderColumnModifySql($tableName, $diff->targetColumn)
+                    ? $this->renderColumnModifySql($tableName, $diff->targetColumn, $changedAttributes)
                     : '';
             }
 
@@ -1841,6 +2161,11 @@ class DatabaseSchemaDiffService
             $diff->changeKind = DBIndexDiff::CHANGE_KIND_ADD;
             $diff->targetIndex = $idx;
             $diff->sql = $idx !== null ? $this->renderIndexAddSql($tableName, $idx) : '';
+            if ($idx === null && $t->definitionSql !== null) {
+                // PostgreSQL: the target index is identified by its definition in the scratch schema
+                $diff->targetDefinitionSql = $t->definitionSql;
+                $diff->sql = $t->definitionSql;
+            }
             $tmp = $diff;
             $diffs->add($tmp);
         }
@@ -2063,7 +2388,7 @@ class DatabaseSchemaDiffService
             $diff->tableName = $tableName;
             $diff->changeKind = DBTriggerDiff::CHANGE_KIND_DROP;
             $diff->currentDefinition = $c;
-            $diff->sql = $this->renderTriggerDropSql($triggerName);
+            $diff->sql = $this->renderTriggerDropSql($triggerName, $tableName);
             $tmp = $diff;
             $diffs->add($tmp);
         }
@@ -2082,7 +2407,7 @@ class DatabaseSchemaDiffService
             $diff->changeKind = DBTriggerDiff::CHANGE_KIND_MODIFY;
             $diff->targetSql = (string)$t->rawSql;
             $diff->currentDefinition = $currentTrigger;
-            $diff->sql = $this->renderTriggerDropSql($triggerName) . ";\n" . $diff->targetSql;
+            $diff->sql = $this->renderTriggerDropSql($triggerName, $tableName) . ";\n" . $diff->targetSql;
             $tmp = $diff;
             $diffs->add($tmp);
         }
@@ -2099,6 +2424,9 @@ class DatabaseSchemaDiffService
      */
     protected function canonicaliseTargetTriggers(DatabaseModel $databaseModel): DBCanonicalTriggers
     {
+        if ($this->isPostgres()) {
+            return $this->canonicalisePostgresTargetTriggers($databaseModel);
+        }
         $triggers = new DBCanonicalTriggers();
         if ($databaseModel->triggers === null) {
             return $triggers;
@@ -2116,6 +2444,37 @@ class DatabaseSchemaDiffService
                 $canonical->normalisedBody = $this->introspectionService->normaliseTriggerBody($extracted['body']);
                 $triggers->add($canonical);
             }
+        }
+        return $triggers;
+    }
+
+    /**
+     * PostgreSQL: the target triggers as built in the scratch schema (body = trigger definition + function source, as
+     * on the live side), each with the statements that create it — the trigger function and the trigger, from
+     * {@see PostgresDdlRenderer::renderTrigger()}.
+     *
+     * @throws InternalErrorException
+     * @throws ReflectionException
+     */
+    protected function canonicalisePostgresTargetTriggers(DatabaseModel $databaseModel): DBCanonicalTriggers
+    {
+        $triggers = new DBCanonicalTriggers();
+        $createSqlByTriggerName = [];
+        if ($databaseModel->triggers !== null) {
+            /** @var PostgresDdlRenderer $renderer */
+            $renderer = EntityManagerFactory::getDialect()->ddlRenderer();
+            foreach ($databaseModel->triggers->getElements() as $databaseTrigger) {
+                $triggerStatements = $renderer->renderTrigger($databaseModel, $databaseTrigger)->getSqlList();
+                foreach ($triggerStatements as $triggerStatement) {
+                    if (preg_match('/CREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\s+"?([A-Za-z_][A-Za-z0-9_]*)"?/i', $triggerStatement, $nameMatch)) {
+                        $createSqlByTriggerName[$nameMatch[1]] = implode(";\n", $triggerStatements);
+                    }
+                }
+            }
+        }
+        foreach ($this->getPostgresTargetTable($databaseModel->sqlTableName)->triggers->getElements() as $scratchTrigger) {
+            $scratchTrigger->rawSql = $createSqlByTriggerName[$scratchTrigger->triggerName] ?? null;
+            $triggers->add($scratchTrigger);
         }
         return $triggers;
     }

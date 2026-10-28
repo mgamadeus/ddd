@@ -28,6 +28,12 @@ class DBCanonicalIndex extends ValueObject
     /** @var string|null Live-side index name. Null on target side. */
     public ?string $indexName = null;
 
+    /**
+     * @var string|null PostgreSQL: the index definition (`pg_get_indexdef()`, schema qualifiers stripped) — the
+     *      statement that creates the index. Null on MariaDB.
+     */
+    public ?string $definitionSql = null;
+
     public function uniqueKey(): string
     {
         return self::uniqueKeyStatic($this->matchKey);

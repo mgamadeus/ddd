@@ -36,6 +36,12 @@ class DBIndexDiff extends ValueObject
     public ?string $currentIndexName = null;
 
     /**
+     * @var string|null PostgreSQL: the statement that creates the target index (its definition in the scratch schema the
+     *      diff builds from the entities). Null on MariaDB, where {@see self::$targetIndex} renders it.
+     */
+    public ?string $targetDefinitionSql = null;
+
+    /**
      * @var DatabaseIndex|null Target-side definition. Null for DROP. See DBColumnDiff::$targetColumn
      * for why this is excluded from both JSON output and OpenAPI schema.
      */

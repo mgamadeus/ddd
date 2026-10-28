@@ -333,7 +333,7 @@ class PostgresDdlRenderer implements DdlRenderer
      *
      * @return DdlStatements
      */
-    protected function renderTrigger(DatabaseModel $databaseModel, DatabaseTrigger $trigger): DdlStatements
+    public function renderTrigger(DatabaseModel $databaseModel, DatabaseTrigger $trigger): DdlStatements
     {
         $table = $databaseModel->sqlTableName;
         $sql = $trigger->getSqlForDialect($databaseModel->entityClassWithNamespace, SqlDialect::POSTGRES);

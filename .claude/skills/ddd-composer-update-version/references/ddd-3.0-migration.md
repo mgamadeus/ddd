@@ -67,3 +67,8 @@ Unchanged:
   `INSERT` (no `ON DUPLICATE KEY UPDATE`, no `ON CONFLICT`), never an update; a unique-key or primary-key collision
   throws `UniqueConstraintViolationException` unchanged. No change to `update()`. Code that implements
   `Dialect\Write\UpsertBuilder` itself adds `insert()`.
+- 3.1.1 — the schema diff (`DatabaseSchemaDiffService`, `/databaseModels/diff` and apply) works on PostgreSQL: the
+  target is built from the entities in a rolled-back scratch schema and compared with the live schema
+  (`current_schema()`) through `PostgresSchemaIntrospectionService`; the apply runs in one transaction with
+  `SET LOCAL lock_timeout`. Needs the CREATE privilege on the database (for the scratch schema) and the `ensure()`
+  objects on the live database. MariaDB unchanged. The large-table guard message no longer names an app skill.
