@@ -128,3 +128,8 @@ Unchanged:
   $environment|null, $groupHash|null, TimeInterval, ?$stepSeconds)`, `app:issues:trend` JSON `values: [{x, y}]`;
   3.6.0's `IssueTrend` is gone. `RuntimeErrorTrend::fromDateTimeValueSequence()` adapts a series to the runtime-error
   trend shape.
+- 3.7.1 — caught message-handler errors reach the issues log: `AppMessageHandler::logShortException()` also logs the
+  throwable there (CRITICAL, section MESSENGER, `messenger.custom_message`), `logIssue()` writes rankingCoach's keys
+  `messenger.custom_message` / `messenger.message_payload` (before: `message.custom_message` / `message.payload`) and
+  no longer loses the payload on an unset typed property; neither throws out of a catch block. `ProcessCLIMessage`
+  logs the failing handler's own error (unwrapped, uncaught).

@@ -3,7 +3,7 @@ name: ddd-issues-log-specialist
 description: "Log, cluster, ship and track errors with the mgamadeus/ddd issues log: IssuesLogService::logThrowable (log-once), the issues channel sinks (ISSUES_LOG_TARGET file/stderr/none, ECS JSON), capture, redaction, hashes error.group_hash / error.issue_hash; the registry (app:issues:sync over Loki, Elasticsearch / OpenSearch or Sentry, per environment / dev workspace, seed mode, explosion guard, regressions, Slack alerts, app:issues:health); agent CLI app:issues:list / show / search / resolve / trend --format=json; RuntimeErrorsService and app:runtime-errors:extract / probe (rankingCoach-compatible, ES_LOGS_*); app:issues:forward-sentry; admin boilerplate; DevOps examples. Use when logging an exception, nobody sees production errors, configuring where errors go or alerts, shipping logs, errors logged twice, one bug in many groups, finding and fixing errors of an environment or workspace as an agent, querying runtime errors in Elasticsearch, forwarding to Sentry, or building an issues admin screen."
 metadata:
   author: mgamadeus
-  version: "1.5.0"
+  version: "1.6.0"
   framework: mgamadeus/ddd
 ---
 
@@ -96,6 +96,26 @@ digit runs of 9+; the event is capped (full trace first, then the short trace, t
 - **Not reachable from PHP:** OOM kills, crash loops, start-up failures before the kernel boots — alert on them in
   Kubernetes (kube-state-metrics: `kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}`,
   `kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}`, restart rate).
+
+## Errors in message handlers
+
+The capture subscriber sees only *uncaught* job failures. A handler that catches its error reports it itself:
+
+```php
+try {
+    $qrScansService->process($appMessage->qrScanId);
+} catch (Throwable $throwable) {
+    $this->logIssue($throwable, $appMessage, 'QR scan ' . $appMessage->qrScanId);   // into the issues log
+}
+```
+
+`AppMessageHandler::logIssue($throwable, $appMessage, ?$customMessage)` logs CRITICAL, section `MESSENGER`, with
+`messenger.custom_message` and `messenger.message_payload` (the message's scalar public properties as JSON — what
+rankingCoach's handlers write). `logShortException($logger, $context, $throwable)` keeps its Monolog line and since
+3.7.1 also reaches the issues log (`messenger.custom_message` = the context), so existing handlers are captured
+unchanged; prefer `logIssue()` for the payload. One throwable is one event, whichever is called first; a failing
+issues log never leaves the catch block. A handler run in its workspace's CLI process (`ProcessCLIMessage`) logs its
+own error there, uncaught, before the parent sees the exit code.
 
 ## Grouping — the two hashes
 
