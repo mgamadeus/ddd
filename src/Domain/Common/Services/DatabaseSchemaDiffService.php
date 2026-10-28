@@ -83,11 +83,16 @@ class DatabaseSchemaDiffService
      * @param DatabaseSchemaIntrospectionService|null $introspectionService Optional override —
      *        the diff service holds the introspection cache, so tests / consumers that want a
      *        pre-warmed or pre-mocked introspector inject it here. Default constructs a fresh one.
+     *        On PostgreSQL only a {@see PostgresSchemaIntrospectionService} is used — any other instance (the
+     *        container autowires the MariaDB class) is replaced by a fresh PostgreSQL one.
      */
     public function __construct(?DatabaseSchemaIntrospectionService $introspectionService = null)
     {
-        $this->introspectionService = $introspectionService
-            ?? ($this->isPostgres() ? new PostgresSchemaIntrospectionService() : new DatabaseSchemaIntrospectionService());
+        $this->introspectionService = $introspectionService ?? new DatabaseSchemaIntrospectionService();
+        // the container autowires the concrete (MariaDB) introspection service; PostgreSQL reads its own catalog
+        if ($this->isPostgres() && !$this->introspectionService instanceof PostgresSchemaIntrospectionService) {
+            $this->introspectionService = new PostgresSchemaIntrospectionService();
+        }
     }
 
     /** PostgreSQL: lock_timeout of every DDL statement of an apply (SET LOCAL inside the apply transaction). */

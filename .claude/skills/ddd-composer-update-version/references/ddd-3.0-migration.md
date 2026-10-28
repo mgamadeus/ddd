@@ -72,3 +72,6 @@ Unchanged:
   (`current_schema()`) through `PostgresSchemaIntrospectionService`; the apply runs in one transaction with
   `SET LOCAL lock_timeout`. Needs the CREATE privilege on the database (for the scratch schema) and the `ensure()`
   objects on the live database. MariaDB unchanged. The large-table guard message no longer names an app skill.
+- 3.1.2 — PostgreSQL schema diff: the container-built `DatabaseSchemaDiffService` (autowired with the MariaDB
+  introspection) uses the PostgreSQL introspection, so `/databaseModels/diff` answers 200; tables an extension owns
+  (PostGIS `spatial_ref_sys`) are no longer offered as DROP_TABLE.

@@ -50,7 +50,8 @@ class PostgresSchemaIntrospectionService extends DatabaseSchemaIntrospectionServ
     }
 
     /**
-     * @return string[] Names of all ordinary and partitioned tables in the schema.
+     * @return string[] Names of the ordinary and partitioned tables in the schema, without the tables an extension owns
+     *         (PostGIS `spatial_ref_sys`, …) — they are not the application's and must never be diffed or dropped.
      * @throws Exception
      */
     public function getLiveTableNames(): array
@@ -61,6 +62,12 @@ class PostgresSchemaIntrospectionService extends DatabaseSchemaIntrospectionServ
         $rows = EntityManagerFactory::getInstance()->getConnection()->fetchFirstColumn(
             "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
              WHERE n.nspname = :schema AND c.relkind IN ('r', 'p')
+               AND NOT EXISTS (
+                   SELECT 1 FROM pg_depend extension_dependency
+                   WHERE extension_dependency.classid = 'pg_class'::regclass
+                     AND extension_dependency.objid = c.oid
+                     AND extension_dependency.deptype = 'e'
+               )
              ORDER BY c.relname",
             ['schema' => $this->getSchemaName()]
         );

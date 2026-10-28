@@ -96,7 +96,8 @@ Same service, same phases, same value objects — dialect-dispatched inside `Dat
 - **Target side = a scratch schema.** `buildPostgresTargetTables()` renders the target tables with
   `PostgresDdlRenderer::renderCreate()` (without the foreign-key phase) into a fresh schema `ddd_diff_<random>` of the
   same database and introspects it with `PostgresSchemaIntrospectionService` — the same class that reads the live
-  schema (`current_schema()` of the connection). Both sides are normalised by PostgreSQL itself (`format_type`,
+  schema (`current_schema()` of the connection) — without the tables an extension owns (PostGIS `spatial_ref_sys`).
+  The container autowires the MariaDB introspection class; on PostgreSQL the service replaces it with its own. Both sides are normalised by PostgreSQL itself (`format_type`,
   `pg_get_expr`, `pg_get_indexdef`, `pg_get_triggerdef` + function source), so type aliases, default casts, JSON,
   generated expressions, expression indexes and trigger bodies never report false drift. Schema qualifiers are stripped
   on both sides.

@@ -10,6 +10,8 @@ use DDD\Domain\Base\Repo\DB\Database\Diff\DBTableDiff;
 use DDD\Domain\Base\Repo\DB\Database\Diff\DBTableDiffs;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\SqlScriptLexer;
 use DDD\Domain\Common\Services\DatabaseSchemaDiffService;
+use DDD\Domain\Common\Services\DatabaseSchemaIntrospectionService;
+use DDD\Domain\Common\Services\PostgresSchemaIntrospectionService;
 use DDD\Tests\Integration\Fixtures\Entities\CounterRows\CounterRow;
 use DDD\Tests\Integration\Fixtures\Entities\SpatialRows\SpatialRow;
 use DDD\Tests\Integration\Fixtures\Entities\TieBreakerRows\TieBreakerChild;
@@ -102,6 +104,25 @@ class SchemaDiffTest extends IntegrationTestCase
         };
     }
 
+    /**
+     * The service as the container builds it: autowiring passes the concrete (MariaDB) introspection service, which
+     * must not be used on PostgreSQL.
+     */
+    protected function containerLikeDiffService(): DatabaseSchemaDiffService
+    {
+        return new class(new DatabaseSchemaIntrospectionService()) extends DatabaseSchemaDiffService {
+            protected function getTargetDatabaseModels(?array $entityClasses = null): DatabaseModels
+            {
+                $databaseModels = new DatabaseModels();
+                foreach (SchemaDiffTest::diffedEntityClasses() as $entityClass) {
+                    $databaseModel = DatabaseModel::fromEntityClass($entityClass);
+                    $databaseModels->add($databaseModel);
+                }
+                return $databaseModels;
+            }
+        };
+    }
+
     /** @return string[] */
     public static function diffedEntityClasses(): array
     {
@@ -166,6 +187,33 @@ class SchemaDiffTest extends IntegrationTestCase
             $this->assertSame(0, (int)static::connection()->fetchOne(
                 "SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'ddd\\_diff\\_%'"
             ));
+        }
+    }
+
+    public function testTheServiceWithTheAutowiredIntrospectionDiffsEmptyOnBothEngines(): void
+    {
+        $tableDiffs = $this->fixtureDiffs($this->containerLikeDiffService());
+
+        $this->assertSame(0, $tableDiffs->count(), $this->describeDiffs($tableDiffs));
+    }
+
+    /** Tables an extension owns (PostGIS spatial_ref_sys) are not the application's: never a DROP_TABLE. */
+    public function testExtensionOwnedTablesAreNotLiveTables(): void
+    {
+        if (!$this->isPostgres()) {
+            $this->markTestSkipped('Extensions are PostgreSQL objects.');
+        }
+        $extensionTableName = (string)static::connection()->fetchOne(
+            "SELECT c.relname FROM pg_class c JOIN pg_depend d ON d.objid = c.oid AND d.classid = 'pg_class'::regclass
+             WHERE d.deptype = 'e' AND c.relkind IN ('r', 'p') AND c.relnamespace = current_schema()::regnamespace LIMIT 1"
+        );
+        if ($extensionTableName === '') {
+            $this->markTestSkipped('No extension-owned table in this database.');
+        }
+
+        $this->assertNotContains($extensionTableName, (new PostgresSchemaIntrospectionService())->getLiveTableNames());
+        foreach ($this->diffService()->computeDiffs()->getElements() as $tableDiff) {
+            $this->assertNotSame($extensionTableName, $tableDiff->sqlTableName);
         }
     }
 
