@@ -113,3 +113,8 @@ Unchanged:
   symlinked or relative path (`php bin/console` from a linked checkout) gave a different `error.group_hash` than the
   same error invoked through the real path. Groups that were keyed by such an absolute path re-key once. A group whose
   first sample predates `service.workspace` takes the workspace from a newer event.
+- 3.5.2 — "generate database tables" (`EntityModelGeneratorService::createOrUpdateDatabaseTablesForEntities()`) works on
+  PostgreSQL: it no longer runs MariaDB's `SET FOREIGN_KEY_CHECKS` (it failed with "unrecognized configuration
+  parameter"), and on PostgreSQL it returns that dialect's DDL (`ensure()` plus each table's, foreign keys last)
+  instead of MariaDB SQL. The PostgreSQL SQL creates (plain `CREATE TABLE`); updating an existing schema is the schema
+  diff's job. `getAllEntityClasses()` no longer lists a class twice when one directory is scanned twice.

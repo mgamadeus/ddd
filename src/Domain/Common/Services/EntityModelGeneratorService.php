@@ -9,6 +9,8 @@ use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModels;
 use DDD\Domain\Base\Repo\DB\Database\SubclassIndicator;
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatements;
+use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Libs\ClassFinder;
 use DDD\Infrastructure\Modules\DDDModule;
@@ -37,7 +39,12 @@ class EntityModelGeneratorService
     protected static array $databaseModelsByFilterMode = [];
 
     /**
-     * Creates Tables for given entity class names. If null is passed, it searches for all Entities in Project
+     * The SQL that creates or updates the tables of the given entity classes (null = every entity of the project), in
+     * the dialect of the default connection: MariaDB `CREATE TABLE IF NOT EXISTS` / `ALTER TABLE … ADD COLUMN IF NOT
+     * EXISTS` / indexes; PostgreSQL the `ensure()` infrastructure (extensions, collation, `ddd_*` functions) and each
+     * table's DDL from its renderer, ordered by phase (foreign keys last). Returned only, never executed — the schema is
+     * the application's to apply.
+     *
      * @param string[]|null $entityClasses
      * @return string
      * @throws Exception
@@ -47,10 +54,21 @@ class EntityModelGeneratorService
     {
         // $entityClasses is a list of FQN strings (or null = all); getDatabaseModels() filters by them.
         $databaseModels = self::getDatabaseModels($entityClasses, filterOverriddenEntities: true);
-        $sql = $databaseModels->getSql();
-        $entityManager = EntityManagerFactory::getInstance();
-        $entityManager->getConnection()->executeStatement('SET FOREIGN_KEY_CHECKS=0;');
-        $entityManager->getConnection()->executeStatement('SET FOREIGN_KEY_CHECKS=1;');
+        $sqlDialect = EntityManagerFactory::getDialect();
+        if ($sqlDialect->name() !== SqlDialect::POSTGRES) {
+            return $databaseModels->getSql();
+        }
+        $ddlRenderer = $sqlDialect->ddlRenderer();
+        $statements = $ddlRenderer->ensure()->getElements();
+        foreach ($databaseModels->getElements() as $databaseModel) {
+            foreach ($ddlRenderer->renderCreate($databaseModel)->getElements() as $statement) {
+                $statements[] = $statement;
+            }
+        }
+        $sql = '';
+        foreach (DdlStatements::fromStatements(...$statements)->sortedByPhase() as $statement) {
+            $sql .= rtrim($statement->sql, "; \n") . ";\n";
+        }
         return $sql;
     }
 
@@ -97,7 +115,14 @@ class EntityModelGeneratorService
         }
         /** @var ClassWithNamespace[] $entityClasses */
         $entityClasses = [];
+        /** @var array<string, true> $seenClassNames method-local: a directory scanned twice (the framework's own checkout
+         * is framework and application at once) must not give a class — and its table — twice */
+        $seenClassNames = [];
         foreach ($allClasses as $class) {
+            if (isset($seenClassNames[$class->getNameWithNamespace()])) {
+                continue;
+            }
+            $seenClassNames[$class->getNameWithNamespace()] = true;
             // ignore repo classes
             if (strpos($class->namespace, '\\Repo\\') !== false) {
                 continue;
