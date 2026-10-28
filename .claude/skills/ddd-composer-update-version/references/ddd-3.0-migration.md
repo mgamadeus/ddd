@@ -163,3 +163,6 @@ Unchanged:
   "Setting up a new PostgreSQL database": role + database → `app:db:postgres:install-extensions-collation-functions`
   → tables; run the command on every deploy, e.g. as an Argo CD PreSync job). The schema diff's PostgreSQL apply
   installs the same objects first (each in a savepoint; one the role may not create is skipped).
+- 3.7.6 — PostgreSQL: a DQL UPDATE / DELETE whose WHERE has a correlated subquery on the root alias
+  (`… NOT EXISTS (SELECT … WHERE oi.orderId = o.id)`) rendered the root as the bare table name (`Orders."id"`, folded to
+  `orders`: "missing FROM-clause entry"). The PostgreSQL walker now names the root by its quoted table name.

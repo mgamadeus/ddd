@@ -39,6 +39,40 @@ class PostgresSqlWalker extends SqlWalker
     use JsonColumnAwareTrait;
     use PostgresComparisonTrait;
 
+    /**
+     * {@inheritDoc}
+     *
+     * Doctrine registers the bare table name as the SQL alias of an UPDATE's root (the statement has no alias); a
+     * correlated subquery referencing the root (`… NOT EXISTS (SELECT … WHERE oi.orderId = o.id)`) then renders
+     * `Orders."id"`, which PostgreSQL folds to `orders` ("missing FROM-clause entry"). The root's alias is the quoted
+     * table name instead — exactly how the statement names its target.
+     */
+    public function walkUpdateClause($updateClause)
+    {
+        $sql = parent::walkUpdateClause($updateClause);
+        $this->registerQuotedRootTableAlias($updateClause->abstractSchemaName, $updateClause->aliasIdentificationVariable);
+        return $sql;
+    }
+
+    /** {@inheritDoc} — the DELETE root's alias is the quoted table name, see {@see self::walkUpdateClause()} */
+    public function walkDeleteClause(AST\DeleteClause $deleteClause)
+    {
+        $sql = parent::walkDeleteClause($deleteClause);
+        $this->registerQuotedRootTableAlias($deleteClause->abstractSchemaName, $deleteClause->aliasIdentificationVariable);
+        return $sql;
+    }
+
+    protected function registerQuotedRootTableAlias(string $entityName, string $dqlAlias): void
+    {
+        $entityManager = $this->getEntityManager();
+        $classMetadata = $entityManager->getClassMetadata($entityName);
+        $quotedTableName = $entityManager->getConfiguration()->getQuoteStrategy()->getTableName(
+            $classMetadata,
+            $entityManager->getConnection()->getDatabasePlatform()
+        );
+        $this->setSQLTableAlias($classMetadata->getTableName(), $quotedTableName, $dqlAlias);
+    }
+
     /** {@inheritDoc} */
     public function walkOrderByItem($orderByItem)
     {
