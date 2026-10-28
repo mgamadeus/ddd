@@ -535,6 +535,7 @@ For the registry on top: `ISSUES_QUERY_BACKEND=elasticsearch`.
 | "Uncaught PHP Exception" lines next to the issues line | the request-channel filter is not first: an app handler on `request` with a priority above 100 |
 | Lines cut at 1024 bytes (stderr) | the FPM `log_limit` |
 | Registry stays empty | `ISSUES_QUERY_BACKEND` set for the job process; `app:issues:search --since=24h` finds lines (selector, auth); only error and above or uncaught lines are registered |
+| A sync right after an event counts 0 | expected: counting stops at now − 1 min (events still in the collector's buffer); an event younger than a minute is counted in the next run. Discovery and `app:issues:search` see it at once |
 | No alerts | seed mode (first `ISSUES_SEED_HOURS` after the first run); `ISSUES_ALERT_WEBHOOK` set; group IGNORED; explosion guard (`app:issues:sync` prints it) |
 | `app:issues:health` fails | `lastError` in its output; the job not running; the collector not shipping (collector silent) |
 | Elasticsearch: groups empty, hits not | the fields are mapped as keyword: `ISSUES_ES_KEYWORD_SUFFIX=` (empty); `app:runtime-errors:probe` shows which field names aggregate |
