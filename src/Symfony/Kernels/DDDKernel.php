@@ -2,6 +2,7 @@
 
 namespace DDD\Symfony\Kernels;
 
+use DDD\Symfony\CompilerPasses\FrameworkCommandsYieldPass;
 use DDD\Symfony\CompilerPasses\FreshWorkerStateMiddlewarePass;
 use DDD\Symfony\CompilerPasses\ModuleCompilerPass;
 use DDD\Symfony\CompilerPasses\QuotaDefaultBindingsCompilerPass;
@@ -192,5 +193,8 @@ class DDDKernel extends Kernel
         // registries empty). Must run BEFORE Symfony's MessengerPass (priority 0 in the same phase), which consumes
         // the per-bus middleware parameter this pass prepends to.
         $container->addCompilerPass(new FreshWorkerStateMiddlewarePass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, 8);
+        // A framework command yields to an application command of the same name. After the autoconfiguration has
+        // tagged the commands (priority 100 of this phase), before the console's command loader (BEFORE_REMOVING).
+        $container->addCompilerPass(new FrameworkCommandsYieldPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -10);
     }
 }

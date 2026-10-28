@@ -1,0 +1,888 @@
+{
+    "groups_default": {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {
+                        "range": {
+                            "@timestamp": {
+                                "gte": "now-24h"
+                            }
+                        }
+                    },
+                    {
+                        "terms": {
+                            "log.level.keyword": [
+                                "ERROR",
+                                "CRITICAL"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "aggs": {
+            "by_fingerprint": {
+                "multi_terms": {
+                    "terms": [
+                        {
+                            "field": "error.type.keyword",
+                            "missing": "—"
+                        },
+                        {
+                            "field": "log.origin.file.name.keyword",
+                            "missing": "—"
+                        }
+                    ],
+                    "size": 50,
+                    "order": {
+                        "_count": "desc"
+                    }
+                },
+                "aggs": {
+                    "latest": {
+                        "top_hits": {
+                            "size": 1,
+                            "sort": [
+                                {
+                                    "@timestamp": "desc"
+                                }
+                            ],
+                            "_source": [
+                                "message",
+                                "error.type",
+                                "error.stack_trace",
+                                "route_name",
+                                "@timestamp",
+                                "error.fingerprint_hash",
+                                "error.fingerprint_short",
+                                "lastLocationId",
+                                "error.code",
+                                "error.kind",
+                                "log.origin.file.name",
+                                "log.origin.file.line",
+                                "environment",
+                                "workspace"
+                            ]
+                        }
+                    },
+                    "affected_locations": {
+                        "cardinality": {
+                            "field": "lastLocationId"
+                        }
+                    },
+                    "first_seen": {
+                        "min": {
+                            "field": "@timestamp",
+                            "format": "strict_date_optional_time"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "groups_fingerprint_filters": {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {
+                        "range": {
+                            "@timestamp": {
+                                "gte": "now-72h"
+                            }
+                        }
+                    },
+                    {
+                        "terms": {
+                            "log.level.keyword": [
+                                "ERROR"
+                            ]
+                        }
+                    },
+                    {
+                        "term": {
+                            "account.id": 4183511
+                        }
+                    },
+                    {
+                        "term": {
+                            "lastLocationId": 77
+                        }
+                    },
+                    {
+                        "bool": {
+                            "should": [
+                                {
+                                    "wildcard": {
+                                        "route_name.keyword": {
+                                            "value": "*App\\\\Foo\\*\\?*",
+                                            "case_insensitive": true
+                                        }
+                                    }
+                                },
+                                {
+                                    "wildcard": {
+                                        "error.type.keyword": {
+                                            "value": "*App\\\\Foo\\*\\?*",
+                                            "case_insensitive": true
+                                        }
+                                    }
+                                }
+                            ],
+                            "minimum_should_match": 1
+                        }
+                    },
+                    {
+                        "term": {
+                            "workspace.keyword": "mgn"
+                        }
+                    }
+                ]
+            }
+        },
+        "aggs": {
+            "by_fingerprint": {
+                "terms": {
+                    "field": "error.fingerprint_short.keyword",
+                    "size": 20,
+                    "order": {
+                        "_count": "desc"
+                    }
+                },
+                "aggs": {
+                    "latest": {
+                        "top_hits": {
+                            "size": 1,
+                            "sort": [
+                                {
+                                    "@timestamp": "desc"
+                                }
+                            ],
+                            "_source": [
+                                "message",
+                                "error.type",
+                                "error.stack_trace",
+                                "route_name",
+                                "@timestamp",
+                                "error.fingerprint_hash",
+                                "error.fingerprint_short",
+                                "lastLocationId",
+                                "error.code",
+                                "error.kind",
+                                "log.origin.file.name",
+                                "log.origin.file.line",
+                                "environment",
+                                "workspace"
+                            ]
+                        }
+                    },
+                    "affected_locations": {
+                        "cardinality": {
+                            "field": "lastLocationId"
+                        }
+                    },
+                    "first_seen": {
+                        "min": {
+                            "field": "@timestamp",
+                            "format": "strict_date_optional_time"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "groups_minutes": {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {
+                        "range": {
+                            "@timestamp": {
+                                "gte": "now-5m"
+                            }
+                        }
+                    },
+                    {
+                        "terms": {
+                            "log.level.keyword": [
+                                "ERROR",
+                                "CRITICAL"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "aggs": {
+            "by_fingerprint": {
+                "multi_terms": {
+                    "terms": [
+                        {
+                            "field": "error.type.keyword",
+                            "missing": "—"
+                        },
+                        {
+                            "field": "log.origin.file.name.keyword",
+                            "missing": "—"
+                        }
+                    ],
+                    "size": 5,
+                    "order": {
+                        "_count": "desc"
+                    }
+                },
+                "aggs": {
+                    "latest": {
+                        "top_hits": {
+                            "size": 1,
+                            "sort": [
+                                {
+                                    "@timestamp": "desc"
+                                }
+                            ],
+                            "_source": [
+                                "message",
+                                "error.type",
+                                "error.stack_trace",
+                                "route_name",
+                                "@timestamp",
+                                "error.fingerprint_hash",
+                                "error.fingerprint_short",
+                                "lastLocationId",
+                                "error.code",
+                                "error.kind",
+                                "log.origin.file.name",
+                                "log.origin.file.line",
+                                "environment",
+                                "workspace"
+                            ]
+                        }
+                    },
+                    "affected_locations": {
+                        "cardinality": {
+                            "field": "lastLocationId"
+                        }
+                    },
+                    "first_seen": {
+                        "min": {
+                            "field": "@timestamp",
+                            "format": "strict_date_optional_time"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "trend_default": {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {
+                        "range": {
+                            "@timestamp": {
+                                "gte": "now-24h"
+                            }
+                        }
+                    },
+                    {
+                        "terms": {
+                            "log.level.keyword": [
+                                "ERROR",
+                                "CRITICAL"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "aggs": {
+            "trend": {
+                "date_histogram": {
+                    "field": "@timestamp",
+                    "fixed_interval": "1h"
+                }
+            }
+        }
+    },
+    "trend_long": {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {
+                        "range": {
+                            "@timestamp": {
+                                "gte": "now-720h"
+                            }
+                        }
+                    },
+                    {
+                        "terms": {
+                            "log.level.keyword": [
+                                "ERROR",
+                                "CRITICAL"
+                            ]
+                        }
+                    },
+                    {
+                        "term": {
+                            "workspace.keyword": "ivs"
+                        }
+                    }
+                ]
+            }
+        },
+        "aggs": {
+            "trend": {
+                "date_histogram": {
+                    "field": "@timestamp",
+                    "fixed_interval": "6h"
+                }
+            }
+        }
+    },
+    "detail_coarse": {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {
+                        "range": {
+                            "@timestamp": {
+                                "gte": "now-24h"
+                            }
+                        }
+                    },
+                    {
+                        "terms": {
+                            "log.level.keyword": [
+                                "ERROR",
+                                "CRITICAL"
+                            ]
+                        }
+                    },
+                    {
+                        "term": {
+                            "workspace.keyword": "mgn"
+                        }
+                    },
+                    {
+                        "term": {
+                            "error.type.keyword": "PDOException"
+                        }
+                    },
+                    {
+                        "term": {
+                            "log.origin.file.name.keyword": "src/Domain/Foo.php"
+                        }
+                    }
+                ]
+            }
+        },
+        "aggs": {
+            "by_fingerprint": {
+                "multi_terms": {
+                    "terms": [
+                        {
+                            "field": "error.type.keyword",
+                            "missing": "—"
+                        },
+                        {
+                            "field": "log.origin.file.name.keyword",
+                            "missing": "—"
+                        }
+                    ],
+                    "size": 1
+                },
+                "aggs": {
+                    "latest": {
+                        "top_hits": {
+                            "size": 1,
+                            "sort": [
+                                {
+                                    "@timestamp": "desc"
+                                }
+                            ],
+                            "_source": [
+                                "message",
+                                "error.type",
+                                "error.stack_trace",
+                                "route_name",
+                                "@timestamp",
+                                "error.fingerprint_hash",
+                                "error.fingerprint_short",
+                                "lastLocationId",
+                                "error.code",
+                                "error.kind",
+                                "log.origin.file.name",
+                                "log.origin.file.line",
+                                "environment",
+                                "workspace"
+                            ]
+                        }
+                    },
+                    "affected_locations": {
+                        "cardinality": {
+                            "field": "lastLocationId"
+                        }
+                    },
+                    "first_seen": {
+                        "min": {
+                            "field": "@timestamp",
+                            "format": "strict_date_optional_time"
+                        }
+                    },
+                    "last_seen": {
+                        "max": {
+                            "field": "@timestamp",
+                            "format": "strict_date_optional_time"
+                        }
+                    },
+                    "trend": {
+                        "date_histogram": {
+                            "field": "@timestamp",
+                            "fixed_interval": "1h",
+                            "min_doc_count": 0,
+                            "extended_bounds": {
+                                "min": "now-24h",
+                                "max": "now"
+                            }
+                        }
+                    },
+                    "recent_occurrences": {
+                        "top_hits": {
+                            "size": 5,
+                            "sort": [
+                                {
+                                    "@timestamp": "desc"
+                                }
+                            ],
+                            "_source": [
+                                "message",
+                                "error.type",
+                                "error.stack_trace",
+                                "route_name",
+                                "@timestamp",
+                                "error.fingerprint_hash",
+                                "error.fingerprint_short",
+                                "lastLocationId",
+                                "error.code",
+                                "error.kind",
+                                "log.origin.file.name",
+                                "log.origin.file.line",
+                                "environment",
+                                "workspace"
+                            ]
+                        }
+                    },
+                    "by_route": {
+                        "terms": {
+                            "field": "route_name.keyword",
+                            "size": 25,
+                            "order": {
+                                "_count": "desc"
+                            },
+                            "missing": "—"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "detail_coarse_missing": {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {
+                        "range": {
+                            "@timestamp": {
+                                "gte": "now-6h"
+                            }
+                        }
+                    },
+                    {
+                        "terms": {
+                            "log.level.keyword": [
+                                "ERROR",
+                                "CRITICAL"
+                            ]
+                        }
+                    },
+                    {
+                        "bool": {
+                            "must_not": [
+                                {
+                                    "exists": {
+                                        "field": "error.type.keyword"
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "bool": {
+                            "must_not": [
+                                {
+                                    "exists": {
+                                        "field": "log.origin.file.name.keyword"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "aggs": {
+            "by_fingerprint": {
+                "multi_terms": {
+                    "terms": [
+                        {
+                            "field": "error.type.keyword",
+                            "missing": "—"
+                        },
+                        {
+                            "field": "log.origin.file.name.keyword",
+                            "missing": "—"
+                        }
+                    ],
+                    "size": 1
+                },
+                "aggs": {
+                    "latest": {
+                        "top_hits": {
+                            "size": 1,
+                            "sort": [
+                                {
+                                    "@timestamp": "desc"
+                                }
+                            ],
+                            "_source": [
+                                "message",
+                                "error.type",
+                                "error.stack_trace",
+                                "route_name",
+                                "@timestamp",
+                                "error.fingerprint_hash",
+                                "error.fingerprint_short",
+                                "lastLocationId",
+                                "error.code",
+                                "error.kind",
+                                "log.origin.file.name",
+                                "log.origin.file.line",
+                                "environment",
+                                "workspace"
+                            ]
+                        }
+                    },
+                    "affected_locations": {
+                        "cardinality": {
+                            "field": "lastLocationId"
+                        }
+                    },
+                    "first_seen": {
+                        "min": {
+                            "field": "@timestamp",
+                            "format": "strict_date_optional_time"
+                        }
+                    },
+                    "last_seen": {
+                        "max": {
+                            "field": "@timestamp",
+                            "format": "strict_date_optional_time"
+                        }
+                    },
+                    "trend": {
+                        "date_histogram": {
+                            "field": "@timestamp",
+                            "fixed_interval": "10m",
+                            "min_doc_count": 0,
+                            "extended_bounds": {
+                                "min": "now-6h",
+                                "max": "now"
+                            }
+                        }
+                    },
+                    "recent_occurrences": {
+                        "top_hits": {
+                            "size": 5,
+                            "sort": [
+                                {
+                                    "@timestamp": "desc"
+                                }
+                            ],
+                            "_source": [
+                                "message",
+                                "error.type",
+                                "error.stack_trace",
+                                "route_name",
+                                "@timestamp",
+                                "error.fingerprint_hash",
+                                "error.fingerprint_short",
+                                "lastLocationId",
+                                "error.code",
+                                "error.kind",
+                                "log.origin.file.name",
+                                "log.origin.file.line",
+                                "environment",
+                                "workspace"
+                            ]
+                        }
+                    },
+                    "by_route": {
+                        "terms": {
+                            "field": "route_name.keyword",
+                            "size": 25,
+                            "order": {
+                                "_count": "desc"
+                            },
+                            "missing": "—"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "detail_fingerprint": {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {
+                        "range": {
+                            "@timestamp": {
+                                "gte": "now-48h"
+                            }
+                        }
+                    },
+                    {
+                        "terms": {
+                            "log.level.keyword": [
+                                "CRITICAL"
+                            ]
+                        }
+                    },
+                    {
+                        "term": {
+                            "error.fingerprint_short.keyword": "abc123"
+                        }
+                    }
+                ]
+            }
+        },
+        "aggs": {
+            "by_fingerprint": {
+                "terms": {
+                    "field": "error.fingerprint_short.keyword",
+                    "size": 1
+                },
+                "aggs": {
+                    "latest": {
+                        "top_hits": {
+                            "size": 1,
+                            "sort": [
+                                {
+                                    "@timestamp": "desc"
+                                }
+                            ],
+                            "_source": [
+                                "message",
+                                "error.type",
+                                "error.stack_trace",
+                                "route_name",
+                                "@timestamp",
+                                "error.fingerprint_hash",
+                                "error.fingerprint_short",
+                                "lastLocationId",
+                                "error.code",
+                                "error.kind",
+                                "log.origin.file.name",
+                                "log.origin.file.line",
+                                "environment",
+                                "workspace"
+                            ]
+                        }
+                    },
+                    "affected_locations": {
+                        "cardinality": {
+                            "field": "lastLocationId"
+                        }
+                    },
+                    "first_seen": {
+                        "min": {
+                            "field": "@timestamp",
+                            "format": "strict_date_optional_time"
+                        }
+                    },
+                    "last_seen": {
+                        "max": {
+                            "field": "@timestamp",
+                            "format": "strict_date_optional_time"
+                        }
+                    },
+                    "trend": {
+                        "date_histogram": {
+                            "field": "@timestamp",
+                            "fixed_interval": "1h",
+                            "min_doc_count": 0,
+                            "extended_bounds": {
+                                "min": "now-48h",
+                                "max": "now"
+                            }
+                        }
+                    },
+                    "recent_occurrences": {
+                        "top_hits": {
+                            "size": 50,
+                            "sort": [
+                                {
+                                    "@timestamp": "desc"
+                                }
+                            ],
+                            "_source": [
+                                "message",
+                                "error.type",
+                                "error.stack_trace",
+                                "route_name",
+                                "@timestamp",
+                                "error.fingerprint_hash",
+                                "error.fingerprint_short",
+                                "lastLocationId",
+                                "error.code",
+                                "error.kind",
+                                "log.origin.file.name",
+                                "log.origin.file.line",
+                                "environment",
+                                "workspace"
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "detail_bad_arity": {
+        "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {
+                        "range": {
+                            "@timestamp": {
+                                "gte": "now-24h"
+                            }
+                        }
+                    },
+                    {
+                        "terms": {
+                            "log.level.keyword": [
+                                "ERROR",
+                                "CRITICAL"
+                            ]
+                        }
+                    },
+                    {
+                        "term": {
+                            "error.fingerprint_short.keyword": "only-one-part"
+                        }
+                    }
+                ]
+            }
+        },
+        "aggs": {
+            "by_fingerprint": {
+                "terms": {
+                    "field": "error.fingerprint_short.keyword",
+                    "size": 1
+                },
+                "aggs": {
+                    "latest": {
+                        "top_hits": {
+                            "size": 1,
+                            "sort": [
+                                {
+                                    "@timestamp": "desc"
+                                }
+                            ],
+                            "_source": [
+                                "message",
+                                "error.type",
+                                "error.stack_trace",
+                                "route_name",
+                                "@timestamp",
+                                "error.fingerprint_hash",
+                                "error.fingerprint_short",
+                                "lastLocationId",
+                                "error.code",
+                                "error.kind",
+                                "log.origin.file.name",
+                                "log.origin.file.line",
+                                "environment",
+                                "workspace"
+                            ]
+                        }
+                    },
+                    "affected_locations": {
+                        "cardinality": {
+                            "field": "lastLocationId"
+                        }
+                    },
+                    "first_seen": {
+                        "min": {
+                            "field": "@timestamp",
+                            "format": "strict_date_optional_time"
+                        }
+                    },
+                    "last_seen": {
+                        "max": {
+                            "field": "@timestamp",
+                            "format": "strict_date_optional_time"
+                        }
+                    },
+                    "trend": {
+                        "date_histogram": {
+                            "field": "@timestamp",
+                            "fixed_interval": "1h",
+                            "min_doc_count": 0,
+                            "extended_bounds": {
+                                "min": "now-24h",
+                                "max": "now"
+                            }
+                        }
+                    },
+                    "recent_occurrences": {
+                        "top_hits": {
+                            "size": 5,
+                            "sort": [
+                                {
+                                    "@timestamp": "desc"
+                                }
+                            ],
+                            "_source": [
+                                "message",
+                                "error.type",
+                                "error.stack_trace",
+                                "route_name",
+                                "@timestamp",
+                                "error.fingerprint_hash",
+                                "error.fingerprint_short",
+                                "lastLocationId",
+                                "error.code",
+                                "error.kind",
+                                "log.origin.file.name",
+                                "log.origin.file.line",
+                                "environment",
+                                "workspace"
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

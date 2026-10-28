@@ -91,3 +91,10 @@ Unchanged:
   any schema change) and posts new causes and regressions to `ISSUES_ALERT_WEBHOOK` — seed mode for the first 24 h,
   explosion guard, `app:issues:health` for the job and the collector. Discovery CLI for agents:
   `app:issues:list|show|search|resolve|ignore|reopen --format=json`. Each issues line gains `error.entry_point`.
+- 3.4.0 — issues log, phase C (skill `ddd-issues-log-specialist`). Query backends `elasticsearch` / `opensearch`
+  (plain `_search`, ES 7/8 and OpenSearch 2; `ISSUES_ES_KEYWORD_SUFFIX` for keyword-mapped indices) and `sentry`.
+  `RuntimeErrorsService` plus `app:runtime-errors:extract` / `probe` with rankingCoach's query bodies, options and JSON,
+  configured by `ISSUES_QUERY_*` or the `ES_LOGS_*` fallback. A framework command now yields to an application command
+  of the same name, so an app's own `app:runtime-errors:*` stays in charge until it is deleted. New
+  `app:issues:forward-sentry` (files → Sentry, read positions in `.issues-sentry-forward.json` next to the logs). No
+  new dependency, no schema change.

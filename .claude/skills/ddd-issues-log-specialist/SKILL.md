@@ -1,9 +1,9 @@
 ---
 name: ddd-issues-log-specialist
-description: "Log, cluster, ship and track production errors with the mgamadeus/ddd issues log: IssuesLogService::logThrowable (log-once), the issues channel sinks (ISSUES_LOG_TARGET file/stderr/none, ECS JSON), the capture subscriber (HTTP 5xx, console, messenger, fatals), redaction, the hashes error.group_hash / error.issue_hash, app:issues:test; the registry (IssueGroups / Issues tables, app:issues:sync job over Loki with seed mode, explosion guard, regressions after resolve, Slack webhook alerts, app:issues:health); the agent discovery CLI app:issues:list / show / search / resolve / ignore / reopen with --format=json; admin controller and DTO boilerplate; DevOps worked examples (Kubernetes Alloy, stderr, VM Filebeat, job deployment). Use when logging an exception, nobody sees production errors, configuring where errors go or the alert, shipping logs, an error is logged twice, one bug splits into many groups, finding and fixing current production errors as an agent, or building an issues admin screen."
+description: "Log, cluster, ship and track production errors with the mgamadeus/ddd issues log: IssuesLogService::logThrowable (log-once), the issues channel sinks (ISSUES_LOG_TARGET file/stderr/none, ECS JSON), capture subscriber, redaction, hashes error.group_hash / error.issue_hash; the registry (app:issues:sync over Loki, Elasticsearch / OpenSearch or Sentry, seed mode, explosion guard, regressions, Slack alerts, app:issues:health); agent CLI app:issues:list / show / search / resolve --format=json; RuntimeErrorsService and app:runtime-errors:extract / probe (rankingCoach-compatible, ES_LOGS_* fallback, .keyword config); app:issues:forward-sentry; admin boilerplate; DevOps examples (Kubernetes, VM, job). Use when logging an exception, nobody sees production errors, configuring where errors go or alerts, shipping logs, errors logged twice, one bug in many groups, finding and fixing production errors as an agent, querying runtime errors in Elasticsearch, forwarding to Sentry, or building an issues admin screen."
 metadata:
   author: mgamadeus
-  version: "1.1.0"
+  version: "1.2.0"
   framework: mgamadeus/ddd
 ---
 
@@ -19,8 +19,8 @@ Three parts, each optional on top of the previous one:
 3. **Registry** — a job queries the backend, keeps one row per root cause in the database, alerts a Slack webhook on new
    causes and regressions, and serves the discovery CLI. On with `ISSUES_QUERY_BACKEND`.
 
-The Elasticsearch / OpenSearch and Sentry query backends and the `app:runtime-errors:*` aliases follow in the next
-release; Loki is the query backend today.
+Query backends: Loki, Elasticsearch / OpenSearch (with rankingCoach's `ES_LOGS_*` configuration and its
+`app:runtime-errors:*` commands) and Sentry (fed by `app:issues:forward-sentry`).
 
 ## Logging in code
 
@@ -251,6 +251,24 @@ A second instance is harmless (a database lock skips concurrent runs), but costs
 mode** for `ISSUES_SEED_HOURS` (24): the existing errors are registered without 200 alerts. Seed again on demand, e.g.
 after pointing the selector at a new environment: `app:issues:sync --seed=12`.
 
+### 7. Backends
+
+- **Loki:** self-hosted monolithic with object storage, or a cloud stack. Query: `{service="…"} | json | error_group_hash="…"`.
+  `ISSUES_QUERY_BACKEND=loki`, `ISSUES_QUERY_SELECTOR={service="…", environment="…"}`.
+- **Elasticsearch / OpenSearch:** `ISSUES_QUERY_BACKEND=elasticsearch` (or `opensearch`), `ISSUES_QUERY_SELECTOR` = the
+  index pattern. Plain `_search` over HTTP — ES 7, ES 8 and OpenSearch 2 alike, only `_search` is called, so a
+  read-only user suffices. String fields are read on their `.keyword` sub-field (Logstash / Filebeat dynamic mapping);
+  with an index template that maps them as `keyword`, set `ISSUES_ES_KEYWORD_SUFFIX=` (empty). Retention by ILM / ISM.
+- **Sentry:** for applications without Loki or Elasticsearch. `app:issues:forward-sentry` runs next to the files (a
+  sidecar or cron in the pod / on the host, `--loop`) and sends every error line as a Sentry event — never from the
+  request. Sentry groups by `error.group_hash` (its issues are the registry's groups), the event id is `event.id` (a
+  line sent twice is one event), the hashes, entry point, route, account and section are tags. Read positions per file
+  in a state file next to the logs (inode + offset: rotation and truncation start over, a file seen first starts at its
+  end unless `--from-start`, a half-written line waits). A rate limit or outage stops the pass; the rest follows.
+  `ISSUES_SENTRY_DSN` (or `SENTRY_DSN`), `--min-level=error` (uncaught errors always). As the registry's query
+  backend: `ISSUES_QUERY_BACKEND=sentry`, `ISSUES_QUERY_URL=https://sentry.io` (or self-hosted),
+  `ISSUES_QUERY_SELECTOR=<organization>/<project>`, `ISSUES_QUERY_TOKEN` with `event:read`.
+
 ### 8. Slack alerts
 
 `ISSUES_ALERT_WEBHOOK` is a Slack (or Mattermost / Rocket.Chat-compatible) incoming webhook. One message per new root
@@ -278,14 +296,6 @@ ISSUES_QUERY_URL=http://127.0.0.1:3110
 ISSUES_QUERY_SELECTOR={service="myapp"}
 ```
 
-### 7. Backends
-
-- **Loki:** self-hosted monolithic with object storage, or a cloud stack. Query: `{service="…"} | json | error_group_hash="…"`.
-- **Elasticsearch / OpenSearch:** an index template mapping the ECS fields (hashes and `log.level` as `keyword`), ILM
-  retention, a read-only API key for queries; an ingest pipeline that sets `event.ingested`.
-- **Sentry (optional):** set `ISSUES_RELEASE`; events are forwarded from the files by an async worker (next releases),
-  never sent from the request.
-
 ## The registry — job, tables, configuration
 
 Three tables, generated like every DDD entity (`app:generate-doctrine-models-for-entities`; the schema is the
@@ -309,12 +319,16 @@ Counts are approximate under collector replays; first seen, the group set and th
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ISSUES_QUERY_BACKEND` | `none` | `loki` (today); `none` = no registry, the application only logs |
-| `ISSUES_QUERY_URL` | | Loki base URL |
-| `ISSUES_QUERY_SELECTOR` | `{job=~".+"}` | stream selector of this application's issues lines |
-| `ISSUES_QUERY_USER` / `_TOKEN` | | user + token = basic auth, token alone = bearer |
+| `ISSUES_QUERY_BACKEND` | `none` | `loki`, `elasticsearch`, `opensearch`, `sentry`; `none` = no registry, the application only logs |
+| `ISSUES_QUERY_URL` | | base URL (Loki, Elasticsearch, Sentry) |
+| `ISSUES_QUERY_SELECTOR` | | Loki stream selector / Elasticsearch index pattern / Sentry `<organization>/<project>` |
+| `ISSUES_QUERY_SELECTOR_DEVELOPMENT` | the selector | Elasticsearch index pattern of `--logstashEnv=DEVELOPMENT` |
+| `ISSUES_QUERY_USER` / `_TOKEN` | | user + token = basic auth, token alone = bearer (a token with a space, e.g. `ApiKey …`, is sent as given) |
 | `ISSUES_QUERY_TENANT` | | Loki `X-Scope-OrgID` |
-| `ISSUES_QUERY_TIMEOUT_SECONDS` | 10 | |
+| `ISSUES_QUERY_TIMEOUT_SECONDS` / `ISSUES_QUERY_TLS_VERIFY` | 10 / true | |
+| `ISSUES_ES_KEYWORD_SUFFIX` | `.keyword` | sub-field of string fields; empty = mapped as keyword |
+| `ISSUES_ES_LOCATION_FIELD` / `ISSUES_ES_WORKSPACE_FIELD` | `lastLocationId` / `workspace` | "affected locations" and `--workspace` fields |
+| `ISSUES_SENTRY_DSN` | `SENTRY_DSN` | target of `app:issues:forward-sentry` |
 | `ISSUES_ALERT_WEBHOOK` | | Slack-compatible webhook; unset = no alerts |
 | `ISSUES_ALERT_LINK_TEMPLATE` | | link in the alert, `{group_hash}` replaced |
 | `ISSUES_DISCOVERY_WINDOW_MINUTES` | 120 | |
@@ -335,6 +349,7 @@ Every command takes `--format=json`: stdout then carries only the JSON, messages
 | `app:issues:resolve <groupHash>` / `ignore` / `reopen` | status; resolve = only a later event reopens it, ignore = never alerts again |
 | `app:issues:sync [--loop] [--interval=60] [--seed=HOURS]` | the job |
 | `app:issues:health` | the self-monitoring (example 9) |
+| `app:issues:forward-sentry [--loop] [--interval=10] [--file=…] [--state-file=…] [--min-level=error] [--from-start]` | the Sentry forwarder (example 7) |
 
 Times are relative (`30m`, `24h`, `7d`) or absolute dates. JSON shapes:
 
@@ -456,6 +471,37 @@ list screen: status filter tabs (Open / Resolved / Ignored), columns type · mes
 "new" and "regression", row → detail with entry points, issues and a link into the log backend
 (`{service="…"} | json | error_group_hash="<hash>"`); the same URL is the `ISSUES_ALERT_LINK_TEMPLATE`.
 
+## Runtime errors straight from Elasticsearch — `app:runtime-errors:*`
+
+Next to the registry, `RuntimeErrorsService` groups the errors directly in Elasticsearch / OpenSearch — no tables, no
+job; the read side of rankingCoach's runtime-error dashboard, with the same query bodies (byte for byte), result objects
+and JSON. Configuration: the `ISSUES_QUERY_*` variables, falling back to `ES_LOGS_HOST` / `_PORT` (9200) / `_SCHEME`
+(https) / `_USER` / `_PASSWORD` / `_INDEX` / `_INDEX_DEV`, whatever `ISSUES_QUERY_BACKEND` says (`ES_LOGS_*` alone does
+not turn the registry on).
+
+- `findErrorGroups($hours, $levels, $size, $groupingDimension, $logstashEnvironment, $accountId, $locationId,
+  $searchTerm, $workspace, $minutes)` → `RuntimeErrorGroups`. COARSE (default) groups by error type + throw-site file
+  (`multi_terms`, ES ≥ 7.12 / OpenSearch ≥ 2.1), FINGERPRINT by `error.fingerprint_short`.
+- `findErrorTrend($hours, $levels, $fixedInterval, $logstashEnvironment, $workspace)` → `RuntimeErrorTrend`.
+- `findErrorGroupDetail($groupKey, …, $sampleSize)` → `RuntimeErrorGroupDetail` (last seen, gap-free trend, newest
+  occurrences, per-route breakdown). Message, stack trace and route are redacted on read (`RuntimeErrorFieldRedactor`).
+
+Commands, same names, options and JSON as rankingCoach's:
+
+```bash
+php bin/console app:runtime-errors:extract --logstashEnv=DEVELOPMENT --workspace=mgn --minutes=5 --limit=5
+#   → {"filters": {environment, workspace, accountId, locationId, window, minutes, hours, levels, limit},
+#      "count": n, "errors": [{errorType, message, throwSite, route, count, affectedLocationCount, environment,
+#      errorCode, errorKind, firstSeen, lastSeen, fingerprint, stackTrace}]}
+#   options: --logstashEnv=PRODUCTION|DEVELOPMENT --account --location --hours=24 --minutes --workspace
+#            --level=ERROR,CRITICAL --limit=20; unknown --logstashEnv = exit 2, a failed query = exit 1
+php bin/console app:runtime-errors:probe [--hours=24] [--size=5] [--compositeSize=10] [--index=…]
+#   hit count, top fingerprints, trend buckets, and which grouping / field names work on this index
+```
+
+**A framework command yields to an application command of the same name** (a compiler pass removes the framework's):
+an application with its own `app:runtime-errors:extract` keeps it until it deletes it.
+
 ## RC-compatible configuration
 
 An application that already writes `issues` lines with a `stream` handler and the ECS formatter (rankingCoach) gets the
@@ -473,6 +519,13 @@ Its own Monolog processors on the `issues` channel keep working (they run before
 own capture subscriber, it sets `ISSUES_CAPTURE_ENABLED=0` — from the DDD bump on, because its `logThrowable` override
 bypasses the log-once mark and both subscribers would log every uncaught error.
 
+Its runtime-error dashboard can move onto the framework: the `ES_LOGS_*` variables already configure it (the index
+patterns, bound as service parameters there, become `ES_LOGS_INDEX` / `ES_LOGS_INDEX_DEV` or `ISSUES_QUERY_SELECTOR` /
+`_DEVELOPMENT`). Then `App\…\RuntimeErrors\*` → `DDD\Infrastructure\Logging\Query\Elasticsearch\*` (same class
+names and public properties), `RuntimeErrorsService` → `DDD\Domain\Common\Services\RuntimeErrorsService` (same
+methods), and its two commands and `ElasticsearchLogReaderService` are deleted — the framework's commands take over.
+For the registry on top: `ISSUES_QUERY_BACKEND=elasticsearch`.
+
 ## Troubleshooting
 
 | Symptom | Check |
@@ -484,4 +537,7 @@ bypasses the log-once mark and both subscribers would log every uncaught error.
 | Registry stays empty | `ISSUES_QUERY_BACKEND` set for the job process; `app:issues:search --since=24h` finds lines (selector, auth); only error and above or uncaught lines are registered |
 | No alerts | seed mode (first `ISSUES_SEED_HOURS` after the first run); `ISSUES_ALERT_WEBHOOK` set; group IGNORED; explosion guard (`app:issues:sync` prints it) |
 | `app:issues:health` fails | `lastError` in its output; the job not running; the collector not shipping (collector silent) |
+| Elasticsearch: groups empty, hits not | the fields are mapped as keyword: `ISSUES_ES_KEYWORD_SUFFIX=` (empty); `app:runtime-errors:probe` shows which field names aggregate |
+| Elasticsearch: `multi_terms` unknown | ES < 7.12: COARSE grouping needs 7.12; the registry (composite aggregation) works from ES 7 |
+| Sentry forwarder sends nothing | a file seen for the first time starts at its end (`--from-start` for history); `--min-level`; state file `.issues-sentry-forward.json` next to the logs |
 | One bug, many groups | a throw site in generated code with varying function names; look at `error.group_hash` inputs (`IssuesFingerprintBuilder::getFrames()`) |

@@ -27,11 +27,36 @@ class IssuesRegistrySettings extends ValueObject
     public const string ENV_GROUP_EXPLOSION_LIMIT = 'ISSUES_GROUP_EXPLOSION_LIMIT';
     public const string ENV_JOB_STALE_MINUTES = 'ISSUES_JOB_STALE_MINUTES';
     public const string ENV_COLLECTOR_SILENT_MINUTES = 'ISSUES_COLLECTOR_SILENT_MINUTES';
+    public const string ENV_QUERY_SELECTOR_DEVELOPMENT = 'ISSUES_QUERY_SELECTOR_DEVELOPMENT';
+    public const string ENV_QUERY_TLS_VERIFY = 'ISSUES_QUERY_TLS_VERIFY';
+    public const string ENV_ES_KEYWORD_SUFFIX = 'ISSUES_ES_KEYWORD_SUFFIX';
+    public const string ENV_ES_LOCATION_FIELD = 'ISSUES_ES_LOCATION_FIELD';
+    public const string ENV_ES_WORKSPACE_FIELD = 'ISSUES_ES_WORKSPACE_FIELD';
+    public const string ENV_SENTRY_DSN = 'ISSUES_SENTRY_DSN';
+
+    /** The read-only Elasticsearch variables of rankingCoach's runtime-error dashboard: the fallback of the ES backend */
+    public const string ENV_ES_LOGS_HOST = 'ES_LOGS_HOST';
+    public const string ENV_ES_LOGS_PORT = 'ES_LOGS_PORT';
+    public const string ENV_ES_LOGS_SCHEME = 'ES_LOGS_SCHEME';
+    public const string ENV_ES_LOGS_USER = 'ES_LOGS_USER';
+    public const string ENV_ES_LOGS_PASSWORD = 'ES_LOGS_PASSWORD';
+    public const string ENV_ES_LOGS_INDEX = 'ES_LOGS_INDEX';
+    public const string ENV_ES_LOGS_INDEX_DEV = 'ES_LOGS_INDEX_DEV';
+    /** Sentry's own DSN variable: the fallback of ISSUES_SENTRY_DSN */
+    public const string ENV_SENTRY_DSN_FALLBACK = 'SENTRY_DSN';
 
     public const string BACKEND_NONE = 'none';
     public const string BACKEND_LOKI = 'loki';
     public const string BACKEND_ELASTICSEARCH = 'elasticsearch';
     public const string BACKEND_SENTRY = 'sentry';
+    /** OpenSearch speaks the same _search API: the Elasticsearch backend */
+    public const string BACKEND_OPENSEARCH = 'opensearch';
+    public const array BACKENDS = [self::BACKEND_LOKI, self::BACKEND_ELASTICSEARCH, self::BACKEND_OPENSEARCH, self::BACKEND_SENTRY];
+
+    /** Elasticsearch: dynamically mapped string fields (Logstash, Filebeat defaults) aggregate on their keyword sub-field */
+    public const string DEFAULT_ES_KEYWORD_SUFFIX = '.keyword';
+    public const string DEFAULT_ES_LOCATION_FIELD = 'lastLocationId';
+    public const string DEFAULT_ES_WORKSPACE_FIELD = 'workspace';
 
     /** The link placeholder of the alert template */
     public const string LINK_GROUP_HASH_PLACEHOLDER = '{group_hash}';
@@ -63,6 +88,18 @@ class IssuesRegistrySettings extends ValueObject
         public readonly int $jobStaleMinutes = 10,
         /** @var int The collector counts as silent after this long without any new event */
         public readonly int $collectorSilentMinutes = 60,
+        /** @var string Elasticsearch: index pattern of the development logs (`--logstashEnv=DEVELOPMENT`) */
+        public readonly string $querySelectorDevelopment = '',
+        /** @var bool Verify the backend's TLS certificate */
+        public readonly bool $queryTlsVerify = true,
+        /** @var string Elasticsearch: suffix of the aggregatable sub-field of a string field ('' = mapped as keyword) */
+        public readonly string $elasticsearchKeywordSuffix = self::DEFAULT_ES_KEYWORD_SUFFIX,
+        /** @var string Elasticsearch: numeric field counted as "affected locations" */
+        public readonly string $elasticsearchLocationField = self::DEFAULT_ES_LOCATION_FIELD,
+        /** @var string Elasticsearch: string field of the dev workspace (`--workspace`) */
+        public readonly string $elasticsearchWorkspaceField = self::DEFAULT_ES_WORKSPACE_FIELD,
+        /** @var string|null Sentry DSN of `app:issues:forward-sentry` */
+        public readonly ?string $sentryDsn = null,
     ) {
         parent::__construct();
     }
@@ -70,14 +107,41 @@ class IssuesRegistrySettings extends ValueObject
     public static function fromEnvironment(): static
     {
         $queryBackend = strtolower(self::readEnv(self::ENV_QUERY_BACKEND) ?? self::BACKEND_NONE);
+        return static::fromEnvironmentForBackend(in_array($queryBackend, self::BACKENDS, true) ? $queryBackend : self::BACKEND_NONE);
+    }
+
+    /**
+     * The settings with the Elasticsearch backend, whatever ISSUES_QUERY_BACKEND says (OpenSearch stays OpenSearch) —
+     * for the `app:runtime-errors:*` commands, which read Elasticsearch also where the registry job is off.
+     */
+    public static function fromEnvironmentForElasticsearch(): static
+    {
+        $queryBackend = strtolower(self::readEnv(self::ENV_QUERY_BACKEND) ?? '');
+        return static::fromEnvironmentForBackend(
+            $queryBackend === self::BACKEND_OPENSEARCH ? self::BACKEND_OPENSEARCH : self::BACKEND_ELASTICSEARCH
+        );
+    }
+
+    /**
+     * Elasticsearch and OpenSearch fall back to the ES_LOGS_* variables for what ISSUES_QUERY_* leaves unset: URL
+     * (scheme://host:port), user, password, index and development index.
+     */
+    protected static function fromEnvironmentForBackend(string $queryBackend): static
+    {
+        $isElasticsearch = in_array($queryBackend, [self::BACKEND_ELASTICSEARCH, self::BACKEND_OPENSEARCH], true);
+        $queryUrl = self::readEnv(self::ENV_QUERY_URL);
+        if ($queryUrl === null && $isElasticsearch && ($esLogsHost = self::readEnv(self::ENV_ES_LOGS_HOST)) !== null) {
+            $queryUrl = (self::readEnv(self::ENV_ES_LOGS_SCHEME) ?? 'https') . '://' . $esLogsHost
+                . ':' . (self::readEnv(self::ENV_ES_LOGS_PORT) ?? '9200');
+        }
+        $fallback = static fn(string $name, string $esLogsName): ?string => self::readEnv($name)
+            ?? ($isElasticsearch ? self::readEnv($esLogsName) : null);
         return new static(
-            queryBackend: in_array($queryBackend, [self::BACKEND_LOKI, self::BACKEND_ELASTICSEARCH, self::BACKEND_SENTRY], true)
-                ? $queryBackend
-                : self::BACKEND_NONE,
-            queryUrl: rtrim(self::readEnv(self::ENV_QUERY_URL) ?? '', '/'),
-            queryUser: self::readEnv(self::ENV_QUERY_USER),
-            queryToken: self::readEnv(self::ENV_QUERY_TOKEN),
-            querySelector: self::readEnv(self::ENV_QUERY_SELECTOR) ?? '',
+            queryBackend: $queryBackend,
+            queryUrl: rtrim($queryUrl ?? '', '/'),
+            queryUser: $fallback(self::ENV_QUERY_USER, self::ENV_ES_LOGS_USER),
+            queryToken: $fallback(self::ENV_QUERY_TOKEN, self::ENV_ES_LOGS_PASSWORD),
+            querySelector: $fallback(self::ENV_QUERY_SELECTOR, self::ENV_ES_LOGS_INDEX) ?? '',
             queryTenant: self::readEnv(self::ENV_QUERY_TENANT),
             queryTimeoutSeconds: (int)(self::readEnv(self::ENV_QUERY_TIMEOUT_SECONDS) ?? 10),
             alertWebhook: self::readEnv(self::ENV_ALERT_WEBHOOK),
@@ -87,7 +151,19 @@ class IssuesRegistrySettings extends ValueObject
             groupExplosionLimit: (int)(self::readEnv(self::ENV_GROUP_EXPLOSION_LIMIT) ?? 50),
             jobStaleMinutes: (int)(self::readEnv(self::ENV_JOB_STALE_MINUTES) ?? 10),
             collectorSilentMinutes: (int)(self::readEnv(self::ENV_COLLECTOR_SILENT_MINUTES) ?? 60),
+            querySelectorDevelopment: $fallback(self::ENV_QUERY_SELECTOR_DEVELOPMENT, self::ENV_ES_LOGS_INDEX_DEV) ?? '',
+            queryTlsVerify: !in_array(strtolower(self::readEnv(self::ENV_QUERY_TLS_VERIFY) ?? 'true'), ['0', 'false', 'no', 'off'], true),
+            // an explicitly empty suffix is a value: the fields are mapped as keyword
+            elasticsearchKeywordSuffix: self::readRawEnv(self::ENV_ES_KEYWORD_SUFFIX) ?? self::DEFAULT_ES_KEYWORD_SUFFIX,
+            elasticsearchLocationField: self::readEnv(self::ENV_ES_LOCATION_FIELD) ?? self::DEFAULT_ES_LOCATION_FIELD,
+            elasticsearchWorkspaceField: self::readEnv(self::ENV_ES_WORKSPACE_FIELD) ?? self::DEFAULT_ES_WORKSPACE_FIELD,
+            sentryDsn: self::readEnv(self::ENV_SENTRY_DSN) ?? self::readEnv(self::ENV_SENTRY_DSN_FALLBACK),
         );
+    }
+
+    public function isElasticsearch(): bool
+    {
+        return in_array($this->queryBackend, [self::BACKEND_ELASTICSEARCH, self::BACKEND_OPENSEARCH], true);
     }
 
     public function hasQueryBackend(): bool
@@ -100,6 +176,16 @@ class IssuesRegistrySettings extends ValueObject
         return $this->alertLinkTemplate !== null
             ? str_replace(self::LINK_GROUP_HASH_PLACEHOLDER, rawurlencode($groupHash), $this->alertLinkTemplate)
             : null;
+    }
+
+    /** The variable as set, also when set to an empty string; null = not set at all */
+    protected static function readRawEnv(string $name): ?string
+    {
+        if (array_key_exists($name, $_ENV)) {
+            return is_bool($_ENV[$name]) ? ($_ENV[$name] ? 'true' : 'false') : (string)$_ENV[$name];
+        }
+        $value = $_SERVER[$name] ?? getenv($name);
+        return $value === false || $value === null ? null : (string)$value;
     }
 
     /** The variable from .env (Config) or the process environment */

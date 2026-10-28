@@ -57,3 +57,30 @@ services:
       - "127.0.0.1:${DDD_TEST_LOKI_PORT:-3110}:3100"
     tmpfs:
       - /loki:uid=10001,gid=10001,mode=0755
+
+  elasticsearch:
+    # The Elasticsearch query backend and the runtime-errors read side (tests/Integration/Issues/Elasticsearch*):
+    # ES 7 like rankingCoach's logging cluster, single node, security off. Port via DDD_TEST_ES_PORT (default 9210);
+    # the tests run only when DDD_TEST_ES_URL points here (or at the opensearch service).
+    image: elasticsearch:7.17.28
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "127.0.0.1:${DDD_TEST_ES_PORT:-9210}:9200"
+    tmpfs:
+      - /usr/share/elasticsearch/data:uid=1000,gid=0,mode=0775
+
+  opensearch:
+    # The same tests against OpenSearch 2 (DDD_TEST_ES_URL=http://127.0.0.1:9211). Port via DDD_TEST_OPENSEARCH_PORT.
+    image: opensearchproject/opensearch:2.19.1
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "127.0.0.1:${DDD_TEST_OPENSEARCH_PORT:-9211}:9200"
+    tmpfs:
+      - /usr/share/opensearch/data:uid=1000,gid=1000,mode=0775
