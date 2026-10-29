@@ -176,3 +176,8 @@ Unchanged:
 - 3.7.8 — descriptions (OpenAPI, MCP, property and enum docs): inline `{@see Foo::bar()}` / `{@link …}` render as the
   referenced name in backticks (a URL as is) instead of cutting the text at their closing brace
   (`ReflectionDocComment::renderInlineReferenceTags()`). A subclass that rendered them itself keeps working.
+- 3.7.9 — issues health: the job records the newest line of any level (`IssuesRegistryJobService::ALL_LOG_LEVELS`),
+  so an environment without errors no longer reports "collector silent"; a silent finding carries a hint to prove the
+  path with `app:issues:test` (JSON `collectorSilentHint`). New `--job-only`: the exit code reflects the job alone —
+  use it for the sync job's liveness probe. Skills note that `bin/console --no-debug` keeps a stale compiled container
+  after `composer update` until `cache:clear --no-debug`.

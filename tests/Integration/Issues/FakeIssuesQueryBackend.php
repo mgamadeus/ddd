@@ -84,7 +84,9 @@ class FakeIssuesQueryBackend implements IssuesQueryBackend
     {
         $matchingEvents = [];
         foreach ($this->storedEvents as [$issueEvent]) {
+            $searchedLevels = $issueEventSearch->levels !== [] ? array_map('strtolower', $issueEventSearch->levels) : self::ERROR_LEVELS;
             if (!$this->isInWindow($issueEvent, $issueEventSearch->from, $issueEventSearch->to)
+                || !in_array(strtolower((string)$issueEvent->level), $searchedLevels, true)
                 || ($issueEventSearch->groupHash !== null && $issueEvent->groupHash !== $issueEventSearch->groupHash)
                 || ($issueEventSearch->issueHash !== null && $issueEvent->issueHash !== $issueEventSearch->issueHash)
                 || ($issueEventSearch->workspace !== null && $issueEvent->workspace !== $issueEventSearch->workspace)) {

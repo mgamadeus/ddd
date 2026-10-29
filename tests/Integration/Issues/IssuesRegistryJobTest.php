@@ -14,6 +14,9 @@ use DDD\Domain\Common\Services\IssuesService;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Logging\IssuesRegistrySettings;
 use DDD\Infrastructure\Services\DDDService;
+use DDD\Symfony\Commands\Common\Issues\IssuesHealth;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Tester\CommandTester;
 
 /**
  * The issues registry job against the registry tables on both engines, with an in-memory log backend and a recording
@@ -272,6 +275,42 @@ class IssuesRegistryJobTest extends IssuesRegistryTestCase
             self::assertNotNull($issuesService->findByIssueHash('group-a-route:test'));
         } finally {
             DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
+        }
+    }
+
+    public function testAnEnvironmentWithoutErrorsIsNotASilentCollector(): void
+    {
+        $issuesRegistryJobService = $this->createJobService();
+        // only warnings: no issue groups, but the collector ships
+        $this->fakeIssuesQueryBackend->addEvent($this->now - 300, 'group-warning', level: 'warning');
+
+        $issuesRegistryJobResult = $issuesRegistryJobService->run($this->secondsFromNow(0));
+        static::entityManager()->clear();
+        $issuesRegistryHealth = $issuesRegistryJobService->getHealth($this->secondsFromNow(60));
+
+        self::assertSame(0, $issuesRegistryJobResult->groupsCreated);
+        self::assertFalse($issuesRegistryHealth->collectorSilent);
+        self::assertTrue($issuesRegistryHealth->isHealthy());
+    }
+
+    public function testTheJobOnlyHealthCheckIgnoresASilentCollector(): void
+    {
+        $issuesRegistryJobService = $this->createJobService();
+        $issuesRegistryJobService->run($this->secondsFromNow(0));
+        static::entityManager()->clear();
+        /** @var IssuesRegistryJobService $containerJobService */
+        $containerJobService = DDDService::instance()->getService(IssuesRegistryJobService::class);
+        $containerJobService->setSettings($issuesRegistryJobService->getSettings());
+
+        try {
+            // no line at all: the collector is silent, the job is not stalled
+            $fullCommandTester = new CommandTester(new IssuesHealth());
+            $jobOnlyCommandTester = new CommandTester(new IssuesHealth());
+            self::assertSame(Command::FAILURE, $fullCommandTester->execute([]));
+            self::assertStringContainsString('app:issues:test', $fullCommandTester->getDisplay());
+            self::assertSame(Command::SUCCESS, $jobOnlyCommandTester->execute(['--job-only' => true]));
+        } finally {
+            $containerJobService->setSettings(null);
         }
     }
 }

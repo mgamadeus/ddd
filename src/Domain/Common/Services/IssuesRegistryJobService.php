@@ -22,6 +22,7 @@ use DDD\Infrastructure\Logging\Query\IssueHashCounts;
 use DDD\Infrastructure\Logging\Query\IssuesQueryBackend;
 use DDD\Infrastructure\Logging\Query\IssuesQueryBackendFactory;
 use DDD\Infrastructure\Services\DDDService;
+use Psr\Log\LogLevel;
 use Throwable;
 
 /**
@@ -52,6 +53,12 @@ class IssuesRegistryJobService
 
     /** Events newer than this are left to the next run (the collector may not have shipped all of them yet) */
     public const int SETTLE_SECONDS = 60;
+
+    /** Every PSR-3 level: the collector check counts a line of any level as a sign of life */
+    public const array ALL_LOG_LEVELS = [
+        LogLevel::DEBUG, LogLevel::INFO, LogLevel::NOTICE, LogLevel::WARNING,
+        LogLevel::ERROR, LogLevel::CRITICAL, LogLevel::ALERT, LogLevel::EMERGENCY,
+    ];
 
     /** Groups per run and environment whose newest event is fetched for last seen / release */
     public const int MAX_REFRESHED_GROUPS_PER_RUN = 100;
@@ -220,7 +227,10 @@ class IssuesRegistryJobService
                 $this->count($environment, $countFrom, $settledUntil, $result);
                 $issuesJobState->watermark = $settledUntil;
             }
-            $newestEvent = $this->getQueryBackend($environment)->searchEvents(new IssueEventSearch($discoveryFrom, $now, limit: 1))->first();
+            // any level, not only errors: "the collector ships" is also true for an environment without errors
+            $newestEvent = $this->getQueryBackend($environment)->searchEvents(
+                new IssueEventSearch($discoveryFrom, $now, levels: self::ALL_LOG_LEVELS, limit: 1)
+            )->first();
             if ($newestEvent?->timestamp !== null) {
                 $issuesJobState->newestEventSeenAt = $newestEvent->timestamp;
             }

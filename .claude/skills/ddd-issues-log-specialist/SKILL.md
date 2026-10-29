@@ -265,7 +265,7 @@ containers:
       - { name: ISSUES_ALERT_WEBHOOK, valueFrom: { secretKeyRef: { name: issues, key: slack-webhook } } }
       - { name: ISSUES_ALERT_LINK_TEMPLATE, value: "https://admin.example.com/issues/{group_hash}" }
     livenessProbe:
-      exec: { command: ["php", "bin/console", "app:issues:check-registry-job-and-collector-health"] }
+      exec: { command: ["php", "bin/console", "app:issues:check-registry-job-and-collector-health", "--job-only"] }
       periodSeconds: 300
 ```
 
@@ -304,8 +304,12 @@ the causes are registered silently and one `:rotating_light:` message is sent in
 
 `app:issues:check-registry-job-and-collector-health` (exit 1 = unhealthy, `--format=json`) checks two things the registry itself cannot alert on:
 **job stalled** (no successful run within `ISSUES_JOB_STALE_MINUTES`, 10) and **collector silent** (no event of any level
-within `ISSUES_COLLECTOR_SILENT_MINUTES`, 60 — set it above the quietest hour of the application). Wire it into the
-liveness probe of the job (example 6) and into the external uptime monitor; the job's last error is in the output.
+within `ISSUES_COLLECTOR_SILENT_MINUTES`, 60 — set it above the quietest hour of the application). The job records
+the newest line of **any** level, so an environment without errors is not silent as long as it logs at all; a
+collector-silent finding comes with a hint to prove the path with `app:issues:test`. Wire the full check into the
+external uptime monitor and `--job-only` (exit code from the job alone, collector findings still printed) into the
+liveness probe of the job (example 6): restarting the job does not help a silent collector. The job's last error is in
+the output.
 
 ### 10. Local development
 
@@ -414,7 +418,7 @@ otherwise, naming the environments).
   `DateTimeValueSequence` (chart types: `ddd-entity-specialist`); `--step=auto` is 1m up to 1 h, 10m up to 6 h, 1h up
   to 24 h, then 6h; a step too fine is coarsened to at most 2 000 buckets.
 - `health` → `{backendConfigured, lastSuccessfulRunAt, newestEventSeenAt, lastError, jobStalled, collectorSilent,
-  environments: {"elements": [{…the same per environment, environment}]}, healthy}` — unhealthy when one environment is.
+  collectorSilentHint (only when silent), environments: {"elements": [{…the same per environment, environment}]}, healthy}` — unhealthy when one environment is.
 
 **Fix loop for an agent:**
 
@@ -657,7 +661,8 @@ For the registry on top: `ISSUES_QUERY_BACKEND=elasticsearch`.
 | Registry stays empty | `ISSUES_QUERY_BACKEND` set for the job process; `app:issues:search --since=24h` finds lines (selector, auth); only error and above or uncaught lines are registered |
 | A sync right after an event counts 0 | expected: discovery and counting stop at now − 1 min (events may still be in the collector's buffer); an event younger than a minute is registered and counted in the next run. `app:issues:search` sees it at once |
 | No alerts | seed mode (first `ISSUES_SEED_HOURS` after the first run); `ISSUES_ALERT_WEBHOOK` set; group IGNORED; explosion guard (`app:issues:sync-registry-from-log-backend` prints it) |
-| `app:issues:check-registry-job-and-collector-health` fails | `lastError` in its output; the job not running; the collector not shipping (collector silent) |
+| `app:issues:check-registry-job-and-collector-health` fails | `lastError` in its output; the job not running; the collector not shipping (collector silent: `app:issues:test` writes one line per level, then `app:issues:search --since=10m` must find it) |
+| New `app:issues:*` commands "not defined" after `composer update` | a stale compiled container of the `--no-debug` (or prod) cache: `php bin/console cache:clear --no-debug`. The debug container rebuilds itself, the non-debug one does not |
 | Elasticsearch: groups empty, hits not | the fields are mapped as keyword: `ISSUES_ES_KEYWORD_SUFFIX=` (empty); `app:runtime-errors:probe` shows which field names aggregate |
 | Elasticsearch: `multi_terms` unknown | ES < 7.12: COARSE grouping needs 7.12; the registry (composite aggregation) works from ES 7 |
 | Sentry forwarder sends nothing | a file seen for the first time starts at its end (`--from-start` for history); `--min-level`; state file `.issues-sentry-forward.json` next to the logs |
