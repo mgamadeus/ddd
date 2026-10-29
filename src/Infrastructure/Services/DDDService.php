@@ -210,10 +210,20 @@ class DDDService
     public function deactivateCaches(): void
     {
         $this->createCachesSnapshot();
-        DoctrineEntityRegistry::$clearCache = true;
-        VirtualEntityRegistry::$clearCache = true;
-        ClassFinder::$clearCache = true;
-        DDDService::$noCache = true;
+        $this->applyCacheStates($this->getCacheStatesAllSwitchedTo(false));
+    }
+
+    /**
+     * Every cache this service knows — the framework's and those an application adds through
+     * {@see getCurrentCacheStates()} — mapped to one state, so deactivateCaches() / activateCaches() switch the
+     * application's caches too without being overridden.
+     *
+     * @param bool $cachesOn true = every cache ON
+     * @return bool[] Cache state by cache name
+     */
+    protected function getCacheStatesAllSwitchedTo(bool $cachesOn): array
+    {
+        return array_fill_keys(array_keys($this->getCurrentCacheStates()), $cachesOn);
     }
 
     /**
@@ -238,10 +248,7 @@ class DDDService
     public function activateCaches(): void
     {
         $this->createCachesSnapshot();
-        DoctrineEntityRegistry::$clearCache = false;
-        VirtualEntityRegistry::$clearCache = false;
-        DDDService::$noCache = false;
-        ClassFinder::$clearCache = false;
+        $this->applyCacheStates($this->getCacheStatesAllSwitchedTo(true));
     }
 
     protected static function getServicePrivate(string $serviceName): mixed

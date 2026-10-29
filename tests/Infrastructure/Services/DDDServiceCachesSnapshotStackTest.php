@@ -10,7 +10,7 @@ use DDD\Infrastructure\Libs\ClassFinder;
 use DDD\Infrastructure\Services\DDDService;
 use PHPUnit\Framework\TestCase;
 
-/** An application service that adds its own cache switch through the two state methods. */
+/** An application service that adds its own cache switch through the two state methods only — no other override. */
 class CacheSwitchAddingDDDService extends DDDService
 {
     public static bool $applicationCacheOff = false;
@@ -24,12 +24,6 @@ class CacheSwitchAddingDDDService extends DDDService
     {
         parent::applyCacheStates($cacheStates);
         self::$applicationCacheOff = !($cacheStates['application'] ?? true);
-    }
-
-    public function deactivateCaches(): void
-    {
-        parent::deactivateCaches();
-        self::$applicationCacheOff = true;
     }
 }
 
@@ -127,5 +121,21 @@ class DDDServiceCachesSnapshotStackTest extends TestCase
         $applicationService->deactivateCaches();
         $applicationService->resetCachesStateForNewJob();
         $this->assertFalse(CacheSwitchAddingDDDService::$applicationCacheOff, 'the job reset switches the added cache on too');
+    }
+
+    public function testDeactivateAndActivateSwitchAnApplicationCacheWithoutOverride(): void
+    {
+        $applicationService = new CacheSwitchAddingDDDService();
+
+        $applicationService->deactivateCaches();
+        $this->assertTrue(CacheSwitchAddingDDDService::$applicationCacheOff);
+        $applicationService->activateCaches();
+        $this->assertFalse(CacheSwitchAddingDDDService::$applicationCacheOff);
+        $applicationService->restoreCachesSnapshot();
+        $this->assertTrue(CacheSwitchAddingDDDService::$applicationCacheOff, 'back in the deactivated window');
+        $applicationService->restoreCachesSnapshot();
+
+        $this->assertFalse(CacheSwitchAddingDDDService::$applicationCacheOff);
+        $this->assertCachesOn(true);
     }
 }

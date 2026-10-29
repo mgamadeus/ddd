@@ -194,3 +194,6 @@ Unchanged:
   `resetCachesStateForNewJob()` empties the stack and switches every cache on through `applyCacheStates([])`. **Check
   callers:** exactly one restore per executed path, in `finally` — a restore on a path that never deactivated (or an
   early restore plus a final one) now pops the enclosing window's frame instead of being a no-op.
+- 3.8.2 — `deactivateCaches()` / `activateCaches()` switch every key of `getCurrentCacheStates()` through
+  `applyCacheStates()`, so an app's own cache switch needs only the two state overrides; an override of
+  `deactivateCaches()` / `activateCaches()` that sets the app flag after the parent call keeps working and can go.
