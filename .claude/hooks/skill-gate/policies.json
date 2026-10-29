@@ -1,0 +1,215 @@
+{
+  "comment": "Which ddd-* skills a session must have loaded before it creates or changes a file of a category. First matching rule wins (fnmatch over the absolute path). new_file: ALL skills required; existing file: ANY one of them. new_only: the rule applies to new files only. Paths match Core and the module repos alike (same src/ layout). module_rules apply IN ADDITION to the first matching file rule (a module's own skill plus the topic skill); a skill counts as loaded when it was loaded with the Skill tool or its SKILL.md was read.",
+  "file_rules": [
+    {
+      "category": "Skill (SKILL.md, references)",
+      "patterns": [
+        "*/.claude/skills/*/SKILL.md",
+        "*/.claude/skills/*/references/*.md"
+      ],
+      "skills": [
+        "ddd-skill-creator"
+      ]
+    },
+    {
+      "category": "DB repository",
+      "patterns": [
+        "*/src/Domain/*/Repo/DB/*.php"
+      ],
+      "skills": [
+        "ddd-entity-specialist",
+        "ddd-rights-specialist"
+      ]
+    },
+    {
+      "category": "Schema diff",
+      "patterns": [
+        "*/src/Domain/Base/Repo/DB/Database/Diff/*",
+        "*/src/Domain/Common/Services/DatabaseSchemaDiff*",
+        "*/src/Symfony/Commands/*/Database/*"
+      ],
+      "skills": [
+        "ddd-database-schema-diff-specialist"
+      ]
+    },
+    {
+      "category": "QueryOptions",
+      "patterns": [
+        "*/src/Domain/Base/Entities/QueryOptions/*",
+        "*/src/Presentation/Base/QueryOptions/*"
+      ],
+      "skills": [
+        "ddd-query-options-specialist"
+      ]
+    },
+    {
+      "category": "Serializer",
+      "patterns": [
+        "*/src/Infrastructure/Traits/Serializer/*"
+      ],
+      "skills": [
+        "ddd-serializer-specialist"
+      ]
+    },
+    {
+      "category": "Issues log (logging, registry, client errors, source maps)",
+      "patterns": [
+        "*/src/Infrastructure/Logging/*",
+        "*/src/Symfony/Commands/Common/Issues/*",
+        "*/src/Symfony/Commands/Common/RuntimeErrors/*",
+        "*/src/Symfony/EventListeners/Issues*",
+        "*/src/Domain/Common/Entities/Issues/*",
+        "*/src/Domain/Common/Services/Issue*",
+        "*/src/Domain/Common/Services/RuntimeErrors*",
+        "*/src/Infrastructure/Services/IssuesLogService.php",
+        "*/src/Infrastructure/Services/SourceMap*"
+      ],
+      "skills": [
+        "ddd-issues-log-specialist",
+        "ddd-service-specialist"
+      ]
+    },
+    {
+      "category": "Entity / EntitySet / value object",
+      "patterns": [
+        "*/src/Domain/*/Entities/*.php"
+      ],
+      "skills": [
+        "ddd-entity-specialist"
+      ]
+    },
+    {
+      "category": "Message / message handler",
+      "patterns": [
+        "*/src/Domain/*/Messages/*.php",
+        "*/src/Domain/*/MessageHandlers/*.php",
+        "*/src/Symfony/Messenger/*.php"
+      ],
+      "skills": [
+        "ddd-message-handler-specialist"
+      ]
+    },
+    {
+      "category": "Service",
+      "patterns": [
+        "*/src/Domain/*/Services/*.php",
+        "*/src/Infrastructure/Services/*.php",
+        "*/src/Presentation/Services/*.php"
+      ],
+      "skills": [
+        "ddd-service-specialist"
+      ]
+    },
+    {
+      "category": "Console command",
+      "patterns": [
+        "*/src/Symfony/Commands/*.php"
+      ],
+      "skills": [
+        "ddd-cli-command-specialist"
+      ]
+    },
+    {
+      "category": "Controller / DTO / endpoint",
+      "patterns": [
+        "*/src/Presentation/*.php"
+      ],
+      "skills": [
+        "ddd-endpoint-specialist"
+      ]
+    },
+    {
+      "category": "Rights",
+      "patterns": [
+        "*/src/Domain/Base/Repo/*Rights*"
+      ],
+      "skills": [
+        "ddd-rights-specialist"
+      ]
+    },
+    {
+      "category": "New Infrastructure / Symfony class (is it a service? which namespace?)",
+      "patterns": [
+        "*/src/Infrastructure/*.php",
+        "*/src/Symfony/*.php",
+        "*/src/Domain/*.php"
+      ],
+      "skills": [
+        "ddd-service-specialist"
+      ],
+      "new_only": true
+    }
+  ],
+  "command_rules": [
+    {
+      "category": "Release (tag)",
+      "pattern": "\\bgit\\s+tag\\s+v?\\d",
+      "skills": [
+        "ddd-composer-update-version"
+      ]
+    },
+    {
+      "category": "composer update of a consuming app",
+      "pattern": "\\bcomposer\\s+(update|require)\\b.*mgamadeus",
+      "skills": [
+        "ddd-composer-update-version"
+      ]
+    }
+  ],
+  "module_rules": [
+    {
+      "category": "ddd-ai module",
+      "patterns": [
+        "*/DDD/Modules/AI/src/*"
+      ],
+      "skills": [
+        "ddd-module-ai-specialist"
+      ]
+    },
+    {
+      "category": "ddd-argus module",
+      "patterns": [
+        "*/DDD/Modules/Argus/src/*"
+      ],
+      "skills": [
+        "ddd-module-argus-specialist"
+      ]
+    },
+    {
+      "category": "ddd-common-geo module",
+      "patterns": [
+        "*/DDD/Modules/Geo/src/*"
+      ],
+      "skills": [
+        "ddd-module-geo-specialist"
+      ]
+    },
+    {
+      "category": "ddd-common-money module",
+      "patterns": [
+        "*/DDD/Modules/Money/src/*"
+      ],
+      "skills": [
+        "ddd-module-money-specialist"
+      ]
+    },
+    {
+      "category": "ddd-common-political module",
+      "patterns": [
+        "*/DDD/Modules/Political/src/*"
+      ],
+      "skills": [
+        "ddd-module-political-specialist"
+      ]
+    },
+    {
+      "category": "ddd-common-translations module",
+      "patterns": [
+        "*/DDD/Modules/Translations/src/*"
+      ],
+      "skills": [
+        "ddd-module-translations-specialist"
+      ]
+    }
+  ]
+}

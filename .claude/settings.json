@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {"hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/skill-gate/skill_gate.py\" prompt"}]}
+    ],
+    "PostToolUse": [
+      {"matcher": "Skill|Read", "hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/skill-gate/skill_gate.py\" record"}]}
+    ],
+    "PreToolUse": [
+      {"matcher": "Write|Edit|MultiEdit|NotebookEdit", "hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/skill-gate/skill_gate.py\" check-file"}]},
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/skill-gate/skill_gate.py\" check-bash"}]}
+    ]
+  }
+}

@@ -769,6 +769,11 @@ conventions; a class placed from memory or from a brief breaks every consuming a
   runtime. `ContainerFetchedServicesNamespaceTest` enforces it for Core.
 - **Class names and namespaces in a feature brief are proposals**, vetted against the skills like an ingest
   ([Ingest Discipline](#ingest-discipline-patches-from-consumer-apps)).
+- **Enforced by hooks** (`.claude/settings.json`, `.claude/hooks/skill-gate/`): every prompt carries the topic → skill
+  table; creating a file of a category (Write / Edit and shell writes: heredoc, `sed -i`, `perl -pi`, Python `open(…,
+  'w')`, `cp`, `mv`) is denied until its skills were loaded in the session — all of them for a new file, one for an
+  existing file; a module file also needs the module's skill (reading its `SKILL.md` counts); `git tag v…` needs
+  `ddd-composer-update-version`. The categories live in `policies.json`.
 - **Release check:** every new class's placement against its skill; for kernel / DI / new services, the prod-mode
   scratch-app gate fetches every new `getService()` target and runs every new command path once — `lint:container`
   alone does not execute them.
