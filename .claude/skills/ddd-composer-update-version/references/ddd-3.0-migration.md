@@ -187,3 +187,10 @@ Unchanged:
   its class declares; nothing else of the service is reset. Scoped API on `Service`: `enableThrowErrors()` /
   `disableThrowErrors()` return the value before, `restoreThrowErrors($before)` in `finally`. No worker config needed.
   An app service with its own `reset()` is not affected (the tag names the dedicated method).
+- 3.8.1 — the caches snapshot is a stack like the rights snapshot: a nested `deactivateCaches()` /
+  `restoreCachesSnapshot()` pair no longer leaves every cache off for the rest of the process. `activateCaches()` is a
+  push as well and needs its own restore. Extension point for an app's own cache switch: override
+  `getCurrentCacheStates()` / `applyCacheStates()` (parent result plus the app key) instead of the four public methods;
+  `resetCachesStateForNewJob()` empties the stack and switches every cache on through `applyCacheStates([])`. **Check
+  callers:** exactly one restore per executed path, in `finally` — a restore on a path that never deactivated (or an
+  early restore plus a final one) now pops the enclosing window's frame instead of being a no-op.

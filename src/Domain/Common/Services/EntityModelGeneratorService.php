@@ -98,70 +98,73 @@ class EntityModelGeneratorService
         bool $filterOverriddenEntities = false
     ): array {
         DDDService::instance()->deactivateCaches();
-        $classesFromFramework = ClassFinder::getClassesInDirectory(DDDService::instance()->getFrameworkRootDir() . '/Domain');
-        $classesFromApplication = ClassFinder::getClassesInDirectory(DDDService::instance()->getRootDir() . '/src/Domain');
-        $allClasses = array_merge($classesFromFramework, $classesFromApplication);
+        try {
+            $classesFromFramework = ClassFinder::getClassesInDirectory(DDDService::instance()->getFrameworkRootDir() . '/Domain');
+            $classesFromApplication = ClassFinder::getClassesInDirectory(DDDService::instance()->getRootDir() . '/src/Domain');
+            $allClasses = array_merge($classesFromFramework, $classesFromApplication);
 
-        // Include entity classes from registered DDD modules
-        $containerBuilder = new ContainerBuilder();
-        $containerBuilder->setParameter('kernel.project_dir', DDDService::instance()->getRootDir());
-        foreach (ModuleCompilerPass::discoverModules($containerBuilder) as $moduleClass) {
-            /** @var DDDModule $moduleClass */
-            $moduleDomainPath = $moduleClass::getSourcePath() . '/Domain';
-            if (is_dir($moduleDomainPath)) {
-                $classesFromModule = ClassFinder::getClassesInDirectory($moduleDomainPath);
-                $allClasses = array_merge($allClasses, $classesFromModule);
-            }
-        }
-        /** @var ClassWithNamespace[] $entityClasses */
-        $entityClasses = [];
-        /** @var array<string, true> $seenClassNames method-local: a directory scanned twice (the framework's own checkout
-         * is framework and application at once) must not give a class — and its table — twice */
-        $seenClassNames = [];
-        foreach ($allClasses as $class) {
-            if (isset($seenClassNames[$class->getNameWithNamespace()])) {
-                continue;
-            }
-            $seenClassNames[$class->getNameWithNamespace()] = true;
-            // ignore repo classes
-            if (strpos($class->namespace, '\\Repo\\') !== false) {
-                continue;
-            }
-            if (strpos($class->namespace, 'Entities') === false) {
-                continue;
-            }
-            if (DefaultObject::isEntity($class->getNameWithNamespace())) {
-                if ($restrictToClasesWithLazyloadRepoType) {
-                    $reflectionClass = ReflectionClass::instance($class->getNameWithNamespace());
-                    if ($lazyloadRepoAttributes = $reflectionClass->getAttributes(LazyLoadRepo::class, ReflectionAttribute::IS_INSTANCEOF)) {
-                        $hasDBRepo = false;
-                        $hasLegacyDBRepo = false;
-                        $forceDBEntityModelCreation = false;
-                        foreach ($lazyloadRepoAttributes as $lazyloadRepoAttribute) {
-                            /** @var LazyLoadRepo $lazyloadRepoAttributeInstance */
-                            $lazyloadRepoAttributeInstance = $lazyloadRepoAttribute->newInstance();
-                            $forceDBEntityModelCreation = $lazyloadRepoAttributeInstance->forceDBEntityModelCreation;
-                            if ($lazyloadRepoAttributeInstance->repoType == $restrictToClasesWithLazyloadRepoType) {
-                                $hasDBRepo = true;
-                            }
-                            if ($lazyloadRepoAttributeInstance->repoType == LazyLoadRepo::LEGACY_DB) {
-                                $hasLegacyDBRepo = true;
-                            }
-                        }
-                        if ($hasDBRepo && (!$hasLegacyDBRepo || $forceDBEntityModelCreation)) {
-                            $entityClasses[] = $class;
-                        }
-                    }
-                } else {
-                    $entityClasses[] = $class;
+            // Include entity classes from registered DDD modules
+            $containerBuilder = new ContainerBuilder();
+            $containerBuilder->setParameter('kernel.project_dir', DDDService::instance()->getRootDir());
+            foreach (ModuleCompilerPass::discoverModules($containerBuilder) as $moduleClass) {
+                /** @var DDDModule $moduleClass */
+                $moduleDomainPath = $moduleClass::getSourcePath() . '/Domain';
+                if (is_dir($moduleDomainPath)) {
+                    $classesFromModule = ClassFinder::getClassesInDirectory($moduleDomainPath);
+                    $allClasses = array_merge($allClasses, $classesFromModule);
                 }
             }
+            /** @var ClassWithNamespace[] $entityClasses */
+            $entityClasses = [];
+            /** @var array<string, true> $seenClassNames method-local: a directory scanned twice (the framework's own checkout
+             * is framework and application at once) must not give a class — and its table — twice */
+            $seenClassNames = [];
+            foreach ($allClasses as $class) {
+                if (isset($seenClassNames[$class->getNameWithNamespace()])) {
+                    continue;
+                }
+                $seenClassNames[$class->getNameWithNamespace()] = true;
+                // ignore repo classes
+                if (strpos($class->namespace, '\\Repo\\') !== false) {
+                    continue;
+                }
+                if (strpos($class->namespace, 'Entities') === false) {
+                    continue;
+                }
+                if (DefaultObject::isEntity($class->getNameWithNamespace())) {
+                    if ($restrictToClasesWithLazyloadRepoType) {
+                        $reflectionClass = ReflectionClass::instance($class->getNameWithNamespace());
+                        if ($lazyloadRepoAttributes = $reflectionClass->getAttributes(LazyLoadRepo::class, ReflectionAttribute::IS_INSTANCEOF)) {
+                            $hasDBRepo = false;
+                            $hasLegacyDBRepo = false;
+                            $forceDBEntityModelCreation = false;
+                            foreach ($lazyloadRepoAttributes as $lazyloadRepoAttribute) {
+                                /** @var LazyLoadRepo $lazyloadRepoAttributeInstance */
+                                $lazyloadRepoAttributeInstance = $lazyloadRepoAttribute->newInstance();
+                                $forceDBEntityModelCreation = $lazyloadRepoAttributeInstance->forceDBEntityModelCreation;
+                                if ($lazyloadRepoAttributeInstance->repoType == $restrictToClasesWithLazyloadRepoType) {
+                                    $hasDBRepo = true;
+                                }
+                                if ($lazyloadRepoAttributeInstance->repoType == LazyLoadRepo::LEGACY_DB) {
+                                    $hasLegacyDBRepo = true;
+                                }
+                            }
+                            if ($hasDBRepo && (!$hasLegacyDBRepo || $forceDBEntityModelCreation)) {
+                                $entityClasses[] = $class;
+                            }
+                        }
+                    } else {
+                        $entityClasses[] = $class;
+                    }
+                }
+            }
+            if ($filterOverriddenEntities) {
+                $entityClasses = self::filterOutOverriddenEntities($entityClasses);
+            }
+            return $entityClasses;
+        } finally {
+            DDDService::instance()->restoreCachesSnapshot();
         }
-        if ($filterOverriddenEntities) {
-            $entityClasses = self::filterOutOverriddenEntities($entityClasses);
-        }
-        DDDService::instance()->restoreCachesSnapshot();
-        return $entityClasses;
     }
 
     /**

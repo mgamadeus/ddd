@@ -42,6 +42,13 @@ class DDDService
 
     protected static $cachesSnapshotSet = false;
 
+    /**
+     * @var array<int, bool[]> Cache states pushed by createCachesSnapshot() (and so by deactivateCaches() /
+     * activateCaches()) and popped by restoreCachesSnapshot(), so nested pairs each restore their own previous state.
+     * $cachesSnapshotSet and $cacheStates mirror the top of this stack for subclasses that still read them.
+     */
+    protected static array $cachesStateStack = [];
+
     protected static $entityRightsRestrictionSnapshotSet = false;
 
     /**
@@ -133,40 +140,76 @@ class DDDService
     }
 
     /**
-     * @return void Creates snapshot of current application related caches state
+     * Pushes the current cache states. Every push is matched by exactly one restoreCachesSnapshot(), in a `finally`;
+     * pairs may be nested.
+     *
+     * @return void
      */
     public function createCachesSnapshot(): void
     {
-        self::$cacheStates = [
+        $currentCacheStates = $this->getCurrentCacheStates();
+        self::$cachesStateStack[] = $currentCacheStates;
+        self::$cacheStates = $currentCacheStates;
+        self::$cachesSnapshotSet = true;
+    }
+
+    /**
+     * Pops the newest snapshot and applies it, so a nested pair restores the state of the enclosing window, not the
+     * state before the outermost one. A restore without a snapshot changes nothing.
+     *
+     * @return void
+     */
+    public function restoreCachesSnapshot(): void
+    {
+        if (!self::$cachesStateStack) {
+            return;
+        }
+        $this->applyCacheStates(array_pop(self::$cachesStateStack));
+        self::$cachesSnapshotSet = self::$cachesStateStack !== [];
+        if (self::$cachesSnapshotSet) {
+            self::$cacheStates = self::$cachesStateStack[array_key_last(self::$cachesStateStack)];
+        }
+    }
+
+    /**
+     * Whether each cache is ON right now. The extension point for an application that adds a cache switch: it
+     * overrides this and {@see applyCacheStates()} (parent result plus its own key) instead of the public methods.
+     *
+     * @return bool[] Cache state by cache name, true = ON
+     */
+    protected function getCurrentCacheStates(): array
+    {
+        return [
             'doctrineRegistry' => !DoctrineEntityRegistry::$clearCache,
             'virtualRegistry' => !VirtualEntityRegistry::$clearCache,
             'app' => !DDDService::$noCache,
             'classFinder' => !ClassFinder::$clearCache
         ];
-        self::$cachesSnapshotSet = true;
     }
 
     /**
-     * @return void Restores snapshot of application related caches state
+     * Switches every cache to the given state; a cache missing from the states is switched ON.
+     *
+     * @param bool[] $cacheStates Cache state by cache name as returned by getCurrentCacheStates()
+     * @return void
      */
-    public function restoreCachesSnapshot(): void
+    protected function applyCacheStates(array $cacheStates): void
     {
-        if (!self::$cachesSnapshotSet) {
-            return;
-        }
-        DoctrineEntityRegistry::$clearCache = !self::$cacheStates['doctrineRegistry'];
-        VirtualEntityRegistry::$clearCache = !self::$cacheStates['virtualRegistry'];
-        DDDService::$noCache = !self::$cacheStates['app'];
-        ClassFinder::$clearCache = !self::$cacheStates['classFinder'];
-        self::$cachesSnapshotSet = false;
+        DoctrineEntityRegistry::$clearCache = !($cacheStates['doctrineRegistry'] ?? true);
+        VirtualEntityRegistry::$clearCache = !($cacheStates['virtualRegistry'] ?? true);
+        DDDService::$noCache = !($cacheStates['app'] ?? true);
+        ClassFinder::$clearCache = !($cacheStates['classFinder'] ?? true);
     }
 
     /**
-     * @return void Deactivates all application related caches
+     * Deactivates all application related caches. Pushes a snapshot first: pair it with restoreCachesSnapshot() in a
+     * `finally`; pairs may be nested.
+     *
+     * @return void
      */
     public function deactivateCaches(): void
     {
-        self::createCachesSnapshot();
+        $this->createCachesSnapshot();
         DoctrineEntityRegistry::$clearCache = true;
         VirtualEntityRegistry::$clearCache = true;
         ClassFinder::$clearCache = true;
@@ -180,19 +223,21 @@ class DDDService
      */
     public function resetCachesStateForNewJob(): void
     {
-        DoctrineEntityRegistry::$clearCache = false;
-        VirtualEntityRegistry::$clearCache = false;
-        ClassFinder::$clearCache = false;
-        DDDService::$noCache = false;
+        // every cache ON, including the switches an application adds through applyCacheStates()
+        $this->applyCacheStates([]);
+        self::$cachesStateStack = [];
         self::$cachesSnapshotSet = false;
     }
 
     /**
-     * @return void Activates all application related caches
+     * Activates all application related caches. Pushes a snapshot first like deactivateCaches(): pair it with its own
+     * restoreCachesSnapshot() in a `finally`; pairs may be nested.
+     *
+     * @return void
      */
     public function activateCaches(): void
     {
-        self::createCachesSnapshot();
+        $this->createCachesSnapshot();
         DoctrineEntityRegistry::$clearCache = false;
         VirtualEntityRegistry::$clearCache = false;
         DDDService::$noCache = false;
