@@ -294,7 +294,7 @@ class IssuesRegistryEnvironmentsTest extends IssuesRegistryTestCase
         $trendCommandTester = new CommandTester(new IssuesTrend());
         self::assertSame(Command::SUCCESS, $trendCommandTester->execute(['--environment' => 'prod', '--since' => '2h', '--step' => '1h', '--format' => 'json']));
         $payload = json_decode($trendCommandTester->getDisplay(), true);
-        self::assertSame(['environment', 'groupHash', 'name', 'interval', 'stepSeconds', 'total', 'values'], array_keys($payload));
+        self::assertSame(['environment', 'groupHash', 'name', 'interval', 'stepSeconds', 'total', 'values', 'failedEnvironments'], array_keys($payload));
         self::assertSame(['startDate', 'endDate'], array_keys($payload['interval']));
         self::assertSame(3600, $payload['stepSeconds']);
         self::assertSame(5, $payload['total']);
@@ -302,5 +302,57 @@ class IssuesRegistryEnvironmentsTest extends IssuesRegistryTestCase
         self::assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:00:00Z$/', $payload['values'][0]['x']);
         self::assertSame(Command::INVALID, (new CommandTester(new IssuesTrend()))->execute(['--step' => 'often']));
         $issuesTrendService->setCacheEnabled(true);
+    }
+
+    public function testAWorkspaceSearchReadsOnlyTheEnvironmentsThatCanHoldIt(): void
+    {
+        $issuesRegistryJobService = $this->createJobService();
+        self::assertSame(['mgn'], $issuesRegistryJobService->getEnvironmentNamesForWorkspace('mgn'));
+        self::assertSame([], $issuesRegistryJobService->getEnvironmentNamesForWorkspace('xyz'), 'every selector pins another workspace');
+        self::assertSame(['prod', 'testing', 'mgn'], $issuesRegistryJobService->getEnvironmentNamesForWorkspace(null));
+        $this->fakeIssuesQueryBackends['dev'] = new FakeIssuesQueryBackend();
+        $unpinnedJobService = $this->createJobService('{"prod": "{workspace=\"prod\"}", "dev": "{cluster=\"k8s-dev\"}"}');
+        self::assertSame(['dev'], $unpinnedJobService->getEnvironmentNamesForWorkspace('ame'), 'the unpinned dev selector can hold it');
+
+        // prod times out — a workspace search for mgn never asks it
+        $this->createJobService();
+        $issuesRegistryJobService->setQueryBackendForEnvironment('prod', new FailingIssuesQueryBackend());
+        $this->fakeIssuesQueryBackends['mgn']->addEvent(time() - 60, 'group-mgn', workspace: 'mgn');
+        $commandTester = new CommandTester(new IssuesSearch());
+
+        self::assertSame(Command::SUCCESS, $commandTester->execute(['--workspace' => 'mgn', '--since' => '1h', '--format' => 'json']));
+        $payload = json_decode($commandTester->getDisplay(), true);
+        self::assertSame(['mgn'], $payload['environments']);
+        self::assertSame(1, $payload['count']);
+        self::assertSame([], $payload['failedEnvironments']);
+    }
+
+    public function testAFailingEnvironmentIsReportedAndTheOthersStillAnswer(): void
+    {
+        $issuesRegistryJobService = $this->createJobService();
+        $issuesRegistryJobService->setQueryBackendForEnvironment('prod', new FailingIssuesQueryBackend());
+        $this->fakeIssuesQueryBackends['testing']->addEvent(time() - 60, 'group-testing');
+        $this->fakeIssuesQueryBackends['mgn']->addEvent(time() - 120, 'group-mgn');
+
+        $searchCommandTester = new CommandTester(new IssuesSearch());
+        self::assertSame(Command::SUCCESS, $searchCommandTester->execute(['--since' => '1h', '--format' => 'json'], ['capture_stderr_separately' => true]));
+        self::assertStringContainsString('environment prod failed', $searchCommandTester->getErrorOutput());
+        $searchPayload = json_decode($searchCommandTester->getDisplay(), true);
+        self::assertSame(2, $searchPayload['count']);
+        self::assertSame([['environment' => 'prod', 'error' => 'backend down']], $searchPayload['failedEnvironments']);
+
+        /** @var IssuesTrendService $issuesTrendService */
+        $issuesTrendService = DDDService::instance()->getService(IssuesTrendService::class);
+        $issuesTrendService->setCacheEnabled(false);
+        $trendCommandTester = new CommandTester(new IssuesTrend());
+        self::assertSame(Command::SUCCESS, $trendCommandTester->execute(['--since' => '1h', '--format' => 'json'], ['capture_stderr_separately' => true]));
+        $trendPayload = json_decode($trendCommandTester->getDisplay(), true);
+        self::assertSame(2, $trendPayload['total']);
+        self::assertSame('prod', $trendPayload['failedEnvironments'][0]['environment']);
+
+        // every searched environment failed: the command fails
+        $failingCommandTester = new CommandTester(new IssuesSearch());
+        self::assertSame(Command::FAILURE, $failingCommandTester->execute(['--environment' => 'prod', '--format' => 'json'], ['capture_stderr_separately' => true]));
+        self::assertSame('prod', json_decode($failingCommandTester->getDisplay(), true)['failedEnvironments'][0]['environment']);
     }
 }

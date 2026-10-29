@@ -525,7 +525,7 @@ Every command takes `--format=json`: stdout then carries only the JSON, messages
 |---|---|
 | `app:issues:list [--environment=prod] [--status=OPEN] [--new-since=24h] [--release=…] [--section=HTTP] [--limit=50]` | groups, last seen first; the status counts per environment |
 | `app:issues:show <groupHash> [--environment=…] [--events=3] [--since=7d]` | one group, its issues, the newest events (from its environment's selector) with full context |
-| `app:issues:search [--environment=…] [--workspace=mgn] [--text=…] [--level=error,warning] [--route=…] [--account=…] [--group=…] [--issue=…] [--since=1h] [--until=…] [--limit=20] [--oldest-first]` | events straight from the backend, any level; every environment merged by time unless `--environment`; `--workspace` filters `service.workspace`, also without an environment for it |
+| `app:issues:search [--environment=…] [--workspace=mgn] [--text=…] [--level=error,warning] [--route=…] [--account=…] [--group=…] [--issue=…] [--since=1h] [--until=…] [--limit=20] [--oldest-first]` | events straight from the backend, any level; every environment merged by time unless `--environment`; `--workspace` filters `service.workspace` and reads only the environments that can hold it (named like it, or a selector pinning `workspace="…"`; else every unpinned one). A failing environment (timeout) is a warning on stderr and `failedEnvironments` in JSON, the others still answer; exit 1 only when all failed |
 | `app:issues:resolve <groupHash> [--environment=…]` / `ignore` / `reopen` | status; resolve = only a later event reopens it, ignore = never alerts again |
 | `app:issues:trend [--environment=…] [--group=<hash>] [--since=24h] [--until=…] [--step=auto]` | error events per time bucket (gap-free), one environment or all summed, one group or all |
 | `app:issues:sync-registry-from-log-backend [--loop] [--interval=60] [--seed=HOURS]` | the job (former name `app:issues:sync`, a deprecated alias) |
@@ -544,12 +544,14 @@ otherwise, naming the environments).
   framework's `objectType`).
 - `show` → `{"environment", "workspace", "group": {…as above}, "issues": [{issueHash, environment, entryPoint,
   firstSeenAt, lastSeenAt, eventCount}], "events": [<event>], "eventsError": null|"…"}`.
-- `search` → `{"environments": [...], "workspace": null|"…", "count": n, "events": [<event>]}`.
+- `search` → `{"environments": [...], "workspace": null|"…", "count": n, "events": [<event>], "failedEnvironments": [{"environment", "error"}]}`.
 - An `<event>` is the raw ECS line as an object with `issues.environment` (the environment it was found in) and
   `issues.workspace` (its `service.workspace`) in front.
 - `resolve` / `ignore` / `reopen` → `{"groupHash", "environment", "workspace", "status"}`.
 - `trend` → `{"environment": null|"…", "groupHash": null|"…", "name", "interval": {"startDate", "endDate"},
-  "stepSeconds", "total", "values": [{"x": "2026-10-28T10:00:00Z", "y": n}]}` — the framework's
+  "stepSeconds", "total", "values": [{"x": "2026-10-28T10:00:00Z", "y": n}], "failedEnvironments": [{"environment", "error"}]}`
+  (summed over the environments that answered; `IssuesTrendService::findTrendWithFailedEnvironments()` →
+  `IssuesTrendResult`, `getTrend()` throws only when all failed) — the framework's
   `DateTimeValueSequence` (chart types: `ddd-entity-specialist`); `--step=auto` is 1m up to 1 h, 10m up to 6 h, 1h up
   to 24 h, then 6h; a step too fine is coarsened to at most 2 000 buckets.
 - `health` → `{backendConfigured, lastSuccessfulRunAt, newestEventSeenAt, lastError, jobStalled, collectorSilent,

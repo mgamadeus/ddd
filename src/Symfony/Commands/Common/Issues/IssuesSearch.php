@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DDD\Symfony\Commands\Common\Issues;
 
+use DDD\Domain\Common\Entities\Issues\IssuesEnvironmentFailure;
+use DDD\Domain\Common\Entities\Issues\IssuesEnvironmentFailures;
 use DDD\Domain\Common\Services\IssuesRegistryJobService;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Logging\Query\IssueEvent;
@@ -20,7 +22,11 @@ use Throwable;
  * Searches the events in the log backend directly (also those the registry does not group: warnings, other levels) —
  * e.g. right after an agent ran something on workspace mgn: `app:issues:search --workspace=mgn --since=5m --format=json`.
  * `--environment` picks one environment's selector (default: every configured environment, merged by time);
- * `--workspace` filters on the lines' `service.workspace`, also where no environment is configured for that workspace.
+ * `--workspace` filters on the lines' `service.workspace` and, without `--environment`, reads only the environments
+ * that can hold that workspace ({@see IssuesRegistryJobService::getEnvironmentNamesForWorkspace()}).
+ *
+ * An environment whose backend fails (a timeout) is reported — a warning, `failedEnvironments` in JSON — and the
+ * others still answer; the command fails only when every searched environment failed.
  */
 #[AsCommand(
     name: 'app:issues:search',
@@ -69,17 +75,38 @@ class IssuesSearch extends IssuesCommand
             workspace: $input->getOption('workspace'),
         );
         $environment = $this->getEnvironmentOption($input);
-        $environments = $environment !== null ? [$environment] : $issuesRegistryJobService->getEnvironmentNames();
+        $environments = $environment !== null
+            ? [$environment]
+            : $issuesRegistryJobService->getEnvironmentNamesForWorkspace($issueEventSearch->workspace);
+        if ($environments === []) {
+            $this->getErrorOutput($output)->writeln(sprintf(
+                '<comment>No configured environment can hold workspace "%s" (every selector pins another workspace)</comment>',
+                $issueEventSearch->workspace
+            ));
+        }
         /** @var array<int, array{0: string, 1: IssueEvent}> $environmentEvents method-local: environment and event */
         $environmentEvents = [];
-        try {
-            foreach ($environments as $searchedEnvironment) {
+        $issuesEnvironmentFailures = new IssuesEnvironmentFailures();
+        foreach ($environments as $searchedEnvironment) {
+            try {
                 foreach ($issuesRegistryJobService->getQueryBackend($searchedEnvironment)->searchEvents($issueEventSearch)->getElements() as $issueEvent) {
                     $environmentEvents[] = [$searchedEnvironment, $issueEvent];
                 }
+            } catch (Throwable $throwable) {
+                $issuesEnvironmentFailures->addFailure($searchedEnvironment, $throwable->getMessage());
             }
-        } catch (Throwable $throwable) {
-            $this->getErrorOutput($output)->writeln('<error>' . $throwable->getMessage() . '</error>');
+        }
+        foreach ($issuesEnvironmentFailures->getElements() as $issuesEnvironmentFailure) {
+            $this->getErrorOutput($output)->writeln(sprintf(
+                '<comment>environment %s failed, its events are missing: %s</comment>',
+                $issuesEnvironmentFailure->environment,
+                $issuesEnvironmentFailure->error
+            ));
+        }
+        if ($environments !== [] && $issuesEnvironmentFailures->count() === count($environments)) {
+            if ($this->isJsonFormat($input)) {
+                $this->writeJson($output, ['environments' => $environments, 'failedEnvironments' => $this->toFailedEnvironmentsPayload($issuesEnvironmentFailures)]);
+            }
             return Command::FAILURE;
         }
         // several environments: merged by time, the limit over all of them
@@ -97,6 +124,7 @@ class IssuesSearch extends IssuesCommand
                 'workspace' => $issueEventSearch->workspace,
                 'count' => count($eventPayloads),
                 'events' => $eventPayloads,
+                'failedEnvironments' => $this->toFailedEnvironmentsPayload($issuesEnvironmentFailures),
             ]);
             return Command::SUCCESS;
         }
@@ -113,5 +141,17 @@ class IssuesSearch extends IssuesCommand
             ));
         }
         return Command::SUCCESS;
+    }
+
+    /** @return array<int, array<string, string>> `[{environment, error}]` — json_encode input only */
+    protected function toFailedEnvironmentsPayload(IssuesEnvironmentFailures $issuesEnvironmentFailures): array
+    {
+        return array_map(
+            static fn(IssuesEnvironmentFailure $issuesEnvironmentFailure): array => [
+                'environment' => $issuesEnvironmentFailure->environment,
+                'error' => $issuesEnvironmentFailure->error,
+            ],
+            array_values($issuesEnvironmentFailures->getElements())
+        );
     }
 }

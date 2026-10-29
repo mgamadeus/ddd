@@ -55,6 +55,9 @@ class IssuesRegistryJobService
     public const int SETTLE_SECONDS = 60;
 
     /** Every PSR-3 level: the collector check counts a line of any level as a sign of life */
+    /** A selector that pins one workspace: Loki `workspace="mgn"` / `service_workspace="mgn"` */
+    public const string PINNED_WORKSPACE_PATTERN = '/(?:^|[{,\s])(?:service_)?workspace\s*=\s*"([^"]+)"/';
+
     public const array ALL_LOG_LEVELS = [
         LogLevel::DEBUG, LogLevel::INFO, LogLevel::NOTICE, LogLevel::WARNING,
         LogLevel::ERROR, LogLevel::CRITICAL, LogLevel::ALERT, LogLevel::EMERGENCY,
@@ -130,6 +133,33 @@ class IssuesRegistryJobService
     public function getEnvironmentNames(): array
     {
         return $this->getSettings()->getQueryEnvironments()->getNames();
+    }
+
+    /**
+     * The environments whose selector can hold lines of the workspace, so a workspace search does not read every
+     * environment: the environment named like the workspace or whose selector pins it (`workspace="mgn"`,
+     * `service_workspace="mgn"`); without one, every environment whose selector does not pin ANOTHER workspace. Null
+     * workspace = every environment.
+     *
+     * @return string[] Environment names
+     */
+    public function getEnvironmentNamesForWorkspace(?string $workspace): array
+    {
+        $issuesQueryEnvironments = $this->getSettings()->getQueryEnvironments();
+        if ($workspace === null || $workspace === '') {
+            return $issuesQueryEnvironments->getNames();
+        }
+        $matchingEnvironments = [];
+        $unpinnedEnvironments = [];
+        foreach ($issuesQueryEnvironments->getElements() as $issuesQueryEnvironment) {
+            $pinnedWorkspace = preg_match(self::PINNED_WORKSPACE_PATTERN, $issuesQueryEnvironment->selector, $matches) ? $matches[1] : null;
+            if ($issuesQueryEnvironment->name === $workspace || $pinnedWorkspace === $workspace) {
+                $matchingEnvironments[] = $issuesQueryEnvironment->name;
+            } elseif ($pinnedWorkspace === null) {
+                $unpinnedEnvironments[] = $issuesQueryEnvironment->name;
+            }
+        }
+        return $matchingEnvironments !== [] ? $matchingEnvironments : $unpinnedEnvironments;
     }
 
     public function getAlertWebhookSender(): IssuesAlertWebhookSender

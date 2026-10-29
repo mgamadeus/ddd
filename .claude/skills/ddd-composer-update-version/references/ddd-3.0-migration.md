@@ -238,3 +238,9 @@ Unchanged:
   `EntityManagerFactory::isScopeConfigured()`.
 - 3.12.1 — docs: the object storage documentation moved into `ddd-service-specialist` › Object Storage; the skill
   `ddd-object-storage-specialist` is gone — applications remove their link to it.
+- 3.12.2 — fix: `app:issues:search --workspace=<code>` without `--environment` reads only the environments that can hold
+  the workspace (`IssuesRegistryJobService::getEnvironmentNamesForWorkspace()`: named like it or a selector pinning
+  `workspace="<code>"`, else every unpinned one) instead of every environment. A failing environment of search and
+  trend (a timeout of prod) is a warning plus `failedEnvironments` in JSON; the others still answer, exit 1 only when all
+  failed. `IssuesTrendService::findTrendWithFailedEnvironments()` → `IssuesTrendResult`; `getTrend()` returns the partial
+  trend and throws only when every environment failed (partial trends are not cached).

@@ -57,7 +57,7 @@ class IssuesTrend extends IssuesCommand
         /** @var IssuesTrendService $issuesTrendService */
         $issuesTrendService = DDDService::instance()->getService(IssuesTrendService::class);
         try {
-            $dateTimeValueSequence = $issuesTrendService->getTrend(
+            $issuesTrendResult = $issuesTrendService->findTrendWithFailedEnvironments(
                 $this->getEnvironmentOption($input),
                 $input->getOption('group'),
                 $interval,
@@ -65,6 +65,24 @@ class IssuesTrend extends IssuesCommand
             );
         } catch (Throwable $throwable) {
             $this->getErrorOutput($output)->writeln('<error>' . $throwable->getMessage() . '</error>');
+            return Command::FAILURE;
+        }
+        $dateTimeValueSequence = $issuesTrendResult->trend;
+        $failedEnvironmentsPayload = [];
+        foreach ($issuesTrendResult->failedEnvironments->getElements() as $issuesEnvironmentFailure) {
+            $failedEnvironmentsPayload[] = ['environment' => $issuesEnvironmentFailure->environment, 'error' => $issuesEnvironmentFailure->error];
+            $this->getErrorOutput($output)->writeln(sprintf(
+                '<comment>environment %s failed, its events are missing from the trend: %s</comment>',
+                $issuesEnvironmentFailure->environment,
+                $issuesEnvironmentFailure->error
+            ));
+        }
+        $environment = $this->getEnvironmentOption($input);
+        $trendEnvironmentCount = $environment !== null ? 1 : count($issuesRegistryJobService->getEnvironmentNames());
+        if ($failedEnvironmentsPayload !== [] && count($failedEnvironmentsPayload) === $trendEnvironmentCount) {
+            if ($this->isJsonFormat($input)) {
+                $this->writeJson($output, ['environment' => $environment, 'failedEnvironments' => $failedEnvironmentsPayload]);
+            }
             return Command::FAILURE;
         }
         if ($this->isJsonFormat($input)) {
@@ -79,6 +97,7 @@ class IssuesTrend extends IssuesCommand
                 'stepSeconds' => $dateTimeValueSequence->stepSeconds,
                 'total' => (int)$dateTimeValueSequence->getTotal(),
                 'values' => array_map(static fn(DateTimeValue $dateTimeValue): array => $dateTimeValue->toObject(), $dateTimeValueSequence->getElements()),
+                'failedEnvironments' => $failedEnvironmentsPayload,
             ]);
             return Command::SUCCESS;
         }

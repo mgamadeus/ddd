@@ -6,6 +6,7 @@ namespace DDD\Domain\Common\Services;
 
 use DDD\Domain\Common\Entities\Charts\DateTimeValueSequence;
 use DDD\Domain\Common\Entities\Charts\TimeInterval;
+use DDD\Domain\Common\Entities\Issues\IssuesTrendResult;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Cache\Cache;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
@@ -77,12 +78,30 @@ class IssuesTrendService extends Service
      */
     public function getTrend(?string $environment, ?string $groupHash, TimeInterval $interval, ?int $stepSeconds = null): DateTimeValueSequence
     {
+        $issuesTrendResult = $this->findTrendWithFailedEnvironments($environment, $groupHash, $interval, $stepSeconds);
+        $issuesEnvironmentFailure = $issuesTrendResult->failedEnvironments->first();
+        if ($issuesEnvironmentFailure !== null && $issuesTrendResult->failedEnvironments->count() === count($this->getTrendEnvironments($environment))) {
+            throw new InternalErrorException($issuesEnvironmentFailure->error);
+        }
+        return $issuesTrendResult->trend;
+    }
+
+    /**
+     * The trend summed over the environments that answered, with those whose backend failed (a timeout of one
+     * environment does not hide the others). Partial trends are not cached.
+     *
+     * @param string|null $environment A configured environment; null = all environments summed
+     * @throws InternalErrorException Unknown environment
+     */
+    public function findTrendWithFailedEnvironments(?string $environment, ?string $groupHash, TimeInterval $interval, ?int $stepSeconds = null): IssuesTrendResult
+    {
         /** @var IssuesRegistryJobService $issuesRegistryJobService */
         $issuesRegistryJobService = DDDService::instance()->getService(IssuesRegistryJobService::class);
         $endDate = $interval->endDate ?? DateTime::fromTimestamp(time());
         $closedInterval = new TimeInterval($interval->startDate ?? DateTime::fromTimestamp($endDate->getTimestamp() - 86400), $endDate);
         $stepSeconds = self::limitStepSeconds($closedInterval, $stepSeconds ?? self::resolveAutoStepSeconds($closedInterval));
-        $environments = $environment !== null ? [$environment] : $issuesRegistryJobService->getEnvironmentNames();
+        $environments = $this->getTrendEnvironments($environment);
+        $issuesTrendResult = new IssuesTrendResult();
         $cacheKey = self::CACHE_KEY_PREFIX . md5(implode('|', [
             implode(',', $environments),
             (string)$groupHash,
@@ -94,20 +113,43 @@ class IssuesTrendService extends Service
         if ($valuesByTimestamp === null) {
             $valuesByTimestamp = [];
             foreach ($environments as $trendEnvironment) {
-                $environmentTrend = $issuesRegistryJobService->getQueryBackend($trendEnvironment)->trend($closedInterval, $stepSeconds, $groupHash);
+                try {
+                    $environmentTrend = $issuesRegistryJobService->getQueryBackend($trendEnvironment)->trend($closedInterval, $stepSeconds, $groupHash);
+                } catch (Throwable $throwable) {
+                    $issuesTrendResult->failedEnvironments->addFailure($trendEnvironment, $throwable->getMessage());
+                    continue;
+                }
                 foreach ($environmentTrend->getValuesByTimestamp() as $timestamp => $value) {
                     $valuesByTimestamp[$timestamp] = ($valuesByTimestamp[$timestamp] ?? 0) + $value;
                 }
             }
-            $this->writeCache($cacheKey, $valuesByTimestamp);
+            if ($issuesTrendResult->failedEnvironments->count() === 0) {
+                $this->writeCache($cacheKey, $valuesByTimestamp);
+            }
         }
-        return DateTimeValueSequence::fromValuesByTimestamp(
+        $issuesTrendResult->trend = DateTimeValueSequence::fromValuesByTimestamp(
             $groupHash ?? $environment ?? self::ALL_ERRORS_NAME,
             $closedInterval->startDate,
             $closedInterval->endDate,
             $stepSeconds,
             $valuesByTimestamp
         );
+        return $issuesTrendResult;
+    }
+
+    /**
+     * The environment, or every configured one.
+     *
+     * @return string[]
+     */
+    protected function getTrendEnvironments(?string $environment): array
+    {
+        if ($environment !== null) {
+            return [$environment];
+        }
+        /** @var IssuesRegistryJobService $issuesRegistryJobService */
+        $issuesRegistryJobService = DDDService::instance()->getService(IssuesRegistryJobService::class);
+        return $issuesRegistryJobService->getEnvironmentNames();
     }
 
     /** @return array<int, float>|null The cached values; null = not cached (or no cache) */
