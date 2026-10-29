@@ -47,7 +47,14 @@ class IssuesAlertWebhookSender
     {
         $headline = $issueGroup->isRegression ? ':repeat: Regression' : ':new: New error';
         $lines = [
-            sprintf('%s%s: *%s*', $headline, $issueGroup->environment !== null ? ' [' . $issueGroup->environment . ']' : '', $issueGroup->exceptionType ?? 'unknown'),
+            sprintf(
+                '%s%s%s: *%s*',
+                $headline,
+                // the section first: a browser error (WEB) reads differently from a backend one
+                $issueGroup->section !== null ? ' [' . $issueGroup->section . ']' : '',
+                $issueGroup->environment !== null ? ' [' . $issueGroup->environment . ']' : '',
+                $issueGroup->exceptionType ?? 'unknown'
+            ),
             '> ' . mb_substr((string)$issueGroup->sampleMessage, 0, 300),
             'slug: `' . ($issueGroup->slug ?? $issueGroup->groupHash) . '`',
             'entry points: ' . implode(', ', $issueGroup->entryPoints?->getNames() ?? []),

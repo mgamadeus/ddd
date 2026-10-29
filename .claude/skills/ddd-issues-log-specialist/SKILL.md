@@ -1,6 +1,6 @@
 ---
 name: ddd-issues-log-specialist
-description: "Log, cluster, ship and track errors with the mgamadeus/ddd issues log: IssuesLogService::logThrowable (log-once), the issues channel sinks (ISSUES_LOG_TARGET file/stderr/none, ECS JSON), capture, redaction, hashes error.group_hash / error.issue_hash; the registry job over Loki, Elasticsearch / OpenSearch or Sentry (per environment / dev workspace, seed mode, explosion guard, regressions, Slack alerts, health check); agent CLI app:issues:list / show / search / resolve / trend --format=json; RuntimeErrorsService and app:runtime-errors:extract / probe (rankingCoach-compatible, ES_LOGS_*); app:issues:forward-sentry; admin boilerplate; DevOps examples. Use when logging an exception, nobody sees production errors, configuring where errors go or alerts, shipping logs, errors logged twice, one bug in many groups, finding and fixing errors of an environment or workspace as an agent, querying runtime errors in Elasticsearch, forwarding to Sentry, or building an issues admin screen."
+description: "Log, cluster, ship and track errors with the mgamadeus/ddd issues log: IssuesLogService::logThrowable (log-once) and logClientIssue (browser / Node / React Native errors, section WEB), sinks (file/stderr/none, ECS JSON), capture, redaction, group / issue hashes; the registry job over Loki, Elasticsearch / OpenSearch or Sentry (environments, workspaces, seed mode, explosion guard, regressions, Slack alerts, health); agent CLI app:issues:list / show / search / resolve / trend --format=json; RuntimeErrorsService, app:runtime-errors:* (rankingCoach-compatible); app:issues:forward-sentry; admin boilerplate; DevOps examples. Use when logging an exception, reporting frontend or mobile errors, replacing Sentry in a web app, nobody sees production errors, configuring where errors go or alerts, shipping logs, errors logged twice, one bug in many groups, finding and fixing an environment's errors as an agent, querying runtime errors in Elasticsearch, forwarding to Sentry, or building an issues admin screen."
 metadata:
   author: mgamadeus
   version: "1.7.0"
@@ -147,6 +147,94 @@ rankingCoach's handlers write). `logShortException($logger, $context, $throwable
 unchanged; prefer `logIssue()` for the payload. One throwable is one event, whichever is called first; a failing
 issues log never leaves the catch block. A handler run in its workspace's CLI process (`ProcessCLIMessage`) logs its
 own error there, uncaught, before the parent sees the exit code.
+
+## Client errors (web, mobile)
+
+A browser, the web app's Node server or a React Native app reports its errors to an ingest endpoint of the
+application; `IssuesLogService::logClientIssue(ClientIssueReport $report, string $section): ClientIssueIngestResult`
+writes them as ordinary issues events — same sinks, redaction, registry, CLI, admin screen and alerts, told apart by
+the section: `IssuesLogService::LOG_MESSAGE_SECTION_WEB` (browser), `…_WEB_SERVER` (the client app's server),
+`…_MOBILE` (reserved). Opt-in: an application that has no ingest endpoint logs exactly as before.
+
+**Wire contract** (`DDD\Domain\Common\Entities\Issues\Client\`, value objects — embed `ClientIssueReport` in the
+request DTO and the OpenAPI / TypeScript schema follows):
+
+| Object | Fields (cap) |
+|---|---|
+| `ClientIssueReport` | `client: ClientIssueContext`, `events: ClientIssueEvents` (1–10) |
+| `ClientIssueContext` | `runtime` (`browser` · `node` · `react-native`), `app`, `release`, `tabId`, `userAgent` (node / RN only; a browser's is the request header), `viewportWidth`, `viewportHeight`, `locale` |
+| `ClientIssueEvent` | `occurredAt`, `kind` (`error` · `unhandledrejection` · `react-render` · `server-request` · `manual`), `level` (`error` · `warning`), `name` (128), `message` (1024), `frames: ClientIssueFrames` (30, innermost first), `rawStack` (4096, only without frames), `url` (1024), `routePattern` (256), `requestMethod`, `httpStatus`, `breadcrumbs: ClientIssueBreadcrumbs` (20, newest kept), `tags: ClientIssueTags` (10 × 64), `count` (repeats the client suppressed), `clientFingerprint` |
+| `ClientIssueFrame` | `file` (512), `line`, `column`, `function` (128), `inApp` |
+| `ClientIssueBreadcrumb` | `at`, `category` (`navigation` · `fetch` · `console` · `ui` · `custom`), `message` (256), `url`, `from`, `to`, `status` |
+| `ClientIssueTag` | `key`, `value` |
+| `ClientIssueIngestResult` | `accepted`, `dropped`, `dropReasons` (one `DROP_REASON_*` per dropped event) |
+
+Core enforces every cap (`ClientIssueReportNormalizer`; an empty report is a `BadRequestException`) — a client's caps
+are never trusted. Drops: more than 10 events (`too-many-events`), a message matching `clientIgnorePatterns`
+(`ignored-message`; default: chunk-load failures, `Script error.`, `ResizeObserver loop`), a crawler user agent
+(`ignored-user-agent`), the kill switch `clientIngestEnabled: false` (`ingest-disabled`; the endpoint still answers 200).
+
+**The line:** `message` = `name: message`; `section`; `error.type` = name; `error.kind` = kind; `error.handled` = false
+for every kind but `manual`; level ERROR or WARNING (a `manual` warning stays out of the registry, `app:issues:search`
+finds it); `error.stack_trace` = `at function (file:line:column)` per frame; `log.origin.file.name/line` = the innermost
+in-app frame; `route_name` = the client route pattern (not the ingest route); `service.version` = the client release
+(the backend's is `client.backend_release`); `client.runtime` / `app` / `tab_id` / `viewport` / `locale` / `count` /
+`occurred_at` / `frames` (structured) / `breadcrumbs` / `tags`; `url.original` / `url.path` (redacted);
+`http.request.method` / `http.response.status_code` (server-request); `user_agent.original` (256) / `name` / `version` /
+`os.name` (`ClientUserAgentParser`, no dependency); `account.id` when the controller attributed one. The headers, query
+and body of the ingest request are not written.
+
+**Hashes** (`ClientIssuesFingerprintBuilder`): group = section | name | normalised message | kind | call site; issue =
+group | route pattern; entry point `WEB:/[lang]/menu/[locationSlug]`. The call site is the innermost in-app frame's file
+without origin, query, build directory, content hash and extension (`app/[lang]/menu/[locationSlug]/page`) — never
+line or column, so a rebuild keeps the group. Minified identifiers (`e is not a function`, `n.map is not a function`)
+become `{ident}`; numbers, UUIDs, hex, URLs and timestamps become placeholders; quoted literals and React codes (`#418`)
+stay. Trade-off: one bug thrown in two places of one chunk is one group; a renamed chunk starts a new one.
+
+**Redaction, on top of the backend rules:** URLs (`url.*`, breadcrumb `url` / `from` / `to`) lose `*token*=` query
+values, the segment after `redactPathSegments` (default `invitations`, `claim-account`, `verify-email`,
+`reset-password`), UUID and long hex segments; message, breadcrumb messages and URLs lose e-mails, phone numbers,
+bearer / JWT tokens and UUIDs. **Size:** a client event may take `maxEventBytesWeb` (16 KB) with the file sink —
+breadcrumbs go first (oldest first), then frames beyond 10; the stderr sink stays at 8 KB because containerd splits a
+stderr line at 16 KB.
+
+**Configuration** (`Common.Issues`, environment overrides): `clientIngestEnabled` / `ISSUES_CLIENT_INGEST_ENABLED`,
+`clientIgnorePatterns` / `ISSUES_CLIENT_IGNORE_PATTERNS`, `clientIgnoreUserAgents` / `ISSUES_CLIENT_IGNORE_USER_AGENTS`,
+`redactPathSegments` / `ISSUES_REDACT_PATH_SEGMENTS`, `maxEventBytesWeb` / `ISSUES_LOG_MAX_EVENT_BYTES_WEB` (lists as
+comma lists in the environment).
+
+**The application's controller** — thin; the checks belong to the app because they depend on its hosts and proxies:
+
+```php
+#[Post('/public/common/issues/report')]
+public function reportClientIssues(ClientIssuesReportRequestDto &$requestDto, IssuesLogService $issuesLogService): ClientIssueIngestResult
+{
+    $this->assertOriginIsAllowed();                 // Origin header present → must be one of the app's hosts, else 403; none → allowed
+    $this->consumeClientIssuesRateLimit($requestDto->report->events->count()); // per hashed IP (events, not requests) → 429
+    $this->attributeAccountFromOptionalBearer();    // AuthService::instance()->setAccount(...) when a valid bearer came
+    $section = $this->hasValidServerToken()         // the client app's own server (Node) sends a shared token
+        ? IssuesLogService::LOG_MESSAGE_SECTION_WEB_SERVER
+        : IssuesLogService::LOG_MESSAGE_SECTION_WEB;
+    return $issuesLogService->logClientIssue($requestDto->report, $section);
+}
+```
+
+The request DTO has one body property `public ClientIssueReport $report;`. Rate-limit by events, key the server token
+by its hash, never log the IP.
+
+**Reference client (TypeScript outline):** collect (`window.onerror`, `unhandledrejection`, the error boundary, the
+fetch wrapper for breadcrumbs, the server's `onRequestError`) → redact on the client too (token query values and path
+segments, e-mails, UUIDs) → de-duplicate by `name | normalised message | top frame` (at most 3 per page session, the
+rest as `count`; ≤ 25 events per page session; stop after 3 failed sends — a Node server uses windowed caps and
+backoff instead) → batch (≤ 10 events) → `fetch(url, {method: 'POST', keepalive: true, body})` on flush and on
+`pagehide`. Send the route PATTERN (`/[lang]/menu/[locationSlug]`), never only the URL: the pattern names the issue.
+Drop locally what the server drops anyway (chunk loads, `Script error.`, `ResizeObserver loop`).
+
+**Verify:** `php bin/console app:issues:test --client` logs one synthetic WEB event through `logClientIssue()` and prints
+its group hash (the same on every run), then `app:issues:search --text="test client error"` finds it.
+
+**Source maps** (resolving minified frames to the original file and line) come in a following release; until then the
+frames are the minified ones and `client.frames` keeps them structured for later resolution.
 
 ## Grouping — the two hashes
 
@@ -694,6 +782,7 @@ For the registry on top: `ISSUES_QUERY_BACKEND=elasticsearch`.
 | Registry stays empty | `ISSUES_QUERY_BACKEND` set for the job process; `app:issues:search --since=24h` finds lines (selector, auth); only error and above or uncaught lines are registered |
 | A sync right after an event counts 0 | expected: discovery and counting stop at now − 1 min (events may still be in the collector's buffer); an event younger than a minute is registered and counted in the next run. `app:issues:search` sees it at once |
 | No alerts | seed mode (first `ISSUES_SEED_HOURS` after the first run); `ISSUES_ALERT_WEBHOOK` set; group IGNORED; explosion guard (`app:issues:sync-registry-from-log-backend` prints it) |
+| Web / mobile errors missing | the kill switch (`clientIngestEnabled`); the controller answers 403 (origin not allowed) or 429 (rate limit); the event matches an ignore pattern (`dropReasons` of the response); a `manual` warning is not registered — `app:issues:search --text=…` finds it; `app:issues:test --client` proves the path |
 | `app:issues:check-registry-job-and-collector-health` fails | `lastError` in its output; the job not running; the collector not shipping (collector silent: `app:issues:test` writes one line per level, then `app:issues:search --since=10m` must find it) |
 | New `app:issues:*` commands "not defined" after `composer update` | a stale compiled container of the `--no-debug` (or prod) cache: `php bin/console cache:clear --no-debug`. The debug container rebuilds itself, the non-debug one does not |
 | Elasticsearch: groups empty, hits not | the fields are mapped as keyword: `ISSUES_ES_KEYWORD_SUFFIX=` (empty); `app:runtime-errors:probe` shows which field names aggregate |

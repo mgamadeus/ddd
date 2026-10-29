@@ -5,6 +5,16 @@ declare(strict_types=1);
 namespace DDD\Infrastructure\Services;
 
 use DDD\Domain\Base\Entities\MessageHandlers\AppMessageHandler;
+use DDD\Domain\Common\Entities\Issues\Client\ClientIssueContext;
+use DDD\Domain\Common\Entities\Issues\Client\ClientIssueEvent;
+use DDD\Domain\Common\Entities\Issues\Client\ClientIssueEvents;
+use DDD\Domain\Common\Entities\Issues\Client\ClientIssueIngestResult;
+use DDD\Domain\Common\Entities\Issues\Client\ClientIssueReport;
+use DDD\Infrastructure\Exceptions\BadRequestException;
+use DDD\Infrastructure\Exceptions\InternalErrorException;
+use DDD\Infrastructure\Logging\ClientIssueReportNormalizer;
+use DDD\Infrastructure\Logging\ClientIssuesFingerprintBuilder;
+use DDD\Infrastructure\Logging\ClientUserAgentParser;
 use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Logging\IssuesFingerprintBuilder;
 use DDD\Infrastructure\Logging\IssuesLogEvent;
@@ -61,6 +71,26 @@ class IssuesLogService
     /** @var string Constant used to indicate whether the current request is via Messenger transport. */
     public const string LOG_MESSAGE_SECTION_MESSENGER = 'MESSENGER';
 
+    /** A browser reported the error ({@see self::logClientIssue()}) */
+    public const string LOG_MESSAGE_SECTION_WEB = 'WEB';
+
+    /** The client app's own server (Node: server rendering, route handlers) reported the error */
+    public const string LOG_MESSAGE_SECTION_WEB_SERVER = 'WEB_SERVER';
+
+    /** A mobile app (React Native) reported the error — reserved */
+    public const string LOG_MESSAGE_SECTION_MOBILE = 'MOBILE';
+
+    /** The sections of client-reported errors */
+    public const array CLIENT_SECTIONS = [
+        self::LOG_MESSAGE_SECTION_WEB, self::LOG_MESSAGE_SECTION_WEB_SERVER, self::LOG_MESSAGE_SECTION_MOBILE,
+    ];
+
+    /** Context keys of the INGEST request that a client line does not carry (they describe the report's POST) */
+    public const array INGEST_REQUEST_CONTEXT_KEYS = ['request_headers', 'url.query', 'http.request.body.content'];
+
+    /** Size cap of `user_agent.original` */
+    public const int MAX_USER_AGENT_LENGTH = 256;
+
     /**
      * Constructor for AsyncLogService.
      *
@@ -111,6 +141,194 @@ class IssuesLogService
         }
 
         $this->safeLog($level, 'Exception occurred: ' . $throwable->getMessage(), $context);
+    }
+
+    /**
+     * Logs the events of a client report (browser, Node, React Native) as ordinary issues events of the given section:
+     * same sinks, hashes ({@see ClientIssuesFingerprintBuilder}), redaction, registry and alerts. The application's
+     * ingest controller checks origin and rate, attributes the account (`AuthService::setAccount()`) and calls this.
+     *
+     * Caps are enforced here ({@see ClientIssueReportNormalizer}); events beyond {@see ClientIssueEvents::MAX_EVENTS},
+     * ignored messages and crawler user agents are dropped and counted. With the kill switch off every event is
+     * dropped. A client line is level `error` or `warning`; every kind but `manual` is logged `error.handled=false`.
+     *
+     * @param ClientIssueReport $clientIssueReport The report as the client sent it
+     * @param string $section One of {@see self::CLIENT_SECTIONS}
+     * @return ClientIssueIngestResult Accepted and dropped events
+     * @throws BadRequestException The report has no event
+     * @throws InternalErrorException The section is not a client section
+     */
+    public function logClientIssue(ClientIssueReport $clientIssueReport, string $section): ClientIssueIngestResult
+    {
+        if (!in_array($section, self::CLIENT_SECTIONS, true)) {
+            throw new InternalErrorException(sprintf('"%s" is not a client issues section (%s)', $section, implode(', ', self::CLIENT_SECTIONS)));
+        }
+        $clientIssueIngestResult = new ClientIssueIngestResult();
+        $settings = static::getSettings();
+        if (!$settings->clientIngestEnabled) {
+            foreach ($clientIssueReport->events?->getElements() ?? [] as $ignoredClientIssueEvent) {
+                $clientIssueIngestResult->addDroppedEvent(ClientIssueIngestResult::DROP_REASON_INGEST_DISABLED);
+            }
+            return $clientIssueIngestResult;
+        }
+        (new ClientIssueReportNormalizer())->normalizeReport($clientIssueReport);
+        $userAgent = $this->getClientUserAgentString($clientIssueReport->client);
+        $userAgentIsIgnored = $userAgent !== null && $this->matchesAnyPattern($userAgent, $settings->clientIgnoreUserAgents);
+        foreach (array_values($clientIssueReport->events->getElements()) as $eventIndex => $clientIssueEvent) {
+            if ($eventIndex >= ClientIssueEvents::MAX_EVENTS) {
+                $clientIssueIngestResult->addDroppedEvent(ClientIssueIngestResult::DROP_REASON_TOO_MANY_EVENTS);
+            } elseif ($userAgentIsIgnored) {
+                $clientIssueIngestResult->addDroppedEvent(ClientIssueIngestResult::DROP_REASON_IGNORED_USER_AGENT);
+            } elseif ($this->matchesAnyPattern($clientIssueEvent->name . ': ' . $clientIssueEvent->message, $settings->clientIgnorePatterns)) {
+                $clientIssueIngestResult->addDroppedEvent(ClientIssueIngestResult::DROP_REASON_IGNORED_MESSAGE);
+            } else {
+                $this->logClientIssueEvent($clientIssueEvent, $clientIssueReport->client, $section, $userAgent);
+                $clientIssueIngestResult->accepted++;
+            }
+        }
+        return $clientIssueIngestResult;
+    }
+
+    /** One client event as one line */
+    protected function logClientIssueEvent(
+        ClientIssueEvent $clientIssueEvent,
+        ClientIssueContext $clientIssueContext,
+        string $section,
+        ?string $userAgent
+    ): void {
+        try {
+            $settings = static::getSettings();
+            $redactor = new IssuesLogRedactor($settings->sanitizeNumberMinDigits, $settings->redactPathSegments);
+            $clientIssuesFingerprintBuilder = new ClientIssuesFingerprintBuilder();
+            $groupHash = $clientIssuesFingerprintBuilder->buildGroupHash($section, $clientIssueEvent);
+            $context = [
+                'section' => $section,
+                'event.id' => $this->generateEventId(),
+                'error.group_hash' => $groupHash,
+                'error.issue_hash' => $clientIssuesFingerprintBuilder->buildIssueHash($groupHash, $clientIssueEvent),
+                'error.entry_point' => $clientIssuesFingerprintBuilder->buildEntryPoint($section, $clientIssueEvent),
+                'error.type' => $clientIssueEvent->name,
+                'error.kind' => $clientIssueEvent->kind,
+                'error.handled' => $clientIssueEvent->isHandled(),
+                'error.stack_trace' => $this->renderClientStackTrace($clientIssueEvent),
+                'client.runtime' => $clientIssueContext->runtime,
+                'client.count' => $clientIssueEvent->count,
+                'client.occurred_at' => $clientIssueEvent->occurredAt,
+                'client.frames' => array_map(static fn($clientIssueFrame): array => array_filter([
+                    'file' => $clientIssueFrame->file,
+                    'line' => $clientIssueFrame->line,
+                    'column' => $clientIssueFrame->column,
+                    'function' => $clientIssueFrame->function,
+                    'in_app' => $clientIssueFrame->inApp,
+                ], static fn(mixed $value): bool => $value !== null), array_values($clientIssueEvent->frames->getElements())),
+                'client.breadcrumbs' => array_map(fn($clientIssueBreadcrumb): array => array_filter([
+                    'at' => $clientIssueBreadcrumb->at,
+                    'category' => $clientIssueBreadcrumb->category,
+                    'message' => $redactor->sanitizeClientText($clientIssueBreadcrumb->message),
+                    'url' => $clientIssueBreadcrumb->url !== null ? $redactor->redactUrl($clientIssueBreadcrumb->url) : null,
+                    'from' => $clientIssueBreadcrumb->from !== null ? $redactor->redactUrl($clientIssueBreadcrumb->from) : null,
+                    'to' => $clientIssueBreadcrumb->to !== null ? $redactor->redactUrl($clientIssueBreadcrumb->to) : null,
+                    'status' => $clientIssueBreadcrumb->status,
+                ], static fn(mixed $value): bool => $value !== null), array_values($clientIssueEvent->breadcrumbs->getElements())),
+            ];
+            $firstInAppFrame = $clientIssueEvent->frames->getFirstInAppFrame();
+            if ($firstInAppFrame !== null) {
+                $context['log.origin.file.name'] = $clientIssuesFingerprintBuilder->normaliseFilePath($firstInAppFrame->file);
+                if ($firstInAppFrame->line !== null) {
+                    $context['log.origin.file.line'] = $firstInAppFrame->line;
+                }
+            }
+            $tags = [];
+            foreach ($clientIssueEvent->tags->getElements() as $clientIssueTag) {
+                $tags[$clientIssueTag->key] = $clientIssueTag->value;
+            }
+            $optionalContext = [
+                'client.app' => $clientIssueContext->app,
+                'client.tab_id' => $clientIssueContext->tabId,
+                'client.locale' => $clientIssueContext->locale,
+                'client.viewport' => $clientIssueContext->viewportWidth !== null && $clientIssueContext->viewportHeight !== null
+                    ? $clientIssueContext->viewportWidth . 'x' . $clientIssueContext->viewportHeight
+                    : null,
+                'client.backend_release' => $settings->release,
+                'client.fingerprint' => $clientIssueEvent->clientFingerprint,
+                'client.tags' => $tags !== [] ? $tags : null,
+                'service.version' => $clientIssueContext->release ?? $settings->release,
+                'route_name' => $clientIssueEvent->routePattern,
+                'url.original' => $clientIssueEvent->url !== null ? $redactor->redactUrl($clientIssueEvent->url) : null,
+                'url.path' => ($urlPath = $clientIssuesFingerprintBuilder->getUrlPath($clientIssueEvent->url)) !== null
+                    ? $redactor->redactUrl($urlPath)
+                    : null,
+                'http.request.method' => $clientIssueEvent->requestMethod,
+                'http.response.status_code' => $clientIssueEvent->httpStatus,
+            ];
+            if ($userAgent !== null) {
+                $clientUserAgent = (new ClientUserAgentParser())->parseUserAgent($userAgent);
+                $optionalContext['user_agent.original'] = mb_substr($userAgent, 0, self::MAX_USER_AGENT_LENGTH);
+                $optionalContext['user_agent.name'] = $clientUserAgent->name;
+                $optionalContext['user_agent.version'] = $clientUserAgent->version;
+                $optionalContext['user_agent.os.name'] = $clientUserAgent->osName;
+            }
+            $context += array_filter($optionalContext, static fn(mixed $value): bool => $value !== null);
+
+            $enrichedContext = $this->enrichContext($context);
+            // the line describes the client's request, not the report's POST to the ingest route
+            foreach (self::INGEST_REQUEST_CONTEXT_KEYS as $ingestRequestContextKey) {
+                unset($enrichedContext[$ingestRequestContextKey]);
+            }
+            foreach (['route_name', 'http.request.method'] as $clientOwnedContextKey) {
+                if (!isset($context[$clientOwnedContextKey])) {
+                    unset($enrichedContext[$clientOwnedContextKey]);
+                }
+            }
+            $message = $redactor->sanitizeClientText($clientIssueEvent->name . ': ' . $clientIssueEvent->message);
+            $event = new IssuesLogEvent($message, $redactor->redactContext($enrichedContext));
+            $redactor->capEvent($event, $settings->getMaxEventBytesForSection($section));
+            $level = $clientIssueEvent->level === ClientIssueEvent::LEVEL_WARNING ? LogLevel::WARNING : LogLevel::ERROR;
+            $this->issuesLogger->log($level, $event->message, $event->context);
+        } catch (Throwable $throwable) {
+            error_log('IssuesLogService failed on a client issue: ' . $throwable->getMessage());
+        }
+    }
+
+    /** The frames as `at function (file:line:column)` lines, innermost first; the raw stack when there are none */
+    protected function renderClientStackTrace(ClientIssueEvent $clientIssueEvent): string
+    {
+        if ($clientIssueEvent->frames->count() === 0) {
+            return (string)$clientIssueEvent->rawStack;
+        }
+        $stackTraceLines = [];
+        foreach ($clientIssueEvent->frames->getElements() as $clientIssueFrame) {
+            $location = $clientIssueFrame->file
+                . ($clientIssueFrame->line !== null ? ':' . $clientIssueFrame->line : '')
+                . ($clientIssueFrame->column !== null ? ':' . $clientIssueFrame->column : '');
+            $stackTraceLines[] = 'at ' . ($clientIssueFrame->function ?? '<anonymous>') . ' (' . $location . ')';
+        }
+        return implode("\n", $stackTraceLines);
+    }
+
+    /** A browser's user agent is its request's header; Node and React Native send their own */
+    protected function getClientUserAgentString(ClientIssueContext $clientIssueContext): ?string
+    {
+        if ($clientIssueContext->runtime !== ClientIssueContext::RUNTIME_BROWSER && $clientIssueContext->userAgent !== null) {
+            return $clientIssueContext->userAgent;
+        }
+        $requestUserAgent = $this->requestStack->getCurrentRequest()?->headers->get('User-Agent');
+        return $requestUserAgent !== null && $requestUserAgent !== '' ? $requestUserAgent : $clientIssueContext->userAgent;
+    }
+
+    /**
+     * Whether the text contains one of the patterns (case-insensitive substrings)
+     *
+     * @param string[] $patterns
+     */
+    protected function matchesAnyPattern(string $text, array $patterns): bool
+    {
+        foreach ($patterns as $pattern) {
+            if ($pattern !== '' && stripos($text, $pattern) !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -377,9 +595,10 @@ class IssuesLogService
     protected function safeLog(string $level, string $message, array $context = []): void
     {
         try {
-            $redactor = new IssuesLogRedactor(static::getSettings()->sanitizeNumberMinDigits);
+            $settings = static::getSettings();
+            $redactor = new IssuesLogRedactor($settings->sanitizeNumberMinDigits, $settings->redactPathSegments);
             $event = new IssuesLogEvent($redactor->sanitizeText($message), $redactor->redactContext($this->enrichContext($context)));
-            $redactor->capEvent($event, static::getSettings()->maxEventBytes);
+            $redactor->capEvent($event, $settings->getMaxEventBytesForSection($context['section'] ?? null));
             $this->issuesLogger->log($level, $event->message, $event->context);
         } catch (Throwable $e) {
             error_log('IssuesLogService failed: ' . $e->getMessage() . ' Original message: ' . $message);

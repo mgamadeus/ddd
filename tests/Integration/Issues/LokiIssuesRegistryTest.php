@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace DDD\Tests\Integration\Issues;
 
 use DDD\Domain\Common\Entities\Charts\TimeInterval;
+use DDD\Domain\Common\Entities\Issues\Client\ClientIssueEvent;
+use DDD\Domain\Common\Entities\Issues\Client\ClientIssueFrame;
+use DDD\Domain\Common\Entities\Issues\Client\ClientIssueReport;
 use DDD\Domain\Common\Entities\Issues\IssueGroup;
 use DDD\Domain\Common\Entities\Issues\IssueGroupsFilter;
 use DDD\Domain\Common\Services\IssueGroupsService;
@@ -111,6 +114,20 @@ class LokiIssuesRegistryTest extends IssuesRegistryTestCase
      */
     protected function logAndPushLines(Throwable ...$throwables): array
     {
+        return $this->logWithIssuesLogServiceAndPushLines(static function (IssuesLogService $issuesLogService) use ($throwables): void {
+            foreach ($throwables as $throwable) {
+                $issuesLogService->logThrowable($throwable, section: IssuesLogService::LOG_MESSAGE_SECTION_CLI);
+            }
+        });
+    }
+
+    /**
+     * Runs the write path into a file and pushes the lines into Loki.
+     *
+     * @return string[] The JSON lines
+     */
+    protected function logWithIssuesLogServiceAndPushLines(callable $writeLines): array
+    {
         $logFile = sys_get_temp_dir() . '/ddd-issues-loki-' . $this->runLabel . '.log';
         $streamHandler = new StreamHandler($logFile);
         $streamHandler->setFormatter(new ElasticCommonSchemaFormatter());
@@ -121,9 +138,7 @@ class LokiIssuesRegistryTest extends IssuesRegistryTestCase
                 new RequestStack(),
                 $this->createMock(RouterInterface::class)
             );
-            foreach ($throwables as $throwable) {
-                $issuesLogService->logThrowable($throwable, section: IssuesLogService::LOG_MESSAGE_SECTION_CLI);
-            }
+            $writeLines($issuesLogService);
         } finally {
             IssuesLogService::setSettings(null);
         }
@@ -158,6 +173,49 @@ class LokiIssuesRegistryTest extends IssuesRegistryTestCase
             usleep(200000);
         }
         self::fail(sprintf('Loki did not return %d events', $expectedEvents));
+    }
+
+    public function testClientErrorsThroughLokiBecomeAWebGroupWithItsSectionInTheAlert(): void
+    {
+        $this->logWithIssuesLogServiceAndPushLines(static function (IssuesLogService $issuesLogService): void {
+            foreach (['e', 'n'] as $minifiedName) {
+                $clientIssueReport = new ClientIssueReport();
+                $clientIssueEvent = new ClientIssueEvent();
+                $clientIssueEvent->name = 'TypeError';
+                $clientIssueEvent->message = $minifiedName . ' is not a function';
+                $clientIssueEvent->routePattern = '/[lang]/menu';
+                $clientIssueFrame = new ClientIssueFrame();
+                $clientIssueFrame->file = '/_next/static/chunks/app/[lang]/menu/page-3f2a9c1b8e7d6f50.js';
+                $clientIssueFrame->inApp = true;
+                $clientIssueEvent->frames->add($clientIssueFrame);
+                $clientIssueReport->events->add($clientIssueEvent);
+                $issuesLogService->logClientIssue($clientIssueReport, IssuesLogService::LOG_MESSAGE_SECTION_WEB);
+            }
+        });
+        $issuesRegistrySettings = $this->createLokiSettings();
+        $lokiIssuesQueryBackend = new LokiIssuesQueryBackend($issuesRegistrySettings);
+        $this->waitForLokiEvents($lokiIssuesQueryBackend, 2);
+
+        $issuesRegistryJobService = new IssuesRegistryJobService();
+        $issuesRegistryJobService->setSettings($issuesRegistrySettings);
+        $issuesRegistryJobService->setAlertWebhookSender(new IssuesAlertWebhookSender($issuesRegistrySettings));
+        $issuesRegistryJobResult = $issuesRegistryJobService->run(DateTime::fromTimestamp(time() + 120));
+
+        self::assertSame(1, $issuesRegistryJobResult->groupsCreated, 'two builds of one bug are one group');
+        self::assertSame(2, $issuesRegistryJobResult->eventsCounted);
+        $webhookBodies = array_values(array_filter(explode("\n", (string)file_get_contents(self::$webhookStubFile))));
+        self::assertStringContainsString(':new: New error [WEB]', json_decode($webhookBodies[0], true)['text']);
+        DDDService::instance()->deactivateEntityRightsRestrictions();
+        try {
+            /** @var IssueGroupsService $issueGroupsService */
+            $issueGroupsService = IssueGroup::getService();
+            $issueGroup = $issueGroupsService->listGroups(new IssueGroupsFilter())->first();
+        } finally {
+            DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
+        }
+        self::assertSame('WEB', $issueGroup->section);
+        self::assertSame('TypeError', $issueGroup->exceptionType);
+        self::assertContains('WEB:/[lang]/menu', $issueGroup->entryPoints?->getNames() ?? []);
     }
 
     public function testRealLinesThroughLokiBecomeGroupsAndOneAlertEach(): void

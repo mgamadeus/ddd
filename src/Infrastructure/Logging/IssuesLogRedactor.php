@@ -25,8 +25,20 @@ class IssuesLogRedactor
     /** Context keys holding stack traces: free text, sanitised like the message (string arguments carry e-mails) */
     public const array STACK_TRACE_KEYS = ['error.stack_trace', 'error.full_stack_trace'];
 
-    /** Context keys cut in this order when the event is too large */
-    public const array CAP_ORDER = ['error.full_stack_trace', 'error.stack_trace', 'error.fingerprint'];
+    /**
+     * Context keys cut in this order when the event is too large: a client event's breadcrumbs (oldest dropped first)
+     * and frames (the innermost {@see self::CAPPED_CLIENT_FRAMES} kept) before the traces
+     */
+    public const array CAP_ORDER = ['client.breadcrumbs', 'client.frames', 'error.full_stack_trace', 'error.stack_trace', 'error.fingerprint'];
+
+    /** The frames a too large client event keeps */
+    public const int CAPPED_CLIENT_FRAMES = 10;
+
+    public const string REDACTED_EMAIL = '[EMAIL]';
+    public const string REDACTED_PHONE = '[PHONE]';
+    public const string REDACTED_JWT = '[JWT]';
+    public const string REDACTED_UUID = '[UUID]';
+    public const string REDACTED_HEX = '[HEX]';
 
     /**
      * @param int $numberMinDigits Digit runs of at least this length become `[NUMBER]`; 0 = digits are kept (ids and
@@ -34,7 +46,50 @@ class IssuesLogRedactor
      */
     public function __construct(
         protected int $numberMinDigits = IssuesLogSettings::DEFAULT_SANITIZE_NUMBER_MIN_DIGITS,
+        /** @var string[] URL path segments whose next segment is a credential, see {@see self::redactUrl()} */
+        protected array $redactPathSegments = IssuesLogSettings::DEFAULT_REDACT_PATH_SEGMENTS,
     ) {
+    }
+
+    /**
+     * A URL of a client line: the value of every query parameter whose name contains `token`, the segment after a
+     * configured path segment (`/invitations/<token>`), UUID and long hex path segments (guest reservation ids are
+     * credentials), then the value rules of {@see self::sanitizeClientText()}.
+     */
+    public function redactUrl(string $url): string
+    {
+        $url = (string)preg_replace('/([?&][^=&#]*token[^=&#]*=)[^&#]*/i', '$1' . self::REDACTED, $url);
+        if ($this->redactPathSegments !== []) {
+            $segmentAlternatives = implode('|', array_map(static fn(string $segment): string => preg_quote($segment, '/'), $this->redactPathSegments));
+            $url = (string)preg_replace('/(\/(?:' . $segmentAlternatives . ')\/)[^\/?#]+/i', '$1' . self::REDACTED, $url);
+        }
+        $url = (string)preg_replace('/(?<=\/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=[\/?#]|$)/i', self::REDACTED_UUID, $url);
+        $url = (string)preg_replace('/(?<=\/)[0-9a-f]{16,}(?=[\/?#]|$)/i', self::REDACTED_HEX, $url);
+        return $this->sanitizeClientText($url);
+    }
+
+    /**
+     * Free text of a client line (message, breadcrumb message): e-mail addresses, bearer/basic credentials, JWTs,
+     * phone numbers and UUIDs become placeholders, plus the rules of {@see self::sanitizeText()}. A phone number is a
+     * run of 9 to 15 digits with a leading `+` or separators — a bare digit run is left to the number rule, a date is
+     * not a phone number.
+     */
+    public function sanitizeClientText(string $text): string
+    {
+        $text = (string)preg_replace('/\beyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]{5,}/', self::REDACTED_JWT, $text);
+        $text = (string)preg_replace('/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i', self::REDACTED_UUID, $text);
+        $text = (string)preg_replace_callback(
+            '/(?<![\w.\/-])\+?\d[\d ().\/-]{6,}\d(?![\w\/-])/',
+            static function (array $matches): string {
+                $candidate = $matches[0];
+                $digitCount = strlen((string)preg_replace('/\D/', '', $candidate));
+                $hasPhoneShape = str_starts_with($candidate, '+') || preg_match('/[ ().\/-]/', $candidate);
+                $isDate = preg_match('/^\d{4}[-.\/]\d{1,2}[-.\/]\d{1,2}$|^\d{1,2}[-.\/]\d{1,2}[-.\/]\d{2,4}$/', $candidate);
+                return $digitCount >= 9 && $digitCount <= 15 && $hasPhoneShape && !$isDate ? self::REDACTED_PHONE : $candidate;
+            },
+            $text
+        );
+        return $this->sanitizeText($text);
     }
 
     /**
@@ -108,6 +163,10 @@ class IssuesLogRedactor
             if (!isset($event->context[$key])) {
                 continue;
             }
+            if (is_array($event->context[$key])) {
+                $this->capClientList($event, $key, $maxBytes);
+                continue;
+            }
             $overflow = $this->getEventBytes($event->message, $event->context) - $maxBytes;
             $value = (string)$event->context[$key];
             $event->context[$key] = strlen($value) > $overflow + 20
@@ -117,6 +176,21 @@ class IssuesLogRedactor
         $overflow = $this->getEventBytes($event->message, $event->context) - $maxBytes;
         if ($overflow > 0) {
             $event->message = substr($event->message, 0, max(0, strlen($event->message) - $overflow - 20)) . '…[cut]';
+        }
+    }
+
+    /**
+     * A structured client list: breadcrumbs lose their oldest entries until the event fits (all of them if need be),
+     * frames are cut to the innermost {@see self::CAPPED_CLIENT_FRAMES}.
+     */
+    protected function capClientList(IssuesLogEvent $event, string $key, int $maxBytes): void
+    {
+        if ($key === 'client.frames') {
+            $event->context[$key] = array_slice($event->context[$key], 0, self::CAPPED_CLIENT_FRAMES);
+            return;
+        }
+        while ($event->context[$key] !== [] && $this->getEventBytes($event->message, $event->context) > $maxBytes) {
+            array_shift($event->context[$key]);
         }
     }
 

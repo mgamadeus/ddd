@@ -6,6 +6,7 @@ namespace DDD\Infrastructure\Logging;
 
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Infrastructure\Libs\Config;
+use DDD\Infrastructure\Services\IssuesLogService;
 use DDD\Infrastructure\Services\DDDService;
 use Psr\Log\LogLevel;
 use Throwable;
@@ -34,6 +35,11 @@ class IssuesLogSettings extends ValueObject
     public const string ENV_RELEASE = 'ISSUES_RELEASE';
     public const string ENV_WORKSPACE = 'ISSUES_WORKSPACE';
     public const string ENV_SANITIZE_NUMBER_MIN_DIGITS = 'ISSUES_LOG_SANITIZE_NUMBER_MIN_DIGITS';
+    public const string ENV_CLIENT_INGEST_ENABLED = 'ISSUES_CLIENT_INGEST_ENABLED';
+    public const string ENV_CLIENT_IGNORE_PATTERNS = 'ISSUES_CLIENT_IGNORE_PATTERNS';
+    public const string ENV_CLIENT_IGNORE_USER_AGENTS = 'ISSUES_CLIENT_IGNORE_USER_AGENTS';
+    public const string ENV_REDACT_PATH_SEGMENTS = 'ISSUES_REDACT_PATH_SEGMENTS';
+    public const string ENV_MAX_EVENT_BYTES_WEB = 'ISSUES_LOG_MAX_EVENT_BYTES_WEB';
 
     /** The committed configuration of the issues log and registry (`config/app/Common/Issues.php`) */
     public const string CONFIG_PATH = 'Common.Issues';
@@ -54,6 +60,26 @@ class IssuesLogSettings extends ValueObject
     public const int DEFAULT_MAX_EVENT_BYTES = 8192;
     /** Digit runs of this length and longer in free text become `[NUMBER]` (phone, account and card numbers) */
     public const int DEFAULT_SANITIZE_NUMBER_MIN_DIGITS = 9;
+    /**
+     * Size cap of a client event (sections WEB, WEB_SERVER, MOBILE) with the file sink; stderr keeps
+     * {@see self::DEFAULT_MAX_EVENT_BYTES}, because containerd splits a stderr line at 16 KB
+     */
+    public const int DEFAULT_MAX_EVENT_BYTES_WEB = 16384;
+
+    /** Client errors that are noise (case-insensitive substrings of `name: message`) */
+    public const array DEFAULT_CLIENT_IGNORE_PATTERNS = [
+        'ChunkLoadError', 'Loading chunk', 'Loading CSS chunk', 'Failed to fetch dynamically imported module',
+        'Importing a module script failed', 'error loading dynamically imported module', 'Script error.',
+        'ResizeObserver loop',
+    ];
+
+    /** Crawlers (case-insensitive substrings of the user agent) */
+    public const array DEFAULT_CLIENT_IGNORE_USER_AGENTS = [
+        'bot/', 'bot;', 'crawler', 'spider', 'slurp', 'facebookexternalhit', 'bingpreview', 'lighthouse',
+    ];
+
+    /** URL path segments whose NEXT segment is a credential (a token in the path) */
+    public const array DEFAULT_REDACT_PATH_SEGMENTS = ['invitations', 'claim-account', 'verify-email', 'reset-password'];
 
     public function __construct(
         /** @var string|null file | stderr | none; null = the application's own handlers (today's behaviour) */
@@ -82,6 +108,16 @@ class IssuesLogSettings extends ValueObject
         public readonly ?string $workspace = null,
         /** @var int Digit runs of at least this length in free text become `[NUMBER]`; 0 = digits are kept */
         public readonly int $sanitizeNumberMinDigits = self::DEFAULT_SANITIZE_NUMBER_MIN_DIGITS,
+        /** @var bool Kill switch of {@see IssuesLogService::logClientIssue()}: off = every event is dropped */
+        public readonly bool $clientIngestEnabled = true,
+        /** @var string[] Client errors dropped at ingest: case-insensitive substrings of `name: message` */
+        public readonly array $clientIgnorePatterns = self::DEFAULT_CLIENT_IGNORE_PATTERNS,
+        /** @var string[] Client user agents dropped at ingest: case-insensitive substrings */
+        public readonly array $clientIgnoreUserAgents = self::DEFAULT_CLIENT_IGNORE_USER_AGENTS,
+        /** @var string[] URL path segments whose next segment is redacted (`/invitations/<token>`) */
+        public readonly array $redactPathSegments = self::DEFAULT_REDACT_PATH_SEGMENTS,
+        /** @var int Size cap of a client event with the file sink (the other sinks keep {@see self::$maxEventBytes}) */
+        public readonly int $maxEventBytesWeb = self::DEFAULT_MAX_EVENT_BYTES_WEB,
     ) {
         parent::__construct();
     }
@@ -118,7 +154,46 @@ class IssuesLogSettings extends ValueObject
             workspace: self::stringEnv(self::ENV_WORKSPACE) ?? self::detectWorkspaceName() ?? self::stringEnv('APP_STAGE'),
             sanitizeNumberMinDigits: (int)(static::stringSetting('sanitizeNumberMinDigits', self::ENV_SANITIZE_NUMBER_MIN_DIGITS)
                 ?? self::DEFAULT_SANITIZE_NUMBER_MIN_DIGITS),
+            clientIngestEnabled: static::boolSetting('clientIngestEnabled', self::ENV_CLIENT_INGEST_ENABLED, true),
+            clientIgnorePatterns: static::listSetting('clientIgnorePatterns', self::ENV_CLIENT_IGNORE_PATTERNS)
+                ?? self::DEFAULT_CLIENT_IGNORE_PATTERNS,
+            clientIgnoreUserAgents: static::listSetting('clientIgnoreUserAgents', self::ENV_CLIENT_IGNORE_USER_AGENTS)
+                ?? self::DEFAULT_CLIENT_IGNORE_USER_AGENTS,
+            redactPathSegments: static::listSetting('redactPathSegments', self::ENV_REDACT_PATH_SEGMENTS)
+                ?? self::DEFAULT_REDACT_PATH_SEGMENTS,
+            maxEventBytesWeb: (int)(static::stringSetting('maxEventBytesWeb', self::ENV_MAX_EVENT_BYTES_WEB)
+                ?? self::DEFAULT_MAX_EVENT_BYTES_WEB),
         );
+    }
+
+    /**
+     * The size cap of an event of the section: a client section with the file sink gets {@see self::$maxEventBytesWeb}
+     * (stderr stays at {@see self::$maxEventBytes}: containerd splits a stderr line at 16 KB).
+     */
+    public function getMaxEventBytesForSection(?string $section): int
+    {
+        return $this->target === self::TARGET_FILE && in_array($section, IssuesLogService::CLIENT_SECTIONS, true)
+            ? $this->maxEventBytesWeb
+            : $this->maxEventBytes;
+    }
+
+    /**
+     * A list setting: the environment variable as a comma list, else the committed list; null = not set (the default
+     * applies). An explicitly empty list is a value (nothing is ignored).
+     *
+     * @return string[]|null
+     */
+    protected static function listSetting(string $configKey, string $envName): ?array
+    {
+        $value = static::readSetting($configKey, $envName);
+        if ($value === null) {
+            return null;
+        }
+        $listItems = is_array($value) ? $value : explode(',', (string)$value);
+        return array_values(array_filter(
+            array_map(static fn(mixed $listItem): string => trim((string)$listItem), $listItems),
+            static fn(string $listItem): bool => $listItem !== ''
+        ));
     }
 
     /**

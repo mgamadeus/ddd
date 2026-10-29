@@ -211,3 +211,11 @@ Unchanged:
   - A failed message's context carries `messenger.retry_count` and `messenger.stamps`.
   - An application subclass `App\Infrastructure\Services\IssuesLogService` is the one instance: the framework id is an
     alias of it (`ApplicationServiceSubclassAliasPass`), with the `issues` logger channel.
+- 3.10.0 — client errors (browser, Node, React Native) into the issues log, opt-in:
+  `IssuesLogService::logClientIssue(ClientIssueReport, string $section): ClientIssueIngestResult` with the sections
+  `LOG_MESSAGE_SECTION_WEB` / `_WEB_SERVER` / `_MOBILE` (`CLIENT_SECTIONS`); wire contract in
+  `DDD\Domain\Common\Entities\Issues\Client\`; `ClientIssueReportNormalizer` (caps), `ClientIssuesFingerprintBuilder`
+  (hashes), `ClientUserAgentParser`; `IssuesLogRedactor::redactUrl()` / `sanitizeClientText()`, client lists capped
+  before the traces; settings `clientIngestEnabled`, `clientIgnorePatterns`, `clientIgnoreUserAgents`,
+  `redactPathSegments`, `maxEventBytesWeb`; the alert names the section (`:new: New error [WEB] …` — every section, also
+  HTTP / CLI / MESSENGER); `app:issues:test --client`. No schema change.
