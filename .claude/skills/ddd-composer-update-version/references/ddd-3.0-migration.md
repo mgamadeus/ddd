@@ -247,3 +247,9 @@ Unchanged:
 - 3.12.3 — fixes: `PhoneNumberConstraintValidator` adds ONE violation for an invalid number (with
   `VALIDATION_POSSIBLE` and a number that is not even possible it added two); `PersonGender::getGender(): ?string` (a
   null gender threw a TypeError). `ContactInfo` and `PersonGender` document their constants and properties.
+- 3.12.4 — fix: the source-map resolver is the container service `DDD\Infrastructure\Services\SourceMapResolverService`.
+  As `DDD\Infrastructure\Logging\SourceMaps\SourceMapResolver` it lay outside the public service namespaces, so
+  `app:issues:show --resolve` (and an admin running `IssuesShow` in-process) failed in a compiled container with
+  "service or alias has been removed or inlined". The old name stays as a deprecated subclass for its constants; an
+  application that made it public in its own services.yaml removes that line. Core's test suite now checks that every
+  `getService(X::class)` target lies in a public service namespace of services.yaml.

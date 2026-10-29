@@ -233,7 +233,7 @@ Drop locally what the server drops anyway (chunk loads, `Script error.`, `Resize
 **Verify:** `php bin/console app:issues:test --client` logs one synthetic WEB event through `logClientIssue()` and prints
 its group hash (the same on every run), then `app:issues:search --text="test client error"` finds it.
 
-**Source maps — resolved on view, never at ingest.** `SourceMapResolver::resolveFrames(string $release,
+**Source maps — resolved on view, never at ingest.** `SourceMapResolverService::resolveFrames(string $release,
 ClientIssueFrames $frames): ResolvedFrames` maps minified frames to the original file, line, column and function (plus
 the original line and one before and after when the map embeds `sourcesContent`). `IssueEvent::getClientFrames()` and
 `IssueEvent::$release` (the client release, `service.version`) are its input; `app:issues:show <hash> --resolve` adds

@@ -83,7 +83,7 @@ class IssueEvent extends ValueObject
 
     /**
      * The structured frames of a client error (`client.frames`, innermost first); empty for a backend error. The input
-     * of {@see \DDD\Infrastructure\Logging\SourceMaps\SourceMapResolver::resolveFrames()} with {@see self::$release}.
+     * of {@see \DDD\Infrastructure\Services\SourceMapResolverService::resolveFrames()} with {@see self::$release}.
      */
     public function getClientFrames(): ClientIssueFrames
     {

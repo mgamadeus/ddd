@@ -9,8 +9,8 @@ use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Logging\Query\IssueEvent;
 use DDD\Infrastructure\Logging\Query\IssueEventSearch;
 use DDD\Infrastructure\Logging\SourceMaps\ResolvedFrame;
-use DDD\Infrastructure\Logging\SourceMaps\SourceMapResolver;
 use DDD\Infrastructure\Services\DDDService;
+use DDD\Infrastructure\Services\SourceMapResolverService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -118,8 +118,8 @@ class IssuesShow extends IssuesCommand
         if ($clientIssueFrames->count() === 0) {
             return [];
         }
-        /** @var SourceMapResolver $sourceMapResolver */
-        $sourceMapResolver = DDDService::instance()->getService(SourceMapResolver::class);
+        /** @var SourceMapResolverService $sourceMapResolver */
+        $sourceMapResolver = DDDService::instance()->getService(SourceMapResolverService::class);
         $resolvedFrames = $sourceMapResolver->resolveFrames((string)$issueEvent->release, $clientIssueFrames);
         return [
             'resolvedFrames' => array_map(fn(ResolvedFrame $resolvedFrame): array => $this->toPayload($resolvedFrame), array_values($resolvedFrames->getElements())),

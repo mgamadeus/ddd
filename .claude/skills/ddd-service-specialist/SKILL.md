@@ -74,6 +74,7 @@ class {EntityName}sService extends EntitiesService
 - **NEVER** cache services in class properties -- always resolve inline
 - `EntitiesBaseService` does **NOT** exist -- always use `EntitiesService`
 - **NEVER** leave `throwErrors` switched on a container service -- switch it for your own call only (see below)
+- **ONLY** fetch classes from a `Services` namespace with `getService()` (`…\Domain\*\Services\`, `…\Infrastructure\Services\`, `…\Presentation\Services\`): only those are public in the compiled container, anything else is removed or inlined and the fetch fails at runtime. Core enforces it with `ContainerFetchedServicesNamespaceTest`
 
 ## Service Instantiation
 

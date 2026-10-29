@@ -8,14 +8,14 @@ use DDD\Domain\Common\Entities\Issues\Client\ClientIssueFrame;
 use DDD\Domain\Common\Entities\Issues\Client\ClientIssueFrames;
 use DDD\Infrastructure\Logging\IssuesLogSettings;
 use DDD\Infrastructure\Logging\SourceMaps\SourceMapParser;
-use DDD\Infrastructure\Logging\SourceMaps\SourceMapResolver;
 use DDD\Infrastructure\ObjectStorage\FilesystemObjectStorage;
 use DDD\Infrastructure\ObjectStorage\ObjectStorage;
 use DDD\Infrastructure\Services\IssuesLogService;
+use DDD\Infrastructure\Services\SourceMapResolverService;
 use PHPUnit\Framework\TestCase;
 
 /** A resolver reading a store the test hands it, without the container */
-class ProbeSourceMapResolver extends SourceMapResolver
+class ProbeSourceMapResolver extends SourceMapResolverService
 {
     public ?ObjectStorage $probeObjectStorage = null;
 
@@ -147,20 +147,20 @@ class SourceMapResolverTest extends TestCase
         $menuPosition = $sourceMap->findOriginalPosition(5, 35);
         $this->assertSame(3, $menuPosition->line);
         $this->assertSame('map', $menuPosition->name);
-        $this->assertSame('src/x.ts', (new SourceMapResolver())->normaliseSourcePath('turbopack:///[project]/src/x.ts'));
+        $this->assertSame('src/x.ts', (new SourceMapResolverService())->normaliseSourcePath('turbopack:///[project]/src/x.ts'));
     }
 
     public function testWhatCannotBeResolvedStaysMinifiedWithANote(): void
     {
         $probeSourceMapResolver = $this->createResolverWithMenuPageMap();
-        $this->assertSame(SourceMapResolver::NOTE_NO_POSITION, $probeSourceMapResolver->resolveFrame(self::RELEASE, $this->createFrame(null, null))->note);
-        $this->assertSame(SourceMapResolver::NOTE_NO_MAP, $probeSourceMapResolver->resolveFrame('other-release', $this->createFrame(1, 35))->note);
-        $this->assertSame(SourceMapResolver::NOTE_NO_MAPPING, $probeSourceMapResolver->resolveFrame(self::RELEASE, $this->createFrame(7, 1))->note);
+        $this->assertSame(SourceMapResolverService::NOTE_NO_POSITION, $probeSourceMapResolver->resolveFrame(self::RELEASE, $this->createFrame(null, null))->note);
+        $this->assertSame(SourceMapResolverService::NOTE_NO_MAP, $probeSourceMapResolver->resolveFrame('other-release', $this->createFrame(1, 35))->note);
+        $this->assertSame(SourceMapResolverService::NOTE_NO_MAPPING, $probeSourceMapResolver->resolveFrame(self::RELEASE, $this->createFrame(7, 1))->note);
 
         $unconfiguredResolver = new ProbeSourceMapResolver();
         $unresolvedFrame = $unconfiguredResolver->resolveFrame(self::RELEASE, $this->createFrame(1, 35));
         $this->assertFalse($unresolvedFrame->resolved);
-        $this->assertSame(SourceMapResolver::NOTE_STORE_NOT_CONFIGURED, $unresolvedFrame->note);
+        $this->assertSame(SourceMapResolverService::NOTE_STORE_NOT_CONFIGURED, $unresolvedFrame->note);
         $this->assertStringContainsString('[source map store not configured]', $unresolvedFrame->toStackTraceLine());
     }
 }

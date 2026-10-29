@@ -4,30 +4,30 @@ declare(strict_types=1);
 
 namespace DDD\Tests\Integration\Issues;
 
-use DDD\Domain\Common\Entities\Issues\IssueGroup;
-use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Domain\Common\Entities\Issues\Client\ClientIssueEvent;
 use DDD\Domain\Common\Entities\Issues\Client\ClientIssueFrame;
 use DDD\Domain\Common\Entities\Issues\Client\ClientIssueReport;
+use DDD\Domain\Common\Entities\Issues\IssueGroup;
 use DDD\Domain\Common\Services\IssuesRegistryJobService;
+use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Logging\IssuesLogSettings;
 use DDD\Infrastructure\Logging\IssuesRegistrySettings;
 use DDD\Infrastructure\Logging\Query\IssueEvent;
-use DDD\Infrastructure\Logging\SourceMaps\SourceMapResolver;
 use DDD\Infrastructure\ObjectStorage\FilesystemObjectStorage;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\IssuesLogService;
 use DDD\Infrastructure\Services\ObjectStorageService;
-use DDD\Tests\Infrastructure\Logging\SourceMaps\SourceMapFixtures;
+use DDD\Infrastructure\Services\SourceMapResolverService;
+use DDD\Symfony\Commands\Common\Issues\IssuesHealth;
 use Elastic\Monolog\Formatter\ElasticCommonSchemaFormatter;
 use Monolog\Handler\StreamHandler;
 use Monolog\Logger;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Routing\RouterInterface;
-use DDD\Symfony\Commands\Common\Issues\IssuesHealth;
 use DDD\Symfony\Commands\Common\Issues\IssuesList;
 use DDD\Symfony\Commands\Common\Issues\IssuesResolve;
 use DDD\Symfony\Commands\Common\Issues\IssuesShow;
+use DDD\Tests\Infrastructure\Logging\SourceMaps\SourceMapFixtures;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
 
@@ -141,7 +141,7 @@ class IssuesCommandsTest extends IssuesRegistryTestCase
 
         $filesystemObjectStorage = new FilesystemObjectStorage($temporaryDirectory . '/store');
         $filesystemObjectStorage->putObject(
-            (new SourceMapResolver())->getSourceMapKey('web-r7', $chunkUrl),
+            (new SourceMapResolverService())->getSourceMapKey('web-r7', $chunkUrl),
             (string)json_encode(SourceMapFixtures::createMenuPageMap())
         );
         /** @var ObjectStorageService $objectStorageService */
