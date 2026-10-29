@@ -56,7 +56,13 @@ class FakeIssuesQueryBackend implements IssuesQueryBackend
         ];
     }
 
-    public function getName(): string
+    /** A prebuilt event, e.g. a real line read back through {@see IssueEvent::fromJsonLine()} */
+    public function addIssueEvent(IssueEvent $issueEvent, int $occurrences = 1): void
+    {
+        $this->storedEvents[] = [$issueEvent, $occurrences];
+    }
+
+        public function getName(): string
     {
         return 'fake';
     }

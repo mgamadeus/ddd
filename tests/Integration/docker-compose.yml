@@ -84,3 +84,16 @@ services:
       - "127.0.0.1:${DDD_TEST_OPENSEARCH_PORT:-9211}:9200"
     tmpfs:
       - /usr/share/opensearch/data:uid=1000,gid=1000,mode=0775
+
+  seaweedfs:
+    # S3-compatible object storage (signature V4, path style) for the ObjectStorage contract test:
+    # DDD_TEST_S3_ENDPOINT=http://127.0.0.1:9212 DDD_TEST_S3_ACCESS_KEY=ddd-test DDD_TEST_S3_SECRET_KEY=ddd-test-secret.
+    # Port via DDD_TEST_S3_PORT. (MinIO no longer publishes pullable images.)
+    image: chrislusf/seaweedfs:4.50
+    command: server -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -dir=/data -volume.max=100 -master.volumeSizeLimitMB=16
+    volumes:
+      - ./seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
+    ports:
+      - "127.0.0.1:${DDD_TEST_S3_PORT:-9212}:8333"
+    tmpfs:
+      - /data

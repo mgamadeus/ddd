@@ -40,6 +40,14 @@ class IssuesLogSettings extends ValueObject
     public const string ENV_CLIENT_IGNORE_USER_AGENTS = 'ISSUES_CLIENT_IGNORE_USER_AGENTS';
     public const string ENV_REDACT_PATH_SEGMENTS = 'ISSUES_REDACT_PATH_SEGMENTS';
     public const string ENV_MAX_EVENT_BYTES_WEB = 'ISSUES_LOG_MAX_EVENT_BYTES_WEB';
+    public const string ENV_SOURCE_MAPS_STORE = 'ISSUES_SOURCE_MAPS_STORE';
+    public const string ENV_SOURCE_MAPS_CACHE_DIR = 'ISSUES_SOURCE_MAPS_CACHE_DIR';
+    public const string ENV_SOURCE_MAPS_CACHE_MB = 'ISSUES_SOURCE_MAPS_CACHE_MB';
+
+    /** The object store the source maps are read from (`sourcemaps/<release>/<chunk path>.map`) */
+    public const string DEFAULT_SOURCE_MAPS_STORE = 'sourcemaps';
+    /** Size cap of the parsed-map disk cache */
+    public const int DEFAULT_SOURCE_MAPS_CACHE_MB = 512;
 
     /** The committed configuration of the issues log and registry (`config/app/Common/Issues.php`) */
     public const string CONFIG_PATH = 'Common.Issues';
@@ -118,6 +126,12 @@ class IssuesLogSettings extends ValueObject
         public readonly array $redactPathSegments = self::DEFAULT_REDACT_PATH_SEGMENTS,
         /** @var int Size cap of a client event with the file sink (the other sinks keep {@see self::$maxEventBytes}) */
         public readonly int $maxEventBytesWeb = self::DEFAULT_MAX_EVENT_BYTES_WEB,
+        /** @var string The object store of the source maps ({@see \DDD\Infrastructure\Services\ObjectStorageService}) */
+        public readonly string $sourceMapsStore = self::DEFAULT_SOURCE_MAPS_STORE,
+        /** @var string|null Directory of the parsed-map cache; null = `<kernel cache dir>/sourcemaps` */
+        public readonly ?string $sourceMapsCacheDirectory = null,
+        /** @var int Size cap of the parsed-map cache; the least recently used maps are removed beyond it */
+        public readonly int $sourceMapsCacheMegabytes = self::DEFAULT_SOURCE_MAPS_CACHE_MB,
     ) {
         parent::__construct();
     }
@@ -163,6 +177,10 @@ class IssuesLogSettings extends ValueObject
                 ?? self::DEFAULT_REDACT_PATH_SEGMENTS,
             maxEventBytesWeb: (int)(static::stringSetting('maxEventBytesWeb', self::ENV_MAX_EVENT_BYTES_WEB)
                 ?? self::DEFAULT_MAX_EVENT_BYTES_WEB),
+            sourceMapsStore: static::stringSetting('sourceMapsStore', self::ENV_SOURCE_MAPS_STORE) ?? self::DEFAULT_SOURCE_MAPS_STORE,
+            sourceMapsCacheDirectory: static::stringSetting('sourceMapsCacheDirectory', self::ENV_SOURCE_MAPS_CACHE_DIR),
+            sourceMapsCacheMegabytes: (int)(static::stringSetting('sourceMapsCacheMegabytes', self::ENV_SOURCE_MAPS_CACHE_MB)
+                ?? self::DEFAULT_SOURCE_MAPS_CACHE_MB),
         );
     }
 

@@ -219,3 +219,14 @@ Unchanged:
   before the traces; settings `clientIngestEnabled`, `clientIgnorePatterns`, `clientIgnoreUserAgents`,
   `redactPathSegments`, `maxEventBytesWeb`; the alert names the section (`:new: New error [WEB] …` — every section, also
   HTTP / CLI / MESSENGER); `app:issues:test --client`. No schema change.
+- 3.11.0 — object storage and source maps:
+  - `DDD\Infrastructure\ObjectStorage\`: interface `ObjectStorage` (`putObject`, `getObjectContent`, `deleteObject`,
+    `objectExists`, `listObjects`, `createTemporaryUrl`), `S3CompatibleObjectStorage` (AWS, Hetzner, MinIO, R2; needs
+    `async-aws/s3`, which Core only suggests), `FilesystemObjectStorage`; named stores via
+    `ObjectStorageService::getObjectStorage($name)` (null = not configured), configured in
+    `config/app/Common/ObjectStorage.php` and `OBJECT_STORAGE_<NAME>_*` (credentials environment only). Skill
+    `ddd-object-storage-specialist` (apps that link the Core skills one by one add the link).
+  - `DDD\Infrastructure\Logging\SourceMaps\`: `SourceMapParser` (regular and indexed maps), `SourceMapResolver::resolveFrames()`
+    → `ResolvedFrames`, reading `sourcemaps/<release>/<chunk path>.map` from the store `sourceMapsStore` (default
+    `sourcemaps`); settings `sourceMapsStore`, `sourceMapsCacheDirectory`, `sourceMapsCacheMegabytes`.
+    `IssueEvent::getClientFrames()`; `app:issues:show --resolve`.

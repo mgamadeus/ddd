@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace DDD\Infrastructure\Logging\Query;
 
 use DDD\Domain\Base\Entities\ValueObject;
+use DDD\Domain\Common\Entities\Issues\Client\ClientIssueFrame;
+use DDD\Domain\Common\Entities\Issues\Client\ClientIssueFrames;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 
 /**
@@ -77,6 +79,37 @@ class IssueEvent extends ValueObject
             workspace: $field('service.workspace') ?? $field('workspace'),
             rawJson: $jsonLine,
         );
+    }
+
+    /**
+     * The structured frames of a client error (`client.frames`, innermost first); empty for a backend error. The input
+     * of {@see \DDD\Infrastructure\Logging\SourceMaps\SourceMapResolver::resolveFrames()} with {@see self::$release}.
+     */
+    public function getClientFrames(): ClientIssueFrames
+    {
+        $clientIssueFrames = new ClientIssueFrames();
+        $fields = json_decode($this->rawJson, true);
+        if (!is_array($fields)) {
+            return $clientIssueFrames;
+        }
+        // flat (`client.frames`) or nested ECS shape (`{"client": {"frames": …}}`)
+        $frames = $fields['client.frames'] ?? $fields['client']['frames'] ?? null;
+        if (!is_array($frames)) {
+            return $clientIssueFrames;
+        }
+        foreach ($frames as $frameFields) {
+            if (!is_array($frameFields) || !isset($frameFields['file'])) {
+                continue;
+            }
+            $clientIssueFrame = new ClientIssueFrame();
+            $clientIssueFrame->file = (string)$frameFields['file'];
+            $clientIssueFrame->line = isset($frameFields['line']) ? (int)$frameFields['line'] : null;
+            $clientIssueFrame->column = isset($frameFields['column']) ? (int)$frameFields['column'] : null;
+            $clientIssueFrame->function = isset($frameFields['function']) ? (string)$frameFields['function'] : null;
+            $clientIssueFrame->inApp = (bool)($frameFields['in_app'] ?? false);
+            $clientIssueFrames->add($clientIssueFrame);
+        }
+        return $clientIssueFrames;
     }
 
     public function uniqueKey(): string

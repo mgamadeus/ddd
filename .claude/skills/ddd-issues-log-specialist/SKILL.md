@@ -233,8 +233,24 @@ Drop locally what the server drops anyway (chunk loads, `Script error.`, `Resize
 **Verify:** `php bin/console app:issues:test --client` logs one synthetic WEB event through `logClientIssue()` and prints
 its group hash (the same on every run), then `app:issues:search --text="test client error"` finds it.
 
-**Source maps** (resolving minified frames to the original file and line) come in a following release; until then the
-frames are the minified ones and `client.frames` keeps them structured for later resolution.
+**Source maps — resolved on view, never at ingest.** `SourceMapResolver::resolveFrames(string $release,
+ClientIssueFrames $frames): ResolvedFrames` maps minified frames to the original file, line, column and function (plus
+the original line and one before and after when the map embeds `sourcesContent`). `IssueEvent::getClientFrames()` and
+`IssueEvent::$release` (the client release, `service.version`) are its input; `app:issues:show <hash> --resolve` adds
+`resolvedFrames` and `resolvedStackTrace` to every client event (JSON) and prints the resolved stack (text) — an admin
+that runs `IssuesShow` in-process gets them from there.
+
+- **The maps are private objects** of the object store `sourceMapsStore` (`Common.Issues`, default `sourcemaps`;
+  `ddd-object-storage-specialist`) under `sourcemaps/<release>/<chunk URL path>.map` — the chunk URL path without the
+  leading slash: `https://x.com/_next/static/chunks/app/page-3f2a.js` → `sourcemaps/<release>/_next/static/chunks/app/page-3f2a.js.map`.
+  The build moves the `.map` files out of the public output (and strips `//# sourceMappingURL=`), the release workflow
+  uploads them under that key with the release the client reports, a bucket lifecycle rule expires old releases.
+- Regular maps and indexed maps (`sections`, Turbopack) are parsed (`SourceMapParser`); `webpack://_N_E/./`,
+  `turbopack:///[project]/` prefixes are stripped from the original file.
+- Parsed maps are cached on local disk (`sourceMapsCacheDirectory`, default `<kernel cache>/sourcemaps`, least recently
+  used removed beyond `sourceMapsCacheMegabytes` = 512), resolved positions in the DDD cache for 7 days.
+- Nothing throws: no line/column, no release, no map, store not configured or a store error leave the minified frame with
+  `resolved = false` and a `note`; a store error is logged once per release and process.
 
 ## Grouping — the two hashes
 
@@ -782,6 +798,7 @@ For the registry on top: `ISSUES_QUERY_BACKEND=elasticsearch`.
 | Registry stays empty | `ISSUES_QUERY_BACKEND` set for the job process; `app:issues:search --since=24h` finds lines (selector, auth); only error and above or uncaught lines are registered |
 | A sync right after an event counts 0 | expected: discovery and counting stop at now − 1 min (events may still be in the collector's buffer); an event younger than a minute is registered and counted in the next run. `app:issues:search` sees it at once |
 | No alerts | seed mode (first `ISSUES_SEED_HOURS` after the first run); `ISSUES_ALERT_WEBHOOK` set; group IGNORED; explosion guard (`app:issues:sync-registry-from-log-backend` prints it) |
+| Frames stay minified (`--resolve`) | the `note` of the frame: `source map store not configured` (no driver for `sourceMapsStore`), `no source map` (key `sourcemaps/<release>/<chunk path>.map` absent — release of the event vs the uploaded folder, chunk path), `no release` (the client sent none), `source map store error` (credentials, endpoint; logged once) |
 | Web / mobile errors missing | the kill switch (`clientIngestEnabled`); the controller answers 403 (origin not allowed) or 429 (rate limit); the event matches an ignore pattern (`dropReasons` of the response); a `manual` warning is not registered — `app:issues:search --text=…` finds it; `app:issues:test --client` proves the path |
 | `app:issues:check-registry-job-and-collector-health` fails | `lastError` in its output; the job not running; the collector not shipping (collector silent: `app:issues:test` writes one line per level, then `app:issues:search --since=10m` must find it) |
 | New `app:issues:*` commands "not defined" after `composer update` | a stale compiled container of the `--no-debug` (or prod) cache: `php bin/console cache:clear --no-debug`. The debug container rebuilds itself, the non-debug one does not |

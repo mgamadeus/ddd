@@ -640,6 +640,18 @@ $translated = __('greeting.hello', 'de', 'DE', 'FORMAL', ['%name%' => 'Max']);
 
 Entities `Cron` and `CronExecution` in `Domain/Common/Entities/Crons/` provide scheduled task execution via Symfony console commands. Managed by `app:crons:execute` (the tick), `app:crons:list`, `app:crons:upsert` (create/edit one Cron), `app:crons:activate` / `app:crons:deactivate` (switch Crons by name; activation re-anchors the next slot via `Cron::activate()`) and `app:crons:executions` (run history).
 
+### Object Storage
+
+```php
+use DDD\Infrastructure\Services\ObjectStorageService;
+
+$objectStorage = DDDService::instance()->getService(ObjectStorageService::class)->getObjectStorage('exports'); // null = not configured
+$objectStorage?->putObject('reports/42.pdf', $pdfContent, 'application/pdf');
+$url = $objectStorage?->createTemporaryUrl('reports/42.pdf', 600);   // presigned
+// Named stores in config/app/Common/ObjectStorage.php + OBJECT_STORAGE_<NAME>_* (credentials env only);
+// drivers s3 (any S3-compatible service, needs async-aws/s3) and filesystem. Skill: ddd-object-storage-specialist.
+```
+
 ### Common Value Objects
 
 | Class | Purpose |

@@ -6,7 +6,10 @@ namespace DDD\Symfony\Commands\Common\Issues;
 
 use DDD\Domain\Common\Services\IssuesRegistryJobService;
 use DDD\Infrastructure\Base\DateTime\DateTime;
+use DDD\Infrastructure\Logging\Query\IssueEvent;
 use DDD\Infrastructure\Logging\Query\IssueEventSearch;
+use DDD\Infrastructure\Logging\SourceMaps\ResolvedFrame;
+use DDD\Infrastructure\Logging\SourceMaps\SourceMapResolver;
 use DDD\Infrastructure\Services\DDDService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -33,6 +36,7 @@ class IssuesShow extends IssuesCommand
             ->addEnvironmentOption()
             ->addOption('events', null, InputOption::VALUE_REQUIRED, 'Newest events to fetch from the log backend', '3')
             ->addOption('since', null, InputOption::VALUE_REQUIRED, 'Event search window (30m, 24h, 7d or a date)', '7d')
+            ->addOption('resolve', null, InputOption::VALUE_NONE, 'Client errors: resolve the minified frames through the source maps of the event\'s release (resolvedFrames, resolvedStackTrace)')
             ->addFormatOption();
     }
 
@@ -54,7 +58,11 @@ class IssuesShow extends IssuesCommand
                     limit: $eventLimit,
                 ));
                 foreach ($issueEvents->getElements() as $issueEvent) {
-                    $eventPayloads[] = $this->toEventPayload($issueEvent, $issueGroup->environment);
+                    $eventPayload = $this->toEventPayload($issueEvent, $issueGroup->environment);
+                    if ($input->getOption('resolve')) {
+                        $eventPayload += $this->toResolvedFramesPayload($issueEvent);
+                    }
+                    $eventPayloads[] = $eventPayload;
                 }
             } catch (Throwable $throwable) {
                 $eventsError = $throwable->getMessage();
@@ -84,11 +92,38 @@ class IssuesShow extends IssuesCommand
         }
         $output->writeln('newest events:');
         foreach ($eventPayloads as $eventPayload) {
+            $resolvedStackTrace = $eventPayload['resolvedStackTrace'] ?? null;
+            unset($eventPayload['resolvedStackTrace'], $eventPayload['resolvedFrames']);
             $output->writeln((string)json_encode($eventPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            if ($resolvedStackTrace !== null) {
+                $output->writeln('resolved stack trace:');
+                $output->writeln($resolvedStackTrace);
+            }
         }
         if ($eventsError !== null) {
             $this->getErrorOutput($output)->writeln('<error>event search failed: ' . $eventsError . '</error>');
         }
         return Command::SUCCESS;
+    }
+
+    /**
+     * The source-map resolution of a client event: `resolvedFrames` (one object per frame) and `resolvedStackTrace`;
+     * nothing for a backend event.
+     *
+     * @return array<string, mixed> json_encode input only
+     */
+    protected function toResolvedFramesPayload(IssueEvent $issueEvent): array
+    {
+        $clientIssueFrames = $issueEvent->getClientFrames();
+        if ($clientIssueFrames->count() === 0) {
+            return [];
+        }
+        /** @var SourceMapResolver $sourceMapResolver */
+        $sourceMapResolver = DDDService::instance()->getService(SourceMapResolver::class);
+        $resolvedFrames = $sourceMapResolver->resolveFrames((string)$issueEvent->release, $clientIssueFrames);
+        return [
+            'resolvedFrames' => array_map(fn(ResolvedFrame $resolvedFrame): array => $this->toPayload($resolvedFrame), array_values($resolvedFrames->getElements())),
+            'resolvedStackTrace' => implode("\n", $resolvedFrames->toStackTraceLines()),
+        ];
     }
 }
