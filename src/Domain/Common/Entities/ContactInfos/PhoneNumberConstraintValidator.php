@@ -61,8 +61,8 @@ class PhoneNumberConstraintValidator extends ConstraintValidator
                     )) {
                         return;
                     }
-                    $this->context->buildViolation($constraint->message)->addViolation();
                 }
+                // one violation per invalid number, also when the possible-number fallback did not apply
                 $this->context->buildViolation($constraint->message)->addViolation();
             }
         } catch (Throwable) {

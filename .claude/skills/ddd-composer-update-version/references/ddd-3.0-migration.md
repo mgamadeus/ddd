@@ -244,3 +244,6 @@ Unchanged:
   trend (a timeout of prod) is a warning plus `failedEnvironments` in JSON; the others still answer, exit 1 only when all
   failed. `IssuesTrendService::findTrendWithFailedEnvironments()` → `IssuesTrendResult`; `getTrend()` returns the partial
   trend and throws only when every environment failed (partial trends are not cached).
+- 3.12.3 — fixes: `PhoneNumberConstraintValidator` adds ONE violation for an invalid number (with
+  `VALIDATION_POSSIBLE` and a number that is not even possible it added two); `PersonGender::getGender(): ?string` (a
+  null gender threw a TypeError). `ContactInfo` and `PersonGender` document their constants and properties.
