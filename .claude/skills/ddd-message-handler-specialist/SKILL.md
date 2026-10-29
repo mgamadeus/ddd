@@ -1,6 +1,6 @@
 ---
 name: ddd-message-handler-specialist
-description: Create Symfony Messenger message + handler pairs for async background processing in the mgamadeus/ddd framework. Covers AppMessage message classes, ultra-slim AppMessageHandler handlers, the service-side bool async dispatch-or-run-inline pattern, auth context propagation, the workspace-origin guard (a message another checkout dispatched is REFUSED, never rerouted; one broker vhost per workspace), the per-process APP_CACHE_DIR / APP_LOG_DIR overrides for worker pools sharing a checkout with FPM, logging conventions, admin privilege escalation, messenger.yaml transport/routing, supervisor consumer blocks, worker recycling, and the --no-debug stale-compiled-container trap. Use when adding an async background job, wiring a transport plus supervisor consumer, sizing worker limits, debugging workers that crash-loop, fail to consume or run stale config, chasing state leaking between messages, or when a job runs against the wrong checkout's database.
+description: Create Symfony Messenger message + handler pairs for async background processing in the mgamadeus/ddd framework. Covers AppMessage message classes, ultra-slim AppMessageHandler handlers, the service-side bool async dispatch-or-run-inline pattern, auth context propagation, the workspace-origin guard (a message another checkout dispatched is REFUSED, never rerouted; one broker vhost per workspace), the per-process APP_CACHE_DIR / APP_LOG_DIR overrides for worker pools sharing a checkout with FPM, logging conventions, admin privilege escalation, messenger.yaml transport/routing, supervisor consumer blocks, worker recycling, and the --no-debug stale-compiled-container trap. Use when adding an async background job, wiring a transport plus supervisor consumer, sizing worker limits, debugging workers that crash-loop, fail to consume or run stale config, chasing state leaking between messages (a lookup that throws only after another job), or when a job runs against the wrong checkout's database.
 metadata:
   author: mgamadeus
   version: "1.4.1"
@@ -69,6 +69,14 @@ swallow the next message's writes. A transaction that was already open before th
 - A stale baseline read in a worker is a SESSION problem, never a reason for a per-write transaction: a transaction
   joins the already open one and keeps its snapshot. Renew the connection instead (`renewDatabaseConnection()`).
 - Do not rely on registry-cached entities across messages; reload by id at the start of the job.
+
+**A handler leaves no service state behind.** Container services are shared across messages. The framework resets
+between two consumed messages — independent of the opt-outs above — `throwErrors` of every instantiated DDD service to
+its declared default (`ServicesThrowErrorsResetter`, before each message; Symfony's `services_resetter` after it unless
+`--no-reset`). It does NOT reset any other property a handler or service set on a shared service, static caches of the
+application, or state inside one long job: a flag a handler switches early in a job still changes every later lookup
+of that job. So a checked lookup in a handler or its service uses `enableThrowErrors()` / `restoreThrowErrors()` in
+`finally` (`ddd-service-specialist`), never a bare `$service->throwErrors = true;`.
 
 ### 1. Prefer IDs in Message Payload
 
@@ -473,6 +481,7 @@ public function doSomething(int $fooBarId, bool $async = false): void
 - [ ] Handler calls `$this->setAuthAccountFromMessage($message)` first
 - [ ] Handler uses `$this->getLogger()` (never `DDDService::instance()->getLogger()`)
 - [ ] Handler uses `$this->logShortException()` in catch blocks
+- [ ] No service state left behind: a checked lookup restores `throwErrors` in `finally`
 - [ ] Handler calls service method with `async: false`
 - [ ] `messenger.yaml` has transport + routing entries
 - [ ] Supervisor config has a consumer for the transport

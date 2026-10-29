@@ -146,7 +146,7 @@ use DDD\Presentation\Base\OpenApi\Attributes\{Info, SecurityScheme, Server, Igno
 ## CRUD Operations
 
 > **Rules for all methods:**
-> - Always set `$service->throwErrors = true;` before any service call
+> - Always set `$service->throwErrors = true;` before any service call — in a controller action only: one request is one unit of work, and the framework puts the flag back to its default between requests of a worker runtime and between Messenger messages. Anywhere else (services, handlers, commands that run several lookups) switch it with `enableThrowErrors()` / `restoreThrowErrors()` in `finally` (`ddd-service-specialist`)
 > - Use pass-by-reference (`&$requestDto`) for DTOs with `DtoQueryOptionsTrait`
 > - Services are auto-injected via Symfony DI
 > - Every method MUST have complete PHPDoc: `@param`, `@return`, and `@throws`

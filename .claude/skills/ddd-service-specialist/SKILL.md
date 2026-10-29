@@ -1,6 +1,6 @@
 ---
 name: ddd-service-specialist
-description: Create DDD services, business logic, QueryBuilder patterns, and rights protection in the mgamadeus/ddd framework — including vector/semantic search, fulltext search over Translatable properties, concurrency-safe atomic writes, partial writes via updatePartialIgnoringRights, and strict insert() that throws on a duplicate key. Covers service instantiation (container, never new, never cache), caller-side vs in-service find() paths, the null-getService() fix (ReuseParentEntitySet), the createQueryBuilder(true) root-alias rule, conventions (entity owns non-repo logic, objects not IDs, App vs DDD namespaces), the PHPDoc @throws convention, advanced patterns (update/delete overrides, junction links, seeding, async dispatch), and utilities (Config, Cache, Encrypt, IssuesLogService). Use when creating services, writing custom queries, implementing rights, doing vector or fulltext search, writing concurrency-safe, partial or collision-checked writes, or debugging a null getService() or a No-alias-was-set error.
+description: DDD services, business logic, QueryBuilder patterns and rights protection in mgamadeus/ddd — vector/semantic search, Translatable fulltext, concurrency-safe atomic writes, partial writes via updatePartialIgnoringRights, strict insert() throwing on a duplicate key. Covers service instantiation (container, never new, never cache), caller-side vs in-service find(), the null-getService() fix (ReuseParentEntitySet), createQueryBuilder(true), conventions (entity owns non-repo logic, objects not IDs, App vs DDD namespaces), PHPDoc @throws, update/delete overrides, junctions, seeding, async, shared-service throwErrors (enableThrowErrors/restoreThrowErrors), utilities (Config, Cache, Encrypt, IssuesLogService). Use when creating services, writing custom queries, implementing rights, vector or fulltext search, concurrency-safe, partial or collision-checked writes, making a lookup throw instead of return null, or debugging a null getService(), a No-alias-was-set error or a lookup that throws only sometimes.
 metadata:
   author: mgamadeus
   version: "1.1.0"
@@ -73,6 +73,7 @@ class {EntityName}sService extends EntitiesService
 - **NEVER** use `new ServiceClass()` -- always resolve from the container
 - **NEVER** cache services in class properties -- always resolve inline
 - `EntitiesBaseService` does **NOT** exist -- always use `EntitiesService`
+- **NEVER** leave `throwErrors` switched on a container service -- switch it for your own call only (see below)
 
 ## Service Instantiation
 
@@ -101,6 +102,37 @@ Distinct paths depending on where the lookup happens:
 | Inside this service, custom set/scalar query | `{EntityName}s::getRepoClassInstance()->find($queryBuilder)` | entity set or scalar |
 
 **`getRepoClassInstance()` is for service-internal custom QueryBuilder queries only**; prefer `getService()->find($id)` from outside. NOTE: calling the repo directly is **not** a rights bypass — `applyReadRightsQuery` (`DatabaseRepoEntity.php:258`), the entity-registry cache (`:161-173`) and the default-select (`:266-275`) all live in `DatabaseRepoEntity::find()`, which the service merely calls. The service adds only eager-expand routing and the `throwErrors` `NotFoundException`.
+
+### `throwErrors` — switch it for your own call, never leave it switched
+
+`Service::$throwErrors` makes a lookup throw (`NotFoundException`) where it otherwise returns null. A container
+service is ONE shared instance per process, so the flag is shared too: a caller that sets it and never sets it back
+changes every later caller of the same process. Where that bites:
+
+- a long-lived Messenger worker: job N's `throwErrors = true` made job N+1's lookup throw where it expected null;
+- inside one long job, a command or a worker runtime: a flag set early changes every later lookup of the run;
+- the outcome depends on which code ran first, so it shows up as "only sometimes" and only in workers.
+
+A checked lookup switches the flag for its own call and restores the value before in `finally`:
+
+```php
+$accountsService = Accounts::getService();
+$throwErrorsBefore = $accountsService->enableThrowErrors();
+try {
+    $account = $accountsService->find($accountId);   // throws NotFoundException on a miss
+} finally {
+    $accountsService->restoreThrowErrors($throwErrorsBefore);
+}
+```
+
+`disableThrowErrors()` is the counterpart for a lookup that must return null on a service that throws by default.
+A plain `$service->throwErrors = true;` is only acceptable on a service the caller created itself.
+
+**Safety net, not a licence:** before every consumed Messenger message (`FreshWorkerStateMiddleware`) and after it
+(Symfony's `services_resetter`, unless the worker runs with `--no-reset`) the framework puts `throwErrors` of every
+instantiated service back to the default its class declares (`Service::resetThrowErrorsToDefault()`,
+`ServicesThrowErrorsResetter`). Nothing else of the service is reset, and nothing is reset inside one job — a flag left
+on still changes the rest of that job.
 
 ### `getService()` returning null — cross-namespace subclasses
 

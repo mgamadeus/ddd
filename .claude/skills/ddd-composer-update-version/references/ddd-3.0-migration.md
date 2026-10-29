@@ -181,3 +181,9 @@ Unchanged:
   path with `app:issues:test` (JSON `collectorSilentHint`). New `--job-only`: the exit code reflects the job alone —
   use it for the sync job's liveness probe. Skills note that `bin/console --no-debug` keeps a stale compiled container
   after `composer update` until `cache:clear --no-debug`.
+- 3.8.0 — `throwErrors` no longer leaks between units of work: before every consumed Messenger message
+  (`FreshWorkerStateMiddleware` → `ServicesThrowErrorsResetter`) and through Symfony's `services_resetter`
+  (`kernel.reset`, method `resetThrowErrorsToDefault`) every instantiated `Service` gets the flag back at the default
+  its class declares; nothing else of the service is reset. Scoped API on `Service`: `enableThrowErrors()` /
+  `disableThrowErrors()` return the value before, `restoreThrowErrors($before)` in `finally`. No worker config needed.
+  An app service with its own `reset()` is not affected (the tag names the dedicated method).
