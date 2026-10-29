@@ -114,6 +114,9 @@ class IssuesFingerprintBuilder
      */
     public function getDiscriminator(Throwable $throwable): string
     {
+        if ($throwable instanceof IssuesGroupDiscriminatorInterface) {
+            return 'own:' . $throwable->getIssuesGroupDiscriminator();
+        }
         if ($throwable instanceof DriverException && $throwable->getSQLState() !== null) {
             return 'sqlstate:' . $throwable->getSQLState();
         }

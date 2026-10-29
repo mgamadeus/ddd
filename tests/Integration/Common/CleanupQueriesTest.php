@@ -14,6 +14,7 @@ use DDD\Domain\Common\Entities\Crons\CronExecution;
 use DDD\Domain\Common\Repo\DB\Accounts\LoginTokens\DBLoginToken;
 use DDD\Domain\Common\Repo\DB\CacheScopes\Invalidations\DBCacheScopeInvalidation;
 use DDD\Domain\Common\Services\CronsService;
+use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Tests\Integration\IntegrationTestCase;
 
@@ -150,5 +151,31 @@ class CleanupQueriesTest extends IntegrationTestCase
 
         self::assertSame([3], $this->ids('LoginTokens'));
         self::assertSame([4], $this->ids('CacheScopeInvalidations'));
+    }
+
+    /** The executor's bookkeeping stamp is a partial write: no validation (an unregistered command), on both engines */
+    public function testTheSlotStampIsAPartialWriteThatSkipsTheCommandValidation(): void
+    {
+        $this->insertCron(7, true, -60);
+        static::connection()->executeStatement(
+            'UPDATE ' . static::quoteIdentifier('Crons') . ' SET ' . static::quoteIdentifier('command') . " = 'app:removed-command'"
+        );
+        DDDService::instance()->deactivateEntityRightsRestrictions();
+        try {
+            /** @var CronsService $cronsService */
+            $cronsService = DDDService::instance()->getService(CronsService::class);
+            $cron = $cronsService->findByName('cron-7');
+            $cron->nextExecutionScheduledAt = DateTime::fromTimestamp(strtotime('2030-01-01 00:00:00 UTC'));
+            $persistCronColumns = new \ReflectionMethod(Cron::class, 'persistCronColumns');
+            $persistCronColumns->invoke($cron, 'nextExecutionScheduledAt');
+        } finally {
+            DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
+        }
+
+        $storedNextExecution = (string)static::connection()->fetchOne(
+            'SELECT ' . static::quoteIdentifier('nextExecutionScheduledAt') . ' FROM ' . static::quoteIdentifier('Crons')
+            . ' WHERE ' . static::quoteIdentifier('id') . ' = 7'
+        );
+        self::assertStringStartsWith('2030-01-01', $storedNextExecution);
     }
 }

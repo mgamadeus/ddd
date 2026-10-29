@@ -166,3 +166,10 @@ Unchanged:
 - 3.7.6 — PostgreSQL: a DQL UPDATE / DELETE whose WHERE has a correlated subquery on the root alias
   (`… NOT EXISTS (SELECT … WHERE oi.orderId = o.id)`) rendered the root as the bare table name (`Orders."id"`, folded to
   `orders`: "missing FROM-clause entry"). The PostgreSQL walker now names the root by its quoted table name.
+- 3.7.7 — crons: a failing Cron never blocks itself or the tick, and every failure reaches the issues log (ERROR,
+  section CLI). A command the application does not register is caught before the execution row (one ERROR at most
+  hourly, slot advanced); a non-zero exit or timeout is logged with exit code, timeout flag and output tail; the
+  bookkeeping stamps are partial writes without validation; every exit after the RUNNING row closes it and advances
+  the slot. New `IssuesGroupDiscriminatorInterface`: a throwable can name its own root-cause discriminator
+  (`CronFailedException`: one issues group per Cron and kind). `Cron::persistCron()` is now
+  `persistCronColumns(string ...$propertyNames)`.

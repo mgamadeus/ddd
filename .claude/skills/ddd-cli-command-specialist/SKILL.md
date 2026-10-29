@@ -315,6 +315,17 @@ class SendScheduledNotifications extends Command
 }
 ```
 
+**How a Cron row runs** (`app:crons:execute`, every minute): each due, active Cron runs its command in a child
+process. One Cron never blocks itself or the tick, and every failure reaches the issues log as ERROR (section CLI,
+context `cronName`, `cronId`, `cronCommand`; one issues group per Cron and kind):
+- a command this application does not register is caught before any execution row: one ERROR (at most hourly per
+  Cron), the next slot advanced, the next Cron runs;
+- a non-zero exit or a timeout closes the execution as FAILED and logs `exitCode` / `timedOut` and the output's last
+  2 000 characters; a throwable is logged as itself;
+- the bookkeeping stamps (`lastExecutionStartedAt`, `nextExecutionScheduledAt`) are partial writes without entity
+  validation, and every way out after the RUNNING row closes it and advances the slot.
+A command that should fail its Cron exits non-zero (`Command::FAILURE`) and writes the reason to stderr.
+
 ### Import / Migration
 
 ```php
