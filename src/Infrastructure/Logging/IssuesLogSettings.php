@@ -11,8 +11,11 @@ use Psr\Log\LogLevel;
 use Throwable;
 
 /**
- * The issues-log configuration, read from the environment. Nothing set = today's behaviour: the `issues` channel goes
- * through the application's own Monolog handlers ({@see self::$target} null), the capture subscriber is on.
+ * The issues-log configuration. Committed in the application's `config/app/Common/Issues.php`
+ * (`Config::get('Common.Issues')`, keys = the property names, e.g. `captureEnabled`, `headerPrefixes` as a list); an
+ * environment variable overrides a committed value — for what differs per host. Nothing set = today's behaviour: the
+ * `issues` channel goes through the application's own Monolog handlers ({@see self::$target} null), the capture
+ * subscriber is on.
  */
 class IssuesLogSettings extends ValueObject
 {
@@ -30,6 +33,10 @@ class IssuesLogSettings extends ValueObject
     public const string ENV_SERVICE_NAME = 'ISSUES_SERVICE_NAME';
     public const string ENV_RELEASE = 'ISSUES_RELEASE';
     public const string ENV_WORKSPACE = 'ISSUES_WORKSPACE';
+    public const string ENV_SANITIZE_NUMBER_MIN_DIGITS = 'ISSUES_LOG_SANITIZE_NUMBER_MIN_DIGITS';
+
+    /** The committed configuration of the issues log and registry (`config/app/Common/Issues.php`) */
+    public const string CONFIG_PATH = 'Common.Issues';
 
     /** JSON lines into a file of {@see self::$path} */
     public const string TARGET_FILE = 'file';
@@ -45,6 +52,8 @@ class IssuesLogSettings extends ValueObject
 
     public const string DEFAULT_FILE_NAME = 'issues_' . self::FILE_NAME_ENVIRONMENT_PLACEHOLDER . '.log';
     public const int DEFAULT_MAX_EVENT_BYTES = 8192;
+    /** Digit runs of this length and longer in free text become `[NUMBER]` (phone, account and card numbers) */
+    public const int DEFAULT_SANITIZE_NUMBER_MIN_DIGITS = 9;
 
     public function __construct(
         /** @var string|null file | stderr | none; null = the application's own handlers (today's behaviour) */
@@ -71,36 +80,88 @@ class IssuesLogSettings extends ValueObject
         public readonly ?string $release = null,
         /** @var string|null `service.workspace` of every line: the dev workspace (`mgn`) or the stage (`prod`) */
         public readonly ?string $workspace = null,
+        /** @var int Digit runs of at least this length in free text become `[NUMBER]`; 0 = digits are kept */
+        public readonly int $sanitizeNumberMinDigits = self::DEFAULT_SANITIZE_NUMBER_MIN_DIGITS,
     ) {
         parent::__construct();
     }
 
+    /**
+     * The settings from the committed configuration ({@see self::CONFIG_PATH}), each value overridden by its
+     * environment variable when that is set. Release and workspace come from the environment only.
+     */
     public static function fromEnvironment(string $defaultPath = ''): static
     {
-        $target = self::stringEnv(self::ENV_TARGET);
+        $target = static::stringSetting('target', self::ENV_TARGET);
         $target = $target !== null && in_array(strtolower($target), self::TARGETS, true) ? strtolower($target) : null;
+        $headerPrefixes = static::readSetting('headerPrefixes', self::ENV_HEADER_PREFIXES);
         $headerPrefixes = array_values(array_filter(array_map(
-            static fn(string $prefix): string => strtolower(trim($prefix)),
-            explode(',', (string)self::stringEnv(self::ENV_HEADER_PREFIXES))
+            static fn(mixed $prefix): string => strtolower(trim((string)$prefix)),
+            is_array($headerPrefixes) ? $headerPrefixes : explode(',', (string)$headerPrefixes)
         )));
         return new static(
             target: $target,
-            path: rtrim(self::stringEnv(self::ENV_PATH) ?? $defaultPath, '/'),
-            fileName: self::stringEnv(self::ENV_FILE_NAME) ?? self::DEFAULT_FILE_NAME,
-            level: strtolower(self::stringEnv(self::ENV_LEVEL) ?? LogLevel::WARNING),
-            useLocking: self::boolEnv(self::ENV_USE_LOCKING, true),
-            captureEnabled: self::boolEnv(self::ENV_CAPTURE_ENABLED, true),
-            clientErrorLevel: ($clientErrorLevel = self::stringEnv(self::ENV_CLIENT_ERROR_LEVEL)) !== null
+            path: rtrim(static::stringSetting('path', self::ENV_PATH) ?? $defaultPath, '/'),
+            fileName: static::stringSetting('fileName', self::ENV_FILE_NAME) ?? self::DEFAULT_FILE_NAME,
+            level: strtolower(static::stringSetting('level', self::ENV_LEVEL) ?? LogLevel::WARNING),
+            useLocking: static::boolSetting('useLocking', self::ENV_USE_LOCKING, true),
+            captureEnabled: static::boolSetting('captureEnabled', self::ENV_CAPTURE_ENABLED, true),
+            clientErrorLevel: ($clientErrorLevel = static::stringSetting('clientErrorLevel', self::ENV_CLIENT_ERROR_LEVEL)) !== null
                 ? strtolower($clientErrorLevel)
                 : null,
             headerPrefixes: $headerPrefixes,
-            includeRequestBody: self::boolEnv(self::ENV_INCLUDE_REQUEST_BODY, false),
-            includeQueryString: self::boolEnv(self::ENV_INCLUDE_QUERY, false),
-            maxEventBytes: (int)(self::stringEnv(self::ENV_MAX_EVENT_BYTES) ?? self::DEFAULT_MAX_EVENT_BYTES),
-            serviceName: self::stringEnv(self::ENV_SERVICE_NAME),
+            includeRequestBody: static::boolSetting('includeRequestBody', self::ENV_INCLUDE_REQUEST_BODY, false),
+            includeQueryString: static::boolSetting('includeQueryString', self::ENV_INCLUDE_QUERY, false),
+            maxEventBytes: (int)(static::stringSetting('maxEventBytes', self::ENV_MAX_EVENT_BYTES) ?? self::DEFAULT_MAX_EVENT_BYTES),
+            serviceName: static::stringSetting('serviceName', self::ENV_SERVICE_NAME),
             release: self::stringEnv(self::ENV_RELEASE) ?? self::stringEnv('APP_VERSION'),
             workspace: self::stringEnv(self::ENV_WORKSPACE) ?? self::detectWorkspaceName() ?? self::stringEnv('APP_STAGE'),
+            sanitizeNumberMinDigits: (int)(static::stringSetting('sanitizeNumberMinDigits', self::ENV_SANITIZE_NUMBER_MIN_DIGITS)
+                ?? self::DEFAULT_SANITIZE_NUMBER_MIN_DIGITS),
         );
+    }
+
+    /**
+     * The committed configuration of the issues log and registry; empty when the application has none. The method a
+     * test overrides.
+     *
+     * @return array<string, mixed>
+     */
+    protected static function readCommittedSettings(): array
+    {
+        try {
+            $committedSettings = Config::get(self::CONFIG_PATH);
+        } catch (Throwable) {
+            return [];
+        }
+        return is_array($committedSettings) ? $committedSettings : [];
+    }
+
+    /** The environment variable when set, else the committed value, else null */
+    protected static function readSetting(string $configKey, string $envName): mixed
+    {
+        return self::readEnv($envName) ?? static::readCommittedSettings()[$configKey] ?? null;
+    }
+
+    protected static function stringSetting(string $configKey, string $envName): ?string
+    {
+        $value = static::readSetting($configKey, $envName);
+        if ($value === null || $value === '' || is_array($value)) {
+            return null;
+        }
+        return is_bool($value) ? ($value ? 'true' : 'false') : (string)$value;
+    }
+
+    protected static function boolSetting(string $configKey, string $envName, bool $default): bool
+    {
+        $value = static::readSetting($configKey, $envName);
+        if ($value === null || $value === '' || is_array($value)) {
+            return $default;
+        }
+        if (is_bool($value)) {
+            return $value;
+        }
+        return !in_array(strtolower((string)$value), ['0', 'off', 'no', 'false'], true);
     }
 
     /** The log file for the given environment and day */

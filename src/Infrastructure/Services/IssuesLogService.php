@@ -377,7 +377,7 @@ class IssuesLogService
     protected function safeLog(string $level, string $message, array $context = []): void
     {
         try {
-            $redactor = new IssuesLogRedactor();
+            $redactor = new IssuesLogRedactor(static::getSettings()->sanitizeNumberMinDigits);
             $event = new IssuesLogEvent($redactor->sanitizeText($message), $redactor->redactContext($this->enrichContext($context)));
             $redactor->capEvent($event, static::getSettings()->maxEventBytes);
             $this->issuesLogger->log($level, $event->message, $event->context);

@@ -19,6 +19,7 @@ use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
 use Symfony\Component\Messenger\Exception\RecoverableMessageHandlingException;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
+use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
 use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 use Throwable;
 
@@ -137,6 +138,9 @@ class IssuesCaptureSubscriber implements EventSubscriberInterface
                 'messenger.message_class' => get_debug_type($envelope->getMessage()),
                 'transports' => $transportNames,
                 'will_retry' => $event->willRetry(),
+                // the delivery that failed: 0 = the first; the retry delay itself is decided after this event
+                'messenger.retry_count' => $envelope->last(RedeliveryStamp::class)?->getRetryCount() ?? 0,
+                'messenger.stamps' => array_keys($envelope->all()),
                 'error.handled' => false,
             ], static fn(mixed $value): bool => $value !== null),
             section: IssuesLogService::LOG_MESSAGE_SECTION_MESSENGER

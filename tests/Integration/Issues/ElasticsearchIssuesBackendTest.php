@@ -55,7 +55,10 @@ class ElasticsearchIssuesBackendTest extends IssuesRegistryTestCase
         parent::tearDown();
     }
 
-    protected function createSettings(string $keywordSuffix = '.keyword'): IssuesRegistrySettings
+    protected function createSettings(
+        string $keywordSuffix = '.keyword',
+        string $workspaceField = IssuesRegistrySettings::DEFAULT_ES_WORKSPACE_FIELD
+    ): IssuesRegistrySettings
     {
         return new IssuesRegistrySettings(
             queryBackend: IssuesRegistrySettings::BACKEND_ELASTICSEARCH,
@@ -63,6 +66,7 @@ class ElasticsearchIssuesBackendTest extends IssuesRegistryTestCase
             querySelector: $this->indexName,
             seedHours: 0,
             elasticsearchKeywordSuffix: $keywordSuffix,
+            elasticsearchWorkspaceField: $workspaceField,
         );
     }
 
@@ -195,7 +199,10 @@ class ElasticsearchIssuesBackendTest extends IssuesRegistryTestCase
             $bulkBody .= json_encode(['index' => ['_index' => $this->indexName]]) . "\n" . $jsonLine . "\n";
         }
         $httpClient->post($this->elasticsearchUrl . '/_bulk?refresh=true', ['headers' => ['Content-Type' => 'application/x-ndjson'], 'body' => $bulkBody]);
-        $elasticsearchIssuesQueryBackend = new ElasticsearchIssuesQueryBackend($this->createSettings());
+        $elasticsearchIssuesQueryBackend = new ElasticsearchIssuesQueryBackend(
+            // the issues log's own lines carry the workspace as service.workspace
+            $this->createSettings(workspaceField: 'service.workspace')
+        );
 
         $workspaceEvents = $elasticsearchIssuesQueryBackend->searchEvents(new IssueEventSearch(
             DateTime::fromTimestamp(time() - 600),

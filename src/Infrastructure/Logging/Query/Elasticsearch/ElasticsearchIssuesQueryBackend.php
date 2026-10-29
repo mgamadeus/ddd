@@ -71,12 +71,21 @@ class ElasticsearchIssuesQueryBackend implements IssuesQueryBackend
         return $this->settings->querySelector;
     }
 
-    /** The development index pattern; unset = the default one */
+    /**
+     * The development index pattern. Never the production one: a DEVELOPMENT or workspace query without a development
+     * index would otherwise read production silently.
+     *
+     * @throws InternalErrorException No development index pattern configured
+     */
     public function getDevelopmentLogIndexPattern(): string
     {
-        return $this->settings->querySelectorDevelopment !== ''
-            ? $this->settings->querySelectorDevelopment
-            : $this->getDefaultLogIndexPattern();
+        if ($this->settings->querySelectorDevelopment === '') {
+            throw new InternalErrorException(
+                'No development Elasticsearch index pattern: set querySelectorDevelopment in Common.Issues '
+                . '(or ISSUES_QUERY_SELECTOR_DEVELOPMENT / ES_LOGS_INDEX_DEV)'
+            );
+        }
+        return $this->settings->querySelectorDevelopment;
     }
 
     /** The index pattern of a `logstashEnvironment` token (DEVELOPMENT; anything else = PRODUCTION) */
@@ -201,7 +210,8 @@ class ElasticsearchIssuesQueryBackend implements IssuesQueryBackend
             'route_name' => $issueEventSearch->routeName,
             'error.group_hash' => $issueEventSearch->groupHash,
             'error.issue_hash' => $issueEventSearch->issueHash,
-            'service.workspace' => $issueEventSearch->workspace,
+            // the same workspace field as the runtime-error queries (elasticsearchWorkspaceField)
+            $fieldNames->workspaceField => $issueEventSearch->workspace,
         ] as $field => $value) {
             if ($value !== null && $value !== '') {
                 $filterClauses[] = ['term' => [$fieldNames->keyword($field) => $value]];

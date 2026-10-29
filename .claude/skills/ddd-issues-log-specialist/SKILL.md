@@ -45,8 +45,34 @@ $issuesLogService->logThrowable(
 
 ## Where it goes — configuration
 
-The channel is `issues`. The DDD bundle registers its sink (`IssuesLogSinkHandler`) as the first handler of the channel
-and reads the environment at runtime:
+The channel is `issues`. The DDD bundle registers its sink (`IssuesLogSinkHandler`) as the first handler of the channel.
+
+**Commit the configuration, override per host.** Both sides (this table and the registry table below) read the
+application's `config/app/Common/Issues.php` (`Config::get('Common.Issues')`; the framework ships an empty, documented
+default). Keys are the settings' property names — `target`, `level`, `captureEnabled`, `clientErrorLevel`,
+`headerPrefixes` (a list), `maxEventBytes`, `sanitizeNumberMinDigits`, `queryBackend`, `querySelector`,
+`querySelectorDevelopment`, `queryEnvironments` (a map environment => selector), `queryTimeoutSeconds`,
+`elasticsearchKeywordSuffix` / `LocationField` / `WorkspaceField`, `alertLinkTemplate`, `seedHours`,
+`groupExplosionLimit`, `jobStaleMinutes`, `collectorSilentMinutes`, … A variable below overrides the committed value.
+Switches and lists belong in the file; the environment carries what differs per host (URLs, users) and the
+**secrets, which are read from the environment only**: `ISSUES_QUERY_TOKEN` (or `ES_LOGS_PASSWORD`),
+`ISSUES_ALERT_WEBHOOK`, `ISSUES_SENTRY_DSN` (or `SENTRY_DSN`). `ISSUES_RELEASE` and `ISSUES_WORKSPACE` are environment
+only as well.
+
+```php
+// config/app/Common/Issues.php
+return [
+    'target' => 'file',
+    'clientErrorLevel' => 'notice',
+    'headerPrefixes' => ['x-'],
+    'queryBackend' => 'elasticsearch',
+    'querySelector' => 'logstash-prod-*',
+    'querySelectorDevelopment' => 'logstash-dev-*',
+    'elasticsearchWorkspaceField' => 'service.workspace',
+];
+```
+
+The variables:
 
 | Variable | Values | Default |
 |---|---|---|
@@ -60,11 +86,15 @@ and reads the environment at runtime:
 | `ISSUES_LOG_HEADER_PREFIXES` | comma list of request header prefixes copied into `request_headers` (e.g. `x-`) | none |
 | `ISSUES_LOG_INCLUDE_QUERY` / `ISSUES_LOG_INCLUDE_REQUEST_BODY` | add `url.query` / `http.request.body.content` | off |
 | `ISSUES_LOG_MAX_EVENT_BYTES` | size cap of one event | 8192 |
+| `ISSUES_LOG_SANITIZE_NUMBER_MIN_DIGITS` | digit runs of this length in free text become `[NUMBER]`; `0` keeps them (Google/GBP ids, ms timestamps) | 9 |
 | `ISSUES_SERVICE_NAME` | `service.name` | `APP_NAME`, else `symfony` |
 | `ISSUES_RELEASE` | `service.version` | `APP_VERSION` |
 | `ISSUES_WORKSPACE` | `service.workspace` | the dev workspace of the checkout path (`/dev-workspaces/<name>/`), else `APP_STAGE` |
 
 Variables are read from `.env` (Config) and from the process environment, so a container can set them directly.
+An application subclass `App\Infrastructure\Services\IssuesLogService` is the ONE instance: the framework's service id is
+an alias of it (`ApplicationServiceSubclassAliasPass`), so typed injections (the capture subscriber, `app:issues:test`)
+get the subclass, which inherits the `issues` logger channel.
 With `file`, `stderr` or `none` the records stop at the sink — they no longer reach the application's main log.
 
 **The line** (Elastic Common Schema, `Elastic\Monolog\Formatter\ElasticCommonSchemaFormatter` from `elastic/ecs-logging`):
@@ -77,8 +107,9 @@ dev workspace, e.g. `mgn`, or the stage — all dev workspaces share `service.en
 unchanged) and the stable hashes below.
 
 **Privacy, before any sink:** values under secret-looking keys (password, secret, token, authorization, cookie, API key,
-credential, session) become `[REDACTED]`, also nested; the message loses e-mail addresses, bearer/basic credentials and
-digit runs of 9+; the event is capped (full trace first, then the short trace, then the message is cut).
+credential, session) become `[REDACTED]`, also nested; the message and the stack traces (`error.stack_trace`,
+`error.full_stack_trace` — string arguments carry e-mails) lose e-mail addresses, bearer/basic credentials and digit
+runs of 9+ (`sanitizeNumberMinDigits`, 0 = off); the event is capped (full trace first, then the short trace, then the message is cut).
 
 **Labels vs body:** only low-cardinality values become Loki labels or index keywords you aggregate on in dashboards
 (`service.name`, `service.environment`, `log.level`, `section`). Hashes, routes and ids stay in the JSON body.
@@ -366,12 +397,12 @@ and the groups and issues without environment. With several, rows without enviro
 | `ISSUES_QUERY_BACKEND` | `none` | `loki`, `elasticsearch`, `opensearch`, `sentry`; `none` = no registry, the application only logs |
 | `ISSUES_QUERY_URL` | | base URL (Loki, Elasticsearch, Sentry) |
 | `ISSUES_QUERY_SELECTOR` | | Loki stream selector / Elasticsearch index pattern / Sentry `<organization>/<project>` |
-| `ISSUES_QUERY_SELECTOR_DEVELOPMENT` | the selector | Elasticsearch index pattern of `--logstashEnv=DEVELOPMENT` |
+| `ISSUES_QUERY_SELECTOR_DEVELOPMENT` | | Elasticsearch index pattern of `--logstashEnv=DEVELOPMENT`; unset = a DEVELOPMENT query fails (`InternalErrorException`), it never falls back to production |
 | `ISSUES_QUERY_USER` / `_TOKEN` | | user + token = basic auth, token alone = bearer (a token with a space, e.g. `ApiKey …`, is sent as given) |
 | `ISSUES_QUERY_TENANT` | | Loki `X-Scope-OrgID` |
 | `ISSUES_QUERY_TIMEOUT_SECONDS` / `ISSUES_QUERY_TLS_VERIFY` | 10 / true | |
 | `ISSUES_ES_KEYWORD_SUFFIX` | `.keyword` | sub-field of string fields; empty = mapped as keyword |
-| `ISSUES_ES_LOCATION_FIELD` / `ISSUES_ES_WORKSPACE_FIELD` | `lastLocationId` / `workspace` | "affected locations" and `--workspace` fields |
+| `ISSUES_ES_LOCATION_FIELD` / `ISSUES_ES_WORKSPACE_FIELD` | `lastLocationId` / `workspace` | "affected locations" field; the ONE workspace field of `--workspace` in the runtime-error queries AND `app:issues:search` / the registry's event search. The default `workspace` is rankingCoach's legacy field; for the issues log's own lines set `service.workspace` |
 | `ISSUES_SENTRY_DSN` | `SENTRY_DSN` | target of `app:issues:forward-sentry` |
 | `ISSUES_ALERT_WEBHOOK` | | Slack-compatible webhook; unset = no alerts |
 | `ISSUES_ALERT_LINK_TEMPLATE` | | link in the alert, `{group_hash}` and `{environment}` replaced |
@@ -605,7 +636,9 @@ not turn the registry on).
 
 - `findErrorGroups($hours, $levels, $size, $groupingDimension, $logstashEnvironment, $accountId, $locationId,
   $searchTerm, $workspace, $minutes)` → `RuntimeErrorGroups`. COARSE (default) groups by error type + throw-site file
-  (`multi_terms`, ES ≥ 7.12 / OpenSearch ≥ 2.1), FINGERPRINT by `error.fingerprint_short`.
+  (`multi_terms`, ES ≥ 7.12 / OpenSearch ≥ 2.1), FINGERPRINT by `error.fingerprint_short`, GROUP_HASH by
+  `error.group_hash` (the issues log's root cause — e.g. one group per failing Cron); the detail takes the same
+  dimension and the group key.
 - `findErrorTrend($hours, $levels, $fixedInterval, $logstashEnvironment, $workspace)` → `RuntimeErrorTrend`.
 - `findErrorGroupDetail($groupKey, …, $sampleSize)` → `RuntimeErrorGroupDetail` (last seen, gap-free trend, newest
   occurrences, per-route breakdown). Message, stack trace and route are redacted on read (`RuntimeErrorFieldRedactor`).

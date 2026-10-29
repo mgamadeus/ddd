@@ -28,8 +28,23 @@ class IssuesQueryEnvironments extends ObjectSet
         if (!is_array($decoded) || $decoded === [] || array_is_list($decoded)) {
             throw new InternalErrorException('ISSUES_QUERY_ENVIRONMENTS must be a JSON object {"<environment>": "<selector>", …}');
         }
+        return static::fromSelectorsByEnvironmentName($decoded);
+    }
+
+    /**
+     * The environments of a map environment name => selector (ISSUES_QUERY_ENVIRONMENTS decoded, or the committed
+     * `queryEnvironments`).
+     *
+     * @param string[] $selectorsByEnvironmentName Selector by environment name
+     * @throws InternalErrorException Not a map, or an environment without a selector
+     */
+    public static function fromSelectorsByEnvironmentName(array $selectorsByEnvironmentName): static
+    {
+        if ($selectorsByEnvironmentName === [] || array_is_list($selectorsByEnvironmentName)) {
+            throw new InternalErrorException('The issues query environments must be a map {"<environment>": "<selector>", …}');
+        }
         $issuesQueryEnvironments = new static();
-        foreach ($decoded as $name => $selector) {
+        foreach ($selectorsByEnvironmentName as $name => $selector) {
             if (!is_string($selector) || trim((string)$name) === '' || trim($selector) === '') {
                 throw new InternalErrorException(sprintf('ISSUES_QUERY_ENVIRONMENTS: environment "%s" needs a non-empty selector', $name));
             }

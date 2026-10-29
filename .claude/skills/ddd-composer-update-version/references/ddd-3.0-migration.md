@@ -197,3 +197,17 @@ Unchanged:
 - 3.8.2 — `deactivateCaches()` / `activateCaches()` switch every key of `getCurrentCacheStates()` through
   `applyCacheStates()`, so an app's own cache switch needs only the two state overrides; an override of
   `deactivateCaches()` / `activateCaches()` that sets the app flag after the parent call keeps working and can go.
+- 3.9.0 — issues logging, for applications moving onto it:
+  - Committed configuration `config/app/Common/Issues.php` (`Config::get('Common.Issues')`, keys = property names)
+    for `IssuesLogSettings` and `IssuesRegistrySettings`; an environment variable overrides a committed value. Secrets
+    (`ISSUES_QUERY_TOKEN` / `ES_LOGS_PASSWORD`, `ISSUES_ALERT_WEBHOOK`, `ISSUES_SENTRY_DSN`) are environment only.
+  - **Behaviour change:** a DEVELOPMENT Elasticsearch query without `querySelectorDevelopment` throws
+    `InternalErrorException` instead of reading the production index.
+  - **Behaviour change:** `app:issues:search` / the registry's event search filter the workspace on
+    `elasticsearchWorkspaceField` (default `workspace`) instead of the hard-coded `service.workspace`. Elasticsearch
+    over the issues log's own lines: set `elasticsearchWorkspaceField` to `service.workspace`.
+  - Grouping dimension `GROUP_HASH` (`error.group_hash`) for the runtime-error groups and detail.
+  - `sanitizeNumberMinDigits` (default 9, 0 = keep digit runs); the stack traces are sanitised like the message.
+  - A failed message's context carries `messenger.retry_count` and `messenger.stamps`.
+  - An application subclass `App\Infrastructure\Services\IssuesLogService` is the one instance: the framework id is an
+    alias of it (`ApplicationServiceSubclassAliasPass`), with the `issues` logger channel.

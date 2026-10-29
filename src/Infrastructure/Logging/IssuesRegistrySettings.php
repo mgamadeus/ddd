@@ -6,10 +6,14 @@ namespace DDD\Infrastructure\Logging;
 
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Infrastructure\Libs\Config;
+use Throwable;
 
 /**
- * Configuration of the issues registry, its job, the query backend and the alert, read from the environment.
- * `ISSUES_QUERY_BACKEND` unset or `none` = no registry, no alert: the application only logs.
+ * Configuration of the issues registry, its job, the query backend and the alert. Committed in the application's
+ * `config/app/Common/Issues.php` ({@see IssuesLogSettings::CONFIG_PATH}, keys = the property names, e.g. `queryBackend`,
+ * `querySelector`, `queryEnvironments` as a map environment => selector); an environment variable overrides a
+ * committed value. Secrets come from the environment only: {@see self::ENV_QUERY_TOKEN}, {@see self::ENV_ALERT_WEBHOOK},
+ * {@see self::ENV_SENTRY_DSN}. Backend unset or `none` = no registry, no alert: the application only logs.
  */
 class IssuesRegistrySettings extends ValueObject
 {
@@ -115,7 +119,7 @@ class IssuesRegistrySettings extends ValueObject
 
     public static function fromEnvironment(): static
     {
-        $queryBackend = strtolower(self::readEnv(self::ENV_QUERY_BACKEND) ?? self::BACKEND_NONE);
+        $queryBackend = strtolower(static::stringSetting('queryBackend', self::ENV_QUERY_BACKEND) ?? self::BACKEND_NONE);
         return static::fromEnvironmentForBackend(in_array($queryBackend, self::BACKENDS, true) ? $queryBackend : self::BACKEND_NONE);
     }
 
@@ -125,15 +129,15 @@ class IssuesRegistrySettings extends ValueObject
      */
     public static function fromEnvironmentForElasticsearch(): static
     {
-        $queryBackend = strtolower(self::readEnv(self::ENV_QUERY_BACKEND) ?? '');
+        $queryBackend = strtolower(static::stringSetting('queryBackend', self::ENV_QUERY_BACKEND) ?? '');
         return static::fromEnvironmentForBackend(
             $queryBackend === self::BACKEND_OPENSEARCH ? self::BACKEND_OPENSEARCH : self::BACKEND_ELASTICSEARCH
         );
     }
 
     /**
-     * Elasticsearch and OpenSearch fall back to the ES_LOGS_* variables for what ISSUES_QUERY_* leaves unset: URL
-     * (scheme://host:port), user, password, index and development index.
+     * Each value: its ISSUES_* variable, for Elasticsearch / OpenSearch then the ES_LOGS_* variable (URL as
+     * scheme://host:port, user, password, index, development index), then the committed value, then the default.
      */
     protected static function fromEnvironmentForBackend(string $queryBackend): static
     {
@@ -143,35 +147,77 @@ class IssuesRegistrySettings extends ValueObject
             $queryUrl = (self::readEnv(self::ENV_ES_LOGS_SCHEME) ?? 'https') . '://' . $esLogsHost
                 . ':' . (self::readEnv(self::ENV_ES_LOGS_PORT) ?? '9200');
         }
-        $fallback = static fn(string $name, string $esLogsName): ?string => self::readEnv($name)
-            ?? ($isElasticsearch ? self::readEnv($esLogsName) : null);
+        $queryUrl ??= static::stringSetting('queryUrl', self::ENV_QUERY_URL);
+        $fallback = static fn(string $configKey, string $name, string $esLogsName): ?string => self::readEnv($name)
+            ?? ($isElasticsearch ? self::readEnv($esLogsName) : null)
+            ?? static::stringSetting($configKey, $name);
+        $committedKeywordSuffix = static::readCommittedSettings()['elasticsearchKeywordSuffix'] ?? null;
         return new static(
             queryBackend: $queryBackend,
             queryUrl: rtrim($queryUrl ?? '', '/'),
-            queryUser: $fallback(self::ENV_QUERY_USER, self::ENV_ES_LOGS_USER),
-            queryToken: $fallback(self::ENV_QUERY_TOKEN, self::ENV_ES_LOGS_PASSWORD),
-            querySelector: $fallback(self::ENV_QUERY_SELECTOR, self::ENV_ES_LOGS_INDEX) ?? '',
-            queryTenant: self::readEnv(self::ENV_QUERY_TENANT),
-            queryTimeoutSeconds: (int)(self::readEnv(self::ENV_QUERY_TIMEOUT_SECONDS) ?? 10),
+            queryUser: $fallback('queryUser', self::ENV_QUERY_USER, self::ENV_ES_LOGS_USER),
+            // a secret: environment only
+            queryToken: self::readEnv(self::ENV_QUERY_TOKEN) ?? ($isElasticsearch ? self::readEnv(self::ENV_ES_LOGS_PASSWORD) : null),
+            querySelector: $fallback('querySelector', self::ENV_QUERY_SELECTOR, self::ENV_ES_LOGS_INDEX) ?? '',
+            queryTenant: static::stringSetting('queryTenant', self::ENV_QUERY_TENANT),
+            queryTimeoutSeconds: (int)(static::stringSetting('queryTimeoutSeconds', self::ENV_QUERY_TIMEOUT_SECONDS) ?? 10),
             alertWebhook: self::readEnv(self::ENV_ALERT_WEBHOOK),
-            alertLinkTemplate: self::readEnv(self::ENV_ALERT_LINK_TEMPLATE),
-            discoveryWindowMinutes: (int)(self::readEnv(self::ENV_DISCOVERY_WINDOW_MINUTES) ?? 120),
-            seedHours: (int)(self::readEnv(self::ENV_SEED_HOURS) ?? 24),
-            groupExplosionLimit: (int)(self::readEnv(self::ENV_GROUP_EXPLOSION_LIMIT) ?? 50),
-            jobStaleMinutes: (int)(self::readEnv(self::ENV_JOB_STALE_MINUTES) ?? 10),
-            collectorSilentMinutes: (int)(self::readEnv(self::ENV_COLLECTOR_SILENT_MINUTES) ?? 60),
-            querySelectorDevelopment: $fallback(self::ENV_QUERY_SELECTOR_DEVELOPMENT, self::ENV_ES_LOGS_INDEX_DEV) ?? '',
-            queryTlsVerify: !in_array(strtolower(self::readEnv(self::ENV_QUERY_TLS_VERIFY) ?? 'true'), ['0', 'false', 'no', 'off'], true),
+            alertLinkTemplate: static::stringSetting('alertLinkTemplate', self::ENV_ALERT_LINK_TEMPLATE),
+            discoveryWindowMinutes: (int)(static::stringSetting('discoveryWindowMinutes', self::ENV_DISCOVERY_WINDOW_MINUTES) ?? 120),
+            seedHours: (int)(static::stringSetting('seedHours', self::ENV_SEED_HOURS) ?? 24),
+            groupExplosionLimit: (int)(static::stringSetting('groupExplosionLimit', self::ENV_GROUP_EXPLOSION_LIMIT) ?? 50),
+            jobStaleMinutes: (int)(static::stringSetting('jobStaleMinutes', self::ENV_JOB_STALE_MINUTES) ?? 10),
+            collectorSilentMinutes: (int)(static::stringSetting('collectorSilentMinutes', self::ENV_COLLECTOR_SILENT_MINUTES) ?? 60),
+            querySelectorDevelopment: $fallback('querySelectorDevelopment', self::ENV_QUERY_SELECTOR_DEVELOPMENT, self::ENV_ES_LOGS_INDEX_DEV) ?? '',
+            queryTlsVerify: !in_array(strtolower(static::stringSetting('queryTlsVerify', self::ENV_QUERY_TLS_VERIFY) ?? 'true'), ['0', 'false', 'no', 'off'], true),
             // an explicitly empty suffix is a value: the fields are mapped as keyword
-            elasticsearchKeywordSuffix: self::readRawEnv(self::ENV_ES_KEYWORD_SUFFIX) ?? self::DEFAULT_ES_KEYWORD_SUFFIX,
-            elasticsearchLocationField: self::readEnv(self::ENV_ES_LOCATION_FIELD) ?? self::DEFAULT_ES_LOCATION_FIELD,
-            elasticsearchWorkspaceField: self::readEnv(self::ENV_ES_WORKSPACE_FIELD) ?? self::DEFAULT_ES_WORKSPACE_FIELD,
+            elasticsearchKeywordSuffix: self::readRawEnv(self::ENV_ES_KEYWORD_SUFFIX)
+                ?? (is_string($committedKeywordSuffix) ? $committedKeywordSuffix : self::DEFAULT_ES_KEYWORD_SUFFIX),
+            elasticsearchLocationField: static::stringSetting('elasticsearchLocationField', self::ENV_ES_LOCATION_FIELD) ?? self::DEFAULT_ES_LOCATION_FIELD,
+            elasticsearchWorkspaceField: static::stringSetting('elasticsearchWorkspaceField', self::ENV_ES_WORKSPACE_FIELD) ?? self::DEFAULT_ES_WORKSPACE_FIELD,
+            // a secret: environment only
             sentryDsn: self::readEnv(self::ENV_SENTRY_DSN) ?? self::readEnv(self::ENV_SENTRY_DSN_FALLBACK),
-            queryEnvironments: ($queryEnvironmentsJson = self::readEnv(self::ENV_QUERY_ENVIRONMENTS)) !== null
-                ? IssuesQueryEnvironments::fromJson($queryEnvironmentsJson)
-                : null,
+            queryEnvironments: static::readQueryEnvironments(),
             defaultEnvironment: self::readEnv('APP_STAGE') ?? self::readEnv('APP_ENV') ?? self::FALLBACK_ENVIRONMENT_NAME,
         );
+    }
+
+    /** ISSUES_QUERY_ENVIRONMENTS (JSON), else the committed map `queryEnvironments` (environment => selector), else null */
+    protected static function readQueryEnvironments(): ?IssuesQueryEnvironments
+    {
+        if (($queryEnvironmentsJson = self::readEnv(self::ENV_QUERY_ENVIRONMENTS)) !== null) {
+            return IssuesQueryEnvironments::fromJson($queryEnvironmentsJson);
+        }
+        $committedQueryEnvironments = static::readCommittedSettings()['queryEnvironments'] ?? null;
+        return is_array($committedQueryEnvironments) && $committedQueryEnvironments !== []
+            ? IssuesQueryEnvironments::fromSelectorsByEnvironmentName($committedQueryEnvironments)
+            : null;
+    }
+
+    /**
+     * The committed configuration of the issues log and registry; empty when the application has none. The method a
+     * test overrides.
+     *
+     * @return array<string, mixed>
+     */
+    protected static function readCommittedSettings(): array
+    {
+        try {
+            $committedSettings = Config::get(IssuesLogSettings::CONFIG_PATH);
+        } catch (Throwable) {
+            return [];
+        }
+        return is_array($committedSettings) ? $committedSettings : [];
+    }
+
+    /** The environment variable when set, else the committed value (a string, number or bool), else null */
+    protected static function stringSetting(string $configKey, string $envName): ?string
+    {
+        $value = self::readEnv($envName) ?? static::readCommittedSettings()[$configKey] ?? null;
+        if ($value === null || $value === '' || is_array($value)) {
+            return null;
+        }
+        return is_bool($value) ? ($value ? 'true' : 'false') : (string)$value;
     }
 
     public function isElasticsearch(): bool

@@ -322,4 +322,21 @@ class IssuesLogServiceTest extends TestCase
         $this->assertSame(basename(__FILE__), $records[1]->context['log.origin.file.name']);
         $this->assertFalse($records[1]->context['error.handled']);
     }
+
+    public function testAFailedMessageCarriesItsRetryCountAndStamps(): void
+    {
+        $testHandler = new TestHandler();
+        $captureSubscriber = new IssuesCaptureSubscriber($this->serviceWith($this->loggerWith($testHandler)));
+        $envelope = new \Symfony\Component\Messenger\Envelope(new \stdClass(), [new \Symfony\Component\Messenger\Stamp\RedeliveryStamp(2)]);
+
+        $captureSubscriber->onWorkerMessageFailed(new \Symfony\Component\Messenger\Event\WorkerMessageFailedEvent(
+            $envelope,
+            'async',
+            new \Symfony\Component\Messenger\Exception\HandlerFailedException($envelope, [new RuntimeException('third try failed')])
+        ));
+
+        $context = $testHandler->getRecords()[0]->context;
+        $this->assertSame(2, $context['messenger.retry_count']);
+        $this->assertSame([\Symfony\Component\Messenger\Stamp\RedeliveryStamp::class], $context['messenger.stamps']);
+    }
 }

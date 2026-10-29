@@ -2,6 +2,7 @@
 
 namespace DDD\Symfony\Kernels;
 
+use DDD\Symfony\CompilerPasses\ApplicationServiceSubclassAliasPass;
 use DDD\Symfony\CompilerPasses\FrameworkCommandsYieldPass;
 use DDD\Symfony\CompilerPasses\FreshWorkerStateMiddlewarePass;
 use DDD\Symfony\CompilerPasses\ModuleCompilerPass;
@@ -186,6 +187,9 @@ class DDDKernel extends Kernel
         $container->addCompilerPass(new ModuleCompilerPass());
         // In the ServiceClassCollectorPass we register all class / service name associations
         $container->addCompilerPass(new ServiceClassCollectorPass());
+        // A framework service the application subclasses (IssuesLogService) is ONE instance: typed injections of the
+        // framework class get the application's. Before the monolog pass (BEFORE_OPTIMIZATION) reads the logger tags.
+        $container->addCompilerPass(new ApplicationServiceSubclassAliasPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, 50);
         // Default bindings for the generic quota framework's ports, so an app that does not wire quotas still compiles
         // (the QuotaSubscriber is auto-registered and depends on QuotaConsumerInterface / QuotaAccountResolverInterface).
         // Only fills gaps — an app's own binding always wins.

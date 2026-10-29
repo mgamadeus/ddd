@@ -33,7 +33,16 @@ class RuntimeErrorAggregationQuery extends ValueObject
     /** Groups on error type + throw-site file (wire token of `groupingDimension`, the default) */
     public const string DIMENSION_COARSE = 'COARSE';
 
+    /** Groups on `error.group_hash` — the issues log's root cause (wire token of `groupingDimension`) */
+    public const string DIMENSION_GROUP_HASH = 'GROUP_HASH';
+
     public const string DEFAULT_DIMENSION = self::DIMENSION_COARSE;
+
+    /** The dimensions grouping on one term field, by dimension */
+    public const array SINGLE_TERM_FIELDS_BY_DIMENSION = [
+        self::DIMENSION_FINGERPRINT => 'error.fingerprint_short',
+        self::DIMENSION_GROUP_HASH => 'error.group_hash',
+    ];
 
     /** Reads the production index pattern (wire token of `logstashEnvironment`, the default) */
     public const string ENVIRONMENT_PRODUCTION = 'PRODUCTION';
@@ -253,12 +262,23 @@ class RuntimeErrorAggregationQuery extends ValueObject
         ];
     }
 
+    /**
+     * The aggregatable field of a single-term dimension (FINGERPRINT: `error.fingerprint_short`, GROUP_HASH:
+     * `error.group_hash`); any other dimension falls back to the fingerprint.
+     */
+    public function getSingleTermGroupingField(): string
+    {
+        return $this->fieldNames->keyword(
+            self::SINGLE_TERM_FIELDS_BY_DIMENSION[$this->groupingDimension] ?? self::SINGLE_TERM_FIELDS_BY_DIMENSION[self::DIMENSION_FINGERPRINT]
+        );
+    }
+
     /** @return array<string, mixed> */
     protected function buildFingerprintGroupingAgg(): array
     {
         return [
             'terms' => [
-                'field' => $this->fieldNames->keyword('error.fingerprint_short'),
+                'field' => $this->getSingleTermGroupingField(),
                 'size' => $this->size,
                 'order' => ['_count' => 'desc'],
             ],

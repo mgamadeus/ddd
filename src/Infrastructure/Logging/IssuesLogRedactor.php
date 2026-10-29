@@ -22,20 +22,48 @@ class IssuesLogRedactor
         'credential', 'private_key', 'privatekey', 'session',
     ];
 
+    /** Context keys holding stack traces: free text, sanitised like the message (string arguments carry e-mails) */
+    public const array STACK_TRACE_KEYS = ['error.stack_trace', 'error.full_stack_trace'];
+
     /** Context keys cut in this order when the event is too large */
     public const array CAP_ORDER = ['error.full_stack_trace', 'error.stack_trace', 'error.fingerprint'];
 
     /**
+     * @param int $numberMinDigits Digit runs of at least this length become `[NUMBER]`; 0 = digits are kept (ids and
+     * millisecond timestamps stay readable)
+     */
+    public function __construct(
+        protected int $numberMinDigits = IssuesLogSettings::DEFAULT_SANITIZE_NUMBER_MIN_DIGITS,
+    ) {
+    }
+
+    /**
+     * Secret-looking keys become `[REDACTED]` (also nested); the stack traces are sanitised like the message.
+     *
      * @param array<string|int, mixed> $context
      * @return array<string|int, mixed>
      */
     public function redactContext(array $context): array
     {
+        foreach (self::STACK_TRACE_KEYS as $stackTraceKey) {
+            if (isset($context[$stackTraceKey]) && is_string($context[$stackTraceKey])) {
+                $context[$stackTraceKey] = $this->sanitizeText($context[$stackTraceKey]);
+            }
+        }
+        return $this->redactSecretKeys($context);
+    }
+
+    /**
+     * @param array<string|int, mixed> $context
+     * @return array<string|int, mixed>
+     */
+    protected function redactSecretKeys(array $context): array
+    {
         foreach ($context as $key => $value) {
             if (is_string($key) && $this->isSecretKey($key)) {
                 $context[$key] = self::REDACTED;
             } elseif (is_array($value)) {
-                $context[$key] = $this->redactContext($value);
+                $context[$key] = $this->redactSecretKeys($value);
             }
         }
         return $context;
@@ -52,14 +80,16 @@ class IssuesLogRedactor
         return false;
     }
 
-    /** E-mail addresses, bearer/basic credentials and digit runs of 9+ become placeholders */
+    /** E-mail addresses, bearer/basic credentials and long digit runs (see the constructor) become placeholders */
     public function sanitizeText(string $text): string
     {
         $patterns = [
             '/\b(Bearer|Basic)\s+[A-Za-z0-9._~+\/=-]+/i' => '$1 [REDACTED]',
             '/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/' => '[EMAIL]',
-            '/\d{9,}/' => '[NUMBER]',
         ];
+        if ($this->numberMinDigits > 0) {
+            $patterns['/\d{' . $this->numberMinDigits . ',}/'] = '[NUMBER]';
+        }
         return (string)preg_replace(array_keys($patterns), array_values($patterns), $text);
     }
 

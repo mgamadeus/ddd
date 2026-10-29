@@ -74,6 +74,7 @@ class RuntimeErrorDetailAggregationQuery extends ValueObject
             $this->levels,
             RuntimeErrorAggregationQuery::DEFAULT_SIZE,
             $this->fixedInterval,
+            groupingDimension: $this->groupingDimension,
             workspace: $this->workspace,
             fieldNames: $this->fieldNames,
         );
@@ -87,7 +88,8 @@ class RuntimeErrorDetailAggregationQuery extends ValueObject
     /** @return array<string, mixed> */
     protected function buildFingerprintDetailBody(RuntimeErrorAggregationQuery $innerAggregationQuery, string $trendInterval): array
     {
-        $fingerprintField = $this->fieldNames->keyword('error.fingerprint_short');
+        // FINGERPRINT or GROUP_HASH: one term field
+        $fingerprintField = $innerAggregationQuery->getSingleTermGroupingField();
         $filterClauses = $innerAggregationQuery->buildFilterClauses();
         $filterClauses[] = ['term' => [$fingerprintField => $this->groupKey]];
         return [
