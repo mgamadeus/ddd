@@ -649,7 +649,7 @@ $objectStorage = DDDService::instance()->getService(ObjectStorageService::class)
 $objectStorage?->putObject('reports/42.pdf', $pdfContent, 'application/pdf');
 $url = $objectStorage?->createTemporaryUrl('reports/42.pdf', 600);   // presigned
 // Named stores in config/app/Common/ObjectStorage.php + OBJECT_STORAGE_<NAME>_* (credentials env only);
-// drivers s3 (any S3-compatible service, needs async-aws/s3) and filesystem. Skill: ddd-object-storage-specialist.
+// drivers s3 (any S3-compatible service, needs async-aws/s3) and filesystem. Details: ddd-service-specialist › Object Storage.
 ```
 
 ### Common Value Objects

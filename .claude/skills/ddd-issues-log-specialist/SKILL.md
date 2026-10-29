@@ -241,7 +241,7 @@ the original line and one before and after when the map embeds `sourcesContent`)
 that runs `IssuesShow` in-process gets them from there.
 
 - **The maps are private objects** of the object store `sourceMapsStore` (`Common.Issues`, default `sourcemaps`;
-  `ddd-object-storage-specialist`) under `sourcemaps/<release>/<chunk URL path>.map` — the chunk URL path without the
+  `ddd-service-specialist` › Object Storage) under `sourcemaps/<release>/<chunk URL path>.map` — the chunk URL path without the
   leading slash: `https://x.com/_next/static/chunks/app/page-3f2a.js` → `sourcemaps/<release>/_next/static/chunks/app/page-3f2a.js.map`.
   The build moves the `.map` files out of the public output (and strips `//# sourceMappingURL=`), the release workflow
   uploads them under that key with the release the client reports, a bucket lifecycle rule expires old releases.

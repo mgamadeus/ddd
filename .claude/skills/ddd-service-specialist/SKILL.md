@@ -1,6 +1,6 @@
 ---
 name: ddd-service-specialist
-description: DDD services, business logic, QueryBuilder patterns and rights protection in mgamadeus/ddd — vector/semantic search, Translatable fulltext, concurrency-safe atomic writes, partial writes via updatePartialIgnoringRights, strict insert() throwing on a duplicate key. Covers service instantiation (container, never new, never cache), caller-side vs in-service find(), the null-getService() fix (ReuseParentEntitySet), createQueryBuilder(true), conventions (entity owns non-repo logic, objects not IDs, App vs DDD namespaces), PHPDoc @throws, update/delete overrides, junctions, seeding, async, shared-service throwErrors (enableThrowErrors/restoreThrowErrors), utilities (Config, Cache, Encrypt, IssuesLogService). Use when creating services, writing custom queries, implementing rights, vector or fulltext search, concurrency-safe, partial or collision-checked writes, making a lookup throw instead of return null, or debugging a null getService(), a No-alias-was-set error or a lookup that throws only sometimes.
+description: DDD services, business logic, QueryBuilder and rights in mgamadeus/ddd — vector/semantic search, Translatable fulltext, concurrency-safe atomic writes, updatePartialIgnoringRights, strict insert() throwing on a duplicate key. Covers instantiation (container, never new or cache), caller-side vs in-service find(), the null-getService() fix (ReuseParentEntitySet), createQueryBuilder(true), conventions (entity owns non-repo logic, objects not IDs), PHPDoc @throws, update/delete overrides, junctions, async, shared-service throwErrors (enableThrowErrors/restoreThrowErrors), utilities (Config, Cache, Encrypt, IssuesLogService, ObjectStorage: S3 / Hetzner / MinIO / R2 files, presigned URLs). Use when creating services, writing custom queries, implementing rights, vector or fulltext search, storing files in object storage, concurrency-safe, partial or collision-checked writes, making a lookup throw instead of return null, or debugging a null getService(), No-alias-was-set or a lookup that throws only sometimes.
 metadata:
   author: mgamadeus
   version: "1.1.0"
@@ -772,6 +772,45 @@ $params = JWTPayload::getParametersFromJWT($token);  // false if expired
 
 `IssuesLogService::logThrowable($exception, LogLevel::ERROR, ['orderId' => $order->id])` — log or rethrow, sinks,
 capture, grouping and shipping: see `ddd-issues-log-specialist`.
+
+### Object Storage (files by key: S3, Hetzner, MinIO, R2, filesystem)
+
+Named stores, one interface. A consumer asks for its store by NAME; the provider is configuration.
+
+```php
+/** @var ObjectStorageService $objectStorageService */
+$objectStorageService = DDDService::instance()->getService(ObjectStorageService::class);
+$exportsObjectStorage = $objectStorageService->getObjectStorage('exports');
+if ($exportsObjectStorage === null) {
+    return null;   // not configured: degrade, never fail at boot
+}
+$exportsObjectStorage->putObject("reports/{$report->id}.pdf", $pdfContent, 'application/pdf');
+$downloadUrl = $exportsObjectStorage->createTemporaryUrl("reports/{$report->id}.pdf", 600);   // presigned GET
+```
+
+- **`DDD\Infrastructure\ObjectStorage\ObjectStorage`:** `putObject($key, $content, ?$contentType)`,
+  `getObjectContent($key): ?string` (null = missing, not an error), `deleteObject($key)` (missing is fine),
+  `objectExists($key)`, `listObjects($keyPrefix = '', $limit = 1000): ObjectStorageObjects` (key order;
+  `{key, size, lastModified}`, `getKeys()`), `createTemporaryUrl($key, $expiresInSeconds = 3600)`. Keys are
+  `/`-separated without a leading slash; the store's prefix is applied by the adapter. A backend failure throws
+  `InternalErrorException` naming store, operation and key.
+- **`ObjectStorageService`:** `getObjectStorage($name): ?ObjectStorage` (null without a driver; throws only for an
+  incomplete store or a missing driver package), `isObjectStorageConfigured($name)`, `setObjectStorage($name, $store)`
+  for tests.
+- **Adapters:** driver `s3` → `S3CompatibleObjectStorage` (AWS S3, Hetzner Object Storage, MinIO, Cloudflare R2,
+  SeaweedFS) on **`async-aws/s3`, which Core only suggests** — the application requires it, else the store fails with
+  "needs the package async-aws/s3"; driver `filesystem` → `FilesystemObjectStorage` (tests, development; a key
+  leaving the root is refused).
+- **Configuration:** `config/app/Common/ObjectStorage.php` →
+  `['stores' => ['<name>' => ['driver', 'endpoint', 'region', 'bucket', 'pathStyle', 'prefix', 'path']]]`;
+  `OBJECT_STORAGE_<NAME>_<SETTING>` overrides per host (NAME upper case, other characters `_`); credentials
+  `OBJECT_STORAGE_<NAME>_ACCESS_KEY` / `_SECRET_KEY` from the environment only. Hetzner: endpoint
+  `https://<location>.your-objectstorage.com`, region = location; R2: region `auto`; MinIO / SeaweedFS: `pathStyle: true`;
+  AWS: no endpoint.
+- **Consumers:** the issues log reads source maps from the store `sourcemaps` (`ddd-issues-log-specialist`); uploads,
+  exports and PDFs get a store each or share one with key prefixes.
+- **Tests:** `tests/Infrastructure/ObjectStorage/ObjectStorageContractTestCase` — one subclass per adapter; the S3 run
+  uses the harness's SeaweedFS (`DDD_TEST_S3_ENDPOINT=http://127.0.0.1:9212`).
 
 ---
 

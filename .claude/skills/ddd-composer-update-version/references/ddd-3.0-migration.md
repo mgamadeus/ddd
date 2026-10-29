@@ -224,8 +224,7 @@ Unchanged:
     `objectExists`, `listObjects`, `createTemporaryUrl`), `S3CompatibleObjectStorage` (AWS, Hetzner, MinIO, R2; needs
     `async-aws/s3`, which Core only suggests), `FilesystemObjectStorage`; named stores via
     `ObjectStorageService::getObjectStorage($name)` (null = not configured), configured in
-    `config/app/Common/ObjectStorage.php` and `OBJECT_STORAGE_<NAME>_*` (credentials environment only). Skill
-    `ddd-object-storage-specialist` (apps that link the Core skills one by one add the link).
+    `config/app/Common/ObjectStorage.php` and `OBJECT_STORAGE_<NAME>_*` (credentials environment only).
   - `DDD\Infrastructure\Logging\SourceMaps\`: `SourceMapParser` (regular and indexed maps), `SourceMapResolver::resolveFrames()`
     → `ResolvedFrames`, reading `sourcemaps/<release>/<chunk path>.map` from the store `sourceMapsStore` (default
     `sourcemaps`); settings `sourceMapsStore`, `sourceMapsCacheDirectory`, `sourceMapsCacheMegabytes`.
@@ -237,3 +236,5 @@ Unchanged:
   database scope (`app:db:read --scope=LEGACY_DB` where no `DB_LEGACY_DB_CONNECTION_*` is set) fails with a
   `DatabaseConfigurationException` naming the variable instead of a `DialectResolver::forDriver()` type error;
   `EntityManagerFactory::isScopeConfigured()`.
+- 3.12.1 — docs: the object storage documentation moved into `ddd-service-specialist` › Object Storage; the skill
+  `ddd-object-storage-specialist` is gone — applications remove their link to it.
