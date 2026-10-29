@@ -173,3 +173,6 @@ Unchanged:
   the slot. New `IssuesGroupDiscriminatorInterface`: a throwable can name its own root-cause discriminator
   (`CronFailedException`: one issues group per Cron and kind). `Cron::persistCron()` is now
   `persistCronColumns(string ...$propertyNames)`.
+- 3.7.8 — descriptions (OpenAPI, MCP, property and enum docs): inline `{@see Foo::bar()}` / `{@link …}` render as the
+  referenced name in backticks (a URL as is) instead of cutting the text at their closing brace
+  (`ReflectionDocComment::renderInlineReferenceTags()`). A subclass that rendered them itself keeps working.

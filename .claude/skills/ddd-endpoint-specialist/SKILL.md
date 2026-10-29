@@ -417,7 +417,8 @@ Always use `T[]`. A list of objects → `/** @var SomeClass[] */` → `items: {$
 
 ### Description & examples
 
-The property **description** is the `@var` docblock text *after* the type token — so `@var string[] Keyword names` → description `Keyword names`; a malformed `@var array<string> …` leaks the unparsed `<string>` into the description. `@example` lines become OpenAPI `examples`.
+The property **description** is the `@var` docblock text *after* the type token — so `@var string[] Keyword names` → description `Keyword names`; a malformed `@var array<string> …` leaks the unparsed `<string>` into the description. `@example` lines become OpenAPI `examples`. Inline `{@see Foo::bar()}` / `{@link Foo}` in a description (property, enum case, controller method) render as
+`` `bar` `` / `` `Foo` ``; a `{@link https://…}` stays the URL — reference freely, the generated text stays readable.
 
 ### Attribute effects on the documented property
 
