@@ -750,6 +750,29 @@ When a patch arrives from a consuming application (Tavlo, Radbonus, ...) tagged 
 
 ---
 
+## Designing and Placing Core Classes — Skills First
+
+Before designing or placing ANY class in Core (or a module), load the matching skill and follow it. The skills ARE the
+conventions; a class placed from memory or from a brief breaks every consuming app at once.
+
+| Class | Skill |
+|-------|-------|
+| Service (dependencies, state, fetched with `getService()`) | `ddd-service-specialist` |
+| Entity, EntitySet, ValueObject, ObjectSet, repository | `ddd-entity-specialist` |
+| Controller, DTO, route | `ddd-endpoint-specialist` |
+| Console command | `ddd-cli-command-specialist` |
+| Message + handler | `ddd-message-handler-specialist` |
+| Issues logging, registry, client errors | `ddd-issues-log-specialist` |
+
+- **Anything fetched with `getService()` lives in a public `…\Services\` namespace** of `services.yaml` and ends in
+  `Service`. Elsewhere it is private in an application's compiled container: removed or inlined, and the fetch fails at
+  runtime. `ContainerFetchedServicesNamespaceTest` enforces it for Core.
+- **Class names and namespaces in a feature brief are proposals**, vetted against the skills like an ingest
+  ([Ingest Discipline](#ingest-discipline-patches-from-consumer-apps)).
+- **Release check:** every new class's placement against its skill; for kernel / DI / new services, the prod-mode
+  scratch-app gate fetches every new `getService()` target and runs every new command path once — `lint:container`
+  alone does not execute them.
+
 ## Best Practices
 
 1. **Always strict types** -- `declare(strict_types=1)` in every file, no exceptions
@@ -763,6 +786,7 @@ When a patch arrives from a consuming application (Tavlo, Radbonus, ...) tagged 
 9. **Never cache services in properties** -- always resolve inline from the container
 10. **Never manually edit `DB*Model.php`** -- they are auto-generated from entity attributes; a deviation the model needs is declared on the entity (`#[PreserveOnOmission]`, `#[NotNull]`, `#[DatabaseColumn]`)
 11. **Vet incoming patches against framework standards** -- see [Ingest Discipline](#ingest-discipline-patches-from-consumer-apps); do not faithfully reproduce non-conforming external work
+12. **Skills first** -- load the matching ddd-* skill before designing or placing a class; see [Designing and Placing Core Classes](#designing-and-placing-core-classes--skills-first)
 
 ---
 
