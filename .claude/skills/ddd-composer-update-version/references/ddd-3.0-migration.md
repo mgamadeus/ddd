@@ -253,3 +253,6 @@ Unchanged:
   "service or alias has been removed or inlined". The old name stays as a deprecated subclass for its constants; an
   application that made it public in its own services.yaml removes that line. Core's test suite now checks that every
   `getService(X::class)` target lies in a public service namespace of services.yaml.
+- 3.12.5 — docs: `ddd-cli-command-specialist` — `bin/console` (cache:clear, `app:*`, composer scripts) runs as the
+  PHP-FPM / worker user, never as root; a root run rebuilds `var/cache` as root and FPM / workers fail with "Could not
+  create proxy directory …/doctrine/orm/Proxies" (repair: `chown -R <uid>:<gid> var/cache`).
