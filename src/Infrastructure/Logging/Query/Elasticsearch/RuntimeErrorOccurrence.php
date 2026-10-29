@@ -11,14 +11,19 @@ use DDD\Domain\Base\Entities\ValueObject;
  */
 class RuntimeErrorOccurrence extends ValueObject
 {
+    /** The occurrence timestamp, ISO-8601 as ES returns it (`_source["@timestamp"]`). */
     public ?string $timestamp = null;
 
+    /** The occurrence's error message, redacted (`_source["message"]`). */
     public ?string $message = null;
 
+    /** The occurrence's stack trace, redacted (`_source["error.stack_trace"]`). */
     public ?string $stackTrace = null;
 
+    /** The occurrence's route name, redacted (`_source["route_name"]`); null for CLI/Messenger errors. */
     public ?string $route = null;
 
+    /** The exception class, e.g. `BadRequestException` (`_source["error.type"]`). */
     public ?string $errorType = null;
 
     /**

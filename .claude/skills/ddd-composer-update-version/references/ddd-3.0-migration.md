@@ -230,3 +230,10 @@ Unchanged:
     → `ResolvedFrames`, reading `sourcemaps/<release>/<chunk path>.map` from the store `sourceMapsStore` (default
     `sourcemaps`); settings `sourceMapsStore`, `sourceMapsCacheDirectory`, `sourceMapsCacheMegabytes`.
     `IssueEvent::getClientFrames()`; `app:issues:show --resolve`.
+- 3.12.0 — `ElasticsearchIssuesQueryBackend::search(…, ?int $timeoutSeconds = null)` (a per-call response timeout
+  for bulk reads); `setErrorBodyMaxLength()` and `app:runtime-errors:probe --full-error-body`; the runtime-error result
+  objects (`RuntimeErrorGroup`, `RuntimeErrorGroupDetail`, `RuntimeErrorOccurrence`, `RuntimeErrorRouteCount`,
+  `RuntimeErrorTrendBucket`) document every field for the generated OpenAPI / TypeScript models. Fix: an unconfigured
+  database scope (`app:db:read --scope=LEGACY_DB` where no `DB_LEGACY_DB_CONNECTION_*` is set) fails with a
+  `DatabaseConfigurationException` naming the variable instead of a `DialectResolver::forDriver()` type error;
+  `EntityManagerFactory::isScopeConfigured()`.

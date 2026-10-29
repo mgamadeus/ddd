@@ -11,8 +11,10 @@ use DDD\Domain\Base\Entities\ValueObject;
  */
 class RuntimeErrorTrendBucket extends ValueObject
 {
+    /** The bucket's start time, ISO-8601 (`key_as_string` from the date_histogram bucket). */
     public ?string $timestamp = null;
 
+    /** Occurrences of the searched levels (default ERROR/CRITICAL) in this interval (`doc_count`). */
     public int $count = 0;
 
     /**

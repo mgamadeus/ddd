@@ -135,4 +135,17 @@ class RunReadOnlyQueryTest extends IntegrationTestCase
 
         $this->assertSame(Command::INVALID, $exitCode);
     }
+
+    public function testAnUnconfiguredScopeIsReportedInsteadOfATypeError(): void
+    {
+        $commandTester = new CommandTester(new RunReadOnlyQuery());
+
+        $exitCode = $commandTester->execute(['statement' => 'SELECT 1', '--scope' => 'LEGACY_DB']);
+
+        self::assertSame(Command::INVALID, $exitCode);
+        self::assertStringContainsString('The database scope LEGACY_DB is not configured', $commandTester->getDisplay());
+        self::assertStringContainsString('--scope=DEFAULT', $commandTester->getDisplay());
+        $this->expectException(\DDD\Domain\Base\Repo\DB\Dialect\DatabaseConfigurationException::class);
+        \DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory::getDialect('LEGACY_DB');
+    }
 }

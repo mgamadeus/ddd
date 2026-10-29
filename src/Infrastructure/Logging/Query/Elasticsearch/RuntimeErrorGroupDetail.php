@@ -12,14 +12,25 @@ use DDD\Domain\Base\Entities\ValueObject;
  */
 class RuntimeErrorGroupDetail extends ValueObject
 {
+    /** The shared group fields, assembled by delegation to {@see RuntimeErrorGroup::buildFromBucket()}. */
     public RuntimeErrorGroup $group;
 
+    /**
+     * The timestamp of the LAST occurrence in the window — the `last_seen` max-agg `value_as_string`,
+     * ISO-8601 as ES returns it. Null when the `last_seen` sub-agg is absent (empty detail path).
+     */
     public ?string $lastSeenTimestamp = null;
 
+    /** The per-group trend series for the window, built from the `trend` date-histogram sub-agg. */
     public RuntimeErrorTrend $perGroupTrend;
 
+    /** The recent occurrences sample, built from the `recent_occurrences` top-hits sub-agg. */
     public RuntimeErrorOccurrences $recentOccurrences;
 
+    /**
+     * The per-route breakdown of occurrences in this group, from the `by_route` terms sub-agg (COARSE); an empty
+     * set under FINGERPRINT and GROUP_HASH, which request no `by_route` sub-agg. Always initialised.
+     */
     public RuntimeErrorRouteCounts $routeBreakdown;
 
     /**

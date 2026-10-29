@@ -13,38 +13,55 @@ use DDD\Domain\Base\Entities\ValueObject;
  */
 class RuntimeErrorGroup extends ValueObject
 {
+    /** How many occurrences of the searched levels (default ERROR/CRITICAL) this group had in the window (the bucket `doc_count`). */
     public int $count = 0;
 
+    /** The exception class, e.g. `BadRequestException` (`_source["error.type"]`). */
     public ?string $errorType = null;
 
+    /** The newest occurrence's message, redacted (`_source["message"]`). */
     public ?string $latestMessage = null;
 
+    /** The newest occurrence's `@timestamp`, ISO-8601 as ES returns it (`_source["@timestamp"]`). */
     public ?string $latestTimestamp = null;
 
+    /** The newest occurrence's route name, redacted (`_source["route_name"]`); null for CLI/Messenger errors. */
     public ?string $route = null;
 
+    /** The newest occurrence's stack trace, redacted (`_source["error.stack_trace"]`). */
     public ?string $stackTrace = null;
 
+    /** Distinct values of the location field (`elasticsearchLocationField`, default `lastLocationId`) over the window (`affected_locations.value`); 0 when no location is attached. */
     public int $affectedLocationCount = 0;
 
-    /** The group key: `error.fingerprint_short` (FINGERPRINT) or `<type>|<file>` (COARSE) */
+    /** The group key, by grouping dimension: `error.fingerprint_short` (FINGERPRINT), `<type>|<file>` (COARSE) or `error.group_hash` (GROUP_HASH); the key of the detail request. */
     public ?string $displayFingerprint = null;
 
-    /** `error.fingerprint_hash` of the newest occurrence (FINGERPRINT only) */
+    /** `error.fingerprint_hash` of the newest occurrence (FINGERPRINT and GROUP_HASH); null under COARSE, where one occurrence's hash is no group identity. */
     public ?string $canonicalFingerprint = null;
 
+    /**
+     * The earliest occurrence timestamp of this group in the window — the `first_seen` min-agg
+     * `value_as_string`, ISO-8601 as ES returns it. Null when the `first_seen` sub-agg is absent (older indices).
+     */
     public ?string $firstSeenTimestamp = null;
 
+    /** The PHP exception/error code (`_source["error.code"]`); null when absent. */
     public ?string $errorCode = null;
 
+    /** The PHP error kind, e.g. `Error` or `Exception` (`_source["error.kind"]`); null when absent. */
     public ?string $errorKind = null;
 
+    /** The file where the exception was thrown (`_source["log.origin.file.name"]`); null when absent. */
     public ?string $throwSiteFileName = null;
 
+    /** The line number where the exception was thrown (`_source["log.origin.file.line"]`); null when absent. */
     public ?int $throwSiteLine = null;
 
+    /** The application environment, e.g. `prod` (`_source["environment"]`); null when absent. */
     public ?string $environment = null;
 
+    /** The dev workspace or stage that produced this error, e.g. `bsu`, from the workspace field (`elasticsearchWorkspaceField`: `workspace` for legacy lines, `service.workspace` for the issues log's own); null when absent. Read un-redacted: framework-derived, no PII. */
     public ?string $workspace = null;
 
     /**

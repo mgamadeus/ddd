@@ -744,6 +744,10 @@ not turn the registry on).
   `error.group_hash` (the issues log's root cause — e.g. one group per failing Cron); the detail takes the same
   dimension and the group key.
 - `findErrorTrend($hours, $levels, $fixedInterval, $logstashEnvironment, $workspace)` → `RuntimeErrorTrend`.
+- A bulk read over a long window (thousands of documents per request) passes its own response timeout:
+  `ElasticsearchIssuesQueryBackend::search($indexPattern, $searchBody, timeoutSeconds: 120)`; dashboards keep
+  `queryTimeoutSeconds` (10). A failed search's exception carries the first 500 characters of the error response
+  (`setErrorBodyMaxLength(null)` for all of it — `app:runtime-errors:probe --full-error-body`).
 - `findErrorGroupDetail($groupKey, …, $sampleSize)` → `RuntimeErrorGroupDetail` (last seen, gap-free trend, newest
   occurrences, per-route breakdown). Message, stack trace and route are redacted on read (`RuntimeErrorFieldRedactor`).
 
@@ -756,7 +760,7 @@ php bin/console app:runtime-errors:extract --logstashEnv=DEVELOPMENT --workspace
 #      errorCode, errorKind, firstSeen, lastSeen, fingerprint, stackTrace}]}
 #   options: --logstashEnv=PRODUCTION|DEVELOPMENT --account --location --hours=24 --minutes --workspace
 #            --level=ERROR,CRITICAL --limit=20; unknown --logstashEnv = exit 2, a failed query = exit 1
-php bin/console app:runtime-errors:probe [--hours=24] [--size=5] [--compositeSize=10] [--index=…]
+php bin/console app:runtime-errors:probe [--hours=24] [--size=5] [--compositeSize=10] [--index=…] [--full-error-body]
 #   hit count, top fingerprints, trend buckets, and which grouping / field names work on this index
 ```
 

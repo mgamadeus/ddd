@@ -45,6 +45,19 @@ class ElasticsearchIssuesQueryBackend implements IssuesQueryBackend
 
     protected ?ClientInterface $httpClient = null;
 
+    /** The error body length in a failed search's exception message (`app:runtime-errors:probe --full-error-body`) */
+    public const int DEFAULT_ERROR_BODY_MAX_LENGTH = 500;
+
+    /** @var int|null Characters of an error response kept in the exception message; null = all */
+    protected ?int $errorBodyMaxLength = self::DEFAULT_ERROR_BODY_MAX_LENGTH;
+
+    /** Characters of an error response kept in a failed search's exception message; null = the full body */
+    public function setErrorBodyMaxLength(?int $errorBodyMaxLength): static
+    {
+        $this->errorBodyMaxLength = $errorBodyMaxLength;
+        return $this;
+    }
+
     public function __construct(protected IssuesRegistrySettings $settings, ?ClientInterface $httpClient = null)
     {
         $this->httpClient = $httpClient;
@@ -100,15 +113,21 @@ class ElasticsearchIssuesQueryBackend implements IssuesQueryBackend
      * Runs a `_search` body (Elasticsearch query DSL, sent as is) and returns the decoded response.
      *
      * @param array<string, mixed> $searchBody
+     * @param int|null $timeoutSeconds This call's response timeout (a bulk export over a long window); null = the
+     *     configured `queryTimeoutSeconds`. The connect timeout stays the configured one.
      * @return array<string, mixed>
      * @throws InternalErrorException The cluster answered with an error or was not reachable
      */
-    public function search(string $indexPattern, array $searchBody): array
+    public function search(string $indexPattern, array $searchBody, ?int $timeoutSeconds = null): array
     {
         $path = '/' . implode(',', array_map('rawurlencode', explode(',', $indexPattern))) . '/_search';
+        $requestOptions = $this->getRequestOptions();
+        if ($timeoutSeconds !== null) {
+            $requestOptions['timeout'] = max(1, $timeoutSeconds);
+        }
         try {
             $response = $this->getHttpClient()->request('POST', $this->settings->queryUrl . $path, [
-                ...$this->getRequestOptions(),
+                ...$requestOptions,
                 'body' => json_encode($searchBody, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
                 'http_errors' => false,
             ]);
@@ -121,7 +140,7 @@ class ElasticsearchIssuesQueryBackend implements IssuesQueryBackend
             throw new InternalErrorException(sprintf(
                 'Elasticsearch query failed: HTTP %d %s',
                 $response->getStatusCode(),
-                mb_substr($responseBody, 0, 500)
+                $this->errorBodyMaxLength !== null ? mb_substr($responseBody, 0, $this->errorBodyMaxLength) : $responseBody
             ));
         }
         return $decoded;

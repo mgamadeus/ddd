@@ -11,8 +11,10 @@ use DDD\Domain\Base\Entities\ValueObject;
  */
 class RuntimeErrorRouteCount extends ValueObject
 {
+    /** The route name from `route_name.keyword`, redacted; `"—"` for route-less occurrences. */
     public ?string $route = null;
 
+    /** How many occurrences of this group surfaced on this route in the window (`doc_count`). */
     public int $count = 0;
 
     /**

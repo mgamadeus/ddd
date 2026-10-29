@@ -184,6 +184,7 @@ class EntityManagerFactory
         $cache = Cache::instance('DOCTRINE')->getCacheAdapter();
         $metaDataCache = Cache::instance('DOCTRINE_METADATA')->getCacheAdapter();
         $configSettings = self::getDBConfigForScope($scope);
+        self::assertScopeIsConfigured($scope, $configSettings);
 
         $config = ORMSetup::createAttributeMetadataConfiguration(
             [__DIR__ . '/../Domain'], // Adjusted path for correctness
@@ -235,7 +236,33 @@ class EntityManagerFactory
         if (isset(self::$instances[$scope])) {
             return self::$dialects[$scope] = DialectResolver::forConnection(self::$instances[$scope]->getConnection());
         }
-        return DialectResolver::forDriver(self::getDBConfigForScope($scope)['connectionParams']['driver']);
+        $configSettings = self::getDBConfigForScope($scope);
+        self::assertScopeIsConfigured($scope, $configSettings);
+        return DialectResolver::forDriver($configSettings['connectionParams']['driver']);
+    }
+
+    /** Whether the scope has a connection configured (`DB_<SCOPE>_CONNECTION_DRIVER`) */
+    public static function isScopeConfigured(string $scope = self::SCOPE_DEFAULT): bool
+    {
+        return (string)(self::getDBConfigForScope($scope)['connectionParams']['driver'] ?? '') !== '';
+    }
+
+    /**
+     * An unconfigured scope fails with a message naming the variable, not with a type error deep in the dialect
+     * resolution. Environments where the legacy tables live in the default database configure no LEGACY_DB scope.
+     *
+     * @param array<string, mixed> $configSettings As returned by getDBConfigForScope()
+     * @throws DatabaseConfigurationException
+     */
+    protected static function assertScopeIsConfigured(string $scope, array $configSettings): void
+    {
+        if ((string)($configSettings['connectionParams']['driver'] ?? '') === '') {
+            throw new DatabaseConfigurationException(sprintf(
+                'The database scope %s is not configured: DB_%s_CONNECTION_DRIVER (and the other DB_%s_CONNECTION_* '
+                . 'variables) are not set in this environment.',
+                $scope, $scope, $scope
+            ));
+        }
     }
 
     /**

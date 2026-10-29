@@ -35,15 +35,30 @@ class RuntimeErrorsProbe extends Command
             ->addOption('hours', null, InputOption::VALUE_OPTIONAL, 'Look-back window in hours', '24')
             ->addOption('size', null, InputOption::VALUE_OPTIONAL, 'Number of top fingerprint groups to show', '5')
             ->addOption('compositeSize', null, InputOption::VALUE_OPTIONAL, 'Top N buckets to print for the composite grouping probe', '10')
-            ->addOption('index', null, InputOption::VALUE_OPTIONAL, 'Override the index pattern to query');
+            ->addOption('index', null, InputOption::VALUE_OPTIONAL, 'Override the index pattern to query')
+            ->addOption('full-error-body', null, InputOption::VALUE_NONE, 'Print the whole Elasticsearch error response instead of its first 500 characters');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $symfonyStyle = new SymfonyStyle($input, $output);
         /** @var RuntimeErrorsService $runtimeErrorsService */
         $runtimeErrorsService = DDDService::instance()->getService(RuntimeErrorsService::class);
         $elasticsearchIssuesQueryBackend = $runtimeErrorsService->getElasticsearchIssuesQueryBackend();
+        if (!$input->getOption('full-error-body')) {
+            return $this->runProbes($input, $output, $elasticsearchIssuesQueryBackend);
+        }
+        // the backend is shared: the full body holds for this probe only
+        $elasticsearchIssuesQueryBackend->setErrorBodyMaxLength(null);
+        try {
+            return $this->runProbes($input, $output, $elasticsearchIssuesQueryBackend);
+        } finally {
+            $elasticsearchIssuesQueryBackend->setErrorBodyMaxLength(ElasticsearchIssuesQueryBackend::DEFAULT_ERROR_BODY_MAX_LENGTH);
+        }
+    }
+
+    protected function runProbes(InputInterface $input, OutputInterface $output, ElasticsearchIssuesQueryBackend $elasticsearchIssuesQueryBackend): int
+    {
+        $symfonyStyle = new SymfonyStyle($input, $output);
         $lookBackHours = (int)$input->getOption('hours');
         $topGroupsSize = (int)$input->getOption('size');
         $compositeProbeSize = (int)$input->getOption('compositeSize');

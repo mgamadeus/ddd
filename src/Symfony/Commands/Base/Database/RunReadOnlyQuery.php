@@ -85,6 +85,18 @@ class RunReadOnlyQuery extends Command
             return Command::INVALID;
         }
 
+        if (!EntityManagerFactory::isScopeConfigured($scope)) {
+            $output->writeln(sprintf(
+                '<error>The database scope %s is not configured in this environment (no DB_%s_CONNECTION_* variables)%s.</error>',
+                $scope,
+                $scope,
+                $scope !== EntityManagerFactory::SCOPE_DEFAULT
+                    ? ' — where its tables live in the default database, read them with --scope=' . EntityManagerFactory::SCOPE_DEFAULT
+                    : ''
+            ));
+            return Command::INVALID;
+        }
+
         $statementToExecute = $this->appendLimitIfMissing($statement, $rowLimit);
 
         try {
