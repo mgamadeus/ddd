@@ -236,6 +236,15 @@ Also applied to **fresh ADD** of VECTOR columns so search code never encounters 
 
 **Limitation:** NOT NULL VECTOR ADDs on populated tables aren't fully handled — the ADD COLUMN fails before zero-fill can run. Typical DDD vector columns are nullable; if you need NOT NULL the path would be ADD-nullable → backfill → MODIFY to enforce NOT NULL (currently not implemented).
 
+## FK Actions on the Base of a STORED Generated Column
+
+The target FK actions are per dialect (`DatabaseForeignKey::getOnUpdateActionForDialect()` / `…OnDelete…`): PostgreSQL
+gets the declared actions, MariaDB RESTRICT for the actions that write the base column (ON UPDATE CASCADE / SET NULL /
+SET DEFAULT, ON DELETE SET NULL / SET DEFAULT) and ON DELETE CASCADE with `ALGORITHM=COPY`. Full table:
+`ddd-entity-specialist` › Virtual (generated) columns. A database built with ≤ 3.13.2 has RESTRICT for both actions on
+such FKs (every dialect); the diff proposes `RESTRICT → CASCADE` for ON DELETE on both engines and, on PostgreSQL, for
+ON UPDATE too — a FK DROP + ADD, metadata-only on PostgreSQL, a table copy on MariaDB.
+
 ## Severity Classification
 
 `classifySeverity(DBTableDiff): string`:
@@ -345,6 +354,9 @@ The `SET FOREIGN_KEY_CHECKS=0/1` wrap is in **`applyDiffs`** (around the whole a
    - Column MODIFY with `requiresFullReset = true` (VECTOR re-dimensioning)
    - Virtual column MODIFY (always DROP+ADD — MySQL forbids in-place ALTER on generation expressions)
    - Index ADD with `indexType === DatabaseIndex::TYPE_FULLTEXT`
+   - MariaDB: FK ADD / MODIFY with ON DELETE CASCADE on the base of a STORED generated column — needs `ALGORITHM=COPY`
+     (in place it fails with `ERROR 138` under `FOREIGN_KEY_CHECKS=0`; per-dialect FK action rules: `ddd-entity-specialist`
+     › Virtual (generated) columns)
 
 Bypass is **only** via the `$bypassProductionGuard = true` parameter on `applyDiff()`/`applyDiffs()`. By design the parameter is **not** exposed through any HTTP DTO — the admin UI cannot bypass. CLI commands and Symfony Messenger handlers (e.g. an Agent running pt-osc orchestration) can pass `true`.
 

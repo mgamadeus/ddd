@@ -663,7 +663,8 @@ class PostgresDdlRenderer implements DdlRenderer
             . "REFERENCES \"$foreignKey->foreignTable\" (\"$foreignKey->foreignIdColumn\") "
             // DatabaseForeignKey::ACTION_* strings (CASCADE, NO ACTION, SET NULL, RESTRICT, SET DEFAULT) are already
             // valid PostgreSQL referential-action keywords — no per-dialect mapping needed.
-            . "ON UPDATE $foreignKey->onUpdateAction ON DELETE $foreignKey->onDeleteAction" . $deferrableClause;
+            . 'ON UPDATE ' . $foreignKey->getOnUpdateActionForDialect(SqlDialect::POSTGRES)
+            . ' ON DELETE ' . $foreignKey->getOnDeleteActionForDialect(SqlDialect::POSTGRES) . $deferrableClause;
     }
 
     /**
@@ -698,11 +699,12 @@ class PostgresDdlRenderer implements DdlRenderer
             if (!$foreignKey->applyForeignKeyConstraint) {
                 continue;
             }
-            if ($foreignKey->onDeleteAction === DatabaseForeignKey::ACTION_CASCADE) {
+            $onDeleteAction = $foreignKey->getOnDeleteActionForDialect(SqlDialect::POSTGRES);
+            if ($onDeleteAction === DatabaseForeignKey::ACTION_CASCADE) {
                 $hasCascade = true;
             } elseif (
-                $foreignKey->onDeleteAction === DatabaseForeignKey::ACTION_SET_NULL
-                || $foreignKey->onDeleteAction === DatabaseForeignKey::ACTION_SET_DEFAULT
+                $onDeleteAction === DatabaseForeignKey::ACTION_SET_NULL
+                || $onDeleteAction === DatabaseForeignKey::ACTION_SET_DEFAULT
             ) {
                 $hasSetNullOrDefault = true;
             }

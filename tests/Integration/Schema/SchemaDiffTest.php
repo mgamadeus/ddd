@@ -14,6 +14,8 @@ use DDD\Domain\Common\Services\DatabaseSchemaIntrospectionService;
 use DDD\Domain\Common\Services\PostgresSchemaIntrospectionService;
 use DDD\Tests\Integration\Fixtures\Entities\CounterRows\CounterRow;
 use DDD\Tests\Integration\Fixtures\Entities\SpatialRows\SpatialRow;
+use DDD\Tests\Integration\Fixtures\Entities\StoredBaseRows\StoredBaseChild;
+use DDD\Tests\Integration\Fixtures\Entities\StoredBaseRows\StoredBaseParent;
 use DDD\Tests\Integration\Fixtures\Entities\TieBreakerRows\TieBreakerChild;
 use DDD\Tests\Integration\Fixtures\Entities\TieBreakerRows\TieBreakerGrandchild;
 use DDD\Tests\Integration\Fixtures\Entities\TieBreakerRows\TieBreakerParent;
@@ -33,6 +35,8 @@ class SchemaDiffTest extends IntegrationTestCase
         TieBreakerChild::class,
         TieBreakerGrandchild::class,
         TriggerRow::class,
+        StoredBaseParent::class,
+        StoredBaseChild::class,
     ];
 
     /** Every table the diff is compared on (managed + the shared fixtures, which are only read) */
@@ -44,6 +48,8 @@ class SchemaDiffTest extends IntegrationTestCase
         TieBreakerChild::class,
         TieBreakerGrandchild::class,
         TriggerRow::class,
+        StoredBaseParent::class,
+        StoredBaseChild::class,
     ];
 
     protected function setUp(): void
@@ -300,6 +306,60 @@ class SchemaDiffTest extends IntegrationTestCase
 
         $this->assertStringContainsString('FOREIGN KEY', $this->diffOf($tableDiffs, 'TieBreakerChildren')->sql);
         $this->applyAndAssertConverged($tableDiffs);
+    }
+
+    /** The live ON UPDATE / ON DELETE rule of the StoredBaseChildren FK */
+    protected function fetchStoredBaseChildForeignKeyRules(): array
+    {
+        $row = static::connection()->fetchAssociative($this->isPostgres()
+            ? "SELECT confupdtype AS update_rule, confdeltype AS delete_rule, conname AS constraint_name FROM pg_constraint WHERE contype = 'f' AND conrelid = '\"StoredBaseChildren\"'::regclass"
+            : "SELECT UPDATE_RULE AS update_rule, DELETE_RULE AS delete_rule, CONSTRAINT_NAME AS constraint_name FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'StoredBaseChildren'");
+        $this->assertIsArray($row);
+        // pg_constraint codes: a = NO ACTION, r = RESTRICT, c = CASCADE, n = SET NULL, d = SET DEFAULT
+        $pgCodes = ['a' => 'NO ACTION', 'r' => 'RESTRICT', 'c' => 'CASCADE', 'n' => 'SET NULL', 'd' => 'SET DEFAULT'];
+        return [
+            'update' => $this->isPostgres() ? $pgCodes[$row['update_rule']] : $row['update_rule'],
+            'delete' => $this->isPostgres() ? $pgCodes[$row['delete_rule']] : $row['delete_rule'],
+            'constraintName' => $row['constraint_name'],
+        ];
+    }
+
+    /**
+     * A FK on the base of a STORED generated column (`IFNULL(parentId, 0)` in a composite UNIQUE index) declaring
+     * CASCADE for both actions: PostgreSQL gets CASCADE / CASCADE, MariaDB ON DELETE CASCADE with ON UPDATE RESTRICT
+     * (ON UPDATE CASCADE fails there with ERROR 1901) — and deleting the parent deletes the child on both.
+     */
+    public function testAForeignKeyOnTheBaseOfAStoredGeneratedColumnKeepsOnDeleteCascade(): void
+    {
+        $foreignKeyRules = $this->fetchStoredBaseChildForeignKeyRules();
+        $this->assertSame('CASCADE', $foreignKeyRules['delete']);
+        $this->assertSame($this->isPostgres() ? 'CASCADE' : 'RESTRICT', $foreignKeyRules['update']);
+
+        static::insertRow('StoredBaseParents', ['id' => 1, 'label' => 'parent']);
+        static::insertRow('StoredBaseChildren', ['id' => 1, 'storedBaseParentId' => 1, 'label' => 'child']);
+        static::insertRow('StoredBaseChildren', ['id' => 2, 'storedBaseParentId' => null, 'label' => 'orphan']);
+        static::connection()->executeStatement('DELETE FROM ' . static::quoteIdentifier('StoredBaseParents') . ' WHERE ' . static::quoteIdentifier('id') . ' = 1');
+        $this->assertSame(1, (int)static::connection()->fetchOne('SELECT COUNT(*) FROM ' . static::quoteIdentifier('StoredBaseChildren')));
+    }
+
+    /** A table built by ≤ 3.13.2 (ON DELETE RESTRICT on such a FK) gets RESTRICT → CASCADE from the diff, on both engines */
+    public function testARestrictBuiltByTheOldDowngradeIsCascadedByTheDiff(): void
+    {
+        $constraintName = $this->fetchStoredBaseChildForeignKeyRules()['constraintName'];
+        static::connection()->executeStatement($this->isPostgres()
+            ? 'ALTER TABLE "StoredBaseChildren" DROP CONSTRAINT "' . $constraintName . '"'
+            : 'ALTER TABLE `StoredBaseChildren` DROP FOREIGN KEY `' . $constraintName . '`');
+        static::connection()->executeStatement(
+            'ALTER TABLE ' . static::quoteIdentifier('StoredBaseChildren') . ' ADD CONSTRAINT ' . static::quoteIdentifier($constraintName)
+            . ' FOREIGN KEY (' . static::quoteIdentifier('storedBaseParentId') . ') REFERENCES '
+            . static::quoteIdentifier('StoredBaseParents') . ' (' . static::quoteIdentifier('id') . ') ON DELETE RESTRICT ON UPDATE RESTRICT'
+        );
+
+        $tableDiffs = $this->fixtureDiffs($this->diffService());
+
+        $this->assertStringContainsString('ON DELETE CASCADE', $this->diffOf($tableDiffs, 'StoredBaseChildren')->sql);
+        $this->applyAndAssertConverged($tableDiffs);
+        $this->assertSame('CASCADE', $this->fetchStoredBaseChildForeignKeyRules()['delete']);
     }
 
     public function testAChangedGeneratedColumnExpressionIsRebuilt(): void

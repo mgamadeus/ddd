@@ -290,3 +290,11 @@ Unchanged:
   `../../../../../apps/web/src/route.ts` → `apps/web/src/route.ts`); a map's `names` entry replaces only a minified or
   missing function name and never with an error constructor (`Error` at the throw site) —
   `SourceMapResolverService::getOriginalFunctionName()`.
+- 3.13.3 — FK actions on the base of a STORED generated column (the `IFNULL(x, 0)` columns of composite UNIQUE indexes)
+  depend on the dialect (`DatabaseForeignKey::getOnUpdateActionForDialect()` / `getOnDeleteActionForDialect()`);
+  `DatabaseModel` no longer downgrades them. PostgreSQL gets the declared actions. MariaDB gets RESTRICT only for the
+  actions that write the base column (ON UPDATE CASCADE / SET NULL / SET DEFAULT, ON DELETE SET NULL / SET DEFAULT,
+  ERROR 1901) and keeps ON DELETE CASCADE, added with `ALGORITHM=COPY` (in place it fails with ERROR 138 under
+  `FOREIGN_KEY_CHECKS=0`); the production guard counts that ADD as copy-forcing on a large table. Databases built with
+  ≤ 3.13.2: the schema diff proposes `RESTRICT → CASCADE` on these FKs — metadata-only on PostgreSQL, a table copy on
+  MariaDB.

@@ -816,6 +816,30 @@ class Table extends Entity {
 - Indexes reference virtual column name (`virtualFoo`), NOT the property
 - Do NOT create a separate PHP property for the virtual column
 
+**Foreign keys on the base of a STORED generated column.** When the NULL-collapsing column is `stored: true` and its
+base column is a FK (`teamId` → `IFNULL(teamId, 0)` STORED in a composite UNIQUE index), the FK's declared actions stay
+the intent; what each dialect gets is decided when the DDL is rendered
+(`DatabaseForeignKey::getOnUpdateActionForDialect()` / `getOnDeleteActionForDialect()`):
+
+| Declared | PostgreSQL | MariaDB |
+|---|---|---|
+| ON DELETE CASCADE (the parent-relation default) | CASCADE | CASCADE, added with `ALGORITHM=COPY` |
+| ON DELETE SET NULL / SET DEFAULT | as declared | RESTRICT |
+| ON UPDATE CASCADE / SET NULL / SET DEFAULT | as declared | RESTRICT |
+| RESTRICT / NO ACTION | as declared | as declared |
+
+- MariaDB forbids an action that WRITES the base column of a stored column: `ERROR 1901 … 'teamId' cannot be used in the
+  GENERATED ALWAYS AS clause of 'virtualTeamId'` (ON UPDATE CASCADE, ON DELETE SET NULL). ON DELETE CASCADE deletes the
+  row instead and is allowed — but the in-place algorithm refuses it (`ERROR 138 Cannot add foreign key on the base
+  column of stored column`), and MariaDB adds a FK in place whenever `FOREIGN_KEY_CHECKS=0` (the schema diff's apply
+  default). So the FK is emitted with `, ALGORITHM=COPY` (`DatabaseForeignKey::requiresCopyAlgorithmOnMariaDb()`): a
+  table rebuild, which the schema diff's production guard counts as copy-forcing on a large table.
+- PostgreSQL recomputes a generated column when its base changes; no action is restricted.
+- A `stored: false` (VIRTUAL) column does not restrict anything on MariaDB. On PostgreSQL every generated column is
+  stored, without restrictions.
+- MySQL 8 forbids CASCADE on either action as well; DDD has no MySQL dialect.
+- Declaring SET NULL on a non-nullable FK column fails generation, independent of this rule.
+
 ### JSON Virtual Column Extraction
 
 Extract values from JSON-stored properties into indexed virtual columns:
