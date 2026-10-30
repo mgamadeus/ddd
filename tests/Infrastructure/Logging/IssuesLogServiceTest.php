@@ -323,7 +323,7 @@ class IssuesLogServiceTest extends TestCase
         $this->assertFalse($records[1]->context['error.handled']);
     }
 
-    public function testAFailedMessageCarriesItsRetryCountAndStamps(): void
+    public function testAFailedMessageCarriesItsRetryCountButNoStampList(): void
     {
         $testHandler = new TestHandler();
         $captureSubscriber = new IssuesCaptureSubscriber($this->serviceWith($this->loggerWith($testHandler)));
@@ -337,6 +337,7 @@ class IssuesLogServiceTest extends TestCase
 
         $context = $testHandler->getRecords()[0]->context;
         $this->assertSame(2, $context['messenger.retry_count']);
-        $this->assertSame([\Symfony\Component\Messenger\Stamp\RedeliveryStamp::class], $context['messenger.stamps']);
+        $this->assertSame(3, $context['messenger.attempt']);
+        $this->assertArrayNotHasKey('messenger.stamps', $context, 'the stamp class list was noise on every worker event');
     }
 }

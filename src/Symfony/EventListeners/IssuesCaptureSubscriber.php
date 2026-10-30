@@ -145,7 +145,6 @@ class IssuesCaptureSubscriber implements EventSubscriberInterface
                 'messenger.attempt' => $retryCount + 1,
                 'messenger.final' => !$event->willRetry(),
                 'messenger.handler' => $this->getFailingHandlerName($event->getThrowable()),
-                'messenger.stamps' => array_keys($envelope->all()),
                 'error.handled' => false,
             ], static fn(mixed $value): bool => $value !== null)
                 + (new IssuesMessengerContextBuilder())->buildMessageContext($envelope->getMessage()),

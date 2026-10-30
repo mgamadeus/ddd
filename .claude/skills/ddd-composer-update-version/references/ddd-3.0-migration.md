@@ -268,3 +268,8 @@ Unchanged:
   `error.frames`; the cap order drops `error.fingerprint` first. Loki `--text` search matches message, type and route
   (not the code context). An application that overrides `logThrowable()` / `compileExceptionContext()` keeps its own
   format.
+- 3.12.7 — fixes: `messenger.origin.route` is recorded again — `AppMessage::setDispatchOrigin()` reads the container's
+  public `request_stack` (the class alias `DDDService::getService('request_stack')` resolved to is removed from a
+  compiled container, so the route stayed empty). A frame file outside the project root shows relative to a parent
+  (`../public/index.php`) instead of absolute (display only, `IssuesFingerprintBuilder::getDisplayFile()`; the hash
+  input `getRelativeFile()` is unchanged). `messenger.stamps` is no longer logged.

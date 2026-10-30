@@ -4,6 +4,7 @@ declare (strict_types=1);
 
 namespace DDD\Domain\Base\Entities\MessageHandlers;
 
+use DDD\DDDBundle;
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
@@ -146,7 +147,9 @@ class AppMessage extends ValueObject implements SerializerInterface
         $appMessageDispatchOrigin = new AppMessageDispatchOrigin();
         $appMessageDispatchOrigin->dispatchedAt = DateTime::fromTimestamp(time());
         try {
-            $route = DDDService::instance()->getService('request_stack')?->getCurrentRequest()?->attributes->get('_route');
+            // the container's public id: DDDService::getService() resolves ids through the service class map, and the
+            // class alias it maps request_stack to is removed from a compiled container
+            $route = DDDBundle::getContainer()->get('request_stack')?->getCurrentRequest()?->attributes->get('_route');
             $appMessageDispatchOrigin->route = is_string($route) ? $route : null;
         } catch (Throwable) {
         }

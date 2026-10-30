@@ -223,4 +223,49 @@ class IssuesErrorEventQualityTest extends TestCase
         $this->assertSame('public_checkout_pay', $decodedMessage->dispatchOrigin->route);
         $this->assertSame(1730282400, $decodedMessage->dispatchOrigin->dispatchedAt->getTimestamp());
     }
+
+    /**
+     * A message dispatched inside a request records the request's route. The compiled container of an application
+     * exposes the public id `request_stack` but removes the class alias `RequestStack` — the lookup must use the id.
+     */
+    public function testTheDispatchOriginRecordsTheRouteOfTheCurrentRequest(): void
+    {
+        $compiledContainer = new \Symfony\Component\DependencyInjection\ContainerBuilder();
+        $compiledContainer->register('request_stack', RequestStack::class)->setPublic(true);
+        $compiledContainer->compile();
+        $request = Request::create('/api/public/common/zz-probe/dispatch');
+        $request->attributes->set('_route', 'public_common_probe_dispatch');
+        $compiledContainer->get('request_stack')->push($request);
+        $defaultContainerProperty = new \ReflectionProperty(\DDD\DDDBundle::class, 'defaultContainer');
+        $previousContainer = $defaultContainerProperty->getValue();
+        $defaultContainerProperty->setValue(null, $compiledContainer);
+        try {
+            $this->assertFalse($compiledContainer->has(RequestStack::class), 'precondition: no class alias, as in a compiled app');
+            $orderPaymentProbeMessage = new OrderPaymentProbeMessage();
+            $orderPaymentProbeMessage->setDispatchOrigin();
+        } finally {
+            $defaultContainerProperty->setValue(null, $previousContainer);
+        }
+
+        $this->assertSame('public_common_probe_dispatch', $orderPaymentProbeMessage->dispatchOrigin->route);
+        $this->assertNotNull($orderPaymentProbeMessage->dispatchOrigin->dispatchedAt);
+    }
+
+    public function testAFrameOutsideTheProjectShowsRelativeToItsParent(): void
+    {
+        $projectDirectory = sys_get_temp_dir() . '/ddd-display-' . bin2hex(random_bytes(4));
+        mkdir($projectDirectory . '/backend', 0777, true);
+        mkdir($projectDirectory . '/public', 0777, true);
+        touch($projectDirectory . '/public/index.php');
+        try {
+            $issuesFingerprintBuilder = new \DDD\Infrastructure\Logging\IssuesFingerprintBuilder($projectDirectory . '/backend');
+            $resolvedProject = realpath($projectDirectory);
+
+            $this->assertSame('../public/index.php', $issuesFingerprintBuilder->getDisplayFile($resolvedProject . '/public/index.php'));
+            $this->assertSame($resolvedProject . '/public/index.php', $issuesFingerprintBuilder->getRelativeFile($resolvedProject . '/public/index.php'), 'the hash input is unchanged');
+            $this->assertSame('/usr/share/php/x.php', $issuesFingerprintBuilder->getDisplayFile('/usr/share/php/x.php'), 'far away stays absolute');
+        } finally {
+            exec('rm -r ' . escapeshellarg($projectDirectory));
+        }
+    }
 }

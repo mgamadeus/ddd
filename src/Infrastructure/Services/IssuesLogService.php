@@ -170,7 +170,7 @@ class IssuesLogService
         return sprintf(
             '%s (no message) at %s:%d',
             $shortType,
-            $this->getFingerprintBuilder()->getRelativeFile($throwable->getFile()),
+            $this->getFingerprintBuilder()->getDisplayFile($throwable->getFile()),
             $throwable->getLine()
         );
     }
@@ -493,7 +493,7 @@ class IssuesLogService
             $causes[] = [
                 'type' => get_class($cause),
                 'message' => $cause->getMessage(),
-                'file' => $fingerprintBuilder->getRelativeFile($cause->getFile()) . ':' . $cause->getLine(),
+                'file' => $fingerprintBuilder->getDisplayFile($cause->getFile()) . ':' . $cause->getLine(),
                 'frames' => array_slice($this->toFramesContext($causeFrames), 0, self::CAUSE_FRAMES),
             ];
             $cause = $cause->getPrevious();

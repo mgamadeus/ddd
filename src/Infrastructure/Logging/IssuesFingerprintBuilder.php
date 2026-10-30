@@ -37,6 +37,9 @@ class IssuesFingerprintBuilder
     /** Source lines before and after the frame's line */
     public const int CODE_CONTEXT_LINES_AROUND = 3;
 
+    /** {@see self::getDisplayFile()}: a file outside the project shows relative to an ancestor at most this far up */
+    public const int DISPLAY_MAX_PARENT_LEVELS = 2;
+
     /** A source line of the code context is cut here */
     public const int CODE_CONTEXT_MAX_LINE_LENGTH = 240;
 
@@ -142,7 +145,7 @@ class IssuesFingerprintBuilder
     protected function addErrorFrame(IssueErrorFrames $issueErrorFrames, string $file, ?int $line, string $function): void
     {
         $issueErrorFrame = new IssueErrorFrame();
-        $issueErrorFrame->file = $this->getRelativeFile($file);
+        $issueErrorFrame->file = $this->getDisplayFile($file);
         $issueErrorFrame->line = $line;
         $issueErrorFrame->function = $this->normaliseFunctionName($function);
         $issueErrorFrame->inApp = $issueErrorFrame->file !== '' && !str_starts_with($issueErrorFrame->file, 'vendor/')
@@ -254,6 +257,31 @@ class IssuesFingerprintBuilder
         $file = $resolvedFile;
         $vendorPosition = strpos($file, '/vendor/');
         return $vendorPosition !== false ? substr($file, $vendorPosition + 1) : $file;
+    }
+
+    /**
+     * A file for DISPLAY: relative to the project root like {@see self::getRelativeFile()} (which feeds the hashes and
+     * is never changed), and a file outside it — an entry script one level above the project (`public/index.php` next
+     * to `backend/`) — relative to the nearest common directory at most {@see self::DISPLAY_MAX_PARENT_LEVELS} levels up
+     * (`../public/index.php`) instead of absolute.
+     */
+    public function getDisplayFile(string $file): string
+    {
+        $relativeFile = $this->getRelativeFile($file);
+        if (!str_starts_with($relativeFile, '/') || $this->projectDirectory === '') {
+            return $relativeFile;
+        }
+        $parentDirectory = $this->projectDirectory;
+        for ($parentLevel = 1; $parentLevel <= self::DISPLAY_MAX_PARENT_LEVELS; $parentLevel++) {
+            $parentDirectory = dirname($parentDirectory);
+            if ($parentDirectory === '/' || $parentDirectory === '.') {
+                break;
+            }
+            if (str_starts_with($relativeFile, $parentDirectory . '/')) {
+                return str_repeat('../', $parentLevel) . substr($relativeFile, strlen($parentDirectory) + 1);
+            }
+        }
+        return $relativeFile;
     }
 
     protected function hash(string $value): string

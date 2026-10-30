@@ -110,7 +110,8 @@ unchanged) and the stable hashes below.
 - `message` = `<Type>: <message>` (short class name; `error.type` keeps the FQCN); a throwable without a message reads
   `<Type> (no message) at <relative file>:<line>`.
 - `error.frames` = `[{file, line, function, in_app, code_context?}]`, innermost first: frame 0 the throw site
-  (`getFile()` / `getLine()`), frame i the call site of trace[i-1], paths relative to the project root, `in_app` = not
+  (`getFile()` / `getLine()`), frame i the call site of trace[i-1], paths relative to the project root (a file outside
+  it, e.g. a `public/index.php` next to `backend/`, relative to a parent: `../public/index.php`), `in_app` = not
   under `vendor/`. The first 2 in-app frames carry `code_context: {start_line, lines}` (±3 source lines, read at log
   time, sanitised; never function arguments). Built by `IssuesFingerprintBuilder::getErrorFrames()` →
   `IssueErrorFrames`; `log.origin.file.name` stays the basename (the runtime-errors COARSE grouping keys on it).
