@@ -7,6 +7,7 @@ namespace DDD\Domain\Base\Entities\MessageHandlers;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityRegistry;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Domain\Base\Repo\Virtual\VirtualEntityRegistry;
+use DDD\Infrastructure\Logging\IssuesMessengerContextBuilder;
 use DDD\Infrastructure\Services\AuthService;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\IssuesLogService;
@@ -158,6 +159,9 @@ abstract class AppMessageHandler
         }
 
         $additionalContext += $appMessagePayload;
+        // what the message is about and where it came from — the same fields as an uncaught worker failure
+        $additionalContext += (new IssuesMessengerContextBuilder())->buildMessageContext($appMessage);
+        $additionalContext['messenger.handler'] = static::class;
 
         $this->logThrowableToIssues($e, $additionalContext);
     }

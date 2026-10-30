@@ -256,3 +256,15 @@ Unchanged:
 - 3.12.5 — docs: `ddd-cli-command-specialist` — `bin/console` (cache:clear, `app:*`, composer scripts) runs as the
   PHP-FPM / worker user, never as root; a root run rebuilds `var/cache` as root and FPM / workers fail with "Could not
   create proxy directory …/doctrine/orm/Proxies" (repair: `chown -R <uid>:<gid> var/cache`).
+- 3.12.6 — error events a developer can act on (display-only; group and issue hashes unchanged, pinned by
+  `IssuesGoldenHashesTest`): `message` = `<Type>: <message>` (no more "Exception occurred:"; a throwable without a message
+  reads `<Type> (no message) at <file>:<line>`), `error.frames` (relative paths, `in_app`, code context of the first 2
+  in-app frames; `IssuesFingerprintBuilder::getErrorFrames()` → `IssueErrorFrames`), `error.stack_trace` rendered from
+  them, `error.causes`, `route_parameters`, worker fields (`messenger.handler`, `messenger.message_keys`,
+  `messenger.attempt`, `messenger.final`, `messenger.origin.*`, `messenger.age_seconds`; `AppMessage::$dispatchOrigin`).
+  **Check:** a message class that declares its own `dispatchOrigin` property collides with the new base property. Source
+  maps for Next.js server frames (`sourcemaps/<release>/.next/…`) and, for the development release, from the build
+  output (`sourceMapsDevelopmentRelease` / `sourceMapsDevelopmentStore`). `SentryEventBuilder` builds frames from
+  `error.frames`; the cap order drops `error.fingerprint` first. Loki `--text` search matches message, type and route
+  (not the code context). An application that overrides `logThrowable()` / `compileExceptionContext()` keeps its own
+  format.

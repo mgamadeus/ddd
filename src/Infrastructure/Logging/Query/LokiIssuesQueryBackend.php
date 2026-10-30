@@ -74,6 +74,12 @@ class LokiIssuesQueryBackend implements IssuesQueryBackend
             $query .= ' |~ ' . $this->quote('(?i)' . preg_quote($issueEventSearch->text));
         }
         $query .= ' | json';
+        if ($issueEventSearch->text !== null && $issueEventSearch->text !== '') {
+            // the line filter above is the cheap pre-filter; the text must be in what the event SAYS (message, type,
+            // route) — like the Elasticsearch backend —, not in the source lines of error.frames' code context
+            $textPattern = $this->quote('(?i).*' . preg_quote($issueEventSearch->text) . '.*');
+            $query .= ' | message=~' . $textPattern . ' or error_type=~' . $textPattern . ' or route_name=~' . $textPattern;
+        }
         $query .= $issueEventSearch->levels !== []
             ? ' | log_level=~' . $this->quote('(?i)(' . implode('|', array_map('preg_quote', $issueEventSearch->levels)) . ')')
             : ' ' . self::ERROR_FILTER;

@@ -106,10 +106,33 @@ dev workspace, e.g. `mgn`, or the stage — all dev workspaces share `service.en
 `log.origin.file.name/line`, `error.fingerprint`, `error.fingerprint_hash`, `error.fingerprint_short` (their meaning is
 unchanged) and the stable hashes below.
 
+**What a developer reads** — all display-only, never a hash input (the golden-hash test pins the hashes):
+- `message` = `<Type>: <message>` (short class name; `error.type` keeps the FQCN); a throwable without a message reads
+  `<Type> (no message) at <relative file>:<line>`.
+- `error.frames` = `[{file, line, function, in_app, code_context?}]`, innermost first: frame 0 the throw site
+  (`getFile()` / `getLine()`), frame i the call site of trace[i-1], paths relative to the project root, `in_app` = not
+  under `vendor/`. The first 2 in-app frames carry `code_context: {start_line, lines}` (±3 source lines, read at log
+  time, sanitised; never function arguments). Built by `IssuesFingerprintBuilder::getErrorFrames()` →
+  `IssueErrorFrames`; `log.origin.file.name` stays the basename (the runtime-errors COARSE grouping keys on it).
+- `error.stack_trace` is rendered from these frames: `#0 src/X.php(12): App\X->y() ← thrown here`, every application
+  frame, framework frames after the first 3 collapsed into `… n framework frames`.
+- `error.causes` = the `getPrevious()` chain (max 5), each `{type, message, file (relative:line), frames (≤ 3)}`.
+- `route_parameters` = the matched route's scalar parameters (`locationId`, `orderId`, …) on HTTP events, capped,
+  secret-looking names redacted.
+- Worker failures (capture and `AppMessageHandler::logIssue()`): `messenger.handler` (the failing handler,
+  `Class::__invoke`), `messenger.message_keys` (the message's scalar public properties — ids, enums, short strings —
+  capped, redacted), `messenger.attempt` (1 = first delivery), `messenger.final` (true = no retry follows, the message
+  goes to the failure transport), `messenger.origin.route` / `.command` / `.account_id` / `.workspace` /
+  `.dispatched_at` and `messenger.age_seconds` (queue delay) — from `AppMessage::$dispatchOrigin`
+  (`AppMessageDispatchOrigin`, stamped by `dispatch()`, part of the message body so every transport serializer keeps it).
+
 **Privacy, before any sink:** values under secret-looking keys (password, secret, token, authorization, cookie, API key,
 credential, session) become `[REDACTED]`, also nested; the message and the stack traces (`error.stack_trace`,
 `error.full_stack_trace` — string arguments carry e-mails) lose e-mail addresses, bearer/basic credentials and digit
-runs of 9+ (`sanitizeNumberMinDigits`, 0 = off); the event is capped (full trace first, then the short trace, then the message is cut).
+runs of 9+ (`sanitizeNumberMinDigits`, 0 = off) — so do the causes' messages and the code-context lines. A too large
+event loses, in this order: `error.fingerprint`, the framework frames of `error.frames` (the throw site stays), the code
+context, the causes beyond the first, a client event's breadcrumbs and frames, the traces, the frames beyond 10; then
+the message is cut.
 
 **Labels vs body:** only low-cardinality values become Loki labels or index keywords you aggregate on in dashboards
 (`service.name`, `service.environment`, `log.level`, `section`). Hashes, routes and ids stay in the JSON body.
@@ -122,7 +145,7 @@ runs of 9+ (`sanitizeNumberMinDigits`, 0 = off); the event is capped (full trace
   `ISSUES_LOG_4XX_LEVEL`. Symfony's own "Uncaught PHP Exception" record of the same exception is dropped
   (`IssuesDuplicateRequestRecordFilterHandler`, first handler of the `request` channel) — one line per error.
 - **Console** errors → `CRITICAL`, `command`, `exit_code`.
-- **Messenger** failures (`WorkerMessageFailedEvent`) → `CRITICAL`, `messenger.message_class`, `transports`, `will_retry`.
+- **Messenger** failures (`WorkerMessageFailedEvent`) → `CRITICAL`, `messenger.message_class`, `transports`, `will_retry`, and the worker fields above (handler, message keys, attempt / final, origin, age).
 - **PHP fatals** → a shutdown handler (registered with the first request or command) logs an `ErrorException`.
 - **Not reachable from PHP:** OOM kills, crash loops, start-up failures before the kernel boots — alert on them in
   Kubernetes (kube-state-metrics: `kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}`,
@@ -245,6 +268,16 @@ that runs `IssuesShow` in-process gets them from there.
   leading slash: `https://x.com/_next/static/chunks/app/page-3f2a.js` → `sourcemaps/<release>/_next/static/chunks/app/page-3f2a.js.map`.
   The build moves the `.map` files out of the public output (and strips `//# sourceMappingURL=`), the release workflow
   uploads them under that key with the release the client reports, a bucket lifecycle rule expires old releases.
+- **Server chunks of the client app** (Next.js `WEB_SERVER` frames — Next keeps `error.stack` unmapped): a frame file
+  inside a `.next/` build directory maps to `sourcemaps/<release>/.next/<path below .next/>.map`, e.g.
+  `/app/apps/web/.next/server/chunks/ssr/x.js` → `sourcemaps/<release>/.next/server/chunks/ssr/x.js.map`; the release
+  workflow uploads the server maps next to the browser maps.
+- **Development** (release `sourceMapsDevelopmentRelease`, default `dev`): the maps are read from the build output
+  through the store `sourceMapsDevelopmentStore` (default `sourcemaps-dev`) — a `filesystem` store rooted at the
+  workspace's `apps/web/.next/dev` on the shared code volume (no HTTP). Keys: `<path below .next/dev/>.map` for a
+  server chunk, `<URL path without _next/>.map` for a browser chunk (`/_next/static/chunks/x.js` →
+  `static/chunks/x.js.map`). Development maps are never cached across builds: read on every resolution, parsed again
+  when their content changed, no disk or position cache.
 - Regular maps and indexed maps (`sections`, Turbopack) are parsed (`SourceMapParser`); `webpack://_N_E/./`,
   `turbopack:///[project]/` prefixes are stripped from the original file.
 - Parsed maps are cached on local disk (`sourceMapsCacheDirectory`, default `<kernel cache>/sourcemaps`, least recently

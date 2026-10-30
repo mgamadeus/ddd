@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Symfony\EventListeners;
 
 use DDD\Infrastructure\Exceptions\Exception as DDDException;
+use DDD\Infrastructure\Logging\IssuesMessengerContextBuilder;
 use DDD\Infrastructure\Services\IssuesLogService;
 use ErrorException;
 use Psr\Log\LogLevel;
@@ -131,18 +132,23 @@ class IssuesCaptureSubscriber implements EventSubscriberInterface
         }
         $envelope = $event->getEnvelope();
         $transportNames = $envelope->last(TransportNamesStamp::class)?->getTransportNames() ?? [$event->getReceiverName()];
+        // the delivery that failed: 0 = the first; the retry delay itself is decided after this event
+        $retryCount = $envelope->last(RedeliveryStamp::class)?->getRetryCount() ?? 0;
         $this->issuesLogService->logThrowable(
             $this->unwrapHandlerThrowable($event->getThrowable()),
             LogLevel::CRITICAL,
             array_filter([
-                'messenger.message_class' => get_debug_type($envelope->getMessage()),
                 'transports' => $transportNames,
                 'will_retry' => $event->willRetry(),
-                // the delivery that failed: 0 = the first; the retry delay itself is decided after this event
-                'messenger.retry_count' => $envelope->last(RedeliveryStamp::class)?->getRetryCount() ?? 0,
+                'messenger.retry_count' => $retryCount,
+                // attempt 1 is the first delivery; final = no retry follows, the message goes to the failure transport
+                'messenger.attempt' => $retryCount + 1,
+                'messenger.final' => !$event->willRetry(),
+                'messenger.handler' => $this->getFailingHandlerName($event->getThrowable()),
                 'messenger.stamps' => array_keys($envelope->all()),
                 'error.handled' => false,
-            ], static fn(mixed $value): bool => $value !== null),
+            ], static fn(mixed $value): bool => $value !== null)
+                + (new IssuesMessengerContextBuilder())->buildMessageContext($envelope->getMessage()),
             section: IssuesLogService::LOG_MESSAGE_SECTION_MESSENGER
         );
     }
@@ -169,6 +175,17 @@ class IssuesCaptureSubscriber implements EventSubscriberInterface
                 section: $section
             );
         });
+    }
+
+    /** The failing handler (`App\X\FooHandler::__invoke`) from Messenger's wrapper; null when it is not one */
+    protected function getFailingHandlerName(Throwable $throwable): ?string
+    {
+        if (!$throwable instanceof HandlerFailedException) {
+            return null;
+        }
+        $wrappedThrowables = $throwable->getWrappedExceptions();
+        $handlerName = array_key_first($wrappedThrowables);
+        return is_string($handlerName) && $handlerName !== '' ? $handlerName : null;
     }
 
     /**

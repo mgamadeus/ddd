@@ -10,6 +10,7 @@ use DDD\Domain\Common\Entities\Issues\Client\ClientIssueEvent;
 use DDD\Domain\Common\Entities\Issues\Client\ClientIssueEvents;
 use DDD\Domain\Common\Entities\Issues\Client\ClientIssueIngestResult;
 use DDD\Domain\Common\Entities\Issues\Client\ClientIssueReport;
+use DDD\Domain\Common\Entities\Issues\ErrorFrames\IssueErrorFrames;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Logging\ClientIssueReportNormalizer;
@@ -88,6 +89,19 @@ class IssuesLogService
     /** Context keys of the INGEST request that a client line does not carry (they describe the report's POST) */
     public const array INGEST_REQUEST_CONTEXT_KEYS = ['request_headers', 'url.query', 'http.request.body.content'];
 
+    /** `error.stack_trace` keeps every frame up to here, framework frames after it are collapsed */
+    public const int STACK_TRACE_LEADING_FRAMEWORK_FRAMES = 3;
+
+    /** `error.causes`: at most this deep */
+    public const int MAX_CAUSES = 5;
+
+    /** Frames per cause */
+    public const int CAUSE_FRAMES = 3;
+
+    /** `route_parameters`: at most this many, strings cut at this length */
+    public const int MAX_ROUTE_PARAMETERS = 20;
+    public const int MAX_ROUTE_PARAMETER_LENGTH = 128;
+
     /** Size cap of `user_agent.original` */
     public const int MAX_USER_AGENT_LENGTH = 256;
 
@@ -140,7 +154,25 @@ class IssuesLogService
             $context = $additionalContext;
         }
 
-        $this->safeLog($level, 'Exception occurred: ' . $throwable->getMessage(), $context);
+        $this->safeLog($level, $this->buildThrowableMessage($throwable), $context);
+    }
+
+    /**
+     * The event's message: `<Type>: <message>`, and for a throwable without a message `<Type> (no message) at
+     * <file>:<line>` — list, alert and drawer still say what and where. Never a hash input.
+     */
+    public function buildThrowableMessage(Throwable $throwable): string
+    {
+        $shortType = substr(strrchr('\\' . get_class($throwable), '\\'), 1);
+        if (trim($throwable->getMessage()) !== '') {
+            return $shortType . ': ' . $throwable->getMessage();
+        }
+        return sprintf(
+            '%s (no message) at %s:%d',
+            $shortType,
+            $this->getFingerprintBuilder()->getRelativeFile($throwable->getFile()),
+            $throwable->getLine()
+        );
     }
 
     /**
@@ -355,6 +387,8 @@ class IssuesLogService
         $fingerprintBuilder = $this->getFingerprintBuilder();
         $groupHash = $fingerprintBuilder->buildGroupHash($exception);
         $entryPoint = $this->determineEntryPoint($exception);
+        // display only: the hashes above come from getFrames(), these frames never feed them
+        $issueErrorFrames = $fingerprintBuilder->getErrorFrames($exception);
         $context = array_merge($additionalContext, [
             'event.id' => $this->generateEventId(),
             'error.group_hash' => $groupHash,
@@ -366,17 +400,127 @@ class IssuesLogService
             'error.code' => (string)$exception->getCode(),
             'log.origin.file.name' => basename($exception->getFile()),
             'log.origin.file.line' => $exception->getLine(),
-            'error.stack_trace' => $this->getShortStackTrace($exception),
+            'error.stack_trace' => $this->renderStackTrace($issueErrorFrames),
+            'error.frames' => $this->toFramesContext($issueErrorFrames),
             'error.fingerprint' => $errorFingerprint,
             'error.fingerprint_hash' => $errorFingerprintHash,
             'error.fingerprint_short' => $errorFingerprintShort,
         ]);
+        $causes = $this->buildCausesContext($exception, $fingerprintBuilder);
+        if ($causes !== []) {
+            $context['error.causes'] = $causes;
+        }
 
         if ($includeFullStackTrace) {
             $context['error.full_stack_trace'] = $exception->getTraceAsString();
         }
 
         return $context;
+    }
+
+    /**
+     * `error.frames`: one entry per frame, innermost first — `file` (relative), `line`, `function`, `in_app`, and for
+     * the first in-app frames `code_context` (`start_line`, `lines`).
+     *
+     * @return array<int, array<string, mixed>> PSR-3 context
+     */
+    protected function toFramesContext(IssueErrorFrames $issueErrorFrames): array
+    {
+        $framesContext = [];
+        foreach ($issueErrorFrames->getElements() as $issueErrorFrame) {
+            $frameContext = [
+                'file' => $issueErrorFrame->file,
+                'line' => $issueErrorFrame->line,
+                'function' => $issueErrorFrame->function,
+                'in_app' => $issueErrorFrame->inApp,
+            ];
+            if ($issueErrorFrame->codeContextLines !== []) {
+                $frameContext['code_context'] = [
+                    'start_line' => $issueErrorFrame->codeContextStartLine,
+                    'lines' => $issueErrorFrame->codeContextLines,
+                ];
+            }
+            $framesContext[] = $frameContext;
+        }
+        return $framesContext;
+    }
+
+    /**
+     * `error.stack_trace` from the frames: `#0 src/X.php(12): App\X->y() ← thrown here`, then every application
+     * frame; framework frames after the first {@see self::STACK_TRACE_LEADING_FRAMEWORK_FRAMES} are collapsed into one
+     * `… n framework frames` line.
+     */
+    protected function renderStackTrace(IssueErrorFrames $issueErrorFrames): string
+    {
+        $stackTraceLines = [];
+        $collapsedFrameworkFrames = 0;
+        foreach (array_values($issueErrorFrames->getElements()) as $frameIndex => $issueErrorFrame) {
+            if (!$issueErrorFrame->inApp && $frameIndex >= self::STACK_TRACE_LEADING_FRAMEWORK_FRAMES) {
+                $collapsedFrameworkFrames++;
+                continue;
+            }
+            if ($collapsedFrameworkFrames > 0) {
+                $stackTraceLines[] = sprintf('… %d framework frames', $collapsedFrameworkFrames);
+                $collapsedFrameworkFrames = 0;
+            }
+            $stackTraceLines[] = sprintf(
+                '#%d %s(%s): %s()%s',
+                $frameIndex,
+                $issueErrorFrame->file !== '' ? $issueErrorFrame->file : '[internal function]',
+                $issueErrorFrame->line ?? '?',
+                $issueErrorFrame->function,
+                $frameIndex === 0 ? ' ← thrown here' : ''
+            );
+        }
+        if ($collapsedFrameworkFrames > 0) {
+            $stackTraceLines[] = sprintf('… %d framework frames', $collapsedFrameworkFrames);
+        }
+        return implode("\n", $stackTraceLines);
+    }
+
+    /**
+     * `error.causes`: the getPrevious() chain, outermost first, at most {@see self::MAX_CAUSES} deep — each with type,
+     * message, throw site and its first frames.
+     *
+     * @return array<int, array<string, mixed>> PSR-3 context
+     */
+    protected function buildCausesContext(Throwable $throwable, IssuesFingerprintBuilder $fingerprintBuilder): array
+    {
+        $causes = [];
+        $cause = $throwable->getPrevious();
+        while ($cause !== null && count($causes) < self::MAX_CAUSES) {
+            $causeFrames = $fingerprintBuilder->getErrorFrames($cause, codeContextFrameCount: 0);
+            $causes[] = [
+                'type' => get_class($cause),
+                'message' => $cause->getMessage(),
+                'file' => $fingerprintBuilder->getRelativeFile($cause->getFile()) . ':' . $cause->getLine(),
+                'frames' => array_slice($this->toFramesContext($causeFrames), 0, self::CAUSE_FRAMES),
+            ];
+            $cause = $cause->getPrevious();
+        }
+        return $causes;
+    }
+
+    /**
+     * The matched route's parameters (ids of the venue, order, …) — scalars, strings capped; the redactor still blanks
+     * secret-looking names.
+     *
+     * @param array<string|int, mixed> $routeParameters
+     * @return array<string, int|float|bool|string> PSR-3 context
+     */
+    protected function getRouteParametersContext(array $routeParameters): array
+    {
+        $routeParametersContext = [];
+        foreach ($routeParameters as $name => $value) {
+            if (!is_scalar($value) || str_starts_with((string)$name, '_')) {
+                continue;
+            }
+            $routeParametersContext[(string)$name] = is_string($value) ? mb_substr($value, 0, self::MAX_ROUTE_PARAMETER_LENGTH) : $value;
+            if (count($routeParametersContext) >= self::MAX_ROUTE_PARAMETERS) {
+                break;
+            }
+        }
+        return $routeParametersContext;
     }
 
     /**
@@ -628,6 +772,10 @@ class IssuesLogService
         $request = $this->requestStack->getCurrentRequest();
         if ($request && $request->attributes->has('_route')) {
             $baseContext['route_name'] = $request->attributes->get('_route');
+            $routeParameters = $this->getRouteParametersContext((array)$request->attributes->get('_route_params', []));
+            if ($routeParameters !== []) {
+                $baseContext['route_parameters'] = $routeParameters;
+            }
         }
 
         $settings = static::getSettings();

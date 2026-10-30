@@ -101,7 +101,7 @@ class IssuesLogServiceTest extends TestCase
             ->logThrowable(new RuntimeException('no account for anna@example.com'), additionalContext: ['token' => 'abc']);
 
         $record = $testHandler->getRecords()[0];
-        $this->assertSame('Exception occurred: no account for [EMAIL]', $record->message);
+        $this->assertSame('RuntimeException: no account for [EMAIL]', $record->message);
         $this->assertSame(IssuesLogRedactor::REDACTED, $record->context['token']);
     }
 

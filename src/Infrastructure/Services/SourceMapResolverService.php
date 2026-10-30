@@ -7,6 +7,7 @@ namespace DDD\Infrastructure\Services;
 use DDD\Domain\Common\Entities\Issues\Client\ClientIssueFrame;
 use DDD\Domain\Common\Entities\Issues\Client\ClientIssueFrames;
 use DDD\Infrastructure\Cache\Cache;
+use DDD\Infrastructure\Logging\IssuesLogSettings;
 use DDD\Infrastructure\Logging\SourceMaps\ResolvedFrame;
 use DDD\Infrastructure\Logging\SourceMaps\ResolvedFrames;
 use DDD\Infrastructure\Logging\SourceMaps\SourceMap;
@@ -33,6 +34,8 @@ class SourceMapResolverService extends Service
 {
     public const string KEY_PREFIX = 'sourcemaps/';
     public const string MAP_SUFFIX = '.map';
+    /** The client app's build directory: a frame file inside it is a server chunk (Next.js) */
+    public const string BUILD_DIRECTORY = '.next';
     public const string CACHE_KEY_PREFIX = 'ddd-sourcemap-position:';
     public const string CACHE_DIRECTORY_NAME = 'sourcemaps';
 
@@ -45,6 +48,9 @@ class SourceMapResolverService extends Service
 
     /** @var SourceMap[] Parsed maps of this process, by object key */
     protected array $sourceMapsByKey = [];
+
+    /** @var string[] Development maps: content hash of the parsed map, by object key */
+    protected array $developmentSourceMapHashesByKey = [];
 
     /** @var bool[] Object keys known to have no map in this process */
     protected array $missingSourceMapKeys = [];
@@ -79,14 +85,16 @@ class SourceMapResolverService extends Service
             $resolvedFrame->note = self::NOTE_NO_RELEASE;
             return $resolvedFrame;
         }
+        // development maps change with every edit: never cached across builds
+        $isDevelopmentRelease = $this->isDevelopmentRelease($release);
         $positionCacheKey = self::CACHE_KEY_PREFIX . hash('sha256', implode('|', [$release, $clientIssueFrame->file, $clientIssueFrame->line, $clientIssueFrame->column]));
-        $cachedPosition = $this->readCachedPosition($positionCacheKey);
+        $cachedPosition = $isDevelopmentRelease ? null : $this->readCachedPosition($positionCacheKey);
         if ($cachedPosition instanceof SourceMapPosition) {
             $this->applyPosition($resolvedFrame, $cachedPosition);
             return $resolvedFrame;
         }
         try {
-            $objectStorage = $this->getObjectStorage();
+            $objectStorage = $isDevelopmentRelease ? $this->getDevelopmentObjectStorage() : $this->getObjectStorage();
         } catch (Throwable $throwable) {
             $this->logStoreErrorOnce($release, $throwable);
             $resolvedFrame->note = self::NOTE_STORE_ERROR;
@@ -98,7 +106,9 @@ class SourceMapResolverService extends Service
         }
         $objectKey = $this->getSourceMapKey($release, $clientIssueFrame->file);
         try {
-            $sourceMap = $this->loadSourceMap($objectStorage, $objectKey);
+            $sourceMap = $isDevelopmentRelease
+                ? $this->loadDevelopmentSourceMap($objectStorage, $objectKey)
+                : $this->loadSourceMap($objectStorage, $objectKey);
         } catch (Throwable $throwable) {
             $this->logStoreErrorOnce($release, $throwable);
             $resolvedFrame->note = self::NOTE_STORE_ERROR;
@@ -113,17 +123,75 @@ class SourceMapResolverService extends Service
             $resolvedFrame->note = self::NOTE_NO_MAPPING;
             return $resolvedFrame;
         }
-        $this->writeCachedPosition($positionCacheKey, $sourceMapPosition);
+        if (!$isDevelopmentRelease) {
+            $this->writeCachedPosition($positionCacheKey, $sourceMapPosition);
+        }
         $this->applyPosition($resolvedFrame, $sourceMapPosition);
         return $resolvedFrame;
     }
 
-    /** `sourcemaps/<release>/<URL path of the frame file without the leading slash>.map` */
+    /**
+     * The map's key in its store:
+     * - a browser chunk (a URL) — `sourcemaps/<release>/<URL path without the leading slash>.map`, e.g.
+     *   `…/_next/static/chunks/app/page-3f2a.js` → `sourcemaps/<release>/_next/static/chunks/app/page-3f2a.js.map`;
+     * - a server chunk of the client app (a path or `file://` URL inside a `.next/` build directory, Next.js server
+     *   frames) — `sourcemaps/<release>/.next/<path below .next/>.map`, e.g. `/app/apps/web/.next/server/chunks/ssr/x.js`
+     *   → `sourcemaps/<release>/.next/server/chunks/ssr/x.js.map`;
+     * - the development release ({@see IssuesLogSettings::$sourceMapsDevelopmentRelease}) reads the build output itself,
+     *   a store rooted at the workspace's `.next/dev`: `<path below .next/dev/>.map` for a server chunk,
+     *   `<URL path without _next/>.map` for a browser chunk (`/_next/static/chunks/x.js` → `static/chunks/x.js.map`).
+     */
     public function getSourceMapKey(string $release, string $frameFile): string
     {
-        $path = (string)preg_replace('/^[a-z][a-z0-9+.-]*:\/\/[^\/]*/i', '', $frameFile);
-        $path = ltrim((string)preg_replace('/[?#].*$/', '', $path), '/');
-        return self::KEY_PREFIX . trim($release, '/') . '/' . $path . self::MAP_SUFFIX;
+        $path = (string)preg_replace('/^file:\/\//i', '', $frameFile);
+        $path = (string)preg_replace('/^[a-z][a-z0-9+.-]*:\/\/[^\/]*/i', '', $path);
+        $path = (string)preg_replace('/[?#].*$/', '', $path);
+        $buildDirectoryPosition = strpos($path, '/' . self::BUILD_DIRECTORY . '/');
+        if ($this->isDevelopmentRelease($release)) {
+            if ($buildDirectoryPosition !== false) {
+                $pathBelowBuildDirectory = substr($path, $buildDirectoryPosition + strlen(self::BUILD_DIRECTORY) + 2);
+                return (string)preg_replace('/^dev\//', '', $pathBelowBuildDirectory) . self::MAP_SUFFIX;
+            }
+            return (string)preg_replace('/^_next\//', '', ltrim($path, '/')) . self::MAP_SUFFIX;
+        }
+        if ($buildDirectoryPosition !== false) {
+            $path = self::BUILD_DIRECTORY . '/' . substr($path, $buildDirectoryPosition + strlen(self::BUILD_DIRECTORY) + 2);
+        }
+        return self::KEY_PREFIX . trim($release, '/') . '/' . ltrim($path, '/') . self::MAP_SUFFIX;
+    }
+
+    public function isDevelopmentRelease(string $release): bool
+    {
+        $developmentRelease = IssuesLogService::getSettings()->sourceMapsDevelopmentRelease;
+        return $developmentRelease !== null && $developmentRelease !== '' && $release === $developmentRelease;
+    }
+
+    /** The store of the development release's build output (a filesystem store at the workspace's `.next/dev`) */
+    protected function getDevelopmentObjectStorage(): ?ObjectStorage
+    {
+        /** @var ObjectStorageService $objectStorageService */
+        $objectStorageService = DDDService::instance()->getService(ObjectStorageService::class);
+        return $objectStorageService->getObjectStorage(IssuesLogService::getSettings()->sourceMapsDevelopmentStore);
+    }
+
+    /**
+     * A development map, read on every resolution and parsed again whenever its content changed — the build output
+     * changes with every edit, so neither the disk cache nor the position cache is used.
+     *
+     * @throws Throwable A store error
+     */
+    protected function loadDevelopmentSourceMap(ObjectStorage $objectStorage, string $objectKey): ?SourceMap
+    {
+        $sourceMapJson = $objectStorage->getObjectContent($objectKey);
+        if ($sourceMapJson === null) {
+            return null;
+        }
+        $contentHash = hash('sha256', $sourceMapJson);
+        if (($this->developmentSourceMapHashesByKey[$objectKey] ?? null) === $contentHash && isset($this->sourceMapsByKey[$objectKey])) {
+            return $this->sourceMapsByKey[$objectKey];
+        }
+        $this->developmentSourceMapHashesByKey[$objectKey] = $contentHash;
+        return $this->sourceMapsByKey[$objectKey] = (new SourceMapParser())->parseSourceMap($sourceMapJson);
     }
 
     protected function applyPosition(ResolvedFrame $resolvedFrame, SourceMapPosition $sourceMapPosition): void

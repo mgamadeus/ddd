@@ -33,6 +33,7 @@ Async background processing via Symfony Messenger within the DDD Core framework 
 - `encodeForCommandline()` / `decodeFromCommandline()` -- CLI transport (gzip + base64)
 - `persistToTempDir()` / `loadFromTempDir()` -- temp file transport
 - `dispatchedFromWorkspaceDir` / `dispatchedFromEnvironment` -- where a message came from (stamped by `dispatch()`; read by the workspace-origin guard)
+- `dispatchOrigin` (`AppMessageDispatchOrigin`: `dispatchedAt`, `route`, `command`) -- when and from which request or command it was dispatched (stamped by `dispatch()`); a failing job's issues event shows it as `messenger.origin.*` and `messenger.age_seconds`. Do not declare `dispatchOrigin` on a message class
 
 **AppMessageHandler provides:**
 - `getLogger()` -- returns injected `messengerLogger` or falls back to `DDDService::instance()->getLogger()`

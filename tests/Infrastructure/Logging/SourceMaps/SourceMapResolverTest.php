@@ -31,6 +31,13 @@ class ProbeSourceMapResolver extends SourceMapResolverService
     {
         return null;
     }
+
+    public ?ObjectStorage $probeDevelopmentObjectStorage = null;
+
+    protected function getDevelopmentObjectStorage(): ?ObjectStorage
+    {
+        return $this->probeDevelopmentObjectStorage;
+    }
 }
 
 /**
@@ -162,5 +169,40 @@ class SourceMapResolverTest extends TestCase
         $this->assertFalse($unresolvedFrame->resolved);
         $this->assertSame(SourceMapResolverService::NOTE_STORE_NOT_CONFIGURED, $unresolvedFrame->note);
         $this->assertStringContainsString('[source map store not configured]', $unresolvedFrame->toStackTraceLine());
+    }
+
+    public function testANextServerFrameMapsToTheBuildDirectoryKey(): void
+    {
+        $sourceMapResolverService = new ProbeSourceMapResolver();
+        $this->assertSame(
+            'sourcemaps/web-r7/.next/server/chunks/ssr/[root-of-the-server]__0a1b._.js.map',
+            $sourceMapResolverService->getSourceMapKey('web-r7', '/app/apps/web/.next/server/chunks/ssr/[root-of-the-server]__0a1b._.js')
+        );
+        $this->assertSame(
+            'sourcemaps/web-r7/.next/server/app/page.js.map',
+            $sourceMapResolverService->getSourceMapKey('web-r7', 'file:///app/apps/web/.next/server/app/page.js')
+        );
+        $this->assertSame('server/chunks/ssr/x.js.map', $sourceMapResolverService->getSourceMapKey('dev', '/code/apps/web/.next/dev/server/chunks/ssr/x.js'));
+        $this->assertSame('static/chunks/app/page.js.map', $sourceMapResolverService->getSourceMapKey('dev', 'https://ame.dev.dineful.com/_next/static/chunks/app/page.js'));
+    }
+
+    public function testDevelopmentMapsComeFromTheBuildOutputAndAreNeverStale(): void
+    {
+        $buildOutput = new FilesystemObjectStorage($this->temporaryDirectory . '/next-dev');
+        $sourceMapResolverService = new ProbeSourceMapResolver();
+        $sourceMapResolverService->probeDevelopmentObjectStorage = $buildOutput;
+        $serverChunk = '/code/apps/web/.next/dev/server/chunks/ssr/menu.js';
+        $buildOutput->putObject('server/chunks/ssr/menu.js.map', (string)json_encode(SourceMapFixtures::createMenuPageMap()));
+
+        $firstResolution = $sourceMapResolverService->resolveFrame('dev', $this->createFrame(1, 35, $serverChunk));
+        // an edit: the next build maps the same position to another line
+        $editedMap = SourceMapFixtures::createMenuPageMap();
+        $editedMap['mappings'] = SourceMapFixtures::encodeMappings([0 => [[0, 0, 0, 0, 0], [30, 0, 1, 2, 1]]], 1);
+        $buildOutput->putObject('server/chunks/ssr/menu.js.map', (string)json_encode($editedMap));
+        $secondResolution = $sourceMapResolverService->resolveFrame('dev', $this->createFrame(1, 35, $serverChunk));
+
+        $this->assertSame(3, $firstResolution->originalLine);
+        $this->assertSame(2, $secondResolution->originalLine, 'the edited map, not the first parse');
+        $this->assertSame([], glob($this->temporaryDirectory . '/cache/*.ser') ?: [], 'development maps are not cached on disk');
     }
 }

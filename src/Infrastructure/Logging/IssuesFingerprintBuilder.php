@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DDD\Infrastructure\Logging;
 
+use DDD\Domain\Common\Entities\Issues\ErrorFrames\IssueErrorFrame;
+use DDD\Domain\Common\Entities\Issues\ErrorFrames\IssueErrorFrames;
 use DDD\Infrastructure\Exceptions\Exception as DDDException;
 use Doctrine\DBAL\Exception\DriverException;
 use Error;
@@ -28,6 +30,15 @@ class IssuesFingerprintBuilder
 {
     /** Number of application frames the issue hash takes */
     public const int ISSUE_APPLICATION_FRAMES = 4;
+
+    /** In-app frames of {@see self::getErrorFrames()} that carry their source lines */
+    public const int CODE_CONTEXT_FRAMES = 2;
+
+    /** Source lines before and after the frame's line */
+    public const int CODE_CONTEXT_LINES_AROUND = 3;
+
+    /** A source line of the code context is cut here */
+    public const int CODE_CONTEXT_MAX_LINE_LENGTH = 240;
 
     /** @var array<string, string> Cache: file path as given → resolved path */
     protected array $resolvedPaths = [];
@@ -86,6 +97,82 @@ class IssuesFingerprintBuilder
             $frames[] = $this->getRelativeFile($codeFile) . '#{main}';
         }
         return $frames;
+    }
+
+    /**
+     * The frames of the throwable for DISPLAY (`error.frames`), innermost first — never a hash input, so
+     * {@see self::getFrames()} and the hashes stay exactly as they are. Frame 0 is the throw site
+     * (`getFile()` / `getLine()`), frame i the call site of trace[i-1], the last one the entry script (`{main}`). Paths
+     * are relative to the project root. The first $codeContextFrameCount in-app frames carry the source lines around
+     * their line ($codeContextLinesAround before and after), read now — never function arguments.
+     */
+    public function getErrorFrames(
+        Throwable $throwable,
+        int $codeContextFrameCount = self::CODE_CONTEXT_FRAMES,
+        int $codeContextLinesAround = self::CODE_CONTEXT_LINES_AROUND
+    ): IssueErrorFrames {
+        $issueErrorFrames = new IssueErrorFrames();
+        $codeFile = $throwable->getFile();
+        $codeLine = $throwable->getLine();
+        $trace = $throwable->getTrace();
+        foreach ($trace as $traceFrame) {
+            $function = ($traceFrame['class'] ?? '') !== ''
+                ? $traceFrame['class'] . ($traceFrame['type'] ?? '::') . $traceFrame['function']
+                : (string)($traceFrame['function'] ?? '');
+            $this->addErrorFrame($issueErrorFrames, $codeFile, $codeLine, $function);
+            // the next frame's code is in the file this frame was called from, at the call's line
+            $codeFile = (string)($traceFrame['file'] ?? '');
+            $codeLine = isset($traceFrame['line']) ? (int)$traceFrame['line'] : null;
+        }
+        if ($codeFile !== '' || $trace === []) {
+            $this->addErrorFrame($issueErrorFrames, $codeFile, $codeLine, '{main}');
+        }
+        $framesWithCodeContext = 0;
+        foreach ($issueErrorFrames->getElements() as $issueErrorFrame) {
+            if ($framesWithCodeContext >= $codeContextFrameCount) {
+                break;
+            }
+            if ($issueErrorFrame->inApp && $issueErrorFrame->line !== null && $this->addCodeContext($issueErrorFrame, $codeContextLinesAround)) {
+                $framesWithCodeContext++;
+            }
+        }
+        return $issueErrorFrames;
+    }
+
+    protected function addErrorFrame(IssueErrorFrames $issueErrorFrames, string $file, ?int $line, string $function): void
+    {
+        $issueErrorFrame = new IssueErrorFrame();
+        $issueErrorFrame->file = $this->getRelativeFile($file);
+        $issueErrorFrame->line = $line;
+        $issueErrorFrame->function = $this->normaliseFunctionName($function);
+        $issueErrorFrame->inApp = $issueErrorFrame->file !== '' && !str_starts_with($issueErrorFrame->file, 'vendor/')
+            && !str_contains($issueErrorFrame->file, '/vendor/');
+        $issueErrorFrames->add($issueErrorFrame);
+    }
+
+    /**
+     * The source lines around the frame's line, from the file under the project root; false when the file is not
+     * readable there (an eval, a phar, a file outside the project).
+     */
+    protected function addCodeContext(IssueErrorFrame $issueErrorFrame, int $linesAround): bool
+    {
+        $absoluteFile = str_starts_with($issueErrorFrame->file, '/')
+            ? $issueErrorFrame->file
+            : $this->projectDirectory . '/' . $issueErrorFrame->file;
+        if ($this->projectDirectory === '' || !str_starts_with($absoluteFile, $this->projectDirectory . '/') || !is_file($absoluteFile)) {
+            return false;
+        }
+        $sourceLines = @file($absoluteFile, FILE_IGNORE_NEW_LINES);
+        if ($sourceLines === false) {
+            return false;
+        }
+        $firstIndex = max(0, (int)$issueErrorFrame->line - 1 - $linesAround);
+        $issueErrorFrame->codeContextStartLine = $firstIndex + 1;
+        $issueErrorFrame->codeContextLines = array_map(
+            static fn(string $sourceLine): string => mb_substr($sourceLine, 0, self::CODE_CONTEXT_MAX_LINE_LENGTH),
+            array_slice($sourceLines, $firstIndex, 2 * $linesAround + 1)
+        );
+        return true;
     }
 
     /**

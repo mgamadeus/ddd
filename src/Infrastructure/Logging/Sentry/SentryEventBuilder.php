@@ -145,6 +145,40 @@ class SentryEventBuilder
     }
 
     /**
+     * Sentry frames from the structured `error.frames` (innermost first), oldest first, the throw site last; a frame
+     * with code context carries Sentry's `pre_context` / `context_line` / `post_context`.
+     *
+     * @param array<int, mixed> $errorFrames
+     * @return array<int, array<string, mixed>>
+     */
+    protected function buildFramesFromErrorFrames(array $errorFrames): array
+    {
+        $frames = [];
+        foreach (array_reverse($errorFrames) as $errorFrame) {
+            if (!is_array($errorFrame)) {
+                continue;
+            }
+            $frame = array_filter([
+                'filename' => isset($errorFrame['file']) && $errorFrame['file'] !== '' ? (string)$errorFrame['file'] : null,
+                'lineno' => isset($errorFrame['line']) ? (int)$errorFrame['line'] : null,
+                'function' => isset($errorFrame['function']) ? (string)$errorFrame['function'] : null,
+                'in_app' => (bool)($errorFrame['in_app'] ?? false),
+            ], static fn(mixed $value): bool => $value !== null);
+            $codeContext = $errorFrame['code_context'] ?? null;
+            if (is_array($codeContext) && isset($codeContext['start_line'], $codeContext['lines'], $errorFrame['line']) && is_array($codeContext['lines'])) {
+                $lineIndex = (int)$errorFrame['line'] - (int)$codeContext['start_line'];
+                if (isset($codeContext['lines'][$lineIndex])) {
+                    $frame['pre_context'] = array_values(array_slice($codeContext['lines'], 0, $lineIndex));
+                    $frame['context_line'] = (string)$codeContext['lines'][$lineIndex];
+                    $frame['post_context'] = array_values(array_slice($codeContext['lines'], $lineIndex + 1));
+                }
+            }
+            $frames[] = $frame;
+        }
+        return $frames;
+    }
+
+    /**
      * Sentry frames, oldest first: the PHP trace lines (`#0 /file.php(12): Class->method()`) reversed, the throw site
      * last.
      *
@@ -153,6 +187,10 @@ class SentryEventBuilder
      */
     protected function buildFrames(array $fields): array
     {
+        if (isset($fields['error.frames']) && is_array($fields['error.frames']) && $fields['error.frames'] !== []) {
+            return $this->buildFramesFromErrorFrames($fields['error.frames']);
+        }
+        // a line from before error.frames: the PHP trace text
         $traceString = (string)($fields['error.full_stack_trace'] ?? $fields['error.stack_trace'] ?? '');
         $frames = [];
         foreach (explode("\n", $traceString) as $traceLine) {

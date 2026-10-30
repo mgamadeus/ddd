@@ -26,10 +26,18 @@ class IssuesLogRedactor
     public const array STACK_TRACE_KEYS = ['error.stack_trace', 'error.full_stack_trace'];
 
     /**
-     * Context keys cut in this order when the event is too large: a client event's breadcrumbs (oldest dropped first)
-     * and frames (the innermost {@see self::CAPPED_CLIENT_FRAMES} kept) before the traces
+     * What a too large event loses, in this order, before the message is cut: the legacy `error.fingerprint`, the
+     * framework frames of `error.frames` (the throw site stays), the code context, the causes beyond the first, a
+     * client event's breadcrumbs (oldest first) and frames beyond {@see self::CAPPED_CLIENT_FRAMES}, the traces, and
+     * finally the frames beyond {@see self::CAPPED_ERROR_FRAMES}. `<key>:<part>` entries are parts of a structured key.
      */
-    public const array CAP_ORDER = ['client.breadcrumbs', 'client.frames', 'error.full_stack_trace', 'error.stack_trace', 'error.fingerprint'];
+    public const array CAP_ORDER = [
+        'error.fingerprint', 'error.frames:framework', 'error.frames:code_context', 'error.causes', 'client.breadcrumbs',
+        'client.frames', 'error.full_stack_trace', 'error.stack_trace', 'error.frames',
+    ];
+
+    /** The frames `error.frames` keeps when nothing else is left to cut */
+    public const int CAPPED_ERROR_FRAMES = 10;
 
     /** The frames a too large client event keeps */
     public const int CAPPED_CLIENT_FRAMES = 10;
@@ -105,7 +113,45 @@ class IssuesLogRedactor
                 $context[$stackTraceKey] = $this->sanitizeText($context[$stackTraceKey]);
             }
         }
+        // free text of the structured error detail: the source lines of the code context, the causes' messages
+        if (isset($context['error.frames']) && is_array($context['error.frames'])) {
+            $context['error.frames'] = $this->sanitizeFrames($context['error.frames']);
+        }
+        if (isset($context['error.causes']) && is_array($context['error.causes'])) {
+            foreach ($context['error.causes'] as $causeIndex => $cause) {
+                if (!is_array($cause)) {
+                    continue;
+                }
+                if (isset($cause['message']) && is_string($cause['message'])) {
+                    $cause['message'] = $this->sanitizeText($cause['message']);
+                }
+                if (isset($cause['frames']) && is_array($cause['frames'])) {
+                    $cause['frames'] = $this->sanitizeFrames($cause['frames']);
+                }
+                $context['error.causes'][$causeIndex] = $cause;
+            }
+        }
         return $this->redactSecretKeys($context);
+    }
+
+    /**
+     * The source lines of every frame's code context, sanitised like free text.
+     *
+     * @param array<int, mixed> $frames `error.frames` entries
+     * @return array<int, mixed>
+     */
+    protected function sanitizeFrames(array $frames): array
+    {
+        foreach ($frames as $frameIndex => $frame) {
+            if (is_array($frame) && isset($frame['code_context']['lines']) && is_array($frame['code_context']['lines'])) {
+                $frame['code_context']['lines'] = array_map(
+                    fn(mixed $sourceLine): string => $this->sanitizeText((string)$sourceLine),
+                    $frame['code_context']['lines']
+                );
+                $frames[$frameIndex] = $frame;
+            }
+        }
+        return $frames;
     }
 
     /**
@@ -160,6 +206,10 @@ class IssuesLogRedactor
             if ($this->getEventBytes($event->message, $event->context) <= $maxBytes) {
                 return;
             }
+            if (str_contains($key, ':') || in_array($key, ['error.fingerprint', 'error.causes', 'error.frames'], true)) {
+                $this->capErrorDetail($event, $key);
+                continue;
+            }
             if (!isset($event->context[$key])) {
                 continue;
             }
@@ -183,6 +233,46 @@ class IssuesLogRedactor
      * A structured client list: breadcrumbs lose their oldest entries until the event fits (all of them if need be),
      * frames are cut to the innermost {@see self::CAPPED_CLIENT_FRAMES}.
      */
+    /** One step of cutting a backend error's display detail (see {@see self::CAP_ORDER}) */
+    protected function capErrorDetail(IssuesLogEvent $event, string $key): void
+    {
+        $frames = isset($event->context['error.frames']) && is_array($event->context['error.frames']) ? $event->context['error.frames'] : null;
+        switch ($key) {
+            case 'error.fingerprint':
+                unset($event->context['error.fingerprint']);
+                return;
+            case 'error.frames:framework':
+                if ($frames !== null) {
+                    $event->context['error.frames'] = array_values(array_filter(
+                        $frames,
+                        static fn(mixed $frame, int $frameIndex): bool => $frameIndex === 0 || (is_array($frame) && ($frame['in_app'] ?? false)),
+                        ARRAY_FILTER_USE_BOTH
+                    ));
+                }
+                return;
+            case 'error.frames:code_context':
+                if ($frames !== null) {
+                    $event->context['error.frames'] = array_map(static function (mixed $frame): mixed {
+                        if (is_array($frame)) {
+                            unset($frame['code_context']);
+                        }
+                        return $frame;
+                    }, $frames);
+                }
+                return;
+            case 'error.causes':
+                if (isset($event->context['error.causes']) && is_array($event->context['error.causes'])) {
+                    $event->context['error.causes'] = array_slice($event->context['error.causes'], 0, 1);
+                }
+                return;
+            case 'error.frames':
+                if ($frames !== null) {
+                    $event->context['error.frames'] = array_slice($frames, 0, self::CAPPED_ERROR_FRAMES);
+                }
+                return;
+        }
+    }
+
     protected function capClientList(IssuesLogEvent $event, string $key, int $maxBytes): void
     {
         if ($key === 'client.frames') {

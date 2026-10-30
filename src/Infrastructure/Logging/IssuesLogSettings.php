@@ -43,6 +43,13 @@ class IssuesLogSettings extends ValueObject
     public const string ENV_SOURCE_MAPS_STORE = 'ISSUES_SOURCE_MAPS_STORE';
     public const string ENV_SOURCE_MAPS_CACHE_DIR = 'ISSUES_SOURCE_MAPS_CACHE_DIR';
     public const string ENV_SOURCE_MAPS_CACHE_MB = 'ISSUES_SOURCE_MAPS_CACHE_MB';
+    public const string ENV_SOURCE_MAPS_DEVELOPMENT_RELEASE = 'ISSUES_SOURCE_MAPS_DEVELOPMENT_RELEASE';
+    public const string ENV_SOURCE_MAPS_DEVELOPMENT_STORE = 'ISSUES_SOURCE_MAPS_DEVELOPMENT_STORE';
+
+    /** The release a development client reports; its maps come from the build output, never cached */
+    public const string DEFAULT_SOURCE_MAPS_DEVELOPMENT_RELEASE = 'dev';
+    /** The store of the development build output (filesystem, rooted at the workspace's `.next/dev`) */
+    public const string DEFAULT_SOURCE_MAPS_DEVELOPMENT_STORE = 'sourcemaps-dev';
 
     /** The object store the source maps are read from (`sourcemaps/<release>/<chunk path>.map`) */
     public const string DEFAULT_SOURCE_MAPS_STORE = 'sourcemaps';
@@ -132,6 +139,10 @@ class IssuesLogSettings extends ValueObject
         public readonly ?string $sourceMapsCacheDirectory = null,
         /** @var int Size cap of the parsed-map cache; the least recently used maps are removed beyond it */
         public readonly int $sourceMapsCacheMegabytes = self::DEFAULT_SOURCE_MAPS_CACHE_MB,
+        /** @var string|null The release whose maps are read from the development build output; '' = none */
+        public readonly ?string $sourceMapsDevelopmentRelease = self::DEFAULT_SOURCE_MAPS_DEVELOPMENT_RELEASE,
+        /** @var string The object store of the development build output */
+        public readonly string $sourceMapsDevelopmentStore = self::DEFAULT_SOURCE_MAPS_DEVELOPMENT_STORE,
     ) {
         parent::__construct();
     }
@@ -181,6 +192,10 @@ class IssuesLogSettings extends ValueObject
             sourceMapsCacheDirectory: static::stringSetting('sourceMapsCacheDirectory', self::ENV_SOURCE_MAPS_CACHE_DIR),
             sourceMapsCacheMegabytes: (int)(static::stringSetting('sourceMapsCacheMegabytes', self::ENV_SOURCE_MAPS_CACHE_MB)
                 ?? self::DEFAULT_SOURCE_MAPS_CACHE_MB),
+            sourceMapsDevelopmentRelease: static::stringSetting('sourceMapsDevelopmentRelease', self::ENV_SOURCE_MAPS_DEVELOPMENT_RELEASE)
+                ?? self::DEFAULT_SOURCE_MAPS_DEVELOPMENT_RELEASE,
+            sourceMapsDevelopmentStore: static::stringSetting('sourceMapsDevelopmentStore', self::ENV_SOURCE_MAPS_DEVELOPMENT_STORE)
+                ?? self::DEFAULT_SOURCE_MAPS_DEVELOPMENT_STORE,
         );
     }
 

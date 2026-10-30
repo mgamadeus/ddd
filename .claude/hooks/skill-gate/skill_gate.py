@@ -26,7 +26,10 @@ import time
 HOOK_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 STATE_ROOT = os.path.join(HOOK_DIRECTORY, 'state')
 SKILL_NAME_PATTERN = re.compile(r'^[A-Za-z0-9_:-]+$')
-WRITE_INDICATORS = re.compile(r"(?:>|\btee\b|\bsed\s+-i|\bperl\s+-[0-9a-z]*i|open\([^)]*['\"][wa]['\"]|\.write\(|\bcp\b|\bmv\b|\bgit\s+mv\b|\bwrite_text\()")
+# commands that may write ANY path they name; a plain redirect (`>`) writes only its own target (REDIRECT_TARGET), so
+# `sed -n … file.php 2>/dev/null` stays a read
+WRITE_INDICATORS = re.compile(r"(?:\btee\b|\bsed\s+-i|\bperl\s+-[0-9a-z]*i|open\([^)]*['\"][wa]['\"]|\.write\(|\bcp\b|\bmv\b|\bgit\s+mv\b|\bwrite_text\()")
+REDIRECT_TARGET = re.compile(r">{1,2}\s*[\"']?([^\s\"';|&<>()]+)")
 PATH_TOKEN = re.compile(r"[\"']?((?:/|\.?[A-Za-z0-9_.-]+/)[^\s\"';|&<>()]*?(?:\.php|SKILL\.md|/references/[^\s\"';|&<>()]+\.md))[\"']?")
 
 PROMPT_CONTEXT = """<system-reminder>
@@ -185,14 +188,19 @@ def mode_check_bash():
             missing_skills = get_missing_skills(command_rule['skills'], loaded_skills, require_all=True)
             if missing_skills:
                 violations.append('{} needs {}'.format(command_rule['category'], ' + '.join(missing_skills)))
+    candidate_paths = []
     if WRITE_INDICATORS.search(command):
+        candidate_paths = [path_match.group(1) for path_match in PATH_TOKEN.finditer(command)]
+    candidate_paths += [redirect_match.group(1) for redirect_match in REDIRECT_TARGET.finditer(command)
+                        if PATH_TOKEN.fullmatch(redirect_match.group(1))]
+    if candidate_paths:
         working_directory = str(hook_input.get('cwd') or os.getcwd())
         directory_match = re.search(r'\bcd\s+("([^"]+)"|\'([^\']+)\'|(\S+))', command)
         if directory_match:
             working_directory = directory_match.group(2) or directory_match.group(3) or directory_match.group(4)
         seen_paths = set()
-        for path_match in PATH_TOKEN.finditer(command):
-            file_path = os.path.normpath(os.path.join(working_directory, os.path.expanduser(path_match.group(1))))
+        for candidate_path in candidate_paths:
+            file_path = os.path.normpath(os.path.join(working_directory, os.path.expanduser(candidate_path)))
             # a path whose directory does not exist is a string in the command, not a write target
             if file_path in seen_paths or not os.path.isdir(os.path.dirname(file_path)):
                 continue
