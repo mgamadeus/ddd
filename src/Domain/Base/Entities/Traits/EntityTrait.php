@@ -16,6 +16,9 @@ use DDD\Infrastructure\Reflection\ReflectionProperty;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\Service;
 use Doctrine\Inflector\InflectorFactory;
+use Doctrine\DBAL\Exception\DeadlockException;
+use Doctrine\DBAL\Exception\LockWaitTimeoutException;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\Exception\ORMException;
 use Doctrine\ORM\NonUniqueResultException;
 use Doctrine\ORM\OptimisticLockException;
@@ -184,6 +187,38 @@ trait EntityTrait
         $repoClassInstance = static::getRepoClassInstance();
         if ($repoClassInstance && method_exists($repoClassInstance, 'update')) {
             return $repoClassInstance->update($this, $depth);
+        }
+        return null;
+    }
+
+    /**
+     * Strict insert of this entity as a new row: a plain INSERT, never an update, also when the entity has an id. A
+     * collision on a unique key or the primary key throws UniqueConstraintViolationException unchanged (nothing is
+     * written) — the caller decides on a retry. {@see update()} stays the default upsert.
+     *
+     * @return static|null
+     * @throws UniqueConstraintViolationException
+     * @throws DeadlockException
+     * @throws LockWaitTimeoutException
+     * @throws BadRequestException
+     * @throws InternalErrorException
+     * @throws InvalidArgumentException
+     * @throws ReflectionException
+     */
+    public function insert(int $depth = DatabaseRepoEntity::UPDATE_DEFAULT_RECURSIVE_DEPTH): ?static
+    {
+        $service = static::getService();
+        if (!$service) {
+            return null;
+        }
+        if (method_exists($service, 'insert')) {
+            $insertedEntity = $service->insert($this, $depth);
+            $this->overwritePropertiesFromOtherObject($insertedEntity);
+            return $this;
+        }
+        $repoClassInstance = static::getRepoClassInstance();
+        if ($repoClassInstance && method_exists($repoClassInstance, 'insert')) {
+            return $repoClassInstance->insert($this, $depth);
         }
         return null;
     }

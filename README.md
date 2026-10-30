@@ -43,6 +43,12 @@ return [
 ];
 ```
 
+On **PostgreSQL**, a new database needs the framework's extensions, the `ddd_ci_ai` collation and its `ddd_*` SQL
+functions before any table: create the role and the database, then run
+`php bin/console app:db:postgres:install-extensions-collation-functions` (idempotent — safe on every deploy), then
+create the tables through the schema diff. Details: the `ddd-database-schema-diff-specialist` skill, section "Setting
+up a new PostgreSQL database".
+
 ## Quick Start
 
 ### 1. Entity

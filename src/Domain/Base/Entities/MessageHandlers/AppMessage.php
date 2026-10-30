@@ -4,7 +4,9 @@ declare (strict_types=1);
 
 namespace DDD\Domain\Base\Entities\MessageHandlers;
 
+use DDD\DDDBundle;
 use DDD\Domain\Base\Entities\ValueObject;
+use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\AuthService;
@@ -41,6 +43,14 @@ class AppMessage extends ValueObject implements SerializerInterface
      * configuration error worth a failed message, never something to route around.
      */
     public ?string $dispatchedFromEnvironment = null;
+
+    /** @var AppMessageDispatchOrigin|null When and from which route or command the message was dispatched */
+    public ?AppMessageDispatchOrigin $dispatchOrigin = null;
+
+    /** The properties that describe WHERE a message came from, not WHAT it is about (not message keys) */
+    public const array DISPATCH_ORIGIN_PROPERTIES = [
+        'accountId', 'tempDirFileName', 'dispatchedFromWorkspaceDir', 'dispatchedFromEnvironment', 'dispatchOrigin',
+    ];
 
     /**
      * Re-creates a serialized message of class $className for hydration through setPropertiesFromObject() — WITHOUT
@@ -112,6 +122,7 @@ class AppMessage extends ValueObject implements SerializerInterface
         /** @var MessageBusInterface $messageBus */
         $this->dispatchedFromWorkspaceDir = DDDService::instance()->getRootDir();
         $this->dispatchedFromEnvironment = DDDService::instance()->getWorkspaceName();
+        $this->setDispatchOrigin();
         $messageBus = DDDService::instance()->getService('messenger.default_bus');
         $messageBus->dispatch($this, $stamps);
     }
@@ -128,6 +139,23 @@ class AppMessage extends ValueObject implements SerializerInterface
     {
         trigger_deprecation('mgamadeus/ddd', '2.66.0', '%s::processOnWorkspaceIfNecessary() does nothing any more and will be removed in 3.0; delete the call from the handler.', static::class);
         return false;
+    }
+
+    /** Stamps when and from which route or command the message is dispatched; fail-soft */
+    public function setDispatchOrigin(): void
+    {
+        $appMessageDispatchOrigin = new AppMessageDispatchOrigin();
+        $appMessageDispatchOrigin->dispatchedAt = DateTime::fromTimestamp(time());
+        try {
+            // the container's public id: DDDService::getService() resolves ids through the service class map, and the
+            // class alias it maps request_stack to is removed from a compiled container
+            $route = DDDBundle::getContainer()->get('request_stack')?->getCurrentRequest()?->attributes->get('_route');
+            $appMessageDispatchOrigin->route = is_string($route) ? $route : null;
+        } catch (Throwable) {
+        }
+        $command = PHP_SAPI === 'cli' ? (($_SERVER['argv'] ?? [])[1] ?? null) : null;
+        $appMessageDispatchOrigin->command = is_string($command) ? $command : null;
+        $this->dispatchOrigin = $appMessageDispatchOrigin;
     }
 
     public function setAccountId(): void

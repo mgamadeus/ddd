@@ -60,3 +60,6 @@
 composer.lock
 # PHPUnit result cache
 /.phpunit.cache/
+
+# Skill gate: per-session record of loaded skills
+/.claude/hooks/skill-gate/state/

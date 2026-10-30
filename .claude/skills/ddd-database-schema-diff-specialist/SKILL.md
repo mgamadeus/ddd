@@ -1,6 +1,6 @@
 ---
 name: ddd-database-schema-diff-specialist
-description: "Understand and operate the DDD live-vs-target database schema diff system: compute diffs between entity-derived schema and live INFORMATION_SCHEMA, apply drift fixes per table or in bulk, and build the admin interface in a consuming app. Covers the diff value objects, the 13-phase SQL assembler, the false-positive normalisation catalog (string NULL defaults, BOOLEAN vs TINYINT, generation expressions, trigger bodies), VECTOR reset semantics, severity, the which-side-is-wrong pre-apply checklist, the large-table production guard (bypass is CLI/messenger-only, never HTTP), the diff-signature gate and apply lock, the v2.19-to-v2.20 migration checklist, the admin-screen build guide, pt-online-schema-change FK-rename coexistence, and troubleshooting (openApi 500, DIFF_SIGNATURE_MISMATCH, DIFF_APPLY_LOCK_BUSY, stale caches). Use when computing or applying schema diffs, debugging false-positive MODIFYs, deciding entity-vs-DB, migrating to v2.20, wiring the diff admin screen, or reasoning about pt-osc."
+description: "Operate the DDD live-vs-target schema diff: compute diffs between the entity-derived and the live schema on MariaDB and PostgreSQL, apply drift fixes per table or in bulk, build the admin interface in a consuming app, and set up a new PostgreSQL database (app:db:postgres:install-extensions-collation-functions, pre-deploy hook). Covers the diff value objects, the 13-phase SQL assembler, the false-positive normalisation catalog, VECTOR reset semantics, severity, the which-side-is-wrong pre-apply checklist, the large-table production guard (bypass is CLI/messenger-only, never HTTP), the diff-signature gate and apply lock, the admin-screen build guide, pt-online-schema-change FK-rename coexistence, and troubleshooting (openApi 500, DIFF_SIGNATURE_MISMATCH, DIFF_APPLY_LOCK_BUSY, stale caches). Use when setting up a PostgreSQL database, computing or applying schema diffs, debugging false-positive MODIFYs, deciding entity-vs-DB, migrating to v2.20, wiring the diff admin screen, or reasoning about pt-osc."
 metadata:
   author: mgamadeus
   version: "2.0.0"
@@ -88,6 +88,80 @@ Both attributes are required. `#[HideProperty]` alone leaves the type in the sch
    - Present → compute per-aspect diffs, assemble phase-ordered statements, classify severity.
 4. Live tables not in target and not ignored → `DROP_TABLE` diff (always `DESTRUCTIVE`).
 5. Filter out `NO_CHANGE` rows before returning.
+
+## PostgreSQL
+
+Same service, same phases, same value objects — dialect-dispatched inside `DatabaseSchemaDiffService`:
+
+- **Target side = a scratch schema.** `buildPostgresTargetTables()` renders the target tables with
+  `PostgresDdlRenderer::renderCreate()` (without the foreign-key phase) into a fresh schema `ddd_diff_<random>` of the
+  same database and introspects it with `PostgresSchemaIntrospectionService` — the same class that reads the live
+  schema (`current_schema()` of the connection) — without the tables an extension owns (PostGIS `spatial_ref_sys`).
+  The container autowires the MariaDB introspection class; on PostgreSQL the service replaces it with its own. Both sides are normalised by PostgreSQL itself (`format_type`,
+  `pg_get_expr`, `pg_get_indexdef`, `pg_get_triggerdef` + function source), so type aliases, default casts, JSON,
+  generated expressions, expression indexes and trigger bodies never report false drift. Schema qualifiers are stripped
+  on both sides.
+- **One transaction, rolled back.** The scratch build runs in one transaction (`SET LOCAL search_path` only — safe behind
+  a transaction-mode pooler) that is rolled back; the scratch schema never persists, and its random name keeps
+  concurrent diffs apart. Global objects (extensions, the `ddd_*` helpers of `ensure()`) are taken from the live
+  database, never created in the scratch schema — run `ensure()` on a new database first.
+- **Privilege.** `CREATE SCHEMA` needs the CREATE privilege on the database; without it the diff throws an
+  `InternalErrorException` naming `GRANT CREATE ON DATABASE`.
+- **Comparison.** Indexes match by their definition without the index name (`DBCanonicalIndex::$definitionSql` re-creates
+  them, `DBIndexDiff::$targetDefinitionSql` on ADD); foreign keys are compared logically (`DatabaseForeignKey` vs
+  `pg_constraint`); there is no table collation.
+- **SQL.** `ALTER COLUMN … TYPE … USING`, `SET/DROP DEFAULT`, `SET/DROP NOT NULL`, `ADD/DROP IDENTITY` for exactly the
+  changed attributes; generated column = DROP + ADD; `DROP INDEX`; `ADD/DROP CONSTRAINT`; triggers = trigger function +
+  trigger from `PostgresDdlRenderer::renderTrigger()`, dropped with `DROP TRIGGER … ON <table>`.
+- **Apply** (`executePostgresTableDiffs()`): every statement of the batch in ONE transaction with
+  `SET LOCAL lock_timeout` (`POSTGRES_APPLY_LOCK_TIMEOUT`) — PostgreSQL DDL is transactional, a failure leaves the schema
+  untouched; foreign keys run after every other statement (no `FOREIGN_KEY_CHECKS` switch). The apply lock is the
+  dialect's `LockService` (a direct, non-pooled connection on PostgreSQL); the diff and the apply themselves use the
+  scope's normal connection.
+- **Large-table guard:** `pg_total_relation_size()` and `pg_class.reltuples`.
+- Not yet: the online-safe forms (`CREATE INDEX CONCURRENTLY`, `NOT VALID` + `VALIDATE`, rewrite classification per
+  operation) — the guard blocks a direct apply on a large table meanwhile.
+
+### Setting up a new PostgreSQL database
+
+The framework's SQL relies on PostgreSQL objects that are not tables: the extensions `pg_trgm`, `unaccent`, `postgis`,
+`vector`, `vectorscale`, `pg_stat_statements`, the case- and accent-insensitive collation `ddd_ci_ai` (every text
+column uses it), and the `ddd_*` SQL functions (`ddd_json_merge_patch` for mergeable JSON columns, `ddd_fold` /
+`ddd_unaccent` for fulltext, `ddd_translatable_text` for search columns, `ddd_now` for change history, …). The schema
+diff compares tables, not these. Order for a new database:
+
+1. **Role and database** — created by the operator (not the framework); the role owns the database.
+2. **`php bin/console app:db:postgres:install-extensions-collation-functions`** — creates the extensions and the
+   collation if missing, creates or replaces the `ddd_*` functions. PostgreSQL only (on MariaDB it does nothing),
+   idempotent (`IF NOT EXISTS`, `CREATE OR REPLACE`, one transaction), `--dry-run` prints the statements. Creating
+   `postgis` / `vectorscale` needs a role allowed to create extensions (superuser, or the extensions pre-installed).
+3. **Tables** — the schema diff (`computeDiffs` + apply, or the admin screen), or the generated SQL.
+
+Run step 2 **on every deploy**, as a pre-deploy step — e.g. a Kubernetes / Argo CD `PreSync` hook job running the
+command with the new image — and in any job that creates or refreshes a database from a template: a framework release
+that changes a `ddd_*` function (its changelog says so) then reaches every database without a manual step. The schema
+diff's PostgreSQL apply also runs these statements first, each in a savepoint (one the role may not run — an
+extension it cannot create, a function another role owns — is skipped, not an error), so a diff never applies
+against a missing function or collation; the command run by a privileged role stays the primary path.
+
+```yaml
+# Argo CD PreSync hook: install / update the framework's PostgreSQL objects before the new pods start
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: app-db-postgres-install
+  annotations: { argocd.argoproj.io/hook: PreSync, argocd.argoproj.io/hook-delete-policy: BeforeHookCreation }
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: install
+          image: <app image of this release>
+          command: ["php", "bin/console", "app:db:postgres:install-extensions-collation-functions"]
+          envFrom: [{ secretRef: { name: app-database } }]
+```
 
 ## Phase-Ordered SQL Assembly
 
@@ -288,7 +362,7 @@ Bypass is **only** via the `$bypassProductionGuard = true` parameter on `applyDi
 
 The decorator and the throw share the same `buildProductionGuardMessage()` helper — both paths surface identical wording.
 
-Threshold rationale: matches the `rb-db-online-schema-update-specialist` skill's decision tree. Tables below both thresholds absorb a brief TOI block from direct ALTER; above either threshold, COPY-forcing operations must go through pt-online-schema-change.
+Threshold rationale: the online-schema-change decision tree of a Galera cluster. Tables below both thresholds absorb a brief TOI block from direct ALTER; above either threshold, COPY-forcing operations must go through pt-online-schema-change.
 
 ### UX requirements for blocked diffs
 
@@ -320,7 +394,7 @@ The block must be **proactively visible** before the operator clicks anything �
 
 - **Card border** — recolour to subtle red (`border-red-300`) when `directApplyBlocked === true`. Visible while skimming the list.
 - **Header badge** — add an `"Apply blocked"` chip next to the existing changeType / severity / size chips. Inline with where the operator already looks for status.
-- **Inline banner** — full multi-line warning below the card header, in red-tinted card style: bold heading, prose explanation of why, bullet-list of `copyForcingOperations`, and a single line on how to proceed (`rb-db-online-schema-update-specialist` skill).
+- **Inline banner** — full multi-line warning below the card header, in red-tinted card style: bold heading, prose explanation of why, bullet-list of `copyForcingOperations`, and a single line on how to proceed (the deployment's online-schema-change runbook).
 
 **3. Always render the size/rows stats** regardless of block status — both as a compact badge in the header row (`"374 MB · 290,067 rows"`). The operator should be able to look at any diff card and instantly know whether they're dealing with a small table or a giant one.
 
@@ -878,7 +952,7 @@ curl -sS -X POST "https://<env>/api/admin/common/databaseModels/applyDiff" \
 
 ## Known Limitations
 
-- **No atomic rollback.** MySQL DDL is implicit-commit; partial-apply failures leave a mixed state. Mitigation: re-introspection on every apply response surfaces what's still pending.
+- **No atomic rollback on MariaDB.** MySQL DDL is implicit-commit; partial-apply failures leave a mixed state (PostgreSQL applies in one transaction). Mitigation: re-introspection on every apply response surfaces what's still pending.
 - **NOT NULL VECTOR ADD on populated table** isn't fully handled — ADD COLUMN fails before backfill can run. Workaround would be ADD-nullable → backfill → MODIFY NOT NULL (currently not implemented).
 - **VECTOR index option changes** (`distanceMetric`, `maxNeighbors`) aren't currently diffed. Match key is `(indexType, columns)` — two VECTOR indexes on the same columns with different metrics look identical.
 - **`CURRENT_TIMESTAMP` defaults aren't expressible on the target side.** Live wins by design (`defaultIsExpression` short-circuits the compare). Removing such a default requires a manual `ALTER`.

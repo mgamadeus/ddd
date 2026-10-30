@@ -7,6 +7,7 @@ namespace DDD\Symfony\Messenger\Middleware;
 use DDD\Domain\Base\Entities\MessageHandlers\AppMessageHandler;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Services\DDDService;
+use DDD\Infrastructure\Services\ServicesThrowErrorsResetter;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Handler\HandlersLocatorInterface;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
@@ -22,6 +23,10 @@ use Throwable;
  * ({@see ConsumedByWorkerStamp}) reaches its handler, this middleware runs
  * {@see AppMessageHandler::resetWorkerStateForNewJob()}: Doctrine unit-of-work caches cleared, every connection without
  * an active transaction closed (lazy reconnect), both static entity registries emptied.
+ *
+ * Independent of the reset opt-out, `throwErrors` of every instantiated DDD service goes back to its declared default
+ * before the job ({@see ServicesThrowErrorsResetter}): a flag an earlier job switched on and left on would otherwise make
+ * this job's lookups throw where they return null.
  *
  * After the job — whether it returned or threw, and independent of the reset opt-out — a transaction the HANDLER left
  * open is rolled back on every connection this process has (all scopes), so it cannot swallow the next message's
@@ -39,8 +44,10 @@ use Throwable;
  */
 class FreshWorkerStateMiddleware implements MiddlewareInterface
 {
-    public function __construct(protected ?HandlersLocatorInterface $handlersLocator = null)
-    {
+    public function __construct(
+        protected ?HandlersLocatorInterface $handlersLocator = null,
+        protected ?ServicesThrowErrorsResetter $servicesThrowErrorsResetter = null,
+    ) {
     }
 
     public function handle(Envelope $envelope, StackInterface $stack): Envelope
@@ -54,6 +61,11 @@ class FreshWorkerStateMiddleware implements MiddlewareInterface
             } catch (Throwable) {
                 // fail-soft, see the class docblock
             }
+        }
+        try {
+            $this->servicesThrowErrorsResetter?->resetThrowErrorsOfInstantiatedServices();
+        } catch (Throwable) {
+            // fail-soft, see the class docblock
         }
         $transactionNestingLevelsBeforeJob = $this->getTransactionNestingLevelsByScope();
         try {

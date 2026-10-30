@@ -9,6 +9,7 @@ use Brick\Geo\Polygon as BrickPolygon;
 use DDD\Domain\Common\Entities\Geometry\Cartesian\Point2D;
 use DDD\Domain\Common\Entities\Geometry\Cartesian\Polygon;
 use Doctrine\DBAL\Platforms\AbstractPlatform;
+use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\DBAL\Types\Type;
 
 /**
@@ -44,12 +45,27 @@ class PolygonType extends Type
         return 'POLYGON';
     }
 
+    /** PostgreSQL only (§4.9): pure WKB via `ST_AsBinary()`, no SRID prefix to strip. MariaDB keeps the bare column. */
+    public function convertToPHPValueSQL($sqlExpr, $platform): string
+    {
+        if ($platform instanceof PostgreSQLPlatform) {
+            return sprintf('ST_AsBinary(%s)', $sqlExpr);
+        }
+        return $sqlExpr;
+    }
+
     public function convertToPHPValue(mixed $value, AbstractPlatform $platform): ?Polygon
     {
-        if ($value === null || !is_string($value) || $value === '') {
+        if ($value === null) {
             return null;
         }
-        $wkb = strlen($value) > 4 ? substr($value, 4) : $value;
+        if (is_resource($value)) {
+            $value = stream_get_contents($value);
+        }
+        if (!is_string($value) || $value === '') {
+            return null;
+        }
+        $wkb = (!$platform instanceof PostgreSQLPlatform && strlen($value) > 4) ? substr($value, 4) : $value;
         try {
             $geometry = (self::$wkbReader ??= new WKBReader())->read($wkb);
         } catch (\Throwable) {

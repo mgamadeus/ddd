@@ -10,6 +10,7 @@ use DDD\Tests\Integration\Fixtures\Entities\CounterRows\CounterRows;
 use DDD\Tests\Integration\Fixtures\Entities\FixtureSettings;
 use DDD\Tests\Integration\Fixtures\Entities\SpatialRows\SpatialRow;
 use DDD\Tests\Integration\Fixtures\Entities\SpatialRows\SpatialRows;
+use DDD\Tests\Integration\Fixtures\Repo\DB\CounterRows\DBCounterRowModel;
 use DDD\Tests\Integration\Fixtures\Repo\DB\CounterRows\DBCounterRows;
 use DDD\Tests\Integration\Fixtures\Repo\DB\SpatialRows\DBSpatialRows;
 use DDD\Tests\Integration\IntegrationTestCase;
@@ -42,7 +43,7 @@ class BatchUpsertTest extends IntegrationTestCase
     protected function storedCounterRowsByBusinessKey(): array
     {
         $rowsByBusinessKey = [];
-        foreach (static::connection()->fetchAllAssociative('SELECT * FROM CounterRows') as $row) {
+        foreach (static::connection()->fetchAllAssociative('SELECT * FROM `CounterRows`') as $row) {
             $rowsByBusinessKey[$row['businessKey']] = $row;
         }
         return $rowsByBusinessKey;
@@ -66,7 +67,7 @@ class BatchUpsertTest extends IntegrationTestCase
         (new DBSpatialRows())->batchUpdate($spatialRowSet);
 
         $storedRow = static::connection()->fetchAssociative(
-            'SELECT label, location, flag, payload, amount, VEC_ToText(embedding) AS embedding FROM SpatialRows'
+            'SELECT label, location, flag, payload, amount, VEC_ToText(embedding) AS embedding FROM `SpatialRows`'
         );
         $this->assertNull($storedRow['location']);
         $this->assertSame(1, (int)$storedRow['flag']);
@@ -77,7 +78,7 @@ class BatchUpsertTest extends IntegrationTestCase
 
     public function testAnOmittedPreservedPropertyKeepsTheStoredValue(): void
     {
-        static::connection()->insert('CounterRows', ['businessKey' => 'kept', 'displayOrder' => 9, 'amount' => 1]);
+        static::insertRow('CounterRows', ['businessKey' => 'kept', 'displayOrder' => 9, 'amount' => 1]);
         $storedId = (int)static::connection()->lastInsertId();
         $payload = (object)['id' => $storedId, 'businessKey' => 'kept', 'amount' => 2];
         $counterRow = new CounterRow();
@@ -110,7 +111,7 @@ class BatchUpsertTest extends IntegrationTestCase
     {
         $connection = static::connection();
         $connection->beginTransaction();
-        $connection->insert('CounterRows', ['businessKey' => 'caller']);
+        static::insertRow('CounterRows', ['businessKey' => 'caller']);
         try {
             $this->batchUpdateCounterRows(
                 $this->newCounterRow('first', ['amount' => 1]),
@@ -134,7 +135,7 @@ class BatchUpsertTest extends IntegrationTestCase
     /** @dataProvider inputOrders */
     public function testAnIdRowAndABusinessKeyRowOnOneExistingRowLeaveTheLastInputValue(bool $idRowFirst): void
     {
-        static::connection()->insert('CounterRows', ['businessKey' => 'shared', 'amount' => 0]);
+        static::insertRow('CounterRows', ['businessKey' => 'shared', 'amount' => 0]);
         $storedId = (int)static::connection()->lastInsertId();
         $idRow = $this->newCounterRow('shared', ['amount' => 10]);
         $idRow->id = $storedId;
@@ -144,7 +145,65 @@ class BatchUpsertTest extends IntegrationTestCase
 
         $expectedAmount = $idRowFirst ? 20 : 10;
         $this->assertSame($expectedAmount, (int)$this->storedCounterRowsByBusinessKey()['shared']['amount']);
-        $this->assertSame(1, (int)static::connection()->fetchOne('SELECT COUNT(*) FROM CounterRows'));
+        $this->assertSame(1, (int)static::connection()->fetchOne('SELECT COUNT(*) FROM `CounterRows`'));
+    }
+
+    /**
+     * §5 fixtures ("Writes:" bullet) "new rows B, A keep input-order ids": a batch of brand-new rows (no id,
+     * distinct business keys — one multi-row statement, no row-by-row split) gets generated ids in INPUT order,
+     * not insertion order flipped by any grouping — `B` (listed first) must get the LOWER id even though
+     * alphabetically `A` < `B`.
+     */
+    public function testNewRowsKeepInputOrderIds(): void
+    {
+        $this->batchUpdateCounterRows(
+            $this->newCounterRow('B', ['amount' => 1]),
+            $this->newCounterRow('A', ['amount' => 2])
+        );
+
+        $rows = $this->storedCounterRowsByBusinessKey();
+        $this->assertLessThan((int)$rows['A']['id'], (int)$rows['B']['id'], '"B" was listed first and must get the lower id');
+    }
+
+    /**
+     * §5 fixtures ("Writes:" bullet) "insertOrNull() race semantics" / architecture §4.3 "insert or lose the
+     * race": a plain INSERT that returns null on a unique-key collision instead of merging onto the row that
+     * won the race — unlike `upsert()`/`batchUpdate()`, which would silently fold the losing attempt's columns
+     * onto the winner's row (exactly the race `ServiceTasksService::insertIfAbsent()` /
+     * `TableAssignmentsService::tryAssign()` must not have).
+     */
+    public function testInsertOrNullLosesARaceWithoutMergingOntoTheWinner(): void
+    {
+        $entityManager = static::entityManager();
+
+        $winner = new DBCounterRowModel();
+        $winner->businessKey = 'race';
+        $winner->amount = 1;
+        $winnerId = $entityManager->insertOrNull($winner);
+        $this->assertNotNull($winnerId);
+
+        $loser = new DBCounterRowModel();
+        $loser->businessKey = 'race';
+        $loser->amount = 999;
+        $this->assertNull($entityManager->insertOrNull($loser), 'the second insert lost the race on the UNIQUE businessKey');
+
+        $this->assertSame(1, (int)static::connection()->fetchOne('SELECT COUNT(*) FROM `CounterRows`'));
+        $this->assertSame(1, (int)$this->storedCounterRowsByBusinessKey()['race']['amount'], 'the winner row must be untouched, not merged onto');
+    }
+
+    /**
+     * insertOrNull() swallows ONLY a unique-key collision — every other error throws (architecture §4.3). A
+     * label over the VARCHAR(255) bound (the same forced failure `testAMixedBatchWhoseSecondStatementFailsLeavesNoRow`
+     * uses) is unrelated to any unique key, so it must propagate, not come back as null.
+     */
+    public function testInsertOrNullThrowsOnAnUnrelatedConstraintViolation(): void
+    {
+        $counterRowModel = new DBCounterRowModel();
+        $counterRowModel->businessKey = 'too-long-label';
+        $counterRowModel->label = str_repeat('x', 300);
+
+        $this->expectException(\Throwable::class);
+        static::entityManager()->insertOrNull($counterRowModel);
     }
 
     public function testTheHeatmapShapeCountsAsBefore(): void

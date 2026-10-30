@@ -7,6 +7,7 @@ namespace DDD\Domain\Base\Entities\MessageHandlers;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityRegistry;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Domain\Base\Repo\Virtual\VirtualEntityRegistry;
+use DDD\Infrastructure\Logging\IssuesMessengerContextBuilder;
 use DDD\Infrastructure\Services\AuthService;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\IssuesLogService;
@@ -19,6 +20,12 @@ use Throwable;
 
 abstract class AppMessageHandler
 {
+    /** Context key of a handler's own description of the failure (as rankingCoach's handlers write it) */
+    public const string ISSUES_CONTEXT_CUSTOM_MESSAGE = 'messenger.custom_message';
+
+    /** Context key of the message's scalar public properties, JSON-encoded */
+    public const string ISSUES_CONTEXT_MESSAGE_PAYLOAD = 'messenger.message_payload';
+
     /**
      * A CONSUMED worker job starts on fresh state by default, like a web request: Doctrine unit of work cleared,
      * database connections renewed (fresh session and snapshot), static entity registries emptied — see
@@ -122,6 +129,9 @@ abstract class AppMessageHandler
                 $shortTrace
             )
         );
+        // a caught job error is an issue too: into the issues log (registry, alerts) — once, even when the handler
+        // also calls logIssue() for the same throwable
+        $this->logThrowableToIssues($t, [self::ISSUES_CONTEXT_CUSTOM_MESSAGE => $context]);
     }
 
     /**
@@ -139,7 +149,7 @@ abstract class AppMessageHandler
         $additionalContext = [];
 
         if ($customMessage) {
-            $additionalContext['message.custom_message'] = $customMessage;
+            $additionalContext[self::ISSUES_CONTEXT_CUSTOM_MESSAGE] = $customMessage;
         }
 
         try {
@@ -149,21 +159,40 @@ abstract class AppMessageHandler
         }
 
         $additionalContext += $appMessagePayload;
+        // what the message is about and where it came from — the same fields as an uncaught worker failure
+        $additionalContext += (new IssuesMessengerContextBuilder())->buildMessageContext($appMessage);
+        $additionalContext['messenger.handler'] = static::class;
 
-        $this->issuesLogService->logThrowable(
-            $e,
-            LogLevel::CRITICAL,
-            $additionalContext,
-            false,
-            IssuesLogService::LOG_MESSAGE_SECTION_MESSENGER,
-        );
+        $this->logThrowableToIssues($e, $additionalContext);
+    }
+
+    /**
+     * A caught job error into the issues log: CRITICAL, section MESSENGER. Logged once per throwable (the issues log's
+     * log-once mark), and a failure of the logging itself never leaves the handler's catch block.
+     *
+     * @param array<string, mixed> $additionalContext Issues-log context (flat ECS fields)
+     */
+    protected function logThrowableToIssues(Throwable $throwable, array $additionalContext): void
+    {
+        try {
+            $issuesLogService = $this->issuesLogService ?? DDDService::instance()->getService(IssuesLogService::class);
+            $issuesLogService->logThrowable(
+                $throwable,
+                LogLevel::CRITICAL,
+                $additionalContext,
+                false,
+                IssuesLogService::LOG_MESSAGE_SECTION_MESSENGER,
+            );
+        } catch (Throwable) {
+            // the job's own error handling goes on; the Monolog line of logShortException() is already written
+        }
     }
 
     /**
      * Extracts scalar properties from the message and JSON encodes them for logging.
      *
      * @param AppMessage $appMessage The message to extract payload from
-     * @return array Additional context with message.payload containing JSON-encoded scalar values
+     * @return array<string, string> json_encode input: messenger.message_payload with the JSON-encoded scalar values
      * @throws JsonException
      * @throws ReflectionException
      */
@@ -173,6 +202,10 @@ abstract class AppMessageHandler
 
         $reflection = $appMessage::getReflectionClass();
         foreach ($reflection->getProperties(ReflectionProperty::IS_PUBLIC) as $property) {
+            // an unset typed property (e.g. tempDirFileName) would throw and lose the whole payload
+            if ($property->isStatic() || !$property->isInitialized($appMessage)) {
+                continue;
+            }
             $value = $property->getValue($appMessage);
             if ($value !== null && !is_object($value) && !is_array($value)) {
                 $payload[$property->getName()] = $value;
@@ -180,7 +213,7 @@ abstract class AppMessageHandler
         }
 
         return [
-            'message.payload' => json_encode($payload, JSON_THROW_ON_ERROR),
+            self::ISSUES_CONTEXT_MESSAGE_PAYLOAD => json_encode($payload, JSON_THROW_ON_ERROR),
         ];
     }
 }

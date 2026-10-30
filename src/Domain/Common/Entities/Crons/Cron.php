@@ -17,20 +17,23 @@ use DDD\Domain\Common\Entities\Roles\Role;
 use DDD\Domain\Common\Repo\DB\Crons\DBCron;
 use DDD\Domain\Common\Services\CronsService;
 use DDD\Infrastructure\Base\DateTime\DateTime;
+use DDD\Infrastructure\Cache\Cache;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Services\DDDService;
+use DDD\Infrastructure\Services\IssuesLogService;
 use Doctrine\ORM\Exception\ORMException;
 use Doctrine\ORM\NonUniqueResultException;
 use Doctrine\ORM\OptimisticLockException;
-use Exception;
 use Psr\Cache\InvalidArgumentException;
-use ReflectionException;
-use Throwable;
+use Psr\Log\LogLevel;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Validator\Constraints\Length;
 use Symfony\Component\Validator\Constraints\NotBlank;
+use Exception;
+use ReflectionException;
+use Throwable;
 
 /**
  * @method Crons getParent()
@@ -43,6 +46,14 @@ use Symfony\Component\Validator\Constraints\NotBlank;
 #[RolesRequiredForUpdate(Role::ADMIN)]
 class Cron extends Entity
 {
+    /** Characters of a failed run's output kept in the issues log (the end: where the error is) */
+    public const int LOGGED_OUTPUT_TAIL_LENGTH = 2000;
+
+    /** An unregistered command is logged at most this often per Cron */
+    public const int UNREGISTERED_COMMAND_LOG_INTERVAL_SECONDS = 3600;
+
+    public const string UNREGISTERED_COMMAND_LOG_CACHE_KEY_PREFIX = 'ddd_cron_unregistered_command_';
+
     use QueryOptionsTrait, ChangeHistoryTrait;
 
     /** @var string The Cron's name */
@@ -82,20 +93,20 @@ class Cron extends Entity
      * Execute the Crons command and stores the results of the Cron execution in a new CronExecution,
      * and returns CronExecution if Cron is scheduled for execution of no other Execution is already running.
      *
-     * A command that times out or throws never leaves the execution RUNNING: the execution is closed as FAILED with
-     * the captured output (stdout and stderr) and the reason, and the next slot is ALWAYS advanced. A RUNNING row
-     * excludes the Cron from the tick until the cleanup removes it after hours, so a hanging command would otherwise
-     * re-fire only every few hours and hang again; and the exception used to abort every later Cron of the tick.
+     * Failure isolation — one Cron never blocks itself or the tick, and every failure reaches the issues log (ERROR):
+     * - A command this application does not register (a row from another branch, a removed command) is caught BEFORE
+     *   any execution row exists: one ERROR (at most hourly per Cron), the next slot advanced, null returned.
+     * - Once the RUNNING row is written, every way out closes it — ENDED, FAILED with the reason — and advances the
+     *   next slot, also when a bookkeeping write fails.
+     * - The bookkeeping stamps (`lastExecutionStartedAt`, `nextExecutionScheduledAt`) are partial writes: they never
+     *   re-run the entity validation (whose command check could fail on exactly the Cron being reported).
+     * - A failed run (non-zero exit, timeout, a throwable) is logged with name, id, command, exit code, timeout flag and
+     *   the output's tail; a failure of the logging itself never leaves this method.
      *
      * @param int $timeoutPerCronInSeconds
      * @return CronExecution|null
-     * @throws BadRequestException
-     * @throws InternalErrorException
-     * @throws InvalidArgumentException
-     * @throws ReflectionException
-     * @throws ORMException
-     * @throws NonUniqueResultException
-     * @throws OptimisticLockException
+     * @throws Throwable Closing the execution row itself failed (after the slot was advanced) — Crons::execute() logs
+     *                   it and goes on with the next Cron
      */
     public function execute(int $timeoutPerCronInSeconds = 60): ?CronExecution
     {
@@ -106,38 +117,149 @@ class Cron extends Entity
         ) {
             return null;
         }
+        if (!$this->isCommandRegistered()) {
+            $this->reportUnregisteredCommand();
+            $this->advanceNextExecution();
+            return null;
+        }
         $cronExecution = new CronExecution();
         $cronExecution->cronId = $this->id;
         $cronExecution->executionStartedAt = new DateTime();
         $cronExecution->state = CronExecution::STATE_RUNNING;
         $this->persistCronExecution($cronExecution);
-        $this->lastExecutionStartedAt = $cronExecution->executionStartedAt;
-        $this->persistCron();
+
+        $process = null;
+        $failureMessage = null;
+        $failureThrowable = null;
+        $timedOut = false;
+        $closingFailure = null;
         try {
-            $process = null;
-            $failureMessage = null;
+            $this->lastExecutionStartedAt = $cronExecution->executionStartedAt;
+            $this->persistCronColumns('lastExecutionStartedAt');
             try {
                 $process = $this->createCronCommandProcess($timeoutPerCronInSeconds);
                 $process->run();
             } catch (ProcessTimedOutException) {
+                $timedOut = true;
                 $failureMessage = 'Cron command timed out after ' . $timeoutPerCronInSeconds . ' s and was stopped';
-            } catch (Throwable $throwable) {
-                $failureMessage = 'Cron command failed: ' . get_class($throwable) . ': ' . $throwable->getMessage();
             }
+        } catch (Throwable $throwable) {
+            $failureThrowable = $throwable;
+            $failureMessage = 'Cron command failed: ' . get_class($throwable) . ': ' . $throwable->getMessage();
+        } finally {
+            // every way out after the RUNNING row: closed, and the Cron not left due at a slot that has passed
             $cronExecution->executionEndedAt = new DateTime();
-            $cronExecution->executionState = $failureMessage === null && $process->isSuccessful()
+            $cronExecution->executionState = $failureMessage === null && $process?->isSuccessful()
                 ? CronExecution::EXECUTION_STATE_SUCCESSFUL
                 : CronExecution::EXECUTION_STATE_FAILED;
             $cronExecution->output = $this->getCombinedProcessOutput($process, $failureMessage);
             $cronExecution->state = CronExecution::STATE_ENDED;
-            $this->persistCronExecution($cronExecution);
-        } finally {
-            // even when closing the execution failed: the Cron must not stay due at a slot that has passed
-            $this->nextExecutionScheduledAt = $this->getNextScheduledExecution();
-            $this->persistCron();
+            try {
+                $this->persistCronExecution($cronExecution);
+            } catch (Throwable $throwable) {
+                $closingFailure = $throwable;
+            }
+            $this->advanceNextExecution();
+        }
+        if ($cronExecution->executionState === CronExecution::EXECUTION_STATE_FAILED) {
+            $this->reportFailedExecution($cronExecution, $process, $timedOut, $failureThrowable, $timeoutPerCronInSeconds);
+        }
+        if ($closingFailure !== null) {
+            throw $closingFailure;
         }
         $cronExecution->cron = $this;
         return $cronExecution;
+    }
+
+    /** The next slot, written as a partial update; a failing write is logged, never thrown */
+    protected function advanceNextExecution(): void
+    {
+        try {
+            $this->nextExecutionScheduledAt = $this->getNextScheduledExecution();
+            $this->persistCronColumns('nextExecutionScheduledAt');
+        } catch (Throwable $throwable) {
+            $this->logCronFailure($throwable, ['cronStep' => 'advanceNextExecution']);
+        }
+    }
+
+    /** Whether this application registers the Cron's command (its first word) — the seam a test replaces */
+    protected function isCommandRegistered(): bool
+    {
+        $commandName = explode(' ', trim((string)($this->command ?? '')), 2)[0];
+        if ($commandName === '') {
+            return false;
+        }
+        try {
+            return DDDService::instance()->createConsoleApplicationForCurrentKernel()->has($commandName);
+        } catch (Throwable) {
+            // the application cannot be built here: let the process report it
+            return true;
+        }
+    }
+
+    /** One ERROR for an unregistered command — at most once per hour per Cron, so a stale row does not flood the log */
+    protected function reportUnregisteredCommand(): void
+    {
+        $rateLimitKey = self::UNREGISTERED_COMMAND_LOG_CACHE_KEY_PREFIX . ($this->id ?? $this->name ?? '');
+        try {
+            $cache = Cache::instance();
+            if ($cache->get($rateLimitKey)) {
+                return;
+            }
+            $cache->set($rateLimitKey, true, self::UNREGISTERED_COMMAND_LOG_INTERVAL_SECONDS);
+        } catch (Throwable) {
+            // no cache: every occurrence is logged
+        }
+        $this->logCronFailure(new CronFailedException(
+            sprintf('Cron %s (%s): command `%s` is not registered in this application', $this->name ?? '?', $this->id ?? '?', $this->command ?? ''),
+            (string)($this->name ?? $this->id),
+            CronFailedException::KIND_COMMAND_NOT_REGISTERED
+        ));
+    }
+
+    /** The failed run as an ERROR: the throwable it threw, or a CronFailedException for an exit code / a timeout */
+    protected function reportFailedExecution(
+        CronExecution $cronExecution,
+        ?Process $process,
+        bool $timedOut,
+        ?Throwable $failureThrowable,
+        int $timeoutPerCronInSeconds
+    ): void {
+        $exitCode = $process !== null && !$timedOut && $failureThrowable === null ? $process->getExitCode() : null;
+        $throwable = $failureThrowable ?? new CronFailedException(
+            $timedOut
+                ? sprintf('Cron %s (%s): command `%s` timed out after %d s', $this->name ?? '?', $this->id ?? '?', $this->command ?? '', $timeoutPerCronInSeconds)
+                : sprintf('Cron %s (%s): command `%s` failed with exit code %s', $this->name ?? '?', $this->id ?? '?', $this->command ?? '', $exitCode ?? '?'),
+            (string)($this->name ?? $this->id),
+            $timedOut ? CronFailedException::KIND_TIMEOUT : CronFailedException::KIND_EXIT_CODE
+        );
+        $this->logCronFailure($throwable, [
+            'exitCode' => $exitCode,
+            'timedOut' => $timedOut,
+            'outputTail' => mb_substr((string)$cronExecution->output, -self::LOGGED_OUTPUT_TAIL_LENGTH),
+        ]);
+    }
+
+    /**
+     * Into the issues log as ERROR (section CLI) with the Cron's name, id and command — never throws.
+     *
+     * @param array<string, mixed> $additionalContext
+     */
+    protected function logCronFailure(Throwable $throwable, array $additionalContext = []): void
+    {
+        try {
+            /** @var IssuesLogService $issuesLogService */
+            $issuesLogService = DDDService::instance()->getService(IssuesLogService::class);
+            $issuesLogService->logThrowable(
+                $throwable,
+                LogLevel::ERROR,
+                ['cronName' => $this->name ?? null, 'cronId' => $this->id ?? null, 'cronCommand' => $this->command ?? null] + $additionalContext,
+                false,
+                IssuesLogService::LOG_MESSAGE_SECTION_CLI
+            );
+        } catch (Throwable) {
+            error_log('Cron ' . ($this->name ?? '?') . ' failed: ' . $throwable->getMessage());
+        }
     }
 
     /**
@@ -187,10 +309,13 @@ class Cron extends Entity
         $cronExecution->update();
     }
 
-    /** Writes this Cron row — the seam a test replaces. */
-    protected function persistCron(): void
+    /**
+     * Writes only these columns of this Cron row, without the entity validation — the bookkeeping stamps; the seam a
+     * test replaces.
+     */
+    protected function persistCronColumns(string ...$propertyNames): void
     {
-        $this->update();
+        $this->updatePartialIgnoringRights(...$propertyNames);
     }
 
     /**

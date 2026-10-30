@@ -12,6 +12,7 @@ use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Domain\Common\Entities\CacheScopes\Invalidations\CacheScopeInvalidation;
 use DDD\Infrastructure\Base\DateTime\DateTime;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\DBAL\Exception;
 use ReflectionException;
 
@@ -33,14 +34,18 @@ class DBCacheScopeInvalidation extends DBEntity
      */
     public function deleteExpiredCacheScopeInvalidations(): void
     {
-        $connection = EntityManagerFactory::getInstance()->getConnection();
-        $now = new DateTime();
-        $createdDateThreshold = $now->sub(new DateInterval('P' . 1 . 'D'));
-        $connection->executeStatement(
-            'DELETE FROM ' . DBCacheScopeInvalidationModel::getTableName()
-            . ' WHERE (numberOfTimesToInvalidateCache is not null and numberOfTimesToInvalidateCache <= 0) 
-                  OR (invalidateUntil is not null and invalidateUntil < :currentDate) OR (created is not null and created < :createdDayThreshold)',
-            ['currentDate' => (string)new DateTime(), 'createdDayThreshold' => $createdDateThreshold]
-        );
+        $createdDateThreshold = (new DateTime())->sub(new DateInterval('P1D'));
+        // DQL, not raw SQL: the identifiers are quoted per engine (PostgreSQL folds unquoted mixed case to lower case)
+        EntityManagerFactory::getInstance()->createQueryBuilder()
+            ->delete(static::BASE_ORM_MODEL, 'cacheScopeInvalidation')
+            ->where(
+                '(cacheScopeInvalidation.numberOfTimesToInvalidateCache IS NOT NULL AND cacheScopeInvalidation.numberOfTimesToInvalidateCache <= 0)'
+                . ' OR (cacheScopeInvalidation.invalidateUntil IS NOT NULL AND cacheScopeInvalidation.invalidateUntil < :currentDate)'
+                . ' OR (cacheScopeInvalidation.created IS NOT NULL AND cacheScopeInvalidation.created < :createdDayThreshold)'
+            )
+            ->setParameter('currentDate', new DateTime(), Types::DATETIME_MUTABLE)
+            ->setParameter('createdDayThreshold', $createdDateThreshold, Types::DATETIME_MUTABLE)
+            ->getQuery()
+            ->execute();
     }
 }

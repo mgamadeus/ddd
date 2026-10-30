@@ -31,6 +31,9 @@ use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Services\AuthService;
 use DDD\Infrastructure\Services\DDDService;
 use Doctrine\DBAL\Exception;
+use Doctrine\DBAL\Exception\DeadlockException;
+use Doctrine\DBAL\Exception\LockWaitTimeoutException;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\NonUniqueResultException;
 use Doctrine\ORM\Query;
 use Doctrine\ORM\Query\Expr\From;
@@ -189,6 +192,13 @@ abstract class DatabaseRepoEntity extends RepoEntity
             }
             $ormInstance = $query->setMaxResults(1)->getResult();
             $ormInstance = $ormInstance[0] ?? null;
+            // The unit of work hands back an already managed model as it is — after a select-restricted load of the
+            // same row in this request, with the unselected columns missing. Re-read it whole.
+            if ($ormInstance && $this->isPartiallyLoadedOrmInstance($ormInstance)) {
+                $refreshQuery = $queryBuilder->getQuery();
+                $refreshQuery->disableResultCache()->useQueryCache(false)->setHint(Query::HINT_REFRESH, true);
+                $ormInstance = $refreshQuery->setMaxResults(1)->getResult()[0] ?? null;
+            }
         }
         if (!$ormInstance) {
             // store empty null result
@@ -201,8 +211,12 @@ abstract class DatabaseRepoEntity extends RepoEntity
 
         $this->ormInstance = $ormInstance;
         $entityInstance = $this->mapToEntity($useEntityRegistrCache, $initiatorClasses);
-        $entityRegistry->add($entityInstance, static::class, $queryBuilder, $deferredCaching);
-        //}
+        // The registry key is the plain find of this id. A model a caller loaded with a select (a list with
+        // `select=…`, an expand with `select=…`, a partial DQL) lacks the unselected columns: registered under that key,
+        // it would be served to every later find of the id — and with the extended registry cache to other requests.
+        if (!$loadedOrmInstance || !$this->isPartiallyLoadedOrmInstance($loadedOrmInstance)) {
+            $entityRegistry->add($entityInstance, static::class, $queryBuilder, $deferredCaching);
+        }
         // Entity Manager's unit of work cache of various types especially loaded DoctrineModels can end up using
         // the whole allocated memory, so if the memory usage is high, we clear it
         if (DDDService::instance()->isMemoryUsageHigh()) {
@@ -210,6 +224,26 @@ abstract class DatabaseRepoEntity extends RepoEntity
         }
         // post processing needs to happen after storage!!!
         return $this->postProcessAfterMapping($entityInstance);
+    }
+
+    /**
+     * Whether Doctrine hydrated only some of the model's mapped columns (a select-restricted load): its original entity
+     * data — the columns the hydration actually read — lacks a mapped field. A model the entity manager does not manage
+     * counts as partial, so it is never registered on a guess.
+     */
+    protected function isPartiallyLoadedOrmInstance(DoctrineModel $ormInstance): bool
+    {
+        $entityManager = EntityManagerFactory::getInstance();
+        $originalEntityData = $entityManager->getUnitOfWork()->getOriginalEntityData($ormInstance);
+        if ($originalEntityData === []) {
+            return true;
+        }
+        foreach ($entityManager->getClassMetadata($ormInstance::class)->getFieldNames() as $fieldName) {
+            if (!array_key_exists($fieldName, $originalEntityData)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -391,6 +425,56 @@ abstract class DatabaseRepoEntity extends RepoEntity
         DefaultObject &$entity,
         int $depth = self::UPDATE_DEFAULT_RECURSIVE_DEPTH
     ): ?DefaultObject {
+        return $this->persistEntity($entity, $depth, false);
+    }
+
+    /**
+     * Strict insert of the entity as a NEW row — a plain `INSERT` without `ON DUPLICATE KEY UPDATE` (PostgreSQL: without
+     * `ON CONFLICT`), never an update, also when the entity carries an id (that id is inserted). Use it for rows whose
+     * identity is a unique business key where a collision must be detected instead of merged, e.g. an append-only log
+     * with a sequence number: the database refuses the duplicate, the caller retries. {@see update()} stays the default
+     * upsert.
+     *
+     * Same validation, role check, column mapping, read-after-write and translations as {@see update()}; the row is
+     * gated by the CREATE rights ({@see applyCreateRightsQuery()}). Dependent entities are written up to $depth as in
+     * {@see update()} — they are upserted, only this entity is strictly inserted.
+     *
+     * @param DefaultObject $entity
+     * @param int $depth
+     * @return Entity|null
+     * @throws UniqueConstraintViolationException A unique key or the primary key already exists — unchanged, nothing written
+     * @throws DeadlockException A deadlock / Galera certification conflict — unchanged, the caller decides on a retry
+     * @throws LockWaitTimeoutException A lock wait timeout — unchanged
+     * @throws ForbiddenException The inserted row is not visible under the create rights (the insert is reverted)
+     * @throws BadRequestException
+     * @throws InternalErrorException
+     * @throws InvalidArgumentException
+     * @throws ReflectionException
+     * @throws Exception
+     * @throws MappingException
+     * @throws JsonException
+     */
+    public function insert(
+        DefaultObject &$entity,
+        int $depth = self::UPDATE_DEFAULT_RECURSIVE_DEPTH
+    ): ?DefaultObject {
+        return $this->persistEntity($entity, $depth, true);
+    }
+
+    /**
+     * The write behind {@see update()} (upsert) and {@see insert()} ($insertOnly: strict INSERT under the create rights).
+     *
+     * @throws BadRequestException
+     * @throws InternalErrorException
+     * @throws InvalidArgumentException
+     * @throws ReflectionException
+     * @throws ForbiddenException
+     * @throws Exception
+     * @throws MappingException
+     * @throws JsonException
+     */
+    protected function persistEntity(DefaultObject &$entity, int $depth, bool $insertOnly): ?DefaultObject
+    {
         if (!DefaultObject::isEntity($entity)) {
             return $entity;
         }
@@ -437,7 +521,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
                 // upsert() re-checks THIS same QB against the row after insert, so the create/update split must be
                 // decided here. applyCreateRightsQuery defaults to applyUpdateRightsQuery (no behaviour change unless
                 // an entity overrides it to allow create-but-not-update, e.g. shared lookup domains).
-                $rightsQueryApplied = $entityId
+                $rightsQueryApplied = $entityId && !$insertOnly
                     ? static::applyUpdateRightsQuery($updateRightsQueryBuilder)
                     : static::applyCreateRightsQuery($updateRightsQueryBuilder);
                 $updateRightsQueryBuilder = $rightsQueryApplied ? $updateRightsQueryBuilder : null;
@@ -445,7 +529,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
                 $updateRightsQueryBuilder = null;
             }
 
-            if (!$entityId || ($entityId && (!$hasTranslations || ($hasTranslations && $translationIsInDefaultLanguage)))) {
+            if ($insertOnly || !$entityId || ($entityId && (!$hasTranslations || ($hasTranslations && $translationIsInDefaultLanguage)))) {
                 // if we have a new entity, we need to persist it anyway
                 // if it is not a new entity and the entity has no translation to be cared of (or we are in the default language), we persist it
                 // create new entity
@@ -467,10 +551,9 @@ abstract class DatabaseRepoEntity extends RepoEntity
                         // NOTE: upsert() derives the created/modified column names itself (ChangeHistory defaults); the
                         // two trailing args this used to pass were silently ignored (PHP drops extra positional args)
                         // and collided with the new $onlyFieldNames param — dropped. Full upsert ⇒ $onlyFieldNames null.
-                        $updatedID = $entityManager->upsert(
-                            $this->ormInstance,
-                            $updateRightsQueryBuilder
-                        );
+                        $updatedID = $insertOnly
+                            ? $entityManager->insert($this->ormInstance, $updateRightsQueryBuilder)
+                            : $entityManager->upsert($this->ormInstance, $updateRightsQueryBuilder);
                     } catch (Throwable $t) {
                         if ($startedTransaction) {
                             try { $connection->rollBack(); } catch (Throwable) {}

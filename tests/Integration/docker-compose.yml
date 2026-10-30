@@ -1,5 +1,7 @@
-# Throwaway MariaDB for the integration suite (phpunit.integration.xml). tmpfs data dir: nothing survives a restart,
-# and no production data is ever loaded. Port via DDD_TEST_DB_PORT (default 3317).
+# Throwaway databases for the integration suite (phpunit.integration.xml). tmpfs data dirs: nothing survives a
+# restart, and no production data is ever loaded. MariaDB port via DDD_TEST_DB_PORT (default 3317), PostgreSQL port
+# via DDD_TEST_PG_PORT (default 5433, distinct from 3317). DDD_TEST_DRIVER selects which one phpunit.integration.xml
+# runs against; both containers may run at once.
 services:
   mariadb:
     image: mariadb:11.8.5
@@ -16,3 +18,82 @@ services:
       interval: 2s
       timeout: 5s
       retries: 30
+
+  postgres:
+    # Step 4a (dual-dialect architecture plan §6 row 4a) needs postgis + pgvector + pgvectorscale on PG 18, which
+    # the plain `postgres:18` image does not carry. `timescale/timescaledb-ha:pg18` does (verified 2026-10-25:
+    # PostGIS 3.6.4, pgvector 0.8.7, pgvectorscale 0.9.1, pg_trgm 1.6, unaccent 1.1, pg_stat_statements 1.12 — the
+    # exact versions the target cluster runs per the migration plan) and, despite the HA-sounding name, boots as a
+    # plain single-node `postgres` process here (no Patroni/etcd involved) when run with just POSTGRES_* env vars —
+    # confirmed via `docker logs`, standard `docker-entrypoint.sh`. The TimescaleDB extension itself is never
+    # CREATEd; it rides along unused.
+    image: timescale/timescaledb-ha:pg18
+    environment:
+      POSTGRES_PASSWORD: ddd-test
+      POSTGRES_DB: ddd_test
+      POSTGRES_USER: postgres
+    ports:
+      - "127.0.0.1:${DDD_TEST_PG_PORT:-5433}:5432"
+    tmpfs:
+      # This image's PGDATA is /home/postgres/pgdata/data (Spilo/Patroni-style layout, not the docker-library
+      # postgres layout), so the tmpfs target differs from a plain `postgres:*` image. The image's `postgres` user
+      # is a fixed uid/gid 1000:1000 that already owns this directory on the image's own filesystem layer; a bare
+      # tmpfs mount defaults to root:root and the entrypoint (running as uid 1000) then fails with EACCES on
+      # `mkdir /home/postgres/pgdata/data` — uid/gid/mode here replicate the image's own ownership on the mount.
+      - /home/postgres/pgdata:uid=1000,gid=1000,mode=0755
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ddd_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  loki:
+    # The issues query backend of the issues registry tests (tests/Integration/Issues/LokiIssuesRegistryTest.php):
+    # single-binary Loki with its bundled local config (filesystem storage, auth off). Port via DDD_TEST_LOKI_PORT
+    # (default 3110); the test runs only when DDD_TEST_LOKI_URL points here.
+    image: grafana/loki:3.5.5
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    ports:
+      - "127.0.0.1:${DDD_TEST_LOKI_PORT:-3110}:3100"
+    tmpfs:
+      - /loki:uid=10001,gid=10001,mode=0755
+
+  elasticsearch:
+    # The Elasticsearch query backend and the runtime-errors read side (tests/Integration/Issues/Elasticsearch*):
+    # ES 7 like rankingCoach's logging cluster, single node, security off. Port via DDD_TEST_ES_PORT (default 9210);
+    # the tests run only when DDD_TEST_ES_URL points here (or at the opensearch service).
+    image: elasticsearch:7.17.28
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "127.0.0.1:${DDD_TEST_ES_PORT:-9210}:9200"
+    tmpfs:
+      - /usr/share/elasticsearch/data:uid=1000,gid=0,mode=0775
+
+  opensearch:
+    # The same tests against OpenSearch 2 (DDD_TEST_ES_URL=http://127.0.0.1:9211). Port via DDD_TEST_OPENSEARCH_PORT.
+    image: opensearchproject/opensearch:2.19.1
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "127.0.0.1:${DDD_TEST_OPENSEARCH_PORT:-9211}:9200"
+    tmpfs:
+      - /usr/share/opensearch/data:uid=1000,gid=1000,mode=0775
+
+  seaweedfs:
+    # S3-compatible object storage (signature V4, path style) for the ObjectStorage contract test:
+    # DDD_TEST_S3_ENDPOINT=http://127.0.0.1:9212 DDD_TEST_S3_ACCESS_KEY=ddd-test DDD_TEST_S3_SECRET_KEY=ddd-test-secret.
+    # Port via DDD_TEST_S3_PORT. (MinIO no longer publishes pullable images.)
+    image: chrislusf/seaweedfs:4.50
+    command: server -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -dir=/data -volume.max=100 -master.volumeSizeLimitMB=16
+    volumes:
+      - ./seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
+    ports:
+      - "127.0.0.1:${DDD_TEST_S3_PORT:-9212}:8333"
+    tmpfs:
+      - /data

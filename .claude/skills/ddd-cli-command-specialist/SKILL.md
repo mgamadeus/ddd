@@ -1,6 +1,6 @@
 ---
 name: ddd-cli-command-specialist
-description: "Create Symfony console commands in the mgamadeus/ddd framework AND use its built-in CLI commands: app:db:read (read-only SQL to inspect stored rows, no SQL client, no raw PDO one-liners), app:entity:show-sql (generated CREATE TABLE/index/FK DDL), app:entity:list, app:generate-doctrine-models-for-entities, app:process-cli-message, app:crons:list, app:crons:execute, app:crons:upsert (register or change a cron row, --dryRun), app:crons:activate / app:crons:deactivate (switch cron rows on or off by name, next slot re-computed, --dryRun), app:crons:executions (run history). Covers command structure, arguments/options, admin auth context, service access, SymfonyStyle output, tables, progress bars, batch processing, memory/time limits, signal handling. Use when writing a console command, inspecting database content or entity DDL from the CLI, regenerating Doctrine models, processing a CLI message, registering, changing, pausing or resuming a cron job, or checking whether a cron ran or why it failed."
+description: "Create Symfony console commands in the mgamadeus/ddd framework AND use its built-in CLI commands: app:db:read (read-only SQL over stored rows, no raw PDO one-liners), app:entity:show-sql (generated DDL), app:entity:list, app:generate-doctrine-models-for-entities, app:process-cli-message, app:crons:list, app:crons:execute, app:crons:upsert (register or change a cron, --dryRun), app:crons:activate / app:crons:deactivate (switch cron rows by name, --dryRun), app:crons:executions (run history). Covers running bin/console as the PHP-FPM user (never root), command structure, options, admin auth context, service access, SymfonyStyle output, tables, progress bars, batch jobs, limits, signals. Use when writing a console command, inspecting database content or entity DDL from the CLI, regenerating Doctrine models, processing a CLI message, registering, changing, pausing or resuming a cron job, checking why a cron failed, or Could not create proxy directory after a root console run."
 metadata:
   author: mgamadeus
   version: "1.0.0"
@@ -105,6 +105,28 @@ class ActionNameCommand extends Command
 ---
 
 ## Critical Patterns
+
+### Run `bin/console` as the PHP-FPM / worker user — never as root
+
+Every `bin/console` call — `cache:clear`, any `app:*` command, composer scripts that boot the kernel
+(`post-install-cmd`, `post-update-cmd`) — runs as the SAME user as PHP-FPM and the workers. A run as root in a container
+whose FPM runs as `www-data` rebuilds `var/cache` as root; FPM, the workers and `issues-sync` then cannot write it and
+fail (HTTP 500) with:
+
+```
+Could not create proxy directory "…/var/cache/<env>/doctrine/orm/Proxies".
+… must be writable …
+```
+
+```bash
+# in the container (a plain `kubectl exec` / `docker exec` is root):
+su -s /bin/sh www-data -c 'cd /var/www/app && php bin/console cache:clear --no-debug'
+# repair after a root run: give the cache back to the FPM user (uid:gid of www-data, e.g. 33:33)
+chown -R 33:33 var/cache
+```
+
+Tooling that opens a shell or runs console commands in a container (dev-env helpers, CI steps, cron wrappers) switches
+to that user first.
 
 ### Admin Auth Context Setup
 
@@ -315,6 +337,17 @@ class SendScheduledNotifications extends Command
 }
 ```
 
+**How a Cron row runs** (`app:crons:execute`, every minute): each due, active Cron runs its command in a child
+process. One Cron never blocks itself or the tick, and every failure reaches the issues log as ERROR (section CLI,
+context `cronName`, `cronId`, `cronCommand`; one issues group per Cron and kind):
+- a command this application does not register is caught before any execution row: one ERROR (at most hourly per
+  Cron), the next slot advanced, the next Cron runs;
+- a non-zero exit or a timeout closes the execution as FAILED and logs `exitCode` / `timedOut` and the output's last
+  2 000 characters; a throwable is logged as itself;
+- the bookkeeping stamps (`lastExecutionStartedAt`, `nextExecutionScheduledAt`) are partial writes without entity
+  validation, and every way out after the RUNNING row closes it and advances the slot.
+A command that should fail its Cron exits non-zero (`Command::FAILURE`) and writes the reason to stderr.
+
 ### Import / Migration
 
 ```php
@@ -437,7 +470,7 @@ The three built-in read-only introspection commands: the first two read **struct
 |---------|-----------|---------|
 | `app:entity:show-sql [entity]` | `entity` (optional): short name (`Account`) or FQN; omit ⇒ every entity | Prints the generated `CREATE TABLE` + index / foreign-key DDL for the entity, derived from its attributes. **Read-only — executes nothing.** The fastest way to see the *exact* schema an entity maps to: default per-column indexes, FK indexes, spatial/vector/fulltext indexes, and trait columns (`id`, `created`/`updated`). |
 | `app:entity:list [filter]` | `filter` (optional): case-insensitive substring over name / table / FQN | Lists every DB-mapped entity with its SQL table name and FQN. Use it to discover entity names/tables before `show-sql`. STI subclasses are shown as folding into their parent table. |
-| `app:db:read "<statement>" [--scope=DEFAULT\|LEGACY_DB] [--limit=200] [--format=json\|table]` | `statement` (required): ONE read-only SQL statement | Reads database **content** (rows) — the counterpart to the two structure commands above. Runs ONE read-only statement (`SELECT` / `WITH` / `SHOW` / `EXPLAIN` / `DESCRIBE` / `DESC`) against a Doctrine connection and prints the rows (JSON on stdout by default; `--format=table` for a console table). Writes, a second `;`-statement, `INTO OUTFILE`/`DUMPFILE` and the shared-lock clauses (`LOCK IN SHARE MODE`, `FOR SHARE`) are rejected before a connection opens; everything else runs inside one `START TRANSACTION READ ONLY` that is rolled back, so a writing stored function or `FOR UPDATE` is refused by the database (error 1792). A `LIMIT` is appended to row-returning statements that carry none. A SELECT-only DB user is still the strongest boundary. |
+| `app:db:read "<statement>" [--scope=DEFAULT\|LEGACY_DB] [--limit=200] [--format=json\|table]` | `statement` (required): ONE read-only SQL statement | Reads database **content** (rows) — the counterpart to the two structure commands above. Runs ONE read-only statement (`SELECT` / `WITH` / `SHOW` / `EXPLAIN` / `DESCRIBE` / `DESC`) against a Doctrine connection and prints the rows (JSON on stdout by default; `--format=table` for a console table). Writes, a second `;`-statement, `INTO OUTFILE`/`DUMPFILE` and the shared-lock clauses (`LOCK IN SHARE MODE`, `FOR SHARE`) are rejected before a connection opens; everything else runs inside one `START TRANSACTION READ ONLY` that is rolled back, so a writing stored function or `FOR UPDATE` is refused by the database (error 1792). A `LIMIT` is appended to row-returning statements that carry none. A scope without `DB_<SCOPE>_CONNECTION_*` variables is reported as not configured (exit 2) — where the legacy tables live in the default database, use `--scope=DEFAULT`. A SELECT-only DB user is still the strongest boundary. |
 
 ```bash
 # What SQL does the Account entity generate?
@@ -468,6 +501,15 @@ php bin/console app:db:read "SHOW COLUMNS FROM user_subscriptions" --format=tabl
 | `app:crons:activate "<name>" ["<name>" …] [--dryRun]` · `app:crons:deactivate "<name>" ["<name>" …] [--dryRun]` | `names` (one or several unique Cron names, quoted) | **Switch Crons on or off without re-stating their definition.** Both go through `Cron::activate()` / `Cron::deactivate()`: switching a Cron ON whose stored `nextExecutionScheduledAt` has passed moves it to the schedule's NEXT slot — the tick runs every active Cron whose slot has passed, so a Cron paused for weeks would otherwise fire at the next tick. A slot still ahead is kept. Prints a table per name (active before/after, next execution, result); a name that is not found fails the call (exit 1), an already-matching state counts as unchanged. No `--all` on purpose. Editing schedule/command/description stays `app:crons:upsert`. |
 | `app:crons:executions [--cron=<name\|id>] [--limit=20] [--state=SUCCESSFUL\|FAILED] [--output]` | — | What the scheduler actually DID: recent executions newest first, with start, duration, state and the first output line; `--output` prints each full captured output, which is where a failing command's real error text is. Read-only. Executions are cleaned up after 14 days, so an empty result can also mean "ran longer ago than that". |
 
+**`Could not create proxy directory "…/doctrine/orm/Proxies"` / "must be writable" (HTTP 500, workers crash):** the
+cache was rebuilt by another user than PHP-FPM — usually a `bin/console` run as root. `chown -R <fpm uid>:<fpm gid>
+var/cache` repairs it; run console commands as the FPM user from then on (see Critical Patterns above).
+
+**A framework command "is not defined" after `composer update`:** `bin/console --no-debug` (and `APP_ENV=prod`) runs
+from a compiled container that is not rebuilt when `vendor/` changes, so commands added by a new Core release stay
+unregistered until `php bin/console cache:clear --no-debug` (with the same `APP_ENV`). The debug container notices the
+change and rebuilds itself. Deployments clear the cache in the image build or the composer `post-install-cmd`.
+
 **The generator output is the model.** A hand-edited `DB*Model.php` is not supported: the next `composer update` regenerates it, and a restore-from-git routine is a bug waiting for the one time it is forgotten. Every deviation must be expressible on the entity — a default the model must not carry is `#[PreserveOnOmission]`, nullability is `#[NotNull]`, column details are `#[DatabaseColumn]`. After an update, `git status -- '*DB*Model.php'` shows only what the entities changed.
 
 ---
@@ -494,6 +536,7 @@ php bin/console app:db:read "SHOW COLUMNS FROM user_subscriptions" --format=tabl
 - [ ] Long batch operations use progress bars
 - [ ] Error handling with try/catch and formatted error output
 - [ ] Never use `private` -- always `protected`
+- [ ] Run as the PHP-FPM / worker user (`su -s /bin/sh www-data -c '…'`), never as root
 
 ---
 

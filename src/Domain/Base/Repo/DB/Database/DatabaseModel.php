@@ -303,9 +303,19 @@ class DatabaseModel extends ValueObject
                     );
                     $virtualSearchColumn->referenceColumn = $virtualSearchReferenceColumn;
                     $virtualSearchColumn->virtualColumnNameOverride = $virtualSearchColumnName;
+                    // PostgreSQL has no form for the MariaDB-only $virtualSearchAs expression above
+                    // (JSON_UNQUOTE/REGEXP_REPLACE); PostgresDdlRenderer renders this one well-known virtual column
+                    // as `ddd_translatable_text("name")` instead (ensure()'d SQL function, see tests/golden and the
+                    // dual-dialect architecture plan §3.5/§4.10).
+                    $virtualSearchColumn->isTranslatableFullTextSearchColumn = true;
+                    $virtualSearchColumn->translatableBaseColumnName = $databaseColumn->name;
                     $databaseModel->virtualColumns->add($virtualSearchColumn);
 
-                    $virtualSearchReferencecolumnDBIndex = new DatabaseIndex(indexType: DatabaseIndex::TYPE_FULLTEXT, indexColumns: [$virtualSearchColumnName]);
+                    $virtualSearchReferencecolumnDBIndex = new DatabaseIndex(
+                        indexType: DatabaseIndex::TYPE_FULLTEXT,
+                        indexColumns: [$virtualSearchColumnName],
+                        fullTextMode: $translatableAttributeInstance->fullTextMode
+                    );
                     $databaseModel->indexes->add($virtualSearchReferencecolumnDBIndex);
                 }
                 if ($virtualColumnAttributes = $reflectionProperty->getAttributes(DatabaseVirtualColumn::class, ReflectionAttribute::IS_INSTANCEOF)) {

@@ -150,3 +150,44 @@ order; every item cost one of those apps time.
 - 2.70.11 — every JWT is signed and verified with `JWT_HASH_KEY` / `JWT_HASH_METHOD`. `AUTH_JWT_HASH_KEY` /
   `AUTH_JWT_HASH_METHOD` are read only while `JWT_HASH_*` is empty (one deprecation per process) and go in the next
   minor: make sure `JWT_HASH_*` is set (same values), then delete the `AUTH_JWT_HASH_*` lines and vault fields.
+- 2.71.0 — PostgreSQL as a second dialect next to MariaDB. A MariaDB / `pdo_mysql` app needs no change: the
+  generated SQL is byte-identical and no public signature changed. What applies when you touch the new surface:
+  - **PostgreSQL scope** (`pdo_pgsql`): set `DB_<SCOPE>_DIRECT_HOST` (and `DB_<SCOPE>_DIRECT_PORT` when it differs
+    from the pooled port) — the direct, non-pooled host named locks (`LockService`) run on; without it the scope
+    refuses to boot. Restart every worker after deploying a release that changes the query walkers: the Doctrine query
+    cache keys on the walker class and a running worker keeps the old SQL.
+  - **Code written against the pre-release `postgres` branch**: `UpsertSpec::$columns` is a `ColumnWrites` set —
+    `new UpsertSpec($table, ColumnWrites::fromColumnWrites(...$columnWrites))`, emptiness is `->count() === 0`. The
+    `DdlRenderer` methods return `DdlStatements` (`withPhase()`, `withoutPhase()`, `sortedByPhase()`,
+    `getSqlList()`; the static `DdlStatement::sortByPhase()` is gone), `LockKey::internalKey()` returns an
+    `AdvisoryLockKeyPair`, and the copy service returns `CopyTableResults`.
+  - **Unreleased installs** (`dev-*` or path repository), on every driver: the guard refuses a connection to a
+    production host / port read from `DB_PRODUCTION_HOSTS` / `DB_PRODUCTION_PORTS` (comma-separated), and refuses
+    every connection while both are empty (fails closed). A dev or spike checkout on a branch or path install sets
+    them in `.env.local`; a tagged release is never checked.
+  - **`#[DatabaseTrigger]` without its source file** fails model SQL generation on both dialects (it used to render
+    no trigger): `{Entity}{Order}{Operations}Trigger.sql` next to the entity's repo, plus `….pgsql.sql` for a
+    PostgreSQL scope.
+  - **A paginated query with to-many joins on PostgreSQL** (`$top` / `$skip` with an `$expand` of a collection): the
+    filter decides which roots are on the page, and those roots come back with ALL their children. MariaDB applies
+    the filter to the children as well, so a filter on a child property returns only the matching children there.
+- 2.71.1 — PostgreSQL fixes: a paginated query with to-many joins returns the page's roots in the requested order
+  (2.71.0 returned them in id order); `SqlDialect::stringAgg()` and DQL `STRING_AGG_ORDERED` aggregate ints and
+  booleans in MariaDB's text form through new `ddd_text()` functions (part of `ensure()`: a database set up with
+  2.71.0 gets them by applying the `ddd_text` statements `app:entity:show-sql` prints, or by the schema phase of
+  `app:db:copy-to-postgres`); `STRING_AGG_ORDERED` without `GROUP BY` no longer gets an `ORDER BY id`; DQL `DATE_BUCKET(x, 'month')`
+  gives the first of the month (`YYYY-MM-01`) like the facade. MariaDB unchanged.
+- 2.71.2 — a list or expand loaded with a `select` no longer puts its partial entities into the entity registry under
+  the key of the plain find by id. A later `find($id)` — in the same request, or for up to the entity's
+  `#[EntityCache(useExtendedRegistryCache: true)]` TTL in any request of the same container — returned the entity with
+  every unselected property missing (settings read from it silently fell back to their defaults). No app change;
+  restart the containers after the update to drop already poisoned APCu entries.
+- 2.71.3 — completes 2.71.2 for the same request: a `find($id)` after a select-restricted load of that row re-reads
+  the whole row instead of taking the partial model the entity manager still holds.
+- 2.71.4 — rights subqueries of expands are numbered per statement (`_rights<N>_<join alias>`): an expand that reused
+  a path-shaped root rights join (`<base>_<prop>_rights`) next to a nested expand could declare the same subquery
+  alias twice ("is already defined", HTTP 500). Apps that renamed their rights joins to dodge it can keep or revert
+  the rename.
+- 2.71.5 — PostgreSQL: a query whose select nests an aggregate (`COUNT(DISTINCT x) + 1`, `COALESCE(SUM(x), 0)`) no
+  longer gets the default `ORDER BY <root>.id` (SQLSTATE 42803). Restart the workers and PHP-FPM after the deploy:
+  the Doctrine query cache keeps the SQL the old walker rendered.

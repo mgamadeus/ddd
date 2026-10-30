@@ -1,6 +1,6 @@
 ---
 name: ddd-query-options-specialist
-description: Work with the OData-inspired QueryOptions system in mgamadeus/ddd — database-level filtering, sorting, pagination, select, expand and fulltext search over Translatable properties. Wire syntax filters=/expand=/orderBy=/select=/top=/skip= (plural filters, no dollar prefix; default top 50). Covers entity setup (QueryOptionsTrait on BOTH Entity and EntitySet), controller DTOs, the filter grammar (eq/ne/gt/ge/lt/le/in/ni/bw, ft/fb fulltext, and/or grouping, dot-notation, escaping, createExpression for runtime values), value validation by column kind (400 for a non-numeric int, a bad date, a comparison on JSON or a plain Translatable, ft/fb without a declared index), expand with nested clauses and join read-rights, propertyScore relevance, programmatic snapshot/restore, mandatory scope filters via addFiltersConnectedByAnd, the Argus shared-defaults rule, why HideProperty fields are never filterable, and temporal filters (FiltersDefinition::$temporalKind, normalizeMomentLiterals) for zone-aware callers. Use when a filter answers 400 or 500, when a query param is ignored, when results cap at 50, when enforcing an inescapable scope filter, when Argus defaults have no effect, or when date-time filters compare against the wrong zone.
+description: OData-style QueryOptions in mgamadeus/ddd — database-level filtering, sorting, pagination, select, expand, fulltext over Translatable properties. Wire syntax filters=/expand=/orderBy=/select=/top=/skip= (no dollar prefix; default top 50). Covers QueryOptionsTrait on Entity AND EntitySet, controller DTOs, the filter grammar (eq/ne/gt/ge/lt/le/in/ni/bw, ft/fb, and/or, dot-notation, escaping, createExpression), value validation (400 for a bad int or date, a comparison on JSON or a plain Translatable, ft/fb without an index), nested expand and join read-rights, propertyScore, snapshot/restore, inescapable scope filters (addFiltersConnectedByAnd), Argus shared defaults, HideProperty never filterable, temporal filters (FiltersDefinition::$temporalKind, normalizeMomentLiterals). Use when a filter answers 400 or 500, when a query param is ignored, when results cap at 50, when enforcing an inescapable scope filter, when Argus defaults have no effect, or when date-time filters compare against the wrong zone.
 metadata:
   author: mgamadeus
   version: "1.3.0"
@@ -279,6 +279,15 @@ Filters and ordering can reference expanded entity properties using dot-notation
 ```
 ?expand=business&filters=business.name ft 'kfc arad'&orderBy=business.nameScore desc
 ```
+
+**A root filter selects roots; it never cuts an expanded collection.** `?expand=orderItems&filters=orderItems.name eq
+'Pizza'` returns the orders that have a Pizza item, each with ALL its items. To return only the matching children,
+filter in the expand: `?expand=orderItems(filters=name eq 'Pizza')` (every order, only its Pizza items). Combine both
+for "orders with a Pizza, showing only their Pizza items". Several conditions on the same collection in one root
+filter hold for one and the same child. Mechanism: a query that filters and fetch-joins a collection selects the
+qualifying root ids in a subquery and loads the roots with their joins without the WHERE
+(`DoctrineQueryBuilder::applyDistinctSubqueryIfNeededAndGetResult()`, paginated or not); the expand's own filter sits
+in the join's ON clause. `count()` counts distinct roots.
 
 ### The `expand()` Method on Entities
 

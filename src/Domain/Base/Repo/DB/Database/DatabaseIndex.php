@@ -65,6 +65,27 @@ class DatabaseIndex extends ValueObject
     public ?int $maxNeighbors = null;
 
     /**
+     * PostgreSQL only (G-R3-2, Arch §4.10): `CREATE UNIQUE INDEX … NULLS NOT DISTINCT`. No MariaDB effect — a
+     * nullable UNIQUE key on MariaDB keeps exactly today's live shape (IFNULL-sentinel virtual columns), never this
+     * flag. Null/false both mean "NULLS DISTINCT" (ordinary SQL UNIQUE semantics).
+     */
+    public ?bool $nullsNotDistinct = null;
+
+    /**
+     * D14: which PostgreSQL fulltext rendering a `TYPE_FULLTEXT` index gets (no effect on MariaDB — both render
+     * today's `FULLTEXT INDEX`). Set from the owning `#[Translatable(fullTextMode:)]` for the generated search
+     * column's index ({@see DatabaseModel::fromEntityClass()}); defaults to `NAME` for a directly-declared
+     * `#[DatabaseIndex(TYPE_FULLTEXT, fullTextMode: …)]` on a 2.70.10 default-indexed TEXT column.
+     */
+    public FullTextMode $fullTextMode = FullTextMode::NAME;
+
+    /**
+     * D6: engine-neutral `TYPE_VECTOR` index intent (no MariaDB effect — both profiles render MariaDB's own
+     * `VECTOR INDEX`). Default `ON_DISK` (pgvectorscale `diskann`) on PostgreSQL.
+     */
+    public ?VectorIndexProfile $vectorIndexProfile = null;
+
+    /**
      * @param string $indexType
      * @param array $indexColumns
      */
@@ -72,24 +93,37 @@ class DatabaseIndex extends ValueObject
         string $indexType = self::TYPE_INDEX,
         array $indexColumns = [],
         ?string $distanceMetric = null,
-        ?int $maxNeighbors = null
+        ?int $maxNeighbors = null,
+        ?bool $nullsNotDistinct = null,
+        FullTextMode $fullTextMode = FullTextMode::NAME,
+        ?VectorIndexProfile $vectorIndexProfile = null
     ) {
         $this->indexType = $indexType;
         $this->indexColumns = $indexColumns;
+        $this->nullsNotDistinct = $nullsNotDistinct;
+        $this->fullTextMode = $fullTextMode;
 
         // Only apply defaults for VECTOR indexes.
         if ($indexType === self::TYPE_VECTOR) {
             $this->distanceMetric = $distanceMetric ?? self::DISTANCE_METRIC_COSINE;
             $this->maxNeighbors = $maxNeighbors ?? self::DEFAULT_VECTOR_MAX_NEIGHBORS;
+            $this->vectorIndexProfile = $vectorIndexProfile ?? VectorIndexProfile::ON_DISK;
         } else {
             $this->distanceMetric = $distanceMetric;
             $this->maxNeighbors = $maxNeighbors;
+            $this->vectorIndexProfile = $vectorIndexProfile;
         }
 
         parent::__construct();
     }
 
-    public function getSql(string $tableName): string
+    /**
+     * The logical index name (type abbreviation + column shorthand), WITHOUT MariaDB's 64-char identifier cap.
+     * {@see getSql()} (MariaDB, golden-sensitive) runs this through {@see DatabaseIdentifier::shortenToMaxLength()};
+     * PostgreSQL's `IdentifierPolicy` (schema-wide names, `<Table>_<name>`, 63-byte sha256 cut) uses this base
+     * unchanged — extracted so both dialects share one naming vocabulary without MariaDB's output moving a byte.
+     */
+    public function getIndexNameBase(): string
     {
         $indexName = self::TYPE_NAME_ALLOCATION[$this->indexType] . '_';
         if (count($this->indexColumns) == 1) {
@@ -107,9 +141,14 @@ class DatabaseIndex extends ValueObject
             }
             $indexName .= $columnsShort;
         }
+        return $indexName;
+    }
+
+    public function getSql(string $tableName): string
+    {
         // Cap at MariaDB's 64-char identifier limit: a single-column index name is `idx_` + the full
         // column name and can overflow with long column names (error 1059).
-        $indexName = DatabaseIdentifier::shortenToMaxLength($indexName);
+        $indexName = DatabaseIdentifier::shortenToMaxLength($this->getIndexNameBase());
 
         $columnsSql = implode(
             ',',

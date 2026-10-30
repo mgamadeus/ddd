@@ -30,6 +30,9 @@ class DBSpatialRowModel extends DoctrineModel
 	#[ORM\Column(type: 'vector', length: 3)]
 	public mixed $embedding;
 
+	#[ORM\Column(type: 'cartesian_polygon')]
+	public mixed $layout;
+
 	#[ORM\Column(type: 'boolean')]
 	public ?bool $flag = false;
 

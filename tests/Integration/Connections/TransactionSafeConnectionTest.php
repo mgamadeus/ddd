@@ -38,6 +38,14 @@ class TransactionOnlyFreshWorkerStateMiddleware extends FreshWorkerStateMiddlewa
  */
 class TransactionSafeConnectionTest extends IntegrationTestCase
 {
+    protected static function unsupportedOnCurrentDriverReason(): ?string
+    {
+        // Every test here either kills a MariaDB/MySQL connection by CONNECTION_ID() (no PostgreSQL equivalent)
+        // or writes through CounterRows (ON DUPLICATE KEY UPDATE, §6 steps 3/4) to observe transaction behaviour.
+        return 'CONNECTION_ID()/KILL are MariaDB/MySQL-only and every test here writes (§6 steps 3/4) to observe '
+            . 'transaction/worker behaviour.';
+    }
+
     protected function businessKeysStoredInCounterRows(): array
     {
         return $this->freshConnection()->fetchFirstColumn('SELECT businessKey FROM CounterRows ORDER BY businessKey');
@@ -83,6 +91,7 @@ class TransactionSafeConnectionTest extends IntegrationTestCase
         $this->assertSame([], $this->businessKeysStoredInCounterRows());
     }
 
+    /** @group mariadb `CONNECTION_ID()`/`KILL` (via killConnectionOf()) are MariaDB/MySQL-only. */
     public function testAKilledConnectionInsideATransactionMakesTheNextWriteThrowInsteadOfAutocommitting(): void
     {
         $entityManager = static::entityManager();
@@ -103,6 +112,7 @@ class TransactionSafeConnectionTest extends IntegrationTestCase
         $this->assertSame([], $this->businessKeysStoredInCounterRows());
     }
 
+    /** @group mariadb `CONNECTION_ID()`/`KILL` (via killConnectionOf()) are MariaDB/MySQL-only. */
     public function testOutsideATransactionAFailedPingStillReplacesTheEntityManager(): void
     {
         $entityManager = static::entityManager();

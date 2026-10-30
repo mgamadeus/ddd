@@ -12,6 +12,9 @@ use ReflectionTrait;
 
 class ReflectionDocComment
 {
+    /** `{@see …}` / `{@link …}` — the reference is the first word inside the braces */
+    public const string INLINE_REFERENCE_TAG_PATTERN = '/\{@(?:see|link)\s+([^\s}]+)[^}]*\}/i';
+
     public const array BASE_TYPES = ['string' => true, 'integer' => true, 'float' => true, 'boolean' => true];
 
     protected string $docComment = '';
@@ -44,8 +47,9 @@ class ReflectionDocComment
             return '';
         }
 
-        // Start with the original doc comment (resolve inheritdoc if possible)
-        $doccomment = $this->resolveInheritDoc($this->docComment);
+        // Start with the original doc comment (resolve inheritdoc if possible), inline {@see}/{@link} tags rendered —
+        // left in, the tag stripping below cut the text at their closing brace ("… re-read them with\n}.")
+        $doccomment = self::renderInlineReferenceTags($this->resolveInheritDoc($this->docComment));
 
         if (!$includeExamples) {
             // Remove @example blocks (tag + its content) until the next @tag or end of docblock.
@@ -88,6 +92,39 @@ class ReflectionDocComment
 
         // Remove leading and trailing whitespace and return the result
         return trim($doccomment);
+    }
+
+    /**
+     * Inline references as readable text: `{@see Foo::bar()}`, `{@see bar}`, `{@link Foo}` → `` `bar` `` / `` `Foo` ``
+     * (the member or class name in backticks); a URL (`{@link https://…}`) stays as is. Any text after the reference
+     * inside the braces is dropped.
+     */
+    public static function renderInlineReferenceTags(string $docCommentText): string
+    {
+        return preg_replace_callback(
+            self::INLINE_REFERENCE_TAG_PATTERN,
+            static fn(array $inlineReferenceMatch): string => self::renderReference($inlineReferenceMatch[1]),
+            $docCommentText
+        ) ?? $docCommentText;
+    }
+
+    /** One reference as its short name in backticks (`Foo::bar()` → `` `bar` ``, `Foo::$baz` → `` `baz` ``); a URL as is */
+    public static function renderReference(string $reference): string
+    {
+        if (str_contains($reference, '://')) {
+            return $reference;
+        }
+        $referencedName = $reference;
+        $memberSeparatorPosition = strrpos($referencedName, '::');
+        if ($memberSeparatorPosition !== false) {
+            $referencedName = substr($referencedName, $memberSeparatorPosition + 2);
+        }
+        $namespaceSeparatorPosition = strrpos($referencedName, '\\');
+        if ($namespaceSeparatorPosition !== false) {
+            $referencedName = substr($referencedName, $namespaceSeparatorPosition + 1);
+        }
+        $referencedName = ltrim(preg_replace('/\(\)$/', '', $referencedName) ?? $referencedName, '$');
+        return $referencedName === '' ? $reference : '`' . $referencedName . '`';
     }
 
     /**

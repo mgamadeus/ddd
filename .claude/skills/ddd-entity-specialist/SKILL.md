@@ -1,9 +1,9 @@
 ---
 name: ddd-entity-specialist
-description: Create and design DDD entities, entity sets, value objects, DB repositories, lazy loading, relationships, and entity attributes in the mgamadeus/ddd framework. Covers folder layout (first-class vs child entities, repo mirror), property naming, critical rules (never redeclare id, NotNull drives NOT NULL, @var T[] feeds the API schema, framework Date/DateTime only, protected not private), loading via getService()->find(), the isset lazy-load footgun, Translatable properties, the ChangeHistory audit trait, junction entities, indexes and virtual columns, single-table inheritance via SubclassIndicator, SQL triggers via DatabaseTrigger, ReuseParentEntitySet for app subclasses, displayOrder ordering, PreserveOnOmission (a partial save keeps stored values; no default on the generated model), validation (Choice, UniqueProperty), and a method reference. Use when creating or modifying entities and their persistence, placing or naming entity files, adding translatable fields or auditing, defining indexes, virtual columns, or triggers, fixing a null getService(), debugging a lazy relation that never loads, or when a partial update overwrites a stored value with the property default.
+description: Create and design DDD entities, entity sets, value objects, DB repositories, lazy loading, relationships and attributes in mgamadeus/ddd. Covers folder layout, naming, critical rules (never redeclare id, NotNull → NOT NULL, @var T[] feeds the API schema, framework Date/DateTime only, protected), getService()->find(), the isset lazy-load trap, Translatable properties, ChangeHistory, junction entities, indexes, virtual columns, SubclassIndicator, DatabaseTrigger, ReuseParentEntitySet, displayOrder, PreserveOnOmission, validation (Choice, UniqueProperty), chart types (DateTimeValueSequence, TimeInterval, KeyValue), and update() (upsert) vs strict insert() (a duplicate key throws). Use when creating or modifying entities and their persistence, returning chart or time-series data, placing entity files, adding translations or auditing, defining indexes or triggers, fixing a null getService(), a lazy relation that never loads, a partial update overwriting a stored value, or a write that must fail on a duplicate key.
 metadata:
   author: mgamadeus
-  version: "1.0.0"
+  version: "1.1.0"
   framework: mgamadeus/ddd
 ---
 
@@ -657,6 +657,33 @@ Checked by `DatabaseRepoEntity::canUpdateOrDeleteBasedOnRoles()` before both `up
 
 ---
 
+## Chart & Time-Series Types (`DDD\Domain\Common\Entities\Charts`)
+
+Chart data is returned in the framework's generic types — an application does not define its own. Types missing here
+are added to Core, not to an app.
+
+| Type | Shape | Use |
+|---|---|---|
+| `DateValue` / `DateValueSequence` | `x` (`Date`, day) + `y`; named sequence | a day series (orders per day) |
+| `DateTimeValue` / `DateTimeValueSequence` | `x` (`DateTime`) + `y`; named sequence with `stepSeconds` and `interval` | a sub-day or day series (errors per 10 min / hour / day) |
+| `DateValueSequences` / `DateTimeValueSequences` | sets of sequences | stacked charts, one line per key |
+| `TimeInterval` | `startDate` / `endDate` (`DateTime`, either may be null), `getDurationSeconds()`, `stringToDateTime()` | a chart's or report's window |
+| `AbstractKeyValue` → `IntegerKeyValue` / `StringKeyValue` | `key` + typed `value` | categorical charts, breakdowns |
+
+A bucketed series from query results — step-aligned (UTC), gap-free (empty buckets 0), the step and the window on it:
+
+```php
+$valuesByTimestamp = [];   // unix timestamp => value, straight from the aggregation
+foreach ($rows as $row) {
+    $valuesByTimestamp[(int)$row['bucketStart']] = (int)$row['count'];
+}
+$dateTimeValueSequence = DateTimeValueSequence::fromValuesByTimestamp('orders', $from, $to, 3600, $valuesByTimestamp);
+```
+
+JSON: `DateValue` → `{"x": "2026-10-28", "y": 4}`; `DateTimeValue` → `{"x": "2026-10-28T10:00:00Z", "y": 4}` (UTC). As a
+response DTO property the sequence documents its points, `stepSeconds` and `interval`. The issues trend
+(`IssuesTrendService`) is one producer.
+
 ## Database Indexes & Virtual Columns
 
 > **Verify the whole entity, don't guess.** To see the *exact* DDL the generator emits — every real column
@@ -1149,9 +1176,22 @@ class MyEntity extends Entity
 **CRUD:**
 ```php
 $entity = {EntityName}::byId($id);
-$entity = $entity->update();          // Create or update (validates)
+$entity = $entity->update();          // Create or update (validates) — upsert, the default
+$entity = $entity->insert();          // Strict INSERT: a duplicate key throws, never an update
 $entity->delete();
 ```
+
+`insert()` (repo twin `DBEntity::insert($entity, $depth)`, service `EntitiesService::insert()`) writes the entity as a
+NEW row with a plain `INSERT` — no `ON DUPLICATE KEY UPDATE` (PostgreSQL: no `ON CONFLICT`), also when the entity has
+an id (that id is inserted). A collision on a unique key or the primary key throws Doctrine's
+`UniqueConstraintViolationException` unchanged and writes nothing; a deadlock / Galera certification conflict throws
+`DeadlockException`, a lock wait timeout `LockWaitTimeoutException` — the caller decides on a retry. Same validation,
+column mapping and translations as `update()`; the row is gated by the CREATE rights (`applyCreateRightsQuery`).
+Dependent entities up to `$depth` are written as by `update()` (upserted). Use it for rows whose identity is a unique
+business key where a collision must be detected instead of silently merged — an append-only log with a sequence
+number (`(conversationId, indexInConversation)`): the second writer gets the exception and retries with the next
+number. Inside a transaction a collision reverts only that insert (a savepoint on PostgreSQL), so the retry can run
+in the same transaction.
 
 **Service & Repo access:**
 ```php

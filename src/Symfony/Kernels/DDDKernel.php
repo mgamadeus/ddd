@@ -2,10 +2,13 @@
 
 namespace DDD\Symfony\Kernels;
 
+use DDD\Symfony\CompilerPasses\ApplicationServiceSubclassAliasPass;
+use DDD\Symfony\CompilerPasses\FrameworkCommandsYieldPass;
 use DDD\Symfony\CompilerPasses\FreshWorkerStateMiddlewarePass;
 use DDD\Symfony\CompilerPasses\ModuleCompilerPass;
 use DDD\Symfony\CompilerPasses\QuotaDefaultBindingsCompilerPass;
 use DDD\Symfony\CompilerPasses\ServiceClassCollectorPass;
+use DDD\Symfony\CompilerPasses\ServicesThrowErrorsResetterPass;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\Container;
@@ -184,6 +187,9 @@ class DDDKernel extends Kernel
         $container->addCompilerPass(new ModuleCompilerPass());
         // In the ServiceClassCollectorPass we register all class / service name associations
         $container->addCompilerPass(new ServiceClassCollectorPass());
+        // A framework service the application subclasses (IssuesLogService) is ONE instance: typed injections of the
+        // framework class get the application's. Before the monolog pass (BEFORE_OPTIMIZATION) reads the logger tags.
+        $container->addCompilerPass(new ApplicationServiceSubclassAliasPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, 50);
         // Default bindings for the generic quota framework's ports, so an app that does not wire quotas still compiles
         // (the QuotaSubscriber is auto-registered and depends on QuotaConsumerInterface / QuotaAccountResolverInterface).
         // Only fills gaps — an app's own binding always wins.
@@ -192,5 +198,11 @@ class DDDKernel extends Kernel
         // registries empty). Must run BEFORE Symfony's MessengerPass (priority 0 in the same phase), which consumes
         // the per-bus middleware parameter this pass prepends to.
         $container->addCompilerPass(new FreshWorkerStateMiddlewarePass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, 8);
+        // `throwErrors` of every instantiated service goes back to its default between two messages. Before Symfony's
+        // ResettableServicePass (priority -32), which collects the kernel.reset tags this pass adds.
+        $container->addCompilerPass(new ServicesThrowErrorsResetterPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -16);
+        // A framework command yields to an application command of the same name. After the autoconfiguration has
+        // tagged the commands (priority 100 of this phase), before the console's command loader (BEFORE_REMOVING).
+        $container->addCompilerPass(new FrameworkCommandsYieldPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, -10);
     }
 }

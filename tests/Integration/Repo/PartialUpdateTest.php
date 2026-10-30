@@ -20,13 +20,16 @@ class PartialUpdateTest extends IntegrationTestCase
 {
     protected function insertCounterRow(array $columns): int
     {
-        static::connection()->insert('CounterRows', $columns);
+        // insertRow() (§6 step 4/5 item 5, IntegrationTestCase) quotes both table and column names through the
+        // dialect — a bare DBAL Connection::insert() call folds "CounterRows" to lowercase on PostgreSQL,
+        // which does not match the mixed-case table the generator created.
+        static::insertRow('CounterRows', $columns);
         return (int)static::connection()->lastInsertId();
     }
 
     protected function countCounterRows(): int
     {
-        return (int)static::connection()->fetchOne('SELECT COUNT(*) FROM CounterRows');
+        return (int)static::connection()->fetchOne('SELECT COUNT(*) FROM `CounterRows`');
     }
 
     public function testAPartialWriteOnAMissingRowReturnsNullAndInsertsNothing(): void
@@ -133,7 +136,7 @@ class PartialUpdateTest extends IntegrationTestCase
 
     protected function insertTranslatedRow(array $names): int
     {
-        static::connection()->insert('TranslatedRows', ['name' => json_encode($names)]);
+        static::insertRow('TranslatedRows', ['name' => json_encode($names)]);
         return (int)static::connection()->lastInsertId();
     }
 }

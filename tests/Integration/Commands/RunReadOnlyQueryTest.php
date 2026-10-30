@@ -13,9 +13,21 @@ use Symfony\Component\Console\Tester\CommandTester;
  * app:db:read runs its statement in a READ ONLY transaction: the keyword guard alone let a SELECT that calls a writing
  * stored function write in autocommit, and SELECT … FOR UPDATE take row locks — on the production database the dev
  * workspaces read from.
+ *
+ * @group mariadb Fixtures use `CREATE FUNCTION … MODIFIES SQL DATA`, `SHOW TABLES` and `@@in_transaction`, all
+ *     MariaDB/MySQL syntax; the PostgreSQL part of `app:db:read` is §6 step 9.
  */
 class RunReadOnlyQueryTest extends IntegrationTestCase
 {
+    protected static function unsupportedOnCurrentDriverReason(): ?string
+    {
+        // Already @group mariadb at the class level (CREATE FUNCTION … MODIFIES SQL DATA, SHOW TABLES,
+        // @@in_transaction, UUID()); the PostgreSQL part of app:db:read is §6 step 9, not this task's scope.
+        // Self-skip too so the class is robust to a run that does not pass --exclude-group mariadb.
+        return 'app:db:read\'s PostgreSQL part is §6 step 9; this class\'s fixtures are MariaDB/MySQL syntax '
+            . '(@group mariadb).';
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -122,5 +134,18 @@ class RunReadOnlyQueryTest extends IntegrationTestCase
         [$exitCode] = $this->runReadOnlyQuery($statement);
 
         $this->assertSame(Command::INVALID, $exitCode);
+    }
+
+    public function testAnUnconfiguredScopeIsReportedInsteadOfATypeError(): void
+    {
+        $commandTester = new CommandTester(new RunReadOnlyQuery());
+
+        $exitCode = $commandTester->execute(['statement' => 'SELECT 1', '--scope' => 'LEGACY_DB']);
+
+        self::assertSame(Command::INVALID, $exitCode);
+        self::assertStringContainsString('The database scope LEGACY_DB is not configured', $commandTester->getDisplay());
+        self::assertStringContainsString('--scope=DEFAULT', $commandTester->getDisplay());
+        $this->expectException(\DDD\Domain\Base\Repo\DB\Dialect\DatabaseConfigurationException::class);
+        \DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory::getDialect('LEGACY_DB');
     }
 }

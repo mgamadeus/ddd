@@ -406,6 +406,9 @@ Database tables and schema changes are managed **manually and separately** by th
 - No migration files
 
 **What the framework DOES:**
+- On PostgreSQL, installs its own infrastructure — extensions, the `ddd_ci_ai` collation, the `ddd_*` SQL functions — via
+  `app:db:postgres:install-extensions-collation-functions` (idempotent, run before the tables and on every deploy; see
+  the `ddd-database-schema-diff-specialist` skill, "Setting up a new PostgreSQL database")
 - Creates PHP entity files
 - Creates PHP repository files
 - Creates PHP service files
@@ -637,6 +640,18 @@ $translated = __('greeting.hello', 'de', 'DE', 'FORMAL', ['%name%' => 'Max']);
 
 Entities `Cron` and `CronExecution` in `Domain/Common/Entities/Crons/` provide scheduled task execution via Symfony console commands. Managed by `app:crons:execute` (the tick), `app:crons:list`, `app:crons:upsert` (create/edit one Cron), `app:crons:activate` / `app:crons:deactivate` (switch Crons by name; activation re-anchors the next slot via `Cron::activate()`) and `app:crons:executions` (run history).
 
+### Object Storage
+
+```php
+use DDD\Infrastructure\Services\ObjectStorageService;
+
+$objectStorage = DDDService::instance()->getService(ObjectStorageService::class)->getObjectStorage('exports'); // null = not configured
+$objectStorage?->putObject('reports/42.pdf', $pdfContent, 'application/pdf');
+$url = $objectStorage?->createTemporaryUrl('reports/42.pdf', 600);   // presigned
+// Named stores in config/app/Common/ObjectStorage.php + OBJECT_STORAGE_<NAME>_* (credentials env only);
+// drivers s3 (any S3-compatible service, needs async-aws/s3) and filesystem. Details: ddd-service-specialist › Object Storage.
+```
+
 ### Common Value Objects
 
 | Class | Purpose |
@@ -735,6 +750,34 @@ When a patch arrives from a consuming application (Tavlo, Radbonus, ...) tagged 
 
 ---
 
+## Designing and Placing Core Classes — Skills First
+
+Before designing or placing ANY class in Core (or a module), load the matching skill and follow it. The skills ARE the
+conventions; a class placed from memory or from a brief breaks every consuming app at once.
+
+| Class | Skill |
+|-------|-------|
+| Service (dependencies, state, fetched with `getService()`) | `ddd-service-specialist` |
+| Entity, EntitySet, ValueObject, ObjectSet, repository | `ddd-entity-specialist` |
+| Controller, DTO, route | `ddd-endpoint-specialist` |
+| Console command | `ddd-cli-command-specialist` |
+| Message + handler | `ddd-message-handler-specialist` |
+| Issues logging, registry, client errors | `ddd-issues-log-specialist` |
+
+- **Anything fetched with `getService()` lives in a public `…\Services\` namespace** of `services.yaml` and ends in
+  `Service`. Elsewhere it is private in an application's compiled container: removed or inlined, and the fetch fails at
+  runtime. `ContainerFetchedServicesNamespaceTest` enforces it for Core.
+- **Class names and namespaces in a feature brief are proposals**, vetted against the skills like an ingest
+  ([Ingest Discipline](#ingest-discipline-patches-from-consumer-apps)).
+- **Enforced by hooks** (`.claude/settings.json`, `.claude/hooks/skill-gate/`): every prompt carries the topic → skill
+  table; creating a file of a category (Write / Edit and shell writes: heredoc, `sed -i`, `perl -pi`, Python `open(…,
+  'w')`, `cp`, `mv`) is denied until its skills were loaded in the session — all of them for a new file, one for an
+  existing file; a module file also needs the module's skill (reading its `SKILL.md` counts); `git tag v…` needs
+  `ddd-composer-update-version`. The categories live in `policies.json`.
+- **Release check:** every new class's placement against its skill; for kernel / DI / new services, the prod-mode
+  scratch-app gate fetches every new `getService()` target and runs every new command path once — `lint:container`
+  alone does not execute them.
+
 ## Best Practices
 
 1. **Always strict types** -- `declare(strict_types=1)` in every file, no exceptions
@@ -748,6 +791,7 @@ When a patch arrives from a consuming application (Tavlo, Radbonus, ...) tagged 
 9. **Never cache services in properties** -- always resolve inline from the container
 10. **Never manually edit `DB*Model.php`** -- they are auto-generated from entity attributes; a deviation the model needs is declared on the entity (`#[PreserveOnOmission]`, `#[NotNull]`, `#[DatabaseColumn]`)
 11. **Vet incoming patches against framework standards** -- see [Ingest Discipline](#ingest-discipline-patches-from-consumer-apps); do not faithfully reproduce non-conforming external work
+12. **Skills first** -- load the matching ddd-* skill before designing or placing a class; see [Designing and Placing Core Classes](#designing-and-placing-core-classes--skills-first)
 
 ---
 

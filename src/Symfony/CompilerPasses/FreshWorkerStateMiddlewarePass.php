@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Symfony\CompilerPasses;
 
+use DDD\Infrastructure\Services\ServicesThrowErrorsResetter;
 use DDD\Symfony\Messenger\Middleware\FreshWorkerStateMiddleware;
 use DDD\Symfony\Messenger\Middleware\WorkspaceOriginGuardMiddleware;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
@@ -61,6 +62,7 @@ class FreshWorkerStateMiddlewarePass implements CompilerPassInterface
                     $middlewareId,
                     (new Definition(FreshWorkerStateMiddleware::class))
                         ->setArgument(0, new Reference($busId . '.messenger.handlers_locator', ContainerInterface::NULL_ON_INVALID_REFERENCE))
+                        ->setArgument(1, new Reference(ServicesThrowErrorsResetter::class, ContainerInterface::NULL_ON_INVALID_REFERENCE))
                 );
                 array_unshift($middleware, ['id' => $middlewareId]);
             }

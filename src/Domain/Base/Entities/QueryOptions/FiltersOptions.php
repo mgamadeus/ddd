@@ -8,6 +8,9 @@ use DDD\DDDBundle;
 use DDD\Domain\Base\Entities\ObjectSet;
 use DDD\Domain\Base\Entities\Translatable\Translatable;
 use DDD\Domain\Base\Repo\DB\DBEntity;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseIndex;
+use DDD\Domain\Base\Repo\DB\Database\FullTextMode;
+use DDD\Domain\Base\Repo\DB\Dialect\DialectResolver;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder;
 use DDD\Infrastructure\Base\DateTime\DateTime;
@@ -1164,6 +1167,12 @@ MD;
 
                 $entityClassNameForProperty = $targetModelClass::ENTITY_CLASS;
 
+                // D14 (dual-dialect architecture plan §3): which PostgreSQL fulltext rendering this property gets —
+                // read from the owning #[Translatable(fullTextMode:)] when the property is a searchable
+                // Translatable, else from a directly-declared #[DatabaseIndex(TYPE_FULLTEXT, fullTextMode:)] (a
+                // 2.70.10 default-indexed TEXT column); defaults to NAME. Only read, never affects MariaDB.
+                $fullTextMode = FullTextMode::NAME;
+
                 if ($entityClassNameForProperty && class_exists($entityClassNameForProperty)) {
                     $entityReflectionClass = ReflectionClass::instance($entityClassNameForProperty);
                     if ($entityReflectionClass && $entityReflectionClass->hasProperty($propertyName)) {
@@ -1173,6 +1182,13 @@ MD;
                         if ($translatableAttributeInstance?->fullTextIndex) {
                             // Example: name -> virtualNameSearch
                             $propertyName = Translatable::getFullTextSearchVirtualColumnName($propertyName);
+                            $fullTextMode = $translatableAttributeInstance->fullTextMode;
+                        } else {
+                            /** @var DatabaseIndex|null $databaseIndexAttributeInstance */
+                            $databaseIndexAttributeInstance = $entityProperty->getAttributeInstance(DatabaseIndex::class);
+                            if ($databaseIndexAttributeInstance?->indexType === DatabaseIndex::TYPE_FULLTEXT) {
+                                $fullTextMode = $databaseIndexAttributeInstance->fullTextMode;
+                            }
                         }
                     }
                 }
@@ -1195,8 +1211,16 @@ MD;
                     $this->property,
                     $qualifiedColumn,
                     (string)$value,
-                    $booleanMode
+                    $booleanMode,
+                    $fullTextMode
                 );
+
+                if (self::isPostgresDialect($queryBuilder)) {
+                    // D14/Mig §3.5: no boolean-mode emulation on PostgreSQL (owner decision) — `fb`/`ft` render the
+                    // SAME FULLTEXT_MATCH predicate per the property's fullTextMode; the operator distinction only
+                    // matters for MariaDB's `IN BOOLEAN MODE` clause.
+                    return "FULLTEXT_MATCH($qualifiedColumn, ?$parameterCount, '{$fullTextMode->value}') = true";
+                }
 
                 return "MATCH($qualifiedColumn) AGAINST (?$parameterCount$booleanModeClause) > 0";
             }
@@ -1204,7 +1228,9 @@ MD;
             $operator = self::OPERATORS_TO_DOCTRINE_ALLOCATION[$this->operator];
             /** @var Expr $expression */
             if (is_string($this->value) && strpos($this->value, '*') !== false) {
-                $value = str_replace('*', '%', $this->value);
+                // `*` is the only wildcard: LIKE's own `%`, `_` and its escape `\` in the value are literal (a trailing `\`
+                // raised 22025 "LIKE pattern must not end with escape character" on PostgreSQL)
+                $value = str_replace('*', '%', str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $this->value));
                 if ($this->operator == self::OPERATOR_EQUAL) {
                     $operator = 'like';
                 } elseif ($this->operator == self::OPERATOR_NOT_EQUAL) {
@@ -1259,14 +1285,46 @@ MD;
             $searchModelClass = ($this->expandOption && $this->expandOption->joinAlias)
                 ? $this->expandOption->getTargetPropertyModelClass()
                 : $this->getBaseModelClass();
+            $routedToSearchColumn = false;
             if ($searchModelClass && ($searchColumnName = self::getTranslatableSearchColumnName($searchModelClass::ENTITY_CLASS, $propertyName))
                 && $searchModelClass::isValidDatabaseExpression($searchModelClass::MODEL_ALIAS . ".$searchColumnName")) {
                 $propertyName = $searchColumnName;
+                $routedToSearchColumn = true;
             }
             $value = $this->getTypedFilterValueForBinding($value);
 
+            // D8/§4.8 (dual-dialect architecture plan): a mandatory scope filter built through
+            // {@see self::createExpression()} (runtime values, no {@see self::validateAgainstDefinitions()} call —
+            // that is what rejects a user-facing `locationId eq ''` as a 400 for not matching the int column kind,
+            // {@see self::isFilterValueValidForColumnKind()}) can still bind a bare `''` against an int/float
+            // column (Dineful `StaffMembershipsService`-style "business-wide" scope: `locationId IS NULL OR
+            // locationId = ''`, legacy rows pre-dating a write-side normalization that would have stored NULL).
+            // MariaDB coerces the string '' to the number 0 when comparing it with an int/float column (`5 = ''`
+            // is `5 = 0`, false); PostgreSQL's pdo_pgsql driver instead rejects the bind outright ("invalid input
+            // syntax for type bigint: \"\""). Replicating MariaDB's RESULT (not its implicit cast) only on
+            // PostgreSQL keeps the MariaDB rendering byte-identical (golden) while making the same filter answer
+            // the same rows on both engines.
+            if (in_array($this->filtersDefinition->columnKind ?? null, [
+                    FiltersDefinition::COLUMN_KIND_INT,
+                    FiltersDefinition::COLUMN_KIND_FLOAT,
+                ], true)
+                && self::isPostgresDialect($queryBuilder)) {
+                $value = is_array($value)
+                    ? array_map(static fn(mixed $element): mixed => $element === '' ? 0 : $element, $value)
+                    : ($value === '' ? 0 : $value);
+            }
+
+            // D8 (dual-dialect architecture plan §3): a `*term*` wildcard on a scalar kind, or a plain
+            // JSON/Translatable column, keeps its `LIKE` on MariaDB (implicit int/bool->text cast) but needs an
+            // explicit `TEXT_CAST`/`JSON_TEXT` on PostgreSQL ("operator does not exist: integer ~~ unknown") — the
+            // virtual search column above is already plain text on both engines, so it is never wrapped.
+            $columnExpression = "$baseModelAliasApplied$propertyName";
+            if (!$routedToSearchColumn && in_array($operator, ['like', 'notLike'], true) && self::isPostgresDialect($queryBuilder)) {
+                $columnExpression = self::wrapColumnForPostgresWildcard($columnExpression, $this->filtersDefinition->columnKind ?? null);
+            }
+
             $parameterCount = $queryBuilder->getParameters()->count() + 1;
-            $operatorParams = ["$baseModelAliasApplied$propertyName", '?' . $parameterCount];
+            $operatorParams = [$columnExpression, '?' . $parameterCount];
             $parameters = [$parameterCount => $value];
             if ($this->operator == self::OPERATOR_BETWEEN) {
                 $operatorParams[] = '?' . $parameterCount + 1;
@@ -1330,13 +1388,42 @@ MD;
         string $propertyName,
         string $qualifiedColumn,
         string $searchTerms,
-        bool $booleanMode
+        bool $booleanMode,
+        FullTextMode $fullTextMode = FullTextMode::NAME
     ): void {
         self::$fulltextSearchRegistry[$propertyName] = [
             'qualifiedColumn' => $qualifiedColumn,
             'searchTerms' => $searchTerms,
             'booleanMode' => $booleanMode,
+            // Read by OrderByOptions::applyOrderByToDoctrineQueryBuilder() for the PostgreSQL `{prop}Score`
+            // rendering (D14/§4.8) — which of FULLTEXT_SCORE's two forms (similarity vs ts_rank) to call.
+            'fullTextMode' => $fullTextMode,
         ];
+    }
+
+    /**
+     * D9/D10: whether the query builder's connection resolves to the PostgreSQL dialect — used by both this class
+     * and {@see \DDD\Domain\Base\Entities\QueryOptions\OrderByOptions} to branch QueryOptions rendering (D8/D14).
+     */
+    public static function isPostgresDialect(DoctrineQueryBuilder $queryBuilder): bool
+    {
+        return DialectResolver::forConnection($queryBuilder->getEntityManager()->getConnection())->capabilities()->isPostgres();
+    }
+
+    /**
+     * D8: the PostgreSQL rendering of a wildcard-compared column — `JSON_TEXT` for a JSON/plain-Translatable
+     * column (`json` has no `LIKE`), `TEXT_CAST` (with the `'bool'` marker) for every other non-string scalar.
+     * A `STRING`/`TRANSLATABLE_SEARCHABLE` column (or an unset kind) is already text and is returned unchanged.
+     */
+    protected static function wrapColumnForPostgresWildcard(string $columnExpression, ?string $columnKind): string
+    {
+        return match ($columnKind) {
+            FiltersDefinition::COLUMN_KIND_JSON, FiltersDefinition::COLUMN_KIND_TRANSLATABLE => "JSON_TEXT($columnExpression)",
+            FiltersDefinition::COLUMN_KIND_BOOL => "TEXT_CAST($columnExpression, 'bool')",
+            FiltersDefinition::COLUMN_KIND_INT, FiltersDefinition::COLUMN_KIND_FLOAT, FiltersDefinition::COLUMN_KIND_DATETIME
+                => "TEXT_CAST($columnExpression)",
+            default => $columnExpression,
+        };
     }
 
     public function applyFiltersToDoctrineQueryBuilder(

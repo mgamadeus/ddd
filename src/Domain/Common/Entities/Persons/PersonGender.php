@@ -9,12 +9,16 @@ use DDD\Infrastructure\Validation\Constraints\Choice;
 
 class PersonGender extends ValueObject
 {
+    /** @var string Male gender */
     public const string GENDER_MALE = 'm';
 
+    /** @var string Female gender */
     public const string GENDER_FEMALE = 'f';
 
+    /** @var string Other gender */
     public const string GENDER_OTHER = 'd';
 
+    /** @var string All genders */
     public const string GENDER_ALL = 'a';
 
     /** @var string|null The persons gender */
@@ -27,22 +31,18 @@ class PersonGender extends ValueObject
         parent::__construct();
     }
 
-    public function getGender(): string
+    /** The gender; null when none is set */
+    public function getGender(): ?string
     {
         return $this->gender;
     }
 
     public function setGender(?string $gender): void
     {
-        switch ($gender) {
-            case self::GENDER_MALE:
-                $this->gender = self::GENDER_MALE;
-                break;
-            case self::GENDER_FEMALE:
-                $this->gender = self::GENDER_FEMALE;
-                break;
-            default:
-                $this->gender = $gender;
-        }
+        $this->gender = match ($gender) {
+            self::GENDER_MALE => self::GENDER_MALE,
+            self::GENDER_FEMALE => self::GENDER_FEMALE,
+            default => $gender,
+        };
     }
 }

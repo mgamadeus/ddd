@@ -17,6 +17,9 @@ use DDD\Infrastructure\Exceptions\NotFoundException;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\Service;
 use Doctrine\DBAL\Exception;
+use Doctrine\DBAL\Exception\DeadlockException;
+use Doctrine\DBAL\Exception\LockWaitTimeoutException;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\Exception\ORMException;
 use Doctrine\ORM\NonUniqueResultException;
 use Doctrine\ORM\OptimisticLockException;
@@ -235,6 +238,33 @@ class EntitiesService extends Service
     ): DefaultObject {
         $repoClass = $entity::getRepoClassInstance();
         return $repoClass->update($entity, $depth);
+    }
+
+    /**
+     * Strict insert of the entity as a new row — a plain INSERT, never an update (see
+     * {@see DatabaseRepoEntity::insert()}). A collision on a unique key or the primary key throws
+     * UniqueConstraintViolationException unchanged; nothing is written.
+     *
+     * @param DefaultObject $entity
+     * @param int $depth
+     * @return DefaultObject
+     * @throws UniqueConstraintViolationException
+     * @throws DeadlockException
+     * @throws LockWaitTimeoutException
+     * @throws BadRequestException
+     * @throws InternalErrorException The entity's repository has no strict insert
+     * @throws InvalidArgumentException
+     * @throws ReflectionException
+     */
+    public function insert(
+        DefaultObject $entity,
+        int $depth = DatabaseRepoEntity::UPDATE_DEFAULT_RECURSIVE_DEPTH
+    ): DefaultObject {
+        $repoClass = $entity::getRepoClassInstance();
+        if (!$repoClass || !method_exists($repoClass, 'insert')) {
+            throw new InternalErrorException('The repository of ' . $entity::class . ' has no strict insert.');
+        }
+        return $repoClass->insert($entity, $depth);
     }
 
     /**

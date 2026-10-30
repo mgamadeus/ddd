@@ -43,16 +43,23 @@ Ensure all changes are committed. If there are uncommitted changes, commit them 
 Dev mode hides a whole class of failures: Symfony >= 7.4 instantiates constraint attributes while compiling the
 container ONLY when `kernel.debug` is off, so a constructor that reaches the container fatals in prod and nowhere
 else. Unit tests, a class-load sweep, `lint:container` in dev and a dev workspace all stay green — v2.70.0 shipped
-exactly that way and broke the first prod build. Before tagging, compile one consuming app in prod mode into a
-scratch cache, with the changed Core files placed in its vendor for the duration and restored afterwards:
+exactly that way and broke the first prod build. Before tagging, compile a **scratch copy** of one consuming app in
+prod mode — never the app checkout itself, not even its vendor and not temporarily:
 
 ```bash
+cp -a <app> /abs/scratch/app-gate                                       # the copy, never the checkout
+rsync -a src/ /abs/scratch/app-gate/vendor/mgamadeus/ddd/src/            # the changed Core into the copy's vendor
+cd /abs/scratch/app-gate
 APP_ENV=prod APP_DEBUG=0 APP_CACHE_DIR=/abs/scratch/prod-cache php bin/console cache:clear     # must print [OK]
 APP_ENV=prod APP_DEBUG=0 APP_CACHE_DIR=/abs/scratch/prod-cache php bin/console lint:container  # must print [OK]
 ```
 
+New Core dependencies (a `require` change) must be in the copy's vendor as well — `composer require` inside the copy.
+
 `APP_CACHE_DIR` (absolute path, read by `DDDKernel`) keeps the app's own `var/cache` untouched. The cache dir must
 start EMPTY — a dump left by an earlier build keeps its error tags.
+
+**Moving an app to ddd 3.0:** follow [references/ddd-3.0-migration.md](references/ddd-3.0-migration.md) — a root filter on an expanded collection no longer cuts the collection down; where that shows up and how to keep the old output.
 
 **Moving an app to Symfony 7.4 / ddd 2.70.x:** follow [references/symfony-7.4-migration.md](references/symfony-7.4-migration.md) — every trap the Radbonus and RankingCoach upgrades hit, in order.
 

@@ -6,20 +6,37 @@ namespace DDD\Tests\Integration;
 
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatement;
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatements;
+use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityManager;
+use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityRegistry;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Tests\Integration\Fixtures\Entities\CounterRows\CounterRow;
 use DDD\Tests\Integration\Fixtures\Entities\SpatialRows\SpatialRow;
 use DDD\Tests\Integration\Fixtures\Entities\TranslatedRows\TranslatedRow;
+use DDD\Tests\Integration\Harness\RecordingMiddleware;
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 
 /**
- * Base of the integration suite: runs only with DDD_TEST_DRIVER=pdo_mysql against the throwaway MariaDB of
- * tests/Integration/docker-compose.yml (a PHPUnit 9 bootstrap cannot skip a suite, so the gate sits here). The
- * fixture tables come from the generator's DDL, are created once per test class, emptied before every test and
- * dropped afterwards.
+ * Base of the integration suite: runs with DDD_TEST_DRIVER=pdo_mysql|pdo_pgsql against the throwaway database of
+ * tests/Integration/docker-compose.yml (a PHPUnit 9 bootstrap cannot skip a suite, so the gate sits here).
+ *
+ * The fixture tables (same three entities on both engines) are created once per test class and emptied before
+ * every test: MariaDB via {@see \DDD\Domain\Base\Repo\DB\Database\DatabaseModel::getSql()} directly, unchanged
+ * since before §6 step 1 (deliberately not routed through `MariaDbDdlRenderer`: see that class's docblock);
+ * PostgreSQL via the dialect's own {@see \DDD\Domain\Base\Repo\DB\Dialect\Schema\PostgresDdlRenderer} ({@see
+ * self::createFixtureTablesOnPostgres()}), proven standalone against a real server by {@see
+ * \DDD\Tests\Integration\Harness\PostgresDdlBootstrapTest} (`@group bootstrap`) since step 4a. Table creation
+ * itself is therefore no longer gated by driver — what IS still gated, per subclass, is whether that subclass's
+ * OWN queries are dialect-ready yet: a write-path class (upsert/merge/batch — steps 3/4) or a class whose
+ * QueryOptions filters need query-side rendering PostgreSQL does not have yet (JSON/Translatable `TEXT_CAST`/
+ * `JSON_TEXT`, step 5) overrides {@see self::unsupportedOnCurrentDriverReason()} to skip under `pdo_pgsql` with an
+ * explicit reason instead of silently needing the whole suite off that driver. The bare connection boot itself is
+ * checked separately by {@see \DDD\Tests\Integration\Harness\ConnectionBootTest}, which needs no fixture tables at
+ * all.
  */
 abstract class IntegrationTestCase extends TestCase
 {
@@ -28,7 +45,27 @@ abstract class IntegrationTestCase extends TestCase
 
     public static function isIntegrationDatabaseEnabled(): bool
     {
-        return (getenv('DDD_TEST_DRIVER') ?: ($_SERVER['DDD_TEST_DRIVER'] ?? null)) === 'pdo_mysql';
+        return in_array(static::currentDriver(), ['pdo_mysql', 'pdo_pgsql'], true);
+    }
+
+    protected static function currentDriver(): ?string
+    {
+        return getenv('DDD_TEST_DRIVER') ?: ($_SERVER['DDD_TEST_DRIVER'] ?? null);
+    }
+
+    /**
+     * Override to skip every test of this class under the current driver with an explicit reason — write-path
+     * classes (`BatchUpsertTest`, `PartialUpdateTest`: upsert/merge/batch is §6 steps 3/4, not built yet) return a
+     * "step 3/4 writes" reason under `pdo_pgsql`; a class whose queries need query-side rendering PostgreSQL does
+     * not have yet (step 5) returns a reason naming that. Returning null (the default) means this class's own
+     * queries are plain SQL that {@see \DDD\Domain\Base\Repo\DB\Dialect\Identifiers\AlwaysQuoteStrategy} and the
+     * runtime middlewares already make correct on both engines — nothing here is gated by driver at the class
+     * level (a test needing query-side rendering not built yet skips itself instead, see e.g.
+     * `FilterAgainstDatabaseTest`).
+     */
+    protected static function unsupportedOnCurrentDriverReason(): ?string
+    {
+        return null;
     }
 
     public static function setUpBeforeClass(): void
@@ -37,14 +74,23 @@ abstract class IntegrationTestCase extends TestCase
             return;
         }
         (new ReflectionProperty(LazyLoadRepo::class, 'defaultRepoType'))->setValue(null, LazyLoadRepo::DB);
+        // No-op unless DDD_GOLDEN_RECORD is set — see RecordingMiddleware. Must run before the first
+        // connection/table of the suite so the fixture DDL itself is captured.
+        RecordingMiddleware::wireIfEnabled();
+        RecordingMiddleware::beginTest(static::goldenTestId('setUpBeforeClass'));
         $connection = static::connection();
-        foreach (self::FIXTURE_ENTITY_CLASSES as $fixtureEntityClass) {
-            $databaseModel = DatabaseModel::fromEntityClass($fixtureEntityClass);
-            $connection->executeStatement('DROP TABLE IF EXISTS `' . $databaseModel->sqlTableName . '`');
-            foreach (static::splitSqlStatements($databaseModel->getSql()) as $statement) {
-                $connection->executeStatement($statement);
+        if (static::currentDriver() === 'pdo_pgsql') {
+            static::createFixtureTablesOnPostgres($connection);
+        } else {
+            foreach (self::FIXTURE_ENTITY_CLASSES as $fixtureEntityClass) {
+                $databaseModel = DatabaseModel::fromEntityClass($fixtureEntityClass);
+                $connection->executeStatement('DROP TABLE IF EXISTS ' . static::quoteIdentifier($databaseModel->sqlTableName));
+                foreach (static::splitSqlStatements($databaseModel->getSql()) as $statement) {
+                    $connection->executeStatement($statement);
+                }
             }
         }
+        RecordingMiddleware::endTest();
     }
 
     public static function tearDownAfterClass(): void
@@ -52,33 +98,102 @@ abstract class IntegrationTestCase extends TestCase
         if (!static::isIntegrationDatabaseEnabled()) {
             return;
         }
+        RecordingMiddleware::wireIfEnabled();
+        RecordingMiddleware::beginTest(static::goldenTestId('tearDownAfterClass'));
         $connection = static::connection();
         while ($connection->isTransactionActive()) {
             $connection->rollBack();
         }
         foreach (self::FIXTURE_ENTITY_CLASSES as $fixtureEntityClass) {
             $connection->executeStatement(
-                'DROP TABLE IF EXISTS `' . DatabaseModel::fromEntityClass($fixtureEntityClass)->sqlTableName . '`'
+                'DROP TABLE IF EXISTS ' . static::quoteIdentifier(DatabaseModel::fromEntityClass($fixtureEntityClass)->sqlTableName)
+                . (static::currentDriver() === 'pdo_pgsql' ? ' CASCADE' : '')
             );
+        }
+        RecordingMiddleware::endTest();
+    }
+
+    /**
+     * PostgreSQL fixture-table bootstrap (§6 step 4a/4): `ensure()`'s idempotent infra (extensions, collation,
+     * `ddd_*` functions) first, then every fixture table's generated DDL, phase-sorted across all three models —
+     * the exact sequence {@see \DDD\Tests\Integration\Harness\PostgresDdlBootstrapTest} already proves against a
+     * real server, lifted here so every OTHER integration test class gets real PostgreSQL fixture tables too.
+     */
+    protected static function createFixtureTablesOnPostgres(Connection $connection): void
+    {
+        $dialect = static::dialect();
+        $renderer = $dialect->ddlRenderer();
+
+        foreach ($renderer->ensure() as $statement) {
+            $connection->executeStatement($statement->sql);
+        }
+
+        $databaseModels = [];
+        foreach (self::FIXTURE_ENTITY_CLASSES as $fixtureEntityClass) {
+            $databaseModels[] = DatabaseModel::fromEntityClass($fixtureEntityClass);
+        }
+
+        foreach ($databaseModels as $databaseModel) {
+            $connection->executeStatement('DROP TABLE IF EXISTS ' . $dialect->quote($databaseModel->sqlTableName) . ' CASCADE');
+        }
+
+        $statements = [];
+        foreach ($databaseModels as $databaseModel) {
+            foreach ($renderer->renderCreate($databaseModel) as $statement) {
+                $statements[] = $statement;
+            }
+        }
+        foreach (DdlStatements::fromStatements(...$statements)->sortedByPhase() as $statement) {
+            $connection->executeStatement($statement->sql);
         }
     }
 
     protected function setUp(): void
     {
         if (!static::isIntegrationDatabaseEnabled()) {
-            $this->markTestSkipped('Integration suite: start tests/Integration/docker-compose.yml and set DDD_TEST_DRIVER=pdo_mysql');
+            $this->markTestSkipped(
+                'Integration suite: start tests/Integration/docker-compose.yml and set DDD_TEST_DRIVER=pdo_mysql|pdo_pgsql'
+            );
+        }
+        if (static::currentDriver() === 'pdo_pgsql' && ($reason = static::unsupportedOnCurrentDriverReason()) !== null) {
+            $this->markTestSkipped($reason);
         }
         (new ReflectionProperty(LazyLoadRepo::class, 'defaultRepoType'))->setValue(null, LazyLoadRepo::DB);
+        // Every test starts with an empty entity registry and unit of work: fixture tables are recreated per class, so
+        // ids repeat across tests, and an entity registered by an earlier test would be served for a different row.
+        DoctrineEntityRegistry::clear();
+        EntityManagerFactory::clearAllInstanceCaches();
+        RecordingMiddleware::wireIfEnabled();
+        // A data-provider test runs this method once per data set, each with its own setUp()/tearDown() — the
+        // data set must be part of the golden id, or every run after the first silently overwrites the last.
+        $testName = $this->getName(false);
+        if ($this->dataName() !== '') {
+            $testName .= '__dataset_' . $this->dataName();
+        }
+        RecordingMiddleware::beginTest(static::goldenTestId($testName));
         $connection = static::connection();
         while ($connection->isTransactionActive()) {
             $connection->rollBack();
         }
         foreach (self::FIXTURE_ENTITY_CLASSES as $fixtureEntityClass) {
             $connection->executeStatement(
-                'DELETE FROM `' . DatabaseModel::fromEntityClass($fixtureEntityClass)->sqlTableName . '`'
+                'DELETE FROM ' . static::quoteIdentifier(DatabaseModel::fromEntityClass($fixtureEntityClass)->sqlTableName)
             );
         }
         static::entityManager()->clear();
+    }
+
+    protected function tearDown(): void
+    {
+        if (static::isIntegrationDatabaseEnabled()) {
+            RecordingMiddleware::endTest();
+        }
+    }
+
+    /** "<ShortClassName>::<phase>" — the golden file id for a test method or a class-level DDL phase */
+    protected static function goldenTestId(string $phase): string
+    {
+        return (new \ReflectionClass(static::class))->getShortName() . '::' . $phase;
     }
 
     protected static function entityManager(): DoctrineEntityManager
@@ -89,6 +204,20 @@ abstract class IntegrationTestCase extends TestCase
     protected static function connection(): Connection
     {
         return static::entityManager()->getConnection();
+    }
+
+    protected static function dialect(): SqlDialect
+    {
+        return EntityManagerFactory::getDialect();
+    }
+
+    /**
+     * Quotes a table/column name for the harness's own setUp/teardown SQL through the one seam that already knows
+     * how (§6 step 1) — `` `x` `` on MariaDB, `"x"` on PostgreSQL once step 4a gives it real fixture tables to quote.
+     */
+    protected static function quoteIdentifier(string $identifier): string
+    {
+        return static::dialect()->quote($identifier);
     }
 
     /**
@@ -111,6 +240,32 @@ abstract class IntegrationTestCase extends TestCase
     /** @return array<string, mixed>|false The stored row of $table with $id, as the database returns it */
     protected function fetchRow(string $table, int $id): array|false
     {
-        return static::connection()->fetchAssociative("SELECT * FROM `$table` WHERE id = ?", [$id]);
+        return static::connection()->fetchAssociative('SELECT * FROM ' . static::quoteIdentifier($table) . ' WHERE id = ?', [$id]);
+    }
+
+    /**
+     * Generic fixture-row INSERT through the dialect (§6 step 4/5 item 5): `Connection::insert()` builds its SQL
+     * from the bare table/column names it is given with no quoting at all, which only ever worked here because
+     * every test used it against MariaDB, which tolerates an unquoted mixed-case identifier. This helper quotes
+     * both ({@see SqlDialect::quote()}) so the same call inserts a fixture row on either engine. Values are bound
+     * exactly as `Connection::insert()` would bind them (no `$types` array) — the read-path fixtures this backs
+     * are plain scalars (ints, strings, nullable datetimes, JSON-encoded text), never a bytea/vector/geometry
+     * column, so no write-path bind-shaping (step 3/4) is needed here.
+     *
+     * @param array<string, mixed> $columns
+     */
+    protected static function insertRow(string $table, array $columns): void
+    {
+        $dialect = static::dialect();
+        $quotedColumns = array_map(
+            static fn (string $column): string => $dialect->quote($column),
+            array_keys($columns)
+        );
+        $placeholders = array_fill(0, count($columns), '?');
+        static::connection()->executeStatement(
+            'INSERT INTO ' . $dialect->quote($table) . ' (' . implode(', ', $quotedColumns) . ') '
+            . 'VALUES (' . implode(', ', $placeholders) . ')',
+            array_values($columns)
+        );
     }
 }

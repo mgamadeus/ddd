@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace DDD\Symfony\Commands\Base\Database;
 
+use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
+use DDD\Domain\Base\Repo\DB\Dialect\DialectResolver;
 use DDD\Domain\Common\Services\EntityModelGeneratorService;
+use DDD\Infrastructure\Exceptions\InternalErrorException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 #[AsCommand(
@@ -25,31 +29,105 @@ class ShowEntitySql extends Command
             InputArgument::OPTIONAL,
             'Entity short name (e.g. "Account") or fully-qualified class name. Omit to dump the SQL for every entity.'
         );
+        $this->addOption(
+            'dialect',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'mysql (default, today\'s MariaDB-targeted SQL) or postgres (dual-dialect architecture plan §6 row 4a: '
+            . 'CREATE-path PostgreSQL DDL via PostgresDdlRenderer — requires --create-only, since ALTER/introspection '
+            . 'are a later build step).',
+            'mysql'
+        );
+        $this->addOption(
+            'create-only',
+            null,
+            InputOption::VALUE_NONE,
+            '--dialect=postgres only: renders the CREATE-only script (every ensure() infra statement, then every '
+            . 'entity\'s table/indexes/foreign keys, phase-ordered across the whole set via DdlStatements::sortedByPhase() '
+            . 'so a forward-referenced foreign key still lands after its target table). No-op for --dialect=mysql, '
+            . 'which only ever had a CREATE-path renderer to begin with.'
+        );
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $entityArg = $input->getArgument('entity');
-
-        // No argument → full target schema for every DB-mapped entity.
-        if ($entityArg === null || $entityArg === '') {
-            $sql = EntityModelGeneratorService::getDatabaseModels(null, filterOverriddenEntities: true)->getSql();
-            $output->writeln($sql !== '' ? $sql : '-- (no entities found)', OutputInterface::OUTPUT_RAW);
-            return Command::SUCCESS;
-        }
-
-        $entityClassName = $this->resolveEntityClass((string)$entityArg, $output);
-        if ($entityClassName === null) {
+        $dialectOption = (string)$input->getOption('dialect');
+        if (!in_array($dialectOption, ['mysql', 'postgres'], true)) {
+            $output->writeln("<error>--dialect must be \"mysql\" or \"postgres\", got \"$dialectOption\".</error>");
             return Command::FAILURE;
         }
 
-        $sql = EntityModelGeneratorService::getDatabaseModels([$entityClassName], filterOverriddenEntities: true)->getSql();
+        $entityArg = $input->getArgument('entity');
+        $entityClassNames = null; // null = every DB-mapped entity
+        if ($entityArg !== null && $entityArg !== '') {
+            $entityClassName = $this->resolveEntityClass((string)$entityArg, $output);
+            if ($entityClassName === null) {
+                return Command::FAILURE;
+            }
+            $entityClassNames = [$entityClassName];
+        }
+
+        if ($dialectOption === 'postgres') {
+            return $this->executePostgres($entityClassNames, (bool)$input->getOption('create-only'), $output);
+        }
+
+        $sql = EntityModelGeneratorService::getDatabaseModels($entityClassNames, filterOverriddenEntities: true)->getSql();
         if ($sql === '') {
-            $output->writeln(
-                "<comment>-- {$entityClassName} produces no table of its own (e.g. a single-table-inheritance subclass folded into its parent's table).</comment>"
-            );
+            $message = $entityClassNames === null
+                ? '-- (no entities found)'
+                : "<comment>-- {$entityClassNames[0]} produces no table of its own (e.g. a single-table-inheritance subclass folded into its parent's table).</comment>";
+            $output->writeln($message, OutputInterface::OUTPUT_RAW);
             return Command::SUCCESS;
         }
+        $output->writeln($sql, OutputInterface::OUTPUT_RAW);
+        return Command::SUCCESS;
+    }
+
+    /** @param string[]|null $entityClassNames */
+    protected function executePostgres(?array $entityClassNames, bool $createOnly, OutputInterface $output): int
+    {
+        if (!$createOnly) {
+            $output->writeln(
+                '<error>--dialect=postgres currently needs --create-only: PostgresDdlRenderer only has a CREATE '
+                . 'path (dual-dialect architecture plan §6 row 4a); ALTER/introspection land in build step 7.</error>'
+            );
+            return Command::FAILURE;
+        }
+
+        $databaseModels = EntityModelGeneratorService::getDatabaseModels($entityClassNames, filterOverriddenEntities: true);
+        // One renderer (and one IdentifierPolicy) for the WHOLE set: PostgreSQL index/constraint names are
+        // schema-wide, so a duplicate across two different tables must be caught here, across every model, not
+        // per-model (dual-dialect architecture plan §4.5).
+        $renderer = DialectResolver::forDriver('pdo_pgsql')->ddlRenderer();
+
+        $statements = $renderer->ensure();
+        // Collect every refusal across the whole run instead of failing on the first (build step 7 iteration
+        // need): a model's InternalErrorException is caught, logged against its table, and rendering continues
+        // with the next model, so one invocation reports every remaining unportable shape together.
+        $refusals = [];
+        /** @var DatabaseModel $databaseModel */
+        foreach ($databaseModels->getElements() as $databaseModel) {
+            try {
+                $statements = $statements->withStatementsOf($renderer->renderCreate($databaseModel));
+            } catch (InternalErrorException $exception) {
+                $refusals[] = $databaseModel->sqlTableName . ': ' . $exception->getMessage();
+            }
+        }
+
+        if ($refusals !== []) {
+            $output->writeln('<error>PostgreSQL rendering refused ' . count($refusals) . ' table(s):</error>');
+            foreach ($refusals as $refusal) {
+                $output->writeln("  - $refusal");
+            }
+            return Command::FAILURE;
+        }
+
+        if ($statements->count() === 0) {
+            $output->writeln('-- (no entities found)', OutputInterface::OUTPUT_RAW);
+            return Command::SUCCESS;
+        }
+
+        $sql = implode(";\n\n", $statements->sortedByPhase()->getSqlList()) . ";\n";
         $output->writeln($sql, OutputInterface::OUTPUT_RAW);
         return Command::SUCCESS;
     }

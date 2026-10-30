@@ -9,6 +9,7 @@ use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
 use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\ValueObject;
+use DDD\Domain\Base\Repo\DB\Database\FullTextMode;
 use DDD\Domain\Base\Services\TranslatableService;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Validation\Constraints\Choice;
@@ -64,9 +65,16 @@ class Translatable extends ValueObject
      */
     public bool $fullTextIndex = false;
 
-    public function __construct(bool $fullTextIndex = false)
+    /**
+     * D14: which PostgreSQL fulltext rendering `fullTextIndex: true` gets (no effect on MariaDB). Default `NAME`
+     * (short text, pg_trgm prefix search); `DOCUMENT` for long text (to_tsvector + websearch_to_tsquery).
+     */
+    public FullTextMode $fullTextMode = FullTextMode::NAME;
+
+    public function __construct(bool $fullTextIndex = false, FullTextMode $fullTextMode = FullTextMode::NAME)
     {
         $this->fullTextIndex = $fullTextIndex;
+        $this->fullTextMode = $fullTextMode;
         parent::__construct();
     }
 

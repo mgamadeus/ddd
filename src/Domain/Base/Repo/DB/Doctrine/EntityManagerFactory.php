@@ -4,102 +4,26 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo\DB\Doctrine;
 
-// Brick\Geo Doctrine Function imports (vendor)
-use Brick\Geo\Doctrine\Functions\AreaFunction;
-use Brick\Geo\Doctrine\Functions\AzimuthFunction;
-use Brick\Geo\Doctrine\Functions\BoundaryFunction;
-use Brick\Geo\Doctrine\Functions\BufferFunction;
-use Brick\Geo\Doctrine\Functions\CentroidFunction;
-use Brick\Geo\Doctrine\Functions\ContainsFunction;
-use Brick\Geo\Doctrine\Functions\ConvexHullFunction;
-use Brick\Geo\Doctrine\Functions\CrossesFunction;
-use Brick\Geo\Doctrine\Functions\DifferenceFunction;
-use Brick\Geo\Doctrine\Functions\DisjointFunction;
-use Brick\Geo\Doctrine\Functions\DistanceFunction;
-use Brick\Geo\Doctrine\Functions\EnvelopeFunction;
-use Brick\Geo\Doctrine\Functions\EqualsFunction;
-use Brick\Geo\Doctrine\Functions\IntersectsFunction;
-use Brick\Geo\Doctrine\Functions\IsClosedFunction;
-use Brick\Geo\Doctrine\Functions\IsSimpleFunction;
-use Brick\Geo\Doctrine\Functions\IsValidFunction;
-use Brick\Geo\Doctrine\Functions\LengthFunction;
-use Brick\Geo\Doctrine\Functions\LocateAlongFunction;
-use Brick\Geo\Doctrine\Functions\LocateBetweenFunction;
-use Brick\Geo\Doctrine\Functions\MaxDistanceFunction;
-use Brick\Geo\Doctrine\Functions\OverlapsFunction;
-use Brick\Geo\Doctrine\Functions\PointOnSurfaceFunction;
-use Brick\Geo\Doctrine\Functions\RelateFunction;
-use Brick\Geo\Doctrine\Functions\SimplifyFunction;
-use Brick\Geo\Doctrine\Functions\SnapToGridFunction;
-use Brick\Geo\Doctrine\Functions\SymDifferenceFunction;
-use Brick\Geo\Doctrine\Functions\TouchesFunction;
-use Brick\Geo\Doctrine\Functions\UnionFunction;
-use Brick\Geo\Doctrine\Functions\WithinFunction;
-
-// Brick\Geo Doctrine Type imports (vendor) — aliased so our identically-named DDD types
-// can keep their short class names below.
-use Brick\Geo\Doctrine\Types\GeometryType;
-use Brick\Geo\Doctrine\Types\LineStringType as BrickLineStringType;
-use Brick\Geo\Doctrine\Types\MultiLineStringType;
-use Brick\Geo\Doctrine\Types\MultiPointType;
-use Brick\Geo\Doctrine\Types\MultiPolygonType;
-use Brick\Geo\Doctrine\Types\PointType as BrickPointType;
-
 // Infrastructure / Framework imports
+use DDD\Domain\Base\Repo\DB\Dialect\DatabaseConfigurationException;
+use DDD\Domain\Base\Repo\DB\Dialect\DialectResolver;
+use DDD\Domain\Base\Repo\DB\Dialect\Guard\UnreleasedCodeGuard;
+use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
 use DDD\Infrastructure\Cache\Cache;
 use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Services\DDDService;
 use Doctrine\Common\Proxy\AbstractProxyFactory;
-use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\ORMSetup;
 
-// DoctrineExtensions imports
-use DoctrineExtensions\Query\Mysql\DateAdd;
-use DoctrineExtensions\Query\Mysql\Field;
-use DoctrineExtensions\Query\Mysql\IfNull;
-use DoctrineExtensions\Query\Mysql\MatchAgainst;
-use DoctrineExtensions\Query\Mysql\Rand;
-use DoctrineExtensions\Query\Mysql\StrToDate;
-use DoctrineExtensions\Types\PolygonType as BrickPolygonType;
-
 use RuntimeException;
-
-// Custom Vector Query functions
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\CosineDistance;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\CosineSimilarity;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Distance;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\EuclideanDistance;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\VecFromText;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\UnescapedJsonType;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\BoundingBoxType;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\LineStringType;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\PointType;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\PolygonType;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\VectorType;
-
-// Custom Geo/Spatial Query functions
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StAsGeoJSON;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StAsText;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StDistanceSphere;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StEndPoint;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StGeomFromGeoJSON;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StGeomFromText;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StGeometryType;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StIntersection;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StLineFromText;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StNumPoints;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StPointFromText;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StPolyFromText;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StSrid;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StStartPoint;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StTransform;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StX;
-use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\Geo\StY;
 
 class EntityManagerFactory
 {
     /** @var DoctrineEntityManager[] */
     protected static array $instances = [];
+
+    /** @var SqlDialect[] Resolved in create(); getDialect() falls back to DialectResolver::forConnection() */
+    protected static array $dialects = [];
 
     public const string SCOPE_DEFAULT = 'DEFAULT';
 
@@ -260,6 +184,7 @@ class EntityManagerFactory
         $cache = Cache::instance('DOCTRINE')->getCacheAdapter();
         $metaDataCache = Cache::instance('DOCTRINE_METADATA')->getCacheAdapter();
         $configSettings = self::getDBConfigForScope($scope);
+        self::assertScopeIsConfigured($scope, $configSettings);
 
         $config = ORMSetup::createAttributeMetadataConfiguration(
             [__DIR__ . '/../Domain'], // Adjusted path for correctness
@@ -270,129 +195,74 @@ class EntityManagerFactory
         $config->setMetadataCache($metaDataCache);
         $config->setClassMetadataFactoryName(ClassMetadataFactory::class);
 
-        // ─── DoctrineExtensions: general-purpose MySQL functions ───
-        $config->addCustomStringFunction('FIELD', Field::class);
-        $config->addCustomStringFunction('IFNULL', IfNull::class);
-        $config->addCustomStringFunction('MATCH', MatchAgainst::class);
-        $config->addCustomStringFunction('DATE_ADD', DateAdd::class);
-        $config->addCustomStringFunction('STR_TO_DATE', StrToDate::class);
-        $config->addCustomNumericFunction('RAND', Rand::class);
-
-        // ─── Spatial functions returning geometry/string (addCustomStringFunction) ───
-        // From brick/geo-doctrine vendor
-        $config->addCustomStringFunction('ST_Envelope', EnvelopeFunction::class);
-        $config->addCustomStringFunction('ST_Boundary', BoundaryFunction::class);
-        $config->addCustomStringFunction('ST_Buffer', BufferFunction::class);
-        $config->addCustomStringFunction('ST_Centroid', CentroidFunction::class);
-        $config->addCustomStringFunction('ST_ConvexHull', ConvexHullFunction::class);
-        $config->addCustomStringFunction('ST_Difference', DifferenceFunction::class);
-        $config->addCustomStringFunction('ST_PointOnSurface', PointOnSurfaceFunction::class);
-        $config->addCustomStringFunction('ST_Simplify', SimplifyFunction::class);
-        $config->addCustomStringFunction('ST_SnapToGrid', SnapToGridFunction::class);
-        $config->addCustomStringFunction('ST_SymDifference', SymDifferenceFunction::class);
-        $config->addCustomStringFunction('ST_Union', UnionFunction::class);
-
-        // From custom Geo functions
-        $config->addCustomStringFunction('ST_GeomFromText', StGeomFromText::class);
-        $config->addCustomStringFunction('ST_PointFromText', StPointFromText::class);
-        $config->addCustomStringFunction('ST_LineFromText', StLineFromText::class);
-        $config->addCustomStringFunction('ST_PolyFromText', StPolyFromText::class);
-        $config->addCustomStringFunction('ST_AsText', StAsText::class);
-        $config->addCustomStringFunction('ST_GeomFromGeoJSON', StGeomFromGeoJSON::class);
-        $config->addCustomStringFunction('ST_AsGeoJSON', StAsGeoJSON::class);
-        $config->addCustomStringFunction('ST_GeometryType', StGeometryType::class);
-        $config->addCustomStringFunction('ST_StartPoint', StStartPoint::class);
-        $config->addCustomStringFunction('ST_EndPoint', StEndPoint::class);
-        $config->addCustomStringFunction('ST_Intersection', StIntersection::class);
-        $config->addCustomStringFunction('ST_Transform', StTransform::class);
-
-        // ─── Spatial functions returning numeric/boolean (addCustomNumericFunction) ───
-        // From brick/geo-doctrine vendor
-        $config->addCustomNumericFunction('ST_Area', AreaFunction::class);
-        $config->addCustomNumericFunction('ST_Within', WithinFunction::class);
-        $config->addCustomNumericFunction('ST_Contains', ContainsFunction::class);
-        $config->addCustomNumericFunction('ST_Azimuth', AzimuthFunction::class);
-        $config->addCustomNumericFunction('ST_Crosses', CrossesFunction::class);
-        $config->addCustomNumericFunction('ST_Disjoint', DisjointFunction::class);
-        $config->addCustomNumericFunction('ST_Distance', DistanceFunction::class);
-        $config->addCustomNumericFunction('ST_Equals', EqualsFunction::class);
-        $config->addCustomNumericFunction('ST_Intersects', IntersectsFunction::class);
-        $config->addCustomNumericFunction('ST_IsClosed', IsClosedFunction::class);
-        $config->addCustomNumericFunction('ST_IsSimple', IsSimpleFunction::class);
-        $config->addCustomNumericFunction('ST_IsValid', IsValidFunction::class);
-        // Use ST_GeoLength to avoid conflict with Doctrine's built-in LENGTH function
-        $config->addCustomNumericFunction('ST_GeoLength', LengthFunction::class);
-        $config->addCustomNumericFunction('ST_LocateAlong', LocateAlongFunction::class);
-        $config->addCustomNumericFunction('ST_LocateBetween', LocateBetweenFunction::class);
-        $config->addCustomNumericFunction('ST_MaxDistance', MaxDistanceFunction::class);
-        $config->addCustomNumericFunction('ST_Overlaps', OverlapsFunction::class);
-        $config->addCustomNumericFunction('ST_Relate', RelateFunction::class);
-        $config->addCustomNumericFunction('ST_Touches', TouchesFunction::class);
-
-        // From custom Geo functions
-        $config->addCustomNumericFunction('ST_Distance_Sphere', StDistanceSphere::class);
-        $config->addCustomNumericFunction('ST_SRID', StSrid::class);
-        $config->addCustomNumericFunction('ST_X', StX::class);
-        $config->addCustomNumericFunction('ST_Y', StY::class);
-        $config->addCustomNumericFunction('ST_NumPoints', StNumPoints::class);
-
-        // ─── JSON type override: preserve Unicode characters (e.g. "Münster" instead of "M\u00fcnster") ───
-        Type::overrideType('json', UnescapedJsonType::class);
-
-        // ─── Vector functions ───
-        if (!Type::hasType(VectorType::NAME)) {
-            Type::addType(VectorType::NAME, VectorType::class);
+        $dialect = DialectResolver::forDriver($configSettings['connectionParams']['driver']);
+        $configSettings['connectionParams'] = $dialect->connectionParams($configSettings['connectionParams']);
+        UnreleasedCodeGuard::assertAllowed($configSettings['connectionParams']);
+        // §4.12 boot guard (D3): named locks on PostgreSQL run on a dedicated, non-pooled connection — a
+        // session-scoped advisory lock on a PgBouncer transaction-mode connection leaks and loses mutual
+        // exclusion. Checked here, at scope boot, rather than lazily inside PostgresLockService, so a
+        // misconfigured scope fails loudly before anything tries to take a lock on it.
+        if ($dialect->capabilities()->isPostgres() && !Config::getEnv("DB_{$scope}_DIRECT_HOST")) {
+            throw new DatabaseConfigurationException(
+                "DB_{$scope}_DIRECT_HOST is required on PostgreSQL: named locks (LockService) take a dedicated, "
+                . 'non-pooled connection, because a session-scoped advisory lock on a PgBouncer transaction-mode '
+                . 'connection leaks and loses mutual exclusion (architecture plan §4.12).'
+            );
         }
+        $dialect->configureOrm($config);
+        self::$dialects[$scope] = $dialect;
 
-        $config->addCustomStringFunction('VEC_FROM_TEXT', VecFromText::class);
-        $config->addCustomNumericFunction('COSINE_DISTANCE', CosineDistance::class);
-        $config->addCustomNumericFunction('EUCLIDEAN_DISTANCE', EuclideanDistance::class);
-        $config->addCustomNumericFunction('VEC_DISTANCE', Distance::class);
-        $config->addCustomNumericFunction('COSINE_SIMILARITY', CosineSimilarity::class);
-
-        // ─── Spatial column types ───
+        // DQL function and Doctrine type registration moved verbatim into $dialect->configureOrm() above
+        // (§6 step 2 "pure move" of the dual-dialect architecture plan) — MariaDbDialect::configureOrm()
+        // holds exactly what used to sit here.
         $config->setProxyNamespace(self::DEFAULT_NAMESPACE);
         $config->setAutoGenerateProxyClasses($configSettings['doctrineConfig']['proxyGenerationMode']);
-        if (!Type::hasType('point')) {
-            Type::addType('point', BrickPointType::class);
-        }
-        if (!Type::hasType('geometry')) {
-            Type::addType('geometry', GeometryType::class);
-        }
-        if (!Type::hasType('linestring')) {
-            Type::addType('linestring', BrickLineStringType::class);
-        }
-        if (!Type::hasType('polygon')) {
-            Type::addType('polygon', BrickPolygonType::class);
-        }
-        if (!Type::hasType('multilinestring')) {
-            Type::addType('multilinestring', MultiLineStringType::class);
-        }
-        if (!Type::hasType('multipoint')) {
-            Type::addType('multipoint', MultiPointType::class);
-        }
-        if (!Type::hasType('multipolygon')) {
-            Type::addType('multipolygon', MultiPolygonType::class);
-        }
-
-        // ─── Cartesian geometry types (SRID 0) — Point2D / Polyline / Polygon / BoundingBox2D ───
-        // Distinct from the brick/geo types above (which carry SRID 4326 / Brick\Geo\* PHP types).
-        // These map directly to the DDD\Domain\Common\Entities\Geometry\Cartesian\* VOs and live
-        // alongside `point` / `linestring` / `polygon` as separate registered type names.
-        if (!Type::hasType(PointType::NAME)) {
-            Type::addType(PointType::NAME, PointType::class);
-        }
-        if (!Type::hasType(LineStringType::NAME)) {
-            Type::addType(LineStringType::NAME, LineStringType::class);
-        }
-        if (!Type::hasType(PolygonType::NAME)) {
-            Type::addType(PolygonType::NAME, PolygonType::class);
-        }
-        if (!Type::hasType(BoundingBoxType::NAME)) {
-            Type::addType(BoundingBoxType::NAME, BoundingBoxType::class);
-        }
 
         self::$instances[$scope] = DoctrineEntityManager::create($configSettings['connectionParams'], $config);
+    }
+
+    /**
+     * The dialect of a scope (D10). Resolved and cached by create(); falls back to
+     * {@see DialectResolver::forConnection()} for an entity manager that exists but was rebuilt outside create()
+     * (2.70.9's rebuildOnSameConnection(), used when a closed EM must keep the caller's open transaction), and to
+     * {@see DialectResolver::forDriver()} from the scope's configured driver when no instance exists yet at all
+     * (DDL generation, golden tests — no connection required).
+     */
+    public static function getDialect(string $scope = self::SCOPE_DEFAULT): SqlDialect
+    {
+        if (isset(self::$dialects[$scope])) {
+            return self::$dialects[$scope];
+        }
+        if (isset(self::$instances[$scope])) {
+            return self::$dialects[$scope] = DialectResolver::forConnection(self::$instances[$scope]->getConnection());
+        }
+        $configSettings = self::getDBConfigForScope($scope);
+        self::assertScopeIsConfigured($scope, $configSettings);
+        return DialectResolver::forDriver($configSettings['connectionParams']['driver']);
+    }
+
+    /** Whether the scope has a connection configured (`DB_<SCOPE>_CONNECTION_DRIVER`) */
+    public static function isScopeConfigured(string $scope = self::SCOPE_DEFAULT): bool
+    {
+        return (string)(self::getDBConfigForScope($scope)['connectionParams']['driver'] ?? '') !== '';
+    }
+
+    /**
+     * An unconfigured scope fails with a message naming the variable, not with a type error deep in the dialect
+     * resolution. Environments where the legacy tables live in the default database configure no LEGACY_DB scope.
+     *
+     * @param array<string, mixed> $configSettings As returned by getDBConfigForScope()
+     * @throws DatabaseConfigurationException
+     */
+    protected static function assertScopeIsConfigured(string $scope, array $configSettings): void
+    {
+        if ((string)($configSettings['connectionParams']['driver'] ?? '') === '') {
+            throw new DatabaseConfigurationException(sprintf(
+                'The database scope %s is not configured: DB_%s_CONNECTION_DRIVER (and the other DB_%s_CONNECTION_* '
+                . 'variables) are not set in this environment.',
+                $scope, $scope, $scope
+            ));
+        }
     }
 
     /**
