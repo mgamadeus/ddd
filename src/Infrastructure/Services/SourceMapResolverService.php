@@ -44,6 +44,12 @@ class SourceMapResolverService extends Service
     public const string NOTE_STORE_NOT_CONFIGURED = 'source map store not configured';
     public const string NOTE_NO_MAP = 'no source map';
     public const string NOTE_NO_MAPPING = 'no mapping at this position';
+
+    /** A function name with a part this short (`e`, `n.map`) is minified: the map's name at the position replaces it */
+    public const int MINIFIED_NAME_PART_MAX_LENGTH = 2;
+
+    /** A map name like this is the thrown constructor at the throw site (`new Error(…)`), never the frame's function */
+    public const string ERROR_CONSTRUCTOR_NAME_PATTERN = '/^[A-Za-z_$][\w$]*(?:Error|Exception)$|^Error$/';
     public const string NOTE_STORE_ERROR = 'source map store error';
 
     /** @var SourceMap[] Parsed maps of this process, by object key */
@@ -200,17 +206,43 @@ class SourceMapResolverService extends Service
         $resolvedFrame->originalFile = $this->normaliseSourcePath($sourceMapPosition->source);
         $resolvedFrame->originalLine = $sourceMapPosition->line;
         $resolvedFrame->originalColumn = $sourceMapPosition->column;
-        $resolvedFrame->originalFunction = $sourceMapPosition->name ?? $resolvedFrame->function;
+        $resolvedFrame->originalFunction = $this->getOriginalFunctionName($resolvedFrame->function, $sourceMapPosition->name);
         $resolvedFrame->contextLines = $sourceMapPosition->contextLines;
         $resolvedFrame->contextStartLine = $sourceMapPosition->contextStartLine;
     }
 
-    /** `webpack://_N_E/./src/app/page.tsx` → `src/app/page.tsx`; `turbopack:///[project]/src/x.ts` → `src/x.ts` */
+    /**
+     * The frame's original function. A source map's `names` entry names the TOKEN at a position — at a call site the
+     * callee, at a throw site the thrown constructor — so it replaces only a minified or missing function name, and an
+     * error constructor (`Error`, `TypeError`) never does.
+     */
+    public function getOriginalFunctionName(?string $minifiedFunctionName, ?string $sourceMapName): ?string
+    {
+        $isSourceMapNameUsable = $sourceMapName !== null && $sourceMapName !== ''
+            && !preg_match(self::ERROR_CONSTRUCTOR_NAME_PATTERN, $sourceMapName);
+        if (!$isSourceMapNameUsable) {
+            return $minifiedFunctionName;
+        }
+        if ($minifiedFunctionName === null || $minifiedFunctionName === '') {
+            return $sourceMapName;
+        }
+        foreach (explode('.', $minifiedFunctionName) as $functionNamePart) {
+            if (strlen($functionNamePart) <= self::MINIFIED_NAME_PART_MAX_LENGTH || $functionNamePart === '<anonymous>') {
+                return $sourceMapName;
+            }
+        }
+        return $minifiedFunctionName;
+    }
+
+    /**
+     * `webpack://_N_E/./src/app/page.tsx` → `src/app/page.tsx`; `turbopack:///[project]/src/x.ts` → `src/x.ts`;
+     * Turbopack's server maps `../../../../../apps/web/src/route.ts` → `apps/web/src/route.ts`
+     */
     public function normaliseSourcePath(string $source): string
     {
         $path = (string)preg_replace('/^[a-z][a-z0-9+.-]*:\/\/\/?/i', '', $source);
         $path = (string)preg_replace('/^(?:_N_E\/|\[project\]\/)/', '', $path);
-        return (string)preg_replace('/^(?:\.\/)+/', '', $path);
+        return (string)preg_replace('/^(?:\.\.?\/)+/', '', $path);
     }
 
     /**

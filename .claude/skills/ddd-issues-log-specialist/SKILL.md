@@ -280,7 +280,11 @@ that runs `IssuesShow` in-process gets them from there.
   `static/chunks/x.js.map`). Development maps are never cached across builds: read on every resolution, parsed again
   when their content changed, no disk or position cache.
 - Regular maps and indexed maps (`sections`, Turbopack) are parsed (`SourceMapParser`); `webpack://_N_E/./`,
-  `turbopack:///[project]/` prefixes are stripped from the original file.
+  `turbopack:///[project]/` prefixes and leading `../` / `./` segments are stripped from the original file
+  (`../../../../../apps/web/src/route.ts` → `apps/web/src/route.ts`).
+- The original function: a map's `names` entry names the token at the position (the callee, or the thrown
+  constructor), so it replaces only a minified or missing function name (a part of ≤ 2 characters, `<anonymous>`) and
+  never with an error constructor (`Error`, `TypeError`) — `getOriginalFunctionName()`.
 - Parsed maps are cached on local disk (`sourceMapsCacheDirectory`, default `<kernel cache>/sourcemaps`, least recently
   used removed beyond `sourceMapsCacheMegabytes` = 512), resolved positions in the DDD cache for 7 days.
 - Nothing throws: no line/column, no release, no map, store not configured or a store error leave the minified frame with

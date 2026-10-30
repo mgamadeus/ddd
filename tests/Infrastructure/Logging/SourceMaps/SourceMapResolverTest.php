@@ -157,6 +157,34 @@ class SourceMapResolverTest extends TestCase
         $this->assertSame('src/x.ts', (new SourceMapResolverService())->normaliseSourcePath('turbopack:///[project]/src/x.ts'));
     }
 
+    public function testRelativeSourcePathsLoseTheirLeadingDirectorySegments(): void
+    {
+        $sourceMapResolverService = new SourceMapResolverService();
+        $this->assertSame(
+            'apps/web/src/app/web-api/issues-test/route.ts',
+            $sourceMapResolverService->normaliseSourcePath('../../../../../apps/web/src/app/web-api/issues-test/route.ts')
+        );
+        $this->assertSame('src/x.ts', $sourceMapResolverService->normaliseSourcePath('./../src/x.ts'));
+        $this->assertSame('src/app/page.tsx', $sourceMapResolverService->normaliseSourcePath('webpack://_N_E/./src/app/page.tsx'));
+    }
+
+    public function testTheMapNameReplacesOnlyAMinifiedFunctionAndNeverAnErrorConstructor(): void
+    {
+        $sourceMapResolverService = new SourceMapResolverService();
+        // the thrown constructor at the throw site: the frame keeps its own name
+        $this->assertSame('GET', $sourceMapResolverService->getOriginalFunctionName('GET', 'Error'));
+        $this->assertSame('e', $sourceMapResolverService->getOriginalFunctionName('e', 'TypeError'));
+        $this->assertNull($sourceMapResolverService->getOriginalFunctionName(null, 'Error'));
+        // a minified or missing name gives way to the map's name
+        $this->assertSame('loadItems', $sourceMapResolverService->getOriginalFunctionName('e', 'loadItems'));
+        $this->assertSame('map', $sourceMapResolverService->getOriginalFunctionName('n.map', 'map'));
+        $this->assertSame('renderMenu', $sourceMapResolverService->getOriginalFunctionName('Object.<anonymous>', 'renderMenu'));
+        $this->assertSame('renderMenu', $sourceMapResolverService->getOriginalFunctionName(null, 'renderMenu'));
+        // a readable name stays; no map name keeps the frame's
+        $this->assertSame('Module.GET', $sourceMapResolverService->getOriginalFunctionName('Module.GET', 'fetchMenu'));
+        $this->assertSame('e', $sourceMapResolverService->getOriginalFunctionName('e', null));
+    }
+
     public function testWhatCannotBeResolvedStaysMinifiedWithANote(): void
     {
         $probeSourceMapResolver = $this->createResolverWithMenuPageMap();

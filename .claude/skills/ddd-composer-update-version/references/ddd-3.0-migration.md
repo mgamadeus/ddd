@@ -286,3 +286,7 @@ Unchanged:
   admin screen: the runtime-error controller and DTOs, a registry drawer events endpoint (`IssueEvent::$rawJson` →
   `RuntimeErrorOccurrence`, any backend), real occurrence JSON, the drawer layout, code-context rendering and "Copy for
   agent". No code change.
+- 3.13.2 — source maps: a resolved file loses leading `../` / `./` segments (Turbopack server maps:
+  `../../../../../apps/web/src/route.ts` → `apps/web/src/route.ts`); a map's `names` entry replaces only a minified or
+  missing function name and never with an error constructor (`Error` at the throw site) —
+  `SourceMapResolverService::getOriginalFunctionName()`.
