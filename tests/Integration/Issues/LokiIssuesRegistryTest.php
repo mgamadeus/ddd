@@ -16,6 +16,8 @@ use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Logging\IssuesAlertWebhookSender;
 use DDD\Infrastructure\Logging\IssuesLogSettings;
 use DDD\Infrastructure\Logging\IssuesRegistrySettings;
+use DDD\Infrastructure\Logging\Query\Elasticsearch\RuntimeErrorFieldRedactor;
+use DDD\Infrastructure\Logging\Query\Elasticsearch\RuntimeErrorOccurrence;
 use DDD\Infrastructure\Logging\Query\IssueEventSearch;
 use DDD\Infrastructure\Logging\Query\LokiIssuesQueryBackend;
 use DDD\Infrastructure\Services\DDDService;
@@ -270,6 +272,14 @@ class LokiIssuesRegistryTest extends IssuesRegistryTestCase
             text: 'id 43',
         ));
         self::assertSame(1, $searchedEvents->count());
+        // the registry drawer's events read like the runtime-error detail's occurrences
+        $runtimeErrorOccurrence = RuntimeErrorOccurrence::buildFromHit(
+            ['_source' => json_decode($searchedEvents->first()->rawJson, true)],
+            new RuntimeErrorFieldRedactor()
+        );
+        self::assertSame($searchedEvents->first()->groupHash, $runtimeErrorOccurrence->groupHash);
+        self::assertGreaterThan(0, $runtimeErrorOccurrence->errorFrames->count());
+        self::assertNotSame([], $runtimeErrorOccurrence->errorFrames->first()->codeContextLines);
         $workspaceSearch = static fn(string $workspace): int => $lokiIssuesQueryBackend->searchEvents(new IssueEventSearch(
             DateTime::fromTimestamp(time() - 600),
             DateTime::fromTimestamp(time() + 600),

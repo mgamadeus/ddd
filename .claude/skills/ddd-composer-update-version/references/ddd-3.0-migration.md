@@ -282,3 +282,7 @@ Unchanged:
   groups and trend bodies are unchanged. `buildFromHit()` / `buildFromTopHits()` take an optional
   `ElasticsearchFieldNames`. `app:runtime-errors:extract --group=<key> [--groupingDimension] [--sampleSize=3]` prints one
   group with its newest occurrences.
+- 3.13.1 — docs: `ddd-issues-log-specialist/references/admin-error-detail.md`, a guide to building the error detail of an
+  admin screen: the runtime-error controller and DTOs, a registry drawer events endpoint (`IssueEvent::$rawJson` →
+  `RuntimeErrorOccurrence`, any backend), real occurrence JSON, the drawer layout, code-context rendering and "Copy for
+  agent". No code change.

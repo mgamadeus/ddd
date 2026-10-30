@@ -1,6 +1,6 @@
 ---
 name: ddd-issues-log-specialist
-description: "Log, cluster, ship and track errors with the mgamadeus/ddd issues log: IssuesLogService::logThrowable (log-once) and logClientIssue (browser / Node / React Native errors, section WEB), sinks (file/stderr/none, ECS JSON), capture, redaction, group / issue hashes; the registry job over Loki, Elasticsearch / OpenSearch or Sentry (environments, workspaces, seed mode, explosion guard, regressions, Slack alerts, health); agent CLI app:issues:list / show / search / resolve / trend --format=json; RuntimeErrorsService, app:runtime-errors:* (rankingCoach-compatible); app:issues:forward-sentry; admin boilerplate; DevOps examples. Use when logging an exception, reporting frontend or mobile errors, replacing Sentry in a web app, nobody sees production errors, configuring where errors go or alerts, shipping logs, errors logged twice, one bug in many groups, finding and fixing an environment's errors as an agent, querying runtime errors in Elasticsearch, forwarding to Sentry, or building an issues admin screen."
+description: "Log, cluster, ship and track errors with the issues log: IssuesLogService::logThrowable (log-once) and logClientIssue (browser / Node / React Native errors, section WEB), sinks (file/stderr/none, ECS JSON), capture, redaction, group / issue hashes; the registry job over Loki, Elasticsearch / OpenSearch or Sentry (environments, workspaces, seed mode, regressions, Slack alerts, health); agent CLI app:issues:list / show / search / resolve / trend --format=json; RuntimeErrorsService, app:runtime-errors:* (rankingCoach-compatible); app:issues:forward-sentry; admin boilerplate incl. error drawer (frames, causes, job fields); DevOps examples. Use when logging an exception, reporting frontend or mobile errors, replacing Sentry, nobody sees production errors, configuring where errors or alerts go, shipping logs, errors logged twice, one bug in many groups, fixing an environment's errors as an agent, querying runtime errors in Elasticsearch, forwarding to Sentry, or building an issues admin screen or error drawer."
 metadata:
   author: mgamadeus
   version: "1.7.0"
@@ -766,6 +766,11 @@ selected, a trend chart above the list (`/trend`, the selected environment) and 
 "new" and "regression", row → detail with entry points, issues and a link into the log backend
 (`{service="…"} | json | error_group_hash="<hash>"`); the same URL is the `ISSUES_ALERT_LINK_TEMPLATE`.
 
+**The error detail** — what an error actually was (frames with code, causes, request, console command, failed job) —
+is [references/admin-error-detail.md](references/admin-error-detail.md): the runtime-error controller and DTOs
+(Elasticsearch), the registry drawer's events endpoint (`IssueEvent::$rawJson` → `RuntimeErrorOccurrence`, any
+backend), real occurrence JSON, the drawer layout, code-context rendering and "Copy for agent".
+
 ## Runtime errors straight from Elasticsearch — `app:runtime-errors:*`
 
 Next to the registry, `RuntimeErrorsService` groups the errors directly in Elasticsearch / OpenSearch — no tables, no
@@ -792,7 +797,7 @@ not turn the registry on).
   `routeParameters`, `command`, `exitCode`, `errorFrames` (`IssueErrorFrames`, with code context), `causes` and
   `messenger` (`RuntimeErrorOccurrenceMessenger`: handler, attempt, final, willRetry, message keys, origin; null
   outside Messenger). Flat dotted and nested `_source` both read; every user-influenced value redacted; an older line
-  leaves them null or empty.
+  leaves them null or empty. Admin screens for it: [references/admin-error-detail.md](references/admin-error-detail.md).
 
 Commands, same names, options and JSON as rankingCoach's:
 
