@@ -22,6 +22,35 @@ class RuntimeErrorDetailAggregationQuery extends ValueObject
 
     public const int ROUTE_BREAKDOWN_SIZE = 25;
 
+    /**
+     * The `_source` fields an occurrence of the detail reads beyond {@see RuntimeErrorAggregationQuery::LATEST_SOURCE_FIELDS}
+     * (the groups list does not read them): the hashes, frames, causes and the HTTP, console and worker fields
+     */
+    public const array OCCURRENCE_SOURCE_FIELDS = [
+        'event.id',
+        'log.level',
+        'section',
+        'error.group_hash',
+        'error.issue_hash',
+        'error.entry_point',
+        'error.handled',
+        'error.frames',
+        'error.causes',
+        'service.environment',
+        'service.workspace',
+        'service.version',
+        'host.hostname',
+        'account.id',
+        'http.request.method',
+        'http_status',
+        'route_parameters',
+        'command',
+        'exit_code',
+        'transports',
+        'will_retry',
+        'messenger.*',
+    ];
+
     /** The group key: the fingerprint (FINGERPRINT) or `<type>|<file>` (COARSE) */
     public string $groupKey = '';
 
@@ -153,7 +182,7 @@ class RuntimeErrorDetailAggregationQuery extends ValueObject
             'top_hits' => [
                 'size' => $this->sampleSize,
                 'sort' => [['@timestamp' => 'desc']],
-                '_source' => $innerAggregationQuery->getSourceFields(),
+                '_source' => array_values(array_unique([...$innerAggregationQuery->getSourceFields(), ...self::OCCURRENCE_SOURCE_FIELDS])),
             ],
         ];
         if ($includeRouteBreakdown) {

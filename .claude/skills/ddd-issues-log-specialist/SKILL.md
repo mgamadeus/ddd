@@ -786,6 +786,13 @@ not turn the registry on).
   (`setErrorBodyMaxLength(null)` for all of it — `app:runtime-errors:probe --full-error-body`).
 - `findErrorGroupDetail($groupKey, …, $sampleSize)` → `RuntimeErrorGroupDetail` (last seen, gap-free trend, newest
   occurrences, per-route breakdown). Message, stack trace and route are redacted on read (`RuntimeErrorFieldRedactor`).
+  Only the detail's occurrences read the issues-log fields (`RuntimeErrorDetailAggregationQuery::OCCURRENCE_SOURCE_FIELDS`;
+  the groups list stays lean): `RuntimeErrorOccurrence` carries `eventId`, `level`, `section`, `groupHash`,
+  `issueHash`, `entryPoint`, `handled`, `release`, `hostName`, `accountId`, `httpMethod`, `httpStatus`,
+  `routeParameters`, `command`, `exitCode`, `errorFrames` (`IssueErrorFrames`, with code context), `causes` and
+  `messenger` (`RuntimeErrorOccurrenceMessenger`: handler, attempt, final, willRetry, message keys, origin; null
+  outside Messenger). Flat dotted and nested `_source` both read; every user-influenced value redacted; an older line
+  leaves them null or empty.
 
 Commands, same names, options and JSON as rankingCoach's:
 
@@ -796,6 +803,9 @@ php bin/console app:runtime-errors:extract --logstashEnv=DEVELOPMENT --workspace
 #      errorCode, errorKind, firstSeen, lastSeen, fingerprint, stackTrace}]}
 #   options: --logstashEnv=PRODUCTION|DEVELOPMENT --account --location --hours=24 --minutes --workspace
 #            --level=ERROR,CRITICAL --limit=20; unknown --logstashEnv = exit 2, a failed query = exit 1
+php bin/console app:runtime-errors:extract --group='PDOException|src/Domain/Foo.php' [--groupingDimension=COARSE|FINGERPRINT|GROUP_HASH] [--sampleSize=3]
+#   → {"filters": {…, group, groupingDimension, sampleSize}, "group": {the errors[] shape} | null,
+#      "occurrences": [the RuntimeErrorOccurrence serialisation, frames, causes, worker fields included]}
 php bin/console app:runtime-errors:probe [--hours=24] [--size=5] [--compositeSize=10] [--index=…] [--full-error-body]
 #   hit count, top fingerprints, trend buckets, and which grouping / field names work on this index
 ```

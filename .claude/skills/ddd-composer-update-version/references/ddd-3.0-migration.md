@@ -273,3 +273,12 @@ Unchanged:
   compiled container, so the route stayed empty). A frame file outside the project root shows relative to a parent
   (`../public/index.php`) instead of absolute (display only, `IssuesFingerprintBuilder::getDisplayFile()`; the hash
   input `getRelativeFile()` is unchanged). `messenger.stamps` is no longer logged.
+- 3.13.0 — the runtime-error detail exposes the issues-log fields per occurrence: `RuntimeErrorOccurrence` gains
+  `eventId`, `level`, `section`, `groupHash`, `issueHash`, `entryPoint`, `errorKind`, `errorCode`, `handled`,
+  `throwSiteFileName` / `throwSiteLine`, `environment`, `workspace`, `release`, `hostName`, `accountId`, `locationId`,
+  `httpMethod`, `httpStatus`, `routeParameters` (`RuntimeErrorKeyValues`), `command`, `exitCode`, `messenger`
+  (`RuntimeErrorOccurrenceMessenger`), `errorFrames` (`IssueErrorFrames`) and `causes` (`RuntimeErrorCauses`). Only the
+  detail's `recent_occurrences` requests them (`RuntimeErrorDetailAggregationQuery::OCCURRENCE_SOURCE_FIELDS`); the
+  groups and trend bodies are unchanged. `buildFromHit()` / `buildFromTopHits()` take an optional
+  `ElasticsearchFieldNames`. `app:runtime-errors:extract --group=<key> [--groupingDimension] [--sampleSize=3]` prints one
+  group with its newest occurrences.

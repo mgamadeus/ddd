@@ -6,6 +6,7 @@ namespace DDD\Symfony\Commands\Common\RuntimeErrors;
 
 use DDD\Domain\Common\Services\RuntimeErrorsService;
 use DDD\Infrastructure\Logging\Query\Elasticsearch\RuntimeErrorAggregationQuery;
+use DDD\Infrastructure\Logging\Query\Elasticsearch\RuntimeErrorDetailAggregationQuery;
 use DDD\Infrastructure\Logging\Query\Elasticsearch\RuntimeErrorGroup;
 use DDD\Infrastructure\Services\DDDService;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -21,6 +22,9 @@ use Throwable;
  * on stdout; messages go to stderr) — for an agent's fix loop:
  * `app:runtime-errors:extract --logstashEnv=DEVELOPMENT --account=4183511 --hours=720 --limit=5`.
  *
+ * `--group=<key>` reproduces ONE group instead (the detail query): `{"filters", "group", "occurrences"}` with the newest
+ * `--sampleSize` occurrences, each with frames, causes, route parameters and the worker / console fields.
+ *
  * Unknown `--logstashEnv` = exit 2 (INVALID), a failed query = exit 1. `--env` is the kernel's, hence `--logstashEnv`.
  * An application that defines a command of the same name keeps its own ({@see RuntimeErrorsCommandsYieldPass}).
  */
@@ -33,6 +37,15 @@ class RuntimeErrorsExtract extends Command
     public const string COMMAND_NAME = 'app:runtime-errors:extract';
 
     public const int DEFAULT_LIMIT = 20;
+
+    /** Occurrences printed with `--group` */
+    public const int DEFAULT_GROUP_SAMPLE_SIZE = 3;
+
+    public const array GROUPING_DIMENSIONS = [
+        RuntimeErrorAggregationQuery::DIMENSION_COARSE,
+        RuntimeErrorAggregationQuery::DIMENSION_FINGERPRINT,
+        RuntimeErrorAggregationQuery::DIMENSION_GROUP_HASH,
+    ];
 
     protected function configure(): void
     {
@@ -66,7 +79,27 @@ class RuntimeErrorsExtract extends Command
                 'Comma-separated log levels to include (e.g. ERROR,CRITICAL).',
                 implode(',', RuntimeErrorAggregationQuery::DEFAULT_LEVELS)
             )
-            ->addOption('limit', null, InputOption::VALUE_OPTIONAL, 'Maximum number of distinct error groups to return.', (string)self::DEFAULT_LIMIT);
+            ->addOption('limit', null, InputOption::VALUE_OPTIONAL, 'Maximum number of distinct error groups to return.', (string)self::DEFAULT_LIMIT)
+            ->addOption(
+                'group',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'Reproduce ONE group: its key in --groupingDimension (COARSE: "<error type>|<throw-site file>", FINGERPRINT: error.fingerprint_short, GROUP_HASH: error.group_hash). Prints the group and its newest occurrences; --account, --location, --minutes and --limit do not apply.'
+            )
+            ->addOption(
+                'groupingDimension',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'Dimension of --group: ' . implode(', ', self::GROUPING_DIMENSIONS) . '.',
+                RuntimeErrorAggregationQuery::DEFAULT_DIMENSION
+            )
+            ->addOption(
+                'sampleSize',
+                null,
+                InputOption::VALUE_OPTIONAL,
+                'Occurrences printed with --group (1 … ' . RuntimeErrorDetailAggregationQuery::MAX_SAMPLE_SIZE . ').',
+                (string)self::DEFAULT_GROUP_SAMPLE_SIZE
+            );
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -92,6 +125,55 @@ class RuntimeErrorsExtract extends Command
 
         /** @var RuntimeErrorsService $runtimeErrorsService */
         $runtimeErrorsService = DDDService::instance()->getService(RuntimeErrorsService::class);
+        $groupKey = trim((string)($input->getOption('group') ?? ''));
+        if ($groupKey !== '') {
+            $groupingDimension = strtoupper((string)($input->getOption('groupingDimension') ?? RuntimeErrorAggregationQuery::DEFAULT_DIMENSION));
+            if (!in_array($groupingDimension, self::GROUPING_DIMENSIONS, true)) {
+                $errorOutput->writeln(sprintf(
+                    '<error>Unknown --groupingDimension value "%s". Valid values: %s</error>',
+                    $groupingDimension,
+                    implode(', ', self::GROUPING_DIMENSIONS)
+                ));
+                return Command::INVALID;
+            }
+            $sampleSize = max(1, min(
+                RuntimeErrorDetailAggregationQuery::MAX_SAMPLE_SIZE,
+                (int)($input->getOption('sampleSize') ?? self::DEFAULT_GROUP_SAMPLE_SIZE)
+            ));
+            try {
+                $runtimeErrorGroupDetail = $runtimeErrorsService->findErrorGroupDetail(
+                    $groupKey,
+                    $lookBackHours,
+                    $logLevels,
+                    null,
+                    $sampleSize,
+                    $groupingDimension,
+                    $logstashEnvironment,
+                    $workspace
+                );
+            } catch (Throwable $throwable) {
+                $errorOutput->writeln(sprintf('<error>ES query failed: [%s] %s</error>', get_class($throwable), $throwable->getMessage()));
+                return Command::FAILURE;
+            }
+            $occurrencePayloads = [];
+            foreach ($runtimeErrorGroupDetail->recentOccurrences->getElements() as $runtimeErrorOccurrence) {
+                $occurrencePayloads[] = $runtimeErrorOccurrence->toObject();
+            }
+            $output->writeln((string)json_encode([
+                'filters' => [
+                    'environment' => $logstashEnvironment,
+                    'workspace' => $workspace,
+                    'group' => $groupKey,
+                    'groupingDimension' => $groupingDimension,
+                    'hours' => $lookBackHours,
+                    'levels' => $logLevels,
+                    'sampleSize' => $sampleSize,
+                ],
+                'group' => $runtimeErrorGroupDetail->group->count > 0 ? $this->buildErrorGroupPayload($runtimeErrorGroupDetail->group) : null,
+                'occurrences' => $occurrencePayloads,
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            return Command::SUCCESS;
+        }
         try {
             $runtimeErrorGroups = $runtimeErrorsService->findErrorGroups(
                 $lookBackHours,

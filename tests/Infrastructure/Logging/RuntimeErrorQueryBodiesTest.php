@@ -11,7 +11,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * The Elasticsearch bodies equal rankingCoach's runtime-error dashboard bodies byte for byte (key order included).
- * Fixtures/rc-runtime-errors-bodies.json was produced by RC's own query classes with the same arguments.
+ * Fixtures/rc-runtime-errors-bodies.json was produced by RC's own query classes with the same arguments. The detail's
+ * `recent_occurrences` additionally reads {@see DetailQuery::OCCURRENCE_SOURCE_FIELDS}; everything else is unchanged.
  */
 class RuntimeErrorQueryBodiesTest extends TestCase
 {
@@ -43,11 +44,29 @@ class RuntimeErrorQueryBodiesTest extends TestCase
     public function testBodyEqualsRankingCoachBody(string $fixtureKey, callable $buildBody): void
     {
         $fixtures = json_decode((string)file_get_contents(__DIR__ . '/Fixtures/rc-runtime-errors-bodies.json'), true);
+        $expectedBody = $fixtures[$fixtureKey];
+        if (str_starts_with($fixtureKey, 'detail_')) {
+            $expectedBody['aggs'][Query::OUTER_AGG_KEY]['aggs']['recent_occurrences']['top_hits']['_source'] = [
+                ...$expectedBody['aggs'][Query::OUTER_AGG_KEY]['aggs']['recent_occurrences']['top_hits']['_source'],
+                ...DetailQuery::OCCURRENCE_SOURCE_FIELDS,
+            ];
+        }
 
         self::assertSame(
-            json_encode($fixtures[$fixtureKey], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            json_encode($expectedBody, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
             json_encode($buildBody(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
         );
+    }
+
+    public function testOnlyTheDetailOccurrencesReadTheOccurrenceFields(): void
+    {
+        $groupsBody = json_encode(Query::build()->toGroupsBody());
+        $detailBody = DetailQuery::build('abc123', groupingDimension: Query::DIMENSION_FINGERPRINT)->toDetailBody();
+
+        self::assertStringNotContainsString('error.frames', $groupsBody);
+        self::assertStringNotContainsString('messenger.*', $groupsBody);
+        self::assertNotContains('error.frames', $detailBody['aggs'][Query::OUTER_AGG_KEY]['aggs']['latest']['top_hits']['_source']);
+        self::assertContains('error.frames', $detailBody['aggs'][Query::OUTER_AGG_KEY]['aggs']['recent_occurrences']['top_hits']['_source']);
     }
 
     public function testFieldsMappedAsKeywordDropTheSuffix(): void

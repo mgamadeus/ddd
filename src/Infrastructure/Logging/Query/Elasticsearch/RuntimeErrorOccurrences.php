@@ -18,11 +18,15 @@ class RuntimeErrorOccurrences extends ObjectSet
     /**
      * @param array<string, mixed> $topHits The decoded `top_hits` aggregation
      */
-    public static function buildFromTopHits(array $topHits, RuntimeErrorFieldRedactor $fieldRedactor): static
+    public static function buildFromTopHits(
+        array $topHits,
+        RuntimeErrorFieldRedactor $fieldRedactor,
+        ?ElasticsearchFieldNames $fieldNames = null
+    ): static
     {
         $runtimeErrorOccurrences = new static();
         foreach ($topHits['hits']['hits'] ?? [] as $hit) {
-            $runtimeErrorOccurrence = RuntimeErrorOccurrence::buildFromHit($hit, $fieldRedactor);
+            $runtimeErrorOccurrence = RuntimeErrorOccurrence::buildFromHit($hit, $fieldRedactor, $fieldNames);
             $runtimeErrorOccurrences->add($runtimeErrorOccurrence);
         }
         return $runtimeErrorOccurrences;

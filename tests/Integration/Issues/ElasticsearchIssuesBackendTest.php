@@ -251,6 +251,15 @@ class ElasticsearchIssuesBackendTest extends IssuesRegistryTestCase
         self::assertStringContainsString('token=[REDACTED]', $occurrenceMessages);
         self::assertStringNotContainsString('token=abc', $occurrenceMessages);
         self::assertSame(2, array_sum(array_map(static fn($trendBucket): int => $trendBucket->count, $runtimeErrorGroupDetail->perGroupTrend->getElements())));
+        // the detail's occurrences read the issues-log fields the groups list leaves out
+        $firstOccurrence = $runtimeErrorGroupDetail->recentOccurrences->first();
+        self::assertNotNull($firstOccurrence->eventId);
+        self::assertNotNull($firstOccurrence->groupHash);
+        self::assertSame(4183511, $firstOccurrence->accountId);
+        self::assertSame(77, $firstOccurrence->locationId);
+        self::assertGreaterThan(0, $firstOccurrence->errorFrames->count());
+        self::assertTrue($firstOccurrence->errorFrames->first()->inApp);
+        self::assertNotSame([], $firstOccurrence->errorFrames->first()->codeContextLines);
 
         $absentDetail = $runtimeErrorsService->findErrorGroupDetail('NoSuchException|Nowhere.php');
         self::assertSame(0, $absentDetail->group->count);
@@ -277,6 +286,15 @@ class ElasticsearchIssuesBackendTest extends IssuesRegistryTestCase
         self::assertMatchesRegularExpression('/^IssuesFixtureThrower\.php:\d+$/', $payload['errors'][0]['throwSite']);
 
         self::assertSame(Command::INVALID, (new CommandTester(new RuntimeErrorsExtract()))->execute(['--logstashEnv' => 'STAGING']));
+
+        $groupCommandTester = new CommandTester(new RuntimeErrorsExtract());
+        self::assertSame(Command::SUCCESS, $groupCommandTester->execute(['--group' => $payload['errors'][0]['fingerprint'], '--sampleSize' => '1']));
+        $groupPayload = json_decode($groupCommandTester->getDisplay(), true);
+        self::assertSame(['filters', 'group', 'occurrences'], array_keys($groupPayload));
+        self::assertSame($payload['errors'][0]['count'], $groupPayload['group']['count']);
+        self::assertCount(1, $groupPayload['occurrences']);
+        self::assertNotEmpty($groupPayload['occurrences'][0]['errorFrames']['elements']);
+        self::assertSame(Command::INVALID, (new CommandTester(new RuntimeErrorsExtract()))->execute(['--group' => 'x', '--groupingDimension' => 'ROUTE']));
 
         $probeCommandTester = new CommandTester(new RuntimeErrorsProbe());
         self::assertSame(Command::SUCCESS, $probeCommandTester->execute([]));

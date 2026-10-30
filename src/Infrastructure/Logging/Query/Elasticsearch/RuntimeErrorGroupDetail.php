@@ -49,7 +49,8 @@ class RuntimeErrorGroupDetail extends ValueObject
         $runtimeErrorGroupDetail->perGroupTrend = RuntimeErrorTrend::buildFromDateHistogram($groupBucket);
         $runtimeErrorGroupDetail->recentOccurrences = RuntimeErrorOccurrences::buildFromTopHits(
             $groupBucket['recent_occurrences'] ?? [],
-            $fieldRedactor
+            $fieldRedactor,
+            $fieldNames
         );
         $runtimeErrorGroupDetail->routeBreakdown = RuntimeErrorRouteCounts::buildFromBuckets(
             $groupBucket['by_route']['buckets'] ?? [],

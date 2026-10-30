@@ -1,0 +1,589 @@
+{
+  "http_wrapped": {
+    "issues.environment": "mgn",
+    "issues.workspace": "mgn",
+    "@timestamp": "2026-10-30T00:56:17.564242+00:00",
+    "log.level": "CRITICAL",
+    "message": "RuntimeException: Could not import the menu",
+    "application": "symfony",
+    "environment": "dev",
+    "route_name": "App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController:import__GET:/common/zz-probe/locations/{locationId}/import",
+    "route_parameters": {
+      "locationId": "12"
+    },
+    "service.name": "symfony",
+    "service.environment": "dev",
+    "service.workspace": "mgn",
+    "http.request.method": "GET",
+    "http_status": 500,
+    "error.handled": false,
+    "section": "HTTP",
+    "error.group_hash": "2261770c2037b75e0c3bc1cd3af55804",
+    "error.issue_hash": "04bd1f52c3d4291e7643aa3c05b170eb",
+    "error.entry_point": "App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController:import__GET:/common/zz-probe/locations/{locationId}/import",
+    "error.type": "RuntimeException",
+    "error.kind": "Exception",
+    "error.code": "0",
+    "log.origin.file.name": "PublicZzProbeController.php",
+    "log.origin.file.line": 52,
+    "error.stack_trace": "#0 src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php(52): App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController->importMenu() ← thrown here\n#1 src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php(24): App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController->import()\n#2 vendor/symfony/http-kernel/HttpKernel.php(195): Symfony\\Component\\HttpKernel\\HttpKernel->handleRaw()\n… 4 framework frames\n#7 /data/dineful/dev-workspaces/mgn/public/index.php(104): {main}()",
+    "error.frames": [
+      {
+        "file": "src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php",
+        "line": 52,
+        "function": "App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController->importMenu",
+        "in_app": true,
+        "code_context": {
+          "start_line": 49,
+          "lines": [
+            "        try {",
+            "            return json_decode($json, true, flags: JSON_THROW_ON_ERROR);",
+            "        } catch (\\JsonException $jsonException) {",
+            "            throw new \\RuntimeException('Could not import the menu', 0, $jsonException);",
+            "        }",
+            "    }",
+            "}"
+          ]
+        }
+      },
+      {
+        "file": "src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php",
+        "line": 24,
+        "function": "App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController->import",
+        "in_app": true,
+        "code_context": {
+          "start_line": 21,
+          "lines": [
+            "    #[Summary('Probe wrapped exception')]",
+            "    public function import(int $locationId): PublicLanguagesGetResponseDto",
+            "    {",
+            "        $this->importMenu('{\"items\": [broken');",
+            "        return new PublicLanguagesGetResponseDto();",
+            "    }",
+            ""
+          ]
+        }
+      },
+      {
+        "file": "vendor/symfony/http-kernel/HttpKernel.php",
+        "line": 195,
+        "function": "Symfony\\Component\\HttpKernel\\HttpKernel->handleRaw",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/http-kernel/HttpKernel.php",
+        "line": 77,
+        "function": "Symfony\\Component\\HttpKernel\\HttpKernel->handle",
+        "in_app": false
+      },
+      {
+        "file": "vendor/mgamadeus/ddd/src/Symfony/Kernels/Kernel.php",
+        "line": 720,
+        "function": "DDD\\Symfony\\Kernels\\Kernel->handle",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/runtime/Runner/Symfony/HttpKernelRunner.php",
+        "line": 34,
+        "function": "Symfony\\Component\\Runtime\\Runner\\Symfony\\HttpKernelRunner->run",
+        "in_app": false
+      },
+      {
+        "file": "vendor/autoload_runtime.php",
+        "line": 32,
+        "function": "require_once",
+        "in_app": false
+      },
+      {
+        "file": "/data/dineful/dev-workspaces/mgn/public/index.php",
+        "line": 104,
+        "function": "{main}",
+        "in_app": true
+      }
+    ],
+    "error.fingerprint": "App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController:import__GET:/common/zz-probe/locations/{locationId}/import::PublicZzProbeController->importMenu:24|PublicZzProbeController->import:195",
+    "error.fingerprint_hash": "37cc5a0c0fa78d04042c5062650d27f8",
+    "error.fingerprint_short": "PublicZzProbeController:import__GET:/common/zz-probe/locations/{locationId}/import|RuntimeException@PublicZzProbeController->importMenu|PublicZzProbeController->import~37cc5a0c0fa7",
+    "error.causes": [
+      {
+        "type": "JsonException",
+        "message": "Syntax error",
+        "file": "src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php:50",
+        "frames": [
+          {
+            "file": "src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php",
+            "line": 50,
+            "function": "json_decode",
+            "in_app": true
+          },
+          {
+            "file": "src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php",
+            "line": 50,
+            "function": "App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController->importMenu",
+            "in_app": true
+          },
+          {
+            "file": "src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php",
+            "line": 24,
+            "function": "App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController->import",
+            "in_app": true
+          }
+        ]
+      }
+    ]
+  },
+  "http_no_message": {
+    "issues.environment": "mgn",
+    "issues.workspace": "mgn",
+    "@timestamp": "2026-10-30T00:56:17.845506+00:00",
+    "log.level": "CRITICAL",
+    "message": "Exception (no message) at src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php:34",
+    "application": "symfony",
+    "environment": "dev",
+    "route_name": "App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController:nomsg__GET:/common/zz-probe/nomsg",
+    "service.name": "symfony",
+    "service.environment": "dev",
+    "service.workspace": "mgn",
+    "http.request.method": "GET",
+    "http_status": 500,
+    "error.handled": false,
+    "section": "HTTP",
+    "error.group_hash": "6af928a73f86b3595c168dbab9fc8ef9",
+    "error.issue_hash": "97196f937c43430aa0c7f02d5617fbd5",
+    "error.entry_point": "App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController:nomsg__GET:/common/zz-probe/nomsg",
+    "error.type": "Exception",
+    "error.kind": "Exception",
+    "error.code": "0",
+    "log.origin.file.name": "PublicZzProbeController.php",
+    "log.origin.file.line": 34,
+    "error.stack_trace": "#0 src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php(34): App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController->nomsg() ← thrown here\n#1 vendor/symfony/http-kernel/HttpKernel.php(195): Symfony\\Component\\HttpKernel\\HttpKernel->handleRaw()\n#2 vendor/symfony/http-kernel/HttpKernel.php(77): Symfony\\Component\\HttpKernel\\HttpKernel->handle()\n… 3 framework frames\n#6 /data/dineful/dev-workspaces/mgn/public/index.php(104): {main}()",
+    "error.frames": [
+      {
+        "file": "src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php",
+        "line": 34,
+        "function": "App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController->nomsg",
+        "in_app": true,
+        "code_context": {
+          "start_line": 31,
+          "lines": [
+            "    {",
+            "        $account = null;",
+            "        if (!$account) {",
+            "            throw new \\Exception();",
+            "        }",
+            "        return new PublicLanguagesGetResponseDto();",
+            "    }"
+          ]
+        }
+      },
+      {
+        "file": "vendor/symfony/http-kernel/HttpKernel.php",
+        "line": 195,
+        "function": "Symfony\\Component\\HttpKernel\\HttpKernel->handleRaw",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/http-kernel/HttpKernel.php",
+        "line": 77,
+        "function": "Symfony\\Component\\HttpKernel\\HttpKernel->handle",
+        "in_app": false
+      },
+      {
+        "file": "vendor/mgamadeus/ddd/src/Symfony/Kernels/Kernel.php",
+        "line": 720,
+        "function": "DDD\\Symfony\\Kernels\\Kernel->handle",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/runtime/Runner/Symfony/HttpKernelRunner.php",
+        "line": 34,
+        "function": "Symfony\\Component\\Runtime\\Runner\\Symfony\\HttpKernelRunner->run",
+        "in_app": false
+      },
+      {
+        "file": "vendor/autoload_runtime.php",
+        "line": 32,
+        "function": "require_once",
+        "in_app": false
+      },
+      {
+        "file": "/data/dineful/dev-workspaces/mgn/public/index.php",
+        "line": 104,
+        "function": "{main}",
+        "in_app": true
+      }
+    ],
+    "error.fingerprint": "App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController:nomsg__GET:/common/zz-probe/nomsg::PublicZzProbeController->nomsg:195",
+    "error.fingerprint_hash": "3a4517b5ebc288e5a7c5ce7f7f36e2d9",
+    "error.fingerprint_short": "PublicZzProbeController:nomsg__GET:/common/zz-probe/nomsg|Exception@PublicZzProbeController->nomsg~3a4517b5ebc2"
+  },
+  "worker_final": {
+    "issues.environment": "mgn",
+    "issues.workspace": "mgn",
+    "@timestamp": "2026-10-30T00:56:26.685466+00:00",
+    "log.level": "CRITICAL",
+    "message": "LogicException: Probe: push payload for order 881 has no recipient",
+    "application": "symfony",
+    "environment": "dev",
+    "service.name": "symfony",
+    "service.environment": "dev",
+    "service.workspace": "mgn",
+    "transports": [
+      "process_partner_invoice"
+    ],
+    "will_retry": false,
+    "messenger.retry_count": 3,
+    "messenger.attempt": 4,
+    "messenger.final": true,
+    "messenger.handler": "App\\Domain\\ZzProbe\\ZzProbeHandler::__invoke",
+    "messenger.stamps": [
+      "Symfony\\Component\\Messenger\\Stamp\\BusNameStamp",
+      "Symfony\\Component\\Messenger\\Stamp\\ErrorDetailsStamp",
+      "Symfony\\Component\\Messenger\\Stamp\\DelayStamp",
+      "Symfony\\Component\\Messenger\\Stamp\\RedeliveryStamp",
+      "Symfony\\Component\\Messenger\\Bridge\\Amqp\\Transport\\AmqpReceivedStamp",
+      "Symfony\\Component\\Messenger\\Stamp\\ReceivedStamp",
+      "Symfony\\Component\\Messenger\\Stamp\\ConsumedByWorkerStamp",
+      "Symfony\\Component\\Messenger\\Stamp\\AckStamp",
+      "Symfony\\Component\\Messenger\\Stamp\\SentForRetryStamp"
+    ],
+    "error.handled": false,
+    "messenger.message_class": "App\\Domain\\ZzProbe\\ZzProbeMessage",
+    "messenger.message_keys": {
+      "orderId": 881,
+      "reason": "order ready"
+    },
+    "messenger.origin.workspace": "mgn",
+    "messenger.origin.dispatched_at": "2026-10-30T00:56:18Z",
+    "messenger.age_seconds": 8,
+    "section": "MESSENGER",
+    "error.group_hash": "ea67c95da678549e5fcf20fb27a5d887",
+    "error.issue_hash": "5acf7e785626851d026ed16024ac4f11",
+    "error.entry_point": "MessageHandler:process_partner_invoice",
+    "error.type": "LogicException",
+    "error.kind": "Exception",
+    "error.code": "0",
+    "log.origin.file.name": "ZzProbeHandler.php",
+    "log.origin.file.line": 23,
+    "error.stack_trace": "#0 src/Domain/ZzProbe/ZzProbeHandler.php(23): App\\Domain\\ZzProbe\\ZzProbeHandler->__invoke() ← thrown here\n#1 vendor/symfony/messenger/Middleware/HandleMessageMiddleware.php(148): Symfony\\Component\\Messenger\\Middleware\\HandleMessageMiddleware->callHandler()\n#2 vendor/symfony/messenger/Middleware/HandleMessageMiddleware.php(90): Symfony\\Component\\Messenger\\Middleware\\HandleMessageMiddleware->handle()\n… 23 framework frames\n#26 bin/console(17): {main}()",
+    "error.frames": [
+      {
+        "file": "src/Domain/ZzProbe/ZzProbeHandler.php",
+        "line": 23,
+        "function": "App\\Domain\\ZzProbe\\ZzProbeHandler->__invoke",
+        "in_app": true,
+        "code_context": {
+          "start_line": 20,
+          "lines": [
+            "        $device = ['pushToken' => null];",
+            "        $payload = [];",
+            "        $payload['to'] = $device['pushToken']['value'];",
+            "        throw new \\LogicException('Probe: push payload for order ' . $message->orderId . ' has no recipient');",
+            "    }",
+            "}"
+          ]
+        }
+      },
+      {
+        "file": "vendor/symfony/messenger/Middleware/HandleMessageMiddleware.php",
+        "line": 148,
+        "function": "Symfony\\Component\\Messenger\\Middleware\\HandleMessageMiddleware->callHandler",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/messenger/Middleware/HandleMessageMiddleware.php",
+        "line": 90,
+        "function": "Symfony\\Component\\Messenger\\Middleware\\HandleMessageMiddleware->handle",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/messenger/Middleware/SendMessageMiddleware.php",
+        "line": 75,
+        "function": "Symfony\\Component\\Messenger\\Middleware\\SendMessageMiddleware->handle",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/messenger/Middleware/DeduplicateMiddleware.php",
+        "line": 28,
+        "function": "Symfony\\Component\\Messenger\\Middleware\\DeduplicateMiddleware->handle",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/messenger/Middleware/FailedMessageProcessingMiddleware.php",
+        "line": 34,
+        "function": "Symfony\\Component\\Messenger\\Middleware\\FailedMessageProcessingMiddleware->handle",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/messenger/Middleware/DispatchAfterCurrentBusMiddleware.php",
+        "line": 78,
+        "function": "Symfony\\Component\\Messenger\\Middleware\\DispatchAfterCurrentBusMiddleware->handle",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/messenger/Middleware/RejectRedeliveredMessageMiddleware.php",
+        "line": 41,
+        "function": "Symfony\\Component\\Messenger\\Middleware\\RejectRedeliveredMessageMiddleware->handle",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/messenger/Middleware/AddBusNameStampMiddleware.php",
+        "line": 35,
+        "function": "Symfony\\Component\\Messenger\\Middleware\\AddBusNameStampMiddleware->handle",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/messenger/Middleware/AddDefaultStampsMiddleware.php",
+        "line": 33,
+        "function": "Symfony\\Component\\Messenger\\Middleware\\AddDefaultStampsMiddleware->handle",
+        "in_app": false
+      },
+      {
+        "file": "vendor/mgamadeus/ddd/src/Symfony/Messenger/Middleware/WorkspaceOriginGuardMiddleware.php",
+        "line": 53,
+        "function": "DDD\\Symfony\\Messenger\\Middleware\\WorkspaceOriginGuardMiddleware->handle",
+        "in_app": false
+      },
+      {
+        "file": "vendor/mgamadeus/ddd/src/Symfony/Messenger/Middleware/FreshWorkerStateMiddleware.php",
+        "line": 72,
+        "function": "DDD\\Symfony\\Messenger\\Middleware\\FreshWorkerStateMiddleware->handle",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/messenger/MessageBus.php",
+        "line": 69,
+        "function": "Symfony\\Component\\Messenger\\MessageBus->dispatch",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/messenger/TraceableMessageBus.php",
+        "line": 30,
+        "function": "Symfony\\Component\\Messenger\\TraceableMessageBus->dispatch",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/messenger/RoutableMessageBus.php",
+        "line": 51,
+        "function": "Symfony\\Component\\Messenger\\RoutableMessageBus->dispatch",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/messenger/Worker.php",
+        "line": 189,
+        "function": "Symfony\\Component\\Messenger\\Worker->handleMessage",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/messenger/Worker.php",
+        "line": 128,
+        "function": "Symfony\\Component\\Messenger\\Worker->run",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/messenger/Command/ConsumeMessagesCommand.php",
+        "line": 288,
+        "function": "Symfony\\Component\\Messenger\\Command\\ConsumeMessagesCommand->execute",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/console/Command/Command.php",
+        "line": 341,
+        "function": "Symfony\\Component\\Console\\Command\\Command->run",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/console/Application.php",
+        "line": 1127,
+        "function": "Symfony\\Component\\Console\\Application->doRunCommand",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/framework-bundle/Console/Application.php",
+        "line": 124,
+        "function": "Symfony\\Bundle\\FrameworkBundle\\Console\\Application->doRunCommand",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/console/Application.php",
+        "line": 357,
+        "function": "Symfony\\Component\\Console\\Application->doRun",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/framework-bundle/Console/Application.php",
+        "line": 78,
+        "function": "Symfony\\Bundle\\FrameworkBundle\\Console\\Application->doRun",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/console/Application.php",
+        "line": 196,
+        "function": "Symfony\\Component\\Console\\Application->run",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/runtime/Runner/Symfony/ConsoleApplicationRunner.php",
+        "line": 49,
+        "function": "Symfony\\Component\\Runtime\\Runner\\Symfony\\ConsoleApplicationRunner->run",
+        "in_app": false
+      },
+      {
+        "file": "vendor/autoload_runtime.php",
+        "line": 32,
+        "function": "require_once",
+        "in_app": false
+      },
+      {
+        "file": "bin/console",
+        "line": 17,
+        "function": "{main}",
+        "in_app": true,
+        "code_context": {
+          "start_line": 14,
+          "lines": [
+            "    throw new LogicException('Symfony Runtime is missing. Try running \"composer require symfony/runtime\".');",
+            "}",
+            "",
+            "require_once dirname(__DIR__) . '/vendor/autoload_runtime.php';",
+            "",
+            "return function (array $context) use ($projectDir) {",
+            "    $kernel = new DDDKernel($context['APP_ENV'], (bool)$context['APP_DEBUG']);"
+          ]
+        }
+      }
+    ],
+    "error.fingerprint": "MessageHandler:process_partner_invoice::ZzProbeHandler->__invoke:148|DeduplicateMiddleware->handle:34|AddDefaultStampsMiddleware->handle:53|WorkspaceOriginGuardMiddleware->handle:72|FreshWorkerStateMiddleware->handle:69|Worker->handleMessage:128|Worker->run:288",
+    "error.fingerprint_hash": "ba0df1dea9bf19388e096327ee3efe3d",
+    "error.fingerprint_short": "MessageHandler:process_partner_invoice|LogicException@ZzProbeHandler->__invoke|DeduplicateMiddleware->handle|AddDefaultStampsMiddleware->handle~ba0df1dea9bf"
+  },
+  "console": {
+    "issues.environment": "mgn",
+    "issues.workspace": "mgn",
+    "@timestamp": "2026-10-30T00:56:18.832368+00:00",
+    "log.level": "CRITICAL",
+    "message": "UnexpectedValueException: Probe: column b missing in the nightly export",
+    "application": "symfony",
+    "environment": "dev",
+    "service.name": "symfony",
+    "service.environment": "dev",
+    "service.workspace": "mgn",
+    "command": "zz:probe-cli",
+    "exit_code": 1,
+    "error.handled": false,
+    "section": "CLI",
+    "error.group_hash": "3f4a8146614ea455544941a73b6970df",
+    "error.issue_hash": "3691700792e8d71f43cc7382ddeaafa0",
+    "error.entry_point": "CLI:zz:probe-cli",
+    "error.type": "UnexpectedValueException",
+    "error.kind": "Exception",
+    "error.code": "0",
+    "log.origin.file.name": "ZzProbeCommand.php",
+    "log.origin.file.line": 27,
+    "error.stack_trace": "#0 src/Domain/ZzProbe/ZzProbeCommand.php(27): App\\Domain\\ZzProbe\\ZzProbeCommand->sumColumn() ← thrown here\n#1 src/Domain/ZzProbe/ZzProbeCommand.php(19): App\\Domain\\ZzProbe\\ZzProbeCommand->execute()\n#2 vendor/symfony/console/Command/Command.php(341): Symfony\\Component\\Console\\Command\\Command->run()\n… 7 framework frames\n#10 bin/console(17): {main}()",
+    "error.frames": [
+      {
+        "file": "src/Domain/ZzProbe/ZzProbeCommand.php",
+        "line": 27,
+        "function": "App\\Domain\\ZzProbe\\ZzProbeCommand->sumColumn",
+        "in_app": true,
+        "code_context": {
+          "start_line": 24,
+          "lines": [
+            "    private function sumColumn(array $rows, string $column): int",
+            "    {",
+            "        if (!array_key_exists($column, $rows)) {",
+            "            throw new \\UnexpectedValueException('Probe: column ' . $column . ' missing in the nightly export');",
+            "        }",
+            "        return $rows[$column];",
+            "    }"
+          ]
+        }
+      },
+      {
+        "file": "src/Domain/ZzProbe/ZzProbeCommand.php",
+        "line": 19,
+        "function": "App\\Domain\\ZzProbe\\ZzProbeCommand->execute",
+        "in_app": true,
+        "code_context": {
+          "start_line": 16,
+          "lines": [
+            "    protected function execute(InputInterface $input, OutputInterface $output): int",
+            "    {",
+            "        $rows = ['a' => 1];",
+            "        $total = $this->sumColumn($rows, 'b');",
+            "        $output->writeln((string)$total);",
+            "        return Command::SUCCESS;",
+            "    }"
+          ]
+        }
+      },
+      {
+        "file": "vendor/symfony/console/Command/Command.php",
+        "line": 341,
+        "function": "Symfony\\Component\\Console\\Command\\Command->run",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/console/Application.php",
+        "line": 1127,
+        "function": "Symfony\\Component\\Console\\Application->doRunCommand",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/framework-bundle/Console/Application.php",
+        "line": 124,
+        "function": "Symfony\\Bundle\\FrameworkBundle\\Console\\Application->doRunCommand",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/console/Application.php",
+        "line": 357,
+        "function": "Symfony\\Component\\Console\\Application->doRun",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/framework-bundle/Console/Application.php",
+        "line": 78,
+        "function": "Symfony\\Bundle\\FrameworkBundle\\Console\\Application->doRun",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/console/Application.php",
+        "line": 196,
+        "function": "Symfony\\Component\\Console\\Application->run",
+        "in_app": false
+      },
+      {
+        "file": "vendor/symfony/runtime/Runner/Symfony/ConsoleApplicationRunner.php",
+        "line": 49,
+        "function": "Symfony\\Component\\Runtime\\Runner\\Symfony\\ConsoleApplicationRunner->run",
+        "in_app": false
+      },
+      {
+        "file": "vendor/autoload_runtime.php",
+        "line": 32,
+        "function": "require_once",
+        "in_app": false
+      },
+      {
+        "file": "bin/console",
+        "line": 17,
+        "function": "{main}",
+        "in_app": true
+      }
+    ],
+    "error.fingerprint": "CLI:zz:probe-cli::ZzProbeCommand->sumColumn:19|ZzProbeCommand->execute:341",
+    "error.fingerprint_hash": "6bc6734b027943732c11ccadfc505067",
+    "error.fingerprint_short": "CLI:zz:probe-cli|UnexpectedValueException@ZzProbeCommand->sumColumn|ZzProbeCommand->execute~6bc6734b0279"
+  },
+  "old_line": {
+    "@timestamp": "2026-03-02T10:15:00.000Z",
+    "message": "Call to a member function getId() on null",
+    "error.type": "Error",
+    "error.stack_trace": "#0 /var/www/src/Domain/Foo.php(12): Foo->bar()\n#1 {main}",
+    "route_name": "api_public_menu_get",
+    "workspace": "ivs",
+    "lastLocationId": 4183511
+  }
+}
