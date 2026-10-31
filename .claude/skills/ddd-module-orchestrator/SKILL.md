@@ -1,6 +1,6 @@
 ---
 name: ddd-module-orchestrator
-description: Centralized orchestration of all DDD modules from the Core project — study, update, release, and propagate changes across the module ecosystem. Contains the dependency graph with release order, the reverse-dependency table, the dependency-floor cascade rule (raise each dependent's require floor to the exact fixed version and re-release transitively), the consuming-app registry (Tavlo, Radbonus, RC), the no-scripts policy (fine in module repos, NEVER in consuming apps — post-update-cmd regenerates DB*Model files), the platform-flag policy (apps pin config.platform.php so plain composer update -W; module repos targeted ext ignores only), the package-vs-repo name mapping, the layered documentation architecture (AGENTS.md hierarchy, vendor-skill symlinks), and handoff-doc ingestion. Use when making cross-module changes, deciding release order, raising dependency floors, running composer update in modules or apps, updating docs across repos, wiring vendor skill symlinks, or ingesting a handoff doc.
+description: Orchestrates all DDD modules from Core — study, update, release, propagate across the ecosystem. Contains the dependency graph with release order, the reverse-dependency table, the dependency-floor cascade rule (raise each dependent's require floor to the exact fixed version and re-release transitively), the consuming-app registry (Tavlo, Radbonus, RC), the npm frontend client @mgamadeus/ddd-web, the no-scripts policy (fine in module repos, NEVER in consuming apps — post-update-cmd regenerates DB*Model files), the platform-flag policy (apps pin config.platform.php so plain composer update -W; module repos targeted ext ignores only), the package-vs-repo names, the layered documentation architecture (AGENTS.md hierarchy, vendor-skill symlinks), and handoff-doc ingestion. Use when making cross-module changes, deciding release order, raising dependency floors, running composer update in modules or apps, updating docs across repos, wiring vendor skill symlinks, or ingesting a handoff doc.
 metadata:
   author: mgamadeus
   version: "2.1.0"
@@ -102,6 +102,25 @@ walk the reverse-dependency graph and, for **every** dependent (transitively, do
 wait for Packagist between each; see [Multi-Module Release](#workflow-release-core--propagate-to-all)). A floor raise
 that the existing caret already satisfies (e.g. bumping `^2.10`→`^2.10` for a Core patch) needs no child re-release —
 but a *new minimum* (`^1.0`→`^1.1.1`) always does.
+
+### Frontend client: `@mgamadeus/ddd-web` (npm)
+
+The TypeScript counterpart of `mgamadeus/ddd` for web, mobile and desktop frontends: an RTK Query SDK generated from the
+backend's DDD OpenAPI document (bin `ddd-web-sdk`), QueryOptions builders, an RTK base query with Bearer token and
+refresh, token utilities, and TS types of the DDD wire format. No UI components, no domain logic.
+
+| | |
+|---|---|
+| Package | `@mgamadeus/ddd-web` on npm (public) — `pnpm add @mgamadeus/ddd-web` |
+| Repo | `github.com/mgamadeus/ddd-web` |
+| Workspace | `/Users/marius/Development/Own Packages/Composer/DDD/Web` (pnpm, tsup) |
+| Release | not Packagist: tag `vX.Y.Z` → GitHub Actions `release.yml` (npm trusted publisher) → staged publish, approved by the owner per passkey (2FA); released by the session that maintains ddd-web, never as part of a Core release |
+| Contract | the OpenAPI document Core emits (`src/Presentation/Base/OpenApi/`); planned `x-ddd-*` extensions (`x-ddd-contract`, `x-ddd-query`, `x-ddd-side-effects`, `x-ddd-entity`) and a golden spec test in Core. A Core change to the OpenAPI output is a contract change: tell the ddd-web maintainers before releasing it |
+| Consumers | Radbonus `admin/` (Next.js); later Dineful `apps/web`, `mobile`, `desktop` |
+| Skills | in the package, `node_modules/@mgamadeus/ddd-web/.claude/skills`, linked into an app's `.claude/skills` like the vendor skills — consumer use and maintaining the package are documented there, not here |
+
+Not part of the Composer dependency graph: a Core release needs no ddd-web release unless the OpenAPI contract
+changed.
 
 ### Consuming Applications
 
