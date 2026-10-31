@@ -343,7 +343,9 @@ class PostgresUpsertBuilder implements UpsertBuilder
 
         $totalStatements = 0;
         foreach ($runs->getElements() as $run) {
-            $totalStatements += (!$run->rowByRow && count($run->modelIndexes) > 1) ? 1 : count($run->modelIndexes);
+            $totalStatements += (!$run->rowByRow && count($run->modelIndexes) > 1)
+                ? $this->countBulkRunStatements($run->modelIndexes, $rowWrites)
+                : count($run->modelIndexes);
         }
         if ($totalStatements <= 1) {
             $executeRuns();
@@ -897,43 +899,80 @@ class PostgresUpsertBuilder implements UpsertBuilder
             $columnNames[] = '"' . $columnWrite->columnName . '"';
         }
 
-        $rowPlaceholderGroups = [];
-        $values = [];
-        $types = [];
-        foreach ($modelIndexes as $index) {
-            $rowExpressions = [];
-            if ($hasId) {
-                $rowExpressions[] = '?';
-                $values[] = $rowWriteList[$index]->idValue;
-                $types[] = 'integer';
-            }
-            foreach ($rowWriteList[$index]->columnWrites as $columnWrite) {
-                $valueExpression = $this->valueExpressionFor($columnWrite);
-                [$expr, $value, $bound] = [$valueExpression->sql, $valueExpression->value, $valueExpression->bindsValue];
-                $rowExpressions[] = $expr;
-                if ($bound) {
-                    $values[] = $value;
-                    $types[] = $columnWrite->dbalType;
-                }
-            }
-            $rowPlaceholderGroups[] = '(' . implode(', ', $rowExpressions) . ')';
-        }
-
-        $sql = 'INSERT INTO "' . $table . '" AS t (' . implode(', ', $columnNames) . ') VALUES ' . implode(', ', $rowPlaceholderGroups);
+        $onConflict = '';
         if ($useInsertIgnore) {
-            $sql .= ' ON CONFLICT DO NOTHING';
+            $onConflict = ' ON CONFLICT DO NOTHING';
         } elseif ($conflictTarget !== []) {
             $assignments = array_map(
                 fn (ColumnWrite $columnWrite): string => $this->renderConflictUpdateAssignment($columnWrite),
                 $columnWritesTemplate->getElements()
             );
             $targetColumns = implode(', ', array_map(static fn (string $c): string => '"' . $c . '"', $conflictTarget));
-            $sql .= $assignments === []
+            $onConflict = $assignments === []
                 ? " ON CONFLICT ($targetColumns) DO NOTHING"
                 : " ON CONFLICT ($targetColumns) DO UPDATE SET " . implode(', ', $assignments);
         }
+        $insertPrefix = 'INSERT INTO "' . $table . '" AS t (' . implode(', ', $columnNames) . ') VALUES ';
 
-        $connection->executeStatement($sql, $values, $types);
+        // one statement per MAX_BOUND_PARAMETERS_PER_STATEMENT: a full statement goes out, the next row starts the next
+        $rowPlaceholderGroups = [];
+        $values = [];
+        $types = [];
+        foreach ($modelIndexes as $index) {
+            $rowExpressions = [];
+            $rowValues = [];
+            $rowTypes = [];
+            if ($hasId) {
+                $rowExpressions[] = '?';
+                $rowValues[] = $rowWriteList[$index]->idValue;
+                $rowTypes[] = 'integer';
+            }
+            foreach ($rowWriteList[$index]->columnWrites as $columnWrite) {
+                $valueExpression = $this->valueExpressionFor($columnWrite);
+                $rowExpressions[] = $valueExpression->sql;
+                if ($valueExpression->bindsValue) {
+                    $rowValues[] = $valueExpression->value;
+                    $rowTypes[] = $columnWrite->dbalType;
+                }
+            }
+            if ($rowPlaceholderGroups !== [] && count($values) + count($rowValues) > self::MAX_BOUND_PARAMETERS_PER_STATEMENT) {
+                $connection->executeStatement($insertPrefix . implode(', ', $rowPlaceholderGroups) . $onConflict, $values, $types);
+                $rowPlaceholderGroups = [];
+                $values = [];
+                $types = [];
+            }
+            $rowPlaceholderGroups[] = '(' . implode(', ', $rowExpressions) . ')';
+            array_push($values, ...$rowValues);
+            array_push($types, ...$rowTypes);
+        }
+        $connection->executeStatement($insertPrefix . implode(', ', $rowPlaceholderGroups) . $onConflict, $values, $types);
+    }
+
+    /**
+     * The statements {@see self::executeBulkRun()} sends for these rows: one per
+     * {@see self::MAX_BOUND_PARAMETERS_PER_STATEMENT} bound parameters.
+     *
+     * @param int[] $modelIndexes
+     */
+    protected function countBulkRunStatements(array $modelIndexes, RowWrites $rowWrites): int
+    {
+        $rowWriteList = $rowWrites->getElements();
+        $statementCount = 1;
+        $statementParameterCount = 0;
+        foreach ($modelIndexes as $index) {
+            $rowParameterCount = $rowWriteList[$index]->idValue !== null ? 1 : 0;
+            foreach ($rowWriteList[$index]->columnWrites as $columnWrite) {
+                if ($this->valueExpressionFor($columnWrite)->bindsValue) {
+                    $rowParameterCount++;
+                }
+            }
+            if ($statementParameterCount > 0 && $statementParameterCount + $rowParameterCount > self::MAX_BOUND_PARAMETERS_PER_STATEMENT) {
+                $statementCount++;
+                $statementParameterCount = 0;
+            }
+            $statementParameterCount += $rowParameterCount;
+        }
+        return $statementCount;
     }
 
     protected function renderConflictUpdateAssignment(ColumnWrite $columnWrite): string

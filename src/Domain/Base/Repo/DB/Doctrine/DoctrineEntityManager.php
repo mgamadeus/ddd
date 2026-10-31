@@ -8,6 +8,7 @@ use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 use DDD\Domain\Base\Repo\DB\Dialect\DialectResolver;
 use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
+use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder;
 use DDD\Infrastructure\Exceptions\ForbiddenException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Services\AuthService;
@@ -691,7 +692,8 @@ class DoctrineEntityManager extends EntityManager
 
     /**
      * Writes many models of one class with multi-row INSERT … ON DUPLICATE KEY UPDATE statements
-     * ({@see self::buildUpsertMultipleStatements()}). Several statements run atomically: in an own transaction when
+     * ({@see self::buildUpsertMultipleStatements()}), each below {@see UpsertBuilder::MAX_BOUND_PARAMETERS_PER_STATEMENT}
+     * bound parameters (a 10 000-row batch of 8 columns is two statements). Several statements run atomically: in an own transaction when
      * none is open, behind a savepoint inside a caller's transaction (so a caller that catches keeps none of the
      * batch). A single statement takes neither.
      *
@@ -756,8 +758,9 @@ class DoctrineEntityManager extends EntityManager
      * does — an uninitialized field, e.g. a #[PreserveOnOmission] property the payload omitted, keeps its stored value),
      * and a row without an id leaves the id column out. Rows are grouped into contiguous runs, in input order, of the
      * same shape (id present, initialized fields, columns to replace instead of merge); a uniform batch is one
-     * statement. The ON DUPLICATE KEY UPDATE list of a run names only that run's columns: `VALUES(c)` of a column
-     * absent from the INSERT list is NULL and would overwrite the stored value.
+     * statement unless its bound parameters exceed {@see UpsertBuilder::MAX_BOUND_PARAMETERS_PER_STATEMENT} — then the
+     * run is split into statements below it. The ON DUPLICATE KEY UPDATE list of a run names only that run's columns:
+     * `VALUES(c)` of a column absent from the INSERT list is NULL and would overwrite the stored value.
      *
      * Column forms: spatial `ST_GeomFromText(?)` (NULL bound plainly, always one bound value), vector
      * `VEC_FromText(?)` or the zero vector for NULL, a mergable JSON string decoded like upsert() does; on a duplicate
@@ -857,30 +860,35 @@ class DoctrineEntityManager extends EntityManager
                 }
             }
 
+            $insertPrefix = 'INSERT ' . ($useInsertIgnore ? 'IGNORE ' : '') . 'INTO ' . $tableName
+                . ' (' . implode(', ', $columns) . ') VALUES ';
+            $onDuplicateKeyUpdate = $useInsertIgnore ? '' : ' ON DUPLICATE KEY UPDATE ' . implode(', ', $updateAssignments);
             $rowPlaceholders = [];
             $values = [];
             $types = [];
             foreach ($run['models'] as $doctrineModel) {
                 $rowExpressions = [];
+                $rowValues = [];
+                $rowTypes = [];
                 foreach ($run['fieldNames'] as $fieldName) {
                     $fieldDefinition = $fieldDefinitions[$fieldName];
                     $type = $fieldDefinition['type'];
                     $value = $metadata->getFieldValue($doctrineModel, $fieldName);
                     if (isset(DatabaseColumn::SPATIAL_SQL_TYPES[$type])) {
                         $rowExpressions[] = $value !== null ? 'ST_GeomFromText(?)' : '?';
-                        $values[] = $value !== null ? (string)$value : null;
-                        $types[] = 'string';
+                        $rowValues[] = $value !== null ? (string)$value : null;
+                        $rowTypes[] = 'string';
                     } elseif ($type == 'vector') {
                         if ($value !== null) {
                             $rowExpressions[] = 'VEC_FromText(?)';
-                            $values[] = json_encode($value, JSON_THROW_ON_ERROR);
-                            $types[] = 'string';
+                            $rowValues[] = json_encode($value, JSON_THROW_ON_ERROR);
+                            $rowTypes[] = 'string';
                         } elseif ($fieldDefinition['vectorDimensions'] > 0) {
                             $rowExpressions[] = (string)DatabaseColumn::createMariaDbNullVectorDefault($fieldDefinition['vectorDimensions']);
                         } else {
                             $rowExpressions[] = '?';
-                            $values[] = null;
-                            $types[] = 'string';
+                            $rowValues[] = null;
+                            $rowTypes[] = 'string';
                         }
                     } else {
                         if ($fieldDefinition['databaseColumn']?->isMergableJSONColumn && is_string($value) && $value !== '') {
@@ -890,18 +898,23 @@ class DoctrineEntityManager extends EntityManager
                             }
                         }
                         $rowExpressions[] = '?';
-                        $values[] = $value;
-                        $types[] = $type;
+                        $rowValues[] = $value;
+                        $rowTypes[] = $type;
                     }
                 }
+                // the statement so far is full: it goes out, this row starts the next one
+                if ($rowPlaceholders !== [] && count($values) + count($rowValues) > UpsertBuilder::MAX_BOUND_PARAMETERS_PER_STATEMENT) {
+                    $statement = new DoctrineBoundSql($insertPrefix . implode(', ', $rowPlaceholders) . $onDuplicateKeyUpdate, $values, $types);
+                    $statements->add($statement);
+                    $rowPlaceholders = [];
+                    $values = [];
+                    $types = [];
+                }
                 $rowPlaceholders[] = '(' . implode(', ', $rowExpressions) . ')';
+                array_push($values, ...$rowValues);
+                array_push($types, ...$rowTypes);
             }
-            $sql = 'INSERT ' . ($useInsertIgnore ? 'IGNORE ' : '') . 'INTO ' . $tableName
-                . ' (' . implode(', ', $columns) . ') VALUES ' . implode(', ', $rowPlaceholders);
-            if (!$useInsertIgnore) {
-                $sql .= ' ON DUPLICATE KEY UPDATE ' . implode(', ', $updateAssignments);
-            }
-            $statement = new DoctrineBoundSql($sql, $values, $types);
+            $statement = new DoctrineBoundSql($insertPrefix . implode(', ', $rowPlaceholders) . $onDuplicateKeyUpdate, $values, $types);
             $statements->add($statement);
         }
         return $statements;

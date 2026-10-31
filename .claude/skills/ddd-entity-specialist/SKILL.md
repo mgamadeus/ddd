@@ -1251,6 +1251,14 @@ $clone = $entity->clone();
 **Entity-specific:** `$set->getEntityIds()`, `$set->update()`, `$set->batchUpdate()`, `$set->delete()`
 **Iteration:** EntitySets are `Iterable` -- use `foreach` directly.
 
+**Batch writes — `$set->batchUpdate(bool $useInsertIgnore = false)`.** Multi-row upserts (`INSERT … ON DUPLICATE KEY
+UPDATE` on MariaDB, `INSERT … ON CONFLICT` on PostgreSQL) for imports and bulk data: no ids returned, no translations
+adapted, no recursion into dependents, each row writes only its initialized properties. Pass the whole set — the
+repository splits it into statements below 65 535 bound parameters (both engines stop there: MariaDB error 1390,
+PostgreSQL "number of parameters must be between 0 and 65535"; `UpsertBuilder::MAX_BOUND_PARAMETERS_PER_STATEMENT`)
+and writes them atomically, in an own transaction or behind a savepoint in the caller's. No caller-side chunking for
+the limit; chunk only to bound memory (each row is an entity plus its row write, ~8 KB on PostgreSQL).
+
 ## Validation
 
 Entities validate automatically on `update()` based on constraint attributes:

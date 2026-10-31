@@ -298,3 +298,7 @@ Unchanged:
   `FOREIGN_KEY_CHECKS=0`); the production guard counts that ADD as copy-forcing on a large table. Databases built with
   ≤ 3.13.2: the schema diff proposes `RESTRICT → CASCADE` on these FKs — metadata-only on PostgreSQL, a table copy on
   MariaDB.
+- 3.13.4 — `batchUpdate()` (`DoctrineEntityManager::upsertMultiple()`, `PostgresUpsertBuilder::upsertMultiple()`)
+  splits a run of rows into statements below 65 535 bound parameters (`UpsertBuilder::MAX_BOUND_PARAMETERS_PER_STATEMENT`),
+  inside the existing atomic handling. A large set failed before with PostgreSQL "number of parameters must be between
+  0 and 65535" or MariaDB error 1390. Caller-side chunking for the limit can go.
