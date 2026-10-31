@@ -305,3 +305,4 @@ Unchanged:
 - 3.13.5 — docs and comments only: the repository names no consuming applications, local paths or internal workflows
   any more (neutral wording; the consuming-app registry lives in local notes). `.claude/settings.local.json` is no
   longer tracked. No code change.
+- 3.13.6 — docs and comments only: the last mentions of a consuming application from 3.13.5 reworded.

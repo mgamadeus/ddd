@@ -30,8 +30,8 @@ use Symfony\Component\Routing\RouterInterface;
 use Throwable;
 
 /**
- * The issues write side: the event fields, log-once, the sink targets, the RC compatibility (the same JSON line as RC's
- * stream handler with the ECS formatter; RC's subclass pattern still runs) and the capture subscriber.
+ * The issues write side: the event fields, log-once, the sink targets, the compatibility with an existing issues stream (the same JSON
+ * line as a stream handler with the ECS formatter; an app's subclass pattern still runs) and the capture subscriber.
  */
 class IssuesLogServiceTest extends TestCase
 {
@@ -121,7 +121,7 @@ class IssuesLogServiceTest extends TestCase
         $this->assertSame('POST', $context['http.request.method']);
     }
 
-    /** RC's handler: stream, warning, bubble false, use_locking, the ECS formatter — the Core sink writes the same line */
+    /** An existing app handler: stream, warning, bubble false, use_locking, the ECS formatter — the Core sink writes the same line */
     public function testTheFileSinkWritesTheSameLineAsRcsStreamHandler(): void
     {
         $record = new LogRecord(
@@ -179,7 +179,7 @@ class IssuesLogServiceTest extends TestCase
         $this->assertTrue($settings->isDateRotated());
     }
 
-    /** RC's subclass bypasses the parent constructor and overrides logThrowable — it keeps running against the new base */
+    /** An app subclass that bypasses the parent constructor and overrides logThrowable — it keeps running against the new base */
     public function testRcsSubclassPatternStillRuns(): void
     {
         $testHandler = new TestHandler();
