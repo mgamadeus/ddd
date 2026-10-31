@@ -19,7 +19,7 @@ use Doctrine\ORM\Query\Expr\Join;
 /**
  * §6 step 5 query fixtures (dual-dialect architecture plan §5 "Query" bullets), against the two EXISTING fixture
  * entities (no new fixture table, no golden-affecting entity change): pagination with joins + a limit (D2 — the
- * real Dineful failure, `syntax error at or near "INNER"`, that this step fixes), `NULL` ordering parity (D13/
+ * real failure of a consuming app, `syntax error at or near "INNER"`, that this step fixes), `NULL` ordering parity (D13/
  * §4.8), and fulltext `NAME`-mode search with `{prop}Score` ordering (D14) on `TranslatedRow.name`, which already
  * carries `#[Translatable(fullTextIndex: true)]` (default `fullTextMode: NAME`) for
  * {@see \DDD\Tests\Integration\QueryOptions\FilterAgainstDatabaseTest}'s unrelated cases. `fullTextMode: DOCUMENT`
@@ -190,7 +190,7 @@ class QueryFixturesTest extends IntegrationTestCase
     }
 
     /**
-     * Real Dineful PostgreSQL failure this fixes (§6 step 5): `TypeError: Cannot assign
+     * Real PostgreSQL failure this fixes (§6 step 5): `TypeError: Cannot assign
      * Doctrine\ORM\Query\AST\Literal to property …PostgresSubstring::$firstSimpleArithmeticExpression of type
      * SimpleArithmeticExpression` — a date-key trick (`SUBSTRING(o0_.someDatetime, 1, 10)`) with LITERAL
      * start/length arguments, which {@see Parser::SimpleArithmeticExpression()}'s own "Phase 1 AST optimization"

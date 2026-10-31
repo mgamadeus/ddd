@@ -93,7 +93,7 @@ Unchanged:
   `app:issues:list|show|search|resolve|ignore|reopen --format=json`. Each issues line gains `error.entry_point`.
 - 3.4.0 — issues log, phase C (skill `ddd-issues-log-specialist`). Query backends `elasticsearch` / `opensearch`
   (plain `_search`, ES 7/8 and OpenSearch 2; `ISSUES_ES_KEYWORD_SUFFIX` for keyword-mapped indices) and `sentry`.
-  `RuntimeErrorsService` plus `app:runtime-errors:extract` / `probe` with rankingCoach's query bodies, options and JSON,
+  `RuntimeErrorsService` plus `app:runtime-errors:extract` / `probe` with the query bodies, options and JSON of an existing runtime-error dashboard,
   configured by `ISSUES_QUERY_*` or the `ES_LOGS_*` fallback. A framework command now yields to an application command
   of the same name, so an app's own `app:runtime-errors:*` stays in charge until it is deleted. New
   `app:issues:forward-sentry` (files → Sentry, read positions in `.issues-sentry-forward.json` next to the logs). No
@@ -129,7 +129,7 @@ Unchanged:
   3.6.0's `IssueTrend` is gone. `RuntimeErrorTrend::fromDateTimeValueSequence()` adapts a series to the runtime-error
   trend shape.
 - 3.7.1 — caught message-handler errors reach the issues log: `AppMessageHandler::logShortException()` also logs the
-  throwable there (CRITICAL, section MESSENGER, `messenger.custom_message`), `logIssue()` writes rankingCoach's keys
+  throwable there (CRITICAL, section MESSENGER, `messenger.custom_message`), `logIssue()` writes the established keys
   `messenger.custom_message` / `messenger.message_payload` (before: `message.custom_message` / `message.payload`) and
   no longer loses the payload on an unset typed property; neither throws out of a catch block. `ProcessCLIMessage`
   logs the failing handler's own error (unwrapped, uncaught).
@@ -302,3 +302,6 @@ Unchanged:
   splits a run of rows into statements below 65 535 bound parameters (`UpsertBuilder::MAX_BOUND_PARAMETERS_PER_STATEMENT`),
   inside the existing atomic handling. A large set failed before with PostgreSQL "number of parameters must be between
   0 and 65535" or MariaDB error 1390. Caller-side chunking for the limit can go.
+- 3.13.5 — docs and comments only: the repository names no consuming applications, local paths or internal workflows
+  any more (neutral wording; the consuming-app registry lives in local notes). `.claude/settings.local.json` is no
+  longer tracked. No code change.

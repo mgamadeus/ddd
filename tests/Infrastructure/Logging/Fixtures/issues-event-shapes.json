@@ -26,7 +26,7 @@
     "error.code": "0",
     "log.origin.file.name": "PublicZzProbeController.php",
     "log.origin.file.line": 52,
-    "error.stack_trace": "#0 src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php(52): App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController->importMenu() ← thrown here\n#1 src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php(24): App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController->import()\n#2 vendor/symfony/http-kernel/HttpKernel.php(195): Symfony\\Component\\HttpKernel\\HttpKernel->handleRaw()\n… 4 framework frames\n#7 /data/dineful/dev-workspaces/mgn/public/index.php(104): {main}()",
+    "error.stack_trace": "#0 src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php(52): App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController->importMenu() ← thrown here\n#1 src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php(24): App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController->import()\n#2 vendor/symfony/http-kernel/HttpKernel.php(195): Symfony\\Component\\HttpKernel\\HttpKernel->handleRaw()\n… 4 framework frames\n#7 /data/app/dev-workspaces/mgn/public/index.php(104): {main}()",
     "error.frames": [
       {
         "file": "src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php",
@@ -95,7 +95,7 @@
         "in_app": false
       },
       {
-        "file": "/data/dineful/dev-workspaces/mgn/public/index.php",
+        "file": "/data/app/dev-workspaces/mgn/public/index.php",
         "line": 104,
         "function": "{main}",
         "in_app": true
@@ -156,7 +156,7 @@
     "error.code": "0",
     "log.origin.file.name": "PublicZzProbeController.php",
     "log.origin.file.line": 34,
-    "error.stack_trace": "#0 src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php(34): App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController->nomsg() ← thrown here\n#1 vendor/symfony/http-kernel/HttpKernel.php(195): Symfony\\Component\\HttpKernel\\HttpKernel->handleRaw()\n#2 vendor/symfony/http-kernel/HttpKernel.php(77): Symfony\\Component\\HttpKernel\\HttpKernel->handle()\n… 3 framework frames\n#6 /data/dineful/dev-workspaces/mgn/public/index.php(104): {main}()",
+    "error.stack_trace": "#0 src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php(34): App\\Presentation\\Api\\Public\\Common\\ZzProbe\\Controller\\PublicZzProbeController->nomsg() ← thrown here\n#1 vendor/symfony/http-kernel/HttpKernel.php(195): Symfony\\Component\\HttpKernel\\HttpKernel->handleRaw()\n#2 vendor/symfony/http-kernel/HttpKernel.php(77): Symfony\\Component\\HttpKernel\\HttpKernel->handle()\n… 3 framework frames\n#6 /data/app/dev-workspaces/mgn/public/index.php(104): {main}()",
     "error.frames": [
       {
         "file": "src/Presentation/Api/Public/Common/ZzProbe/Controller/PublicZzProbeController.php",
@@ -207,7 +207,7 @@
         "in_app": false
       },
       {
-        "file": "/data/dineful/dev-workspaces/mgn/public/index.php",
+        "file": "/data/app/dev-workspaces/mgn/public/index.php",
         "line": 104,
         "function": "{main}",
         "in_app": true

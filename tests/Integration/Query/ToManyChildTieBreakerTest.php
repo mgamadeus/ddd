@@ -13,7 +13,7 @@ use DDD\Tests\Integration\IntegrationTestCase;
 
 /**
  * D13 to-many child tie-breaker (dual-dialect architecture plan §3, "InnoDB returns rows in primary-key order with
- * no ORDER BY; a PostgreSQL heap has no such guarantee"): real Dineful failure this closes — an `Order` expanded
+ * no ORDER BY; a PostgreSQL heap has no such guarantee"): real failure this closes — an `Order` expanded
  * with its `orderItems` and their `orderItemOptionSelections` came back with the children in a different order on
  * PostgreSQL than on MariaDB, because {@see \DDD\Domain\Base\Repo\DB\Dialect\Query\DefaultOrderTreeWalker} only
  * ever appended the ROOT id tie-breaker. {@see TieBreakerParent} → {@see TieBreakerChild} (to-many) →

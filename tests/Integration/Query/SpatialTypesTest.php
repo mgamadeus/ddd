@@ -13,7 +13,7 @@ use DDD\Tests\Integration\Fixtures\Repo\DB\SpatialRows\DBSpatialRowModel;
 use DDD\Tests\Integration\IntegrationTestCase;
 
 /**
- * §6 step 6 subset (dual-dialect architecture plan §4.9): the real Dineful PostgreSQL failure — "Unknown column
+ * §6 step 6 subset (dual-dialect architecture plan §4.9): the real PostgreSQL failure — "Unknown column
  * type 'cartesian_polygon' requested" — happens the moment {@see \Doctrine\ORM\Mapping\ClassMetadataFactory}
  * loads an entity with a Cartesian/vector-typed property on a connection whose dialect never registered the
  * type. `Type::addType()`/`Type::overrideType()` are process-wide, not per-connection

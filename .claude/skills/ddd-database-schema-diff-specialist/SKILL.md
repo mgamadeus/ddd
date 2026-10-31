@@ -288,7 +288,7 @@ For every diff row that adds NOT NULL, adds a UNIQUE index, narrows a column, or
 
 If any of (1), (2), or (3) surfaces evidence that the looser shape is required, **do not apply** — fix the entity instead.
 
-### Real Examples From the Radbonus Audit (2026-05-13)
+### Real Examples From a Production Audit
 
 **Roles.description — fix the entity, not the DB.**
 - Diff: live DB has no index on `description`; entity-derived schema expected a default B-Tree index.
@@ -619,7 +619,7 @@ class SqlTableNames extends ObjectSet {
 }
 ```
 
-Tavlo did this; Radbonus may want to mirror it for symmetry. **Not required** — a flat `string[]` is allowed under AGENTS.md for simple lists, and `ApplyDiffsRequestDto::$sqlTableNames` ships that way out of the box. The typed wrapper is a stylistic upgrade, not a correctness requirement.
+Some apps do this. **Not required** — a flat `string[]` is allowed under AGENTS.md for simple lists, and `ApplyDiffsRequestDto::$sqlTableNames` ships that way out of the box. The typed wrapper is a stylistic upgrade, not a correctness requirement.
 
 ### Migration verification
 

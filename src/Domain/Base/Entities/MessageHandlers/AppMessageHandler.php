@@ -20,7 +20,7 @@ use Throwable;
 
 abstract class AppMessageHandler
 {
-    /** Context key of a handler's own description of the failure (as rankingCoach's handlers write it) */
+    /** Context key of a handler's own description of the failure (the key existing handlers write) */
     public const string ISSUES_CONTEXT_CUSTOM_MESSAGE = 'messenger.custom_message';
 
     /** Context key of the message's scalar public properties, JSON-encoded */

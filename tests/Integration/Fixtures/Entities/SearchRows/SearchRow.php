@@ -32,7 +32,7 @@ class SearchRow extends Entity
     #[Translatable(fullTextIndex: true, fullTextMode: FullTextMode::DOCUMENT)]
     public ?string $summary;
 
-    /** @var string|null Whitespace-joined exact token list (D19/Mig §3.5, the Radbonus `Tracks.allocations` shape) */
+    /** @var string|null Whitespace-joined exact token list (a token-list column) */
     #[DatabaseIndex(DatabaseIndex::TYPE_FULLTEXT, fullTextMode: FullTextMode::TOKEN_MATCH)]
     public ?string $tags;
 }

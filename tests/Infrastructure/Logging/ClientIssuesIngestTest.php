@@ -70,15 +70,15 @@ class ClientIssuesIngestTest extends TestCase
         $clientIssueEvent->name = $name;
         $clientIssueEvent->message = $message;
         $clientIssueEvent->routePattern = '/[lang]/menu/[locationSlug]';
-        $clientIssueEvent->url = 'https://dineful.com/de/menu/pizza-roma?invitationToken=abc123&tab=2';
+        $clientIssueEvent->url = 'https://shop.example.com/de/menu/pizza-roma?invitationToken=abc123&tab=2';
         $innerFrame = new ClientIssueFrame();
-        $innerFrame->file = 'https://dineful.com/_next/static/chunks/framework-0a1b2c3d4e5f6a7b.js';
+        $innerFrame->file = 'https://shop.example.com/_next/static/chunks/framework-0a1b2c3d4e5f6a7b.js';
         $innerFrame->line = 1;
         $innerFrame->column = 900;
         $innerFrame->function = 'n';
         $clientIssueEvent->frames->add($innerFrame);
         $appFrame = new ClientIssueFrame();
-        $appFrame->file = 'https://dineful.com/_next/static/chunks/app/[lang]/menu/[locationSlug]/page-3f2a9c1b8e7d6f50.js';
+        $appFrame->file = 'https://shop.example.com/_next/static/chunks/app/[lang]/menu/[locationSlug]/page-3f2a9c1b8e7d6f50.js';
         $appFrame->line = 1;
         $appFrame->column = 4242;
         $appFrame->function = 'onClick';
@@ -120,12 +120,12 @@ class ClientIssuesIngestTest extends TestCase
         $this->assertFalse($context['error.handled']);
         $this->assertSame('error', $context['error.kind']);
         $this->assertSame('app/[lang]/menu/[locationSlug]/page', $context['log.origin.file.name']);
-        $this->assertStringContainsString('at onClick (https://dineful.com/_next/static/chunks/app/[lang]/menu/[locationSlug]/page-3f2a9c1b8e7d6f50.js:1:4242)', $context['error.stack_trace']);
+        $this->assertStringContainsString('at onClick (https://shop.example.com/_next/static/chunks/app/[lang]/menu/[locationSlug]/page-3f2a9c1b8e7d6f50.js:1:4242)', $context['error.stack_trace']);
         $this->assertSame('web-2026.10.29', $context['service.version']);
         $this->assertSame('tab-7f3a', $context['client.tab_id'], 'not redacted like a session');
         $this->assertSame('390x844', $context['client.viewport']);
         $this->assertCount(2, $context['client.frames']);
-        $this->assertSame('https://dineful.com/de/menu/pizza-roma?invitationToken=[REDACTED]&tab=2', $context['url.original']);
+        $this->assertSame('https://shop.example.com/de/menu/pizza-roma?invitationToken=[REDACTED]&tab=2', $context['url.original']);
         $this->assertSame('/de/menu/pizza-roma', $context['url.path']);
         $this->assertSame('Safari', $context['user_agent.name']);
         $this->assertSame('18', $context['user_agent.version']);
@@ -220,7 +220,7 @@ class ClientIssuesIngestTest extends TestCase
             $clientIssueBreadcrumb->at = '2026-10-29T09:59:00Z';
             $clientIssueBreadcrumb->category = ClientIssueBreadcrumb::CATEGORY_CONSOLE;
             $clientIssueBreadcrumb->message = "breadcrumb $breadcrumbIndex " . str_repeat('y', 240);
-            $clientIssueBreadcrumb->url = 'https://dineful.com/de/menu/' . str_repeat('z', 700);
+            $clientIssueBreadcrumb->url = 'https://shop.example.com/de/menu/' . str_repeat('z', 700);
             $clientIssueEvent->breadcrumbs->add($clientIssueBreadcrumb);
         }
 
@@ -240,7 +240,7 @@ class ClientIssuesIngestTest extends TestCase
         $clientIssuesFingerprintBuilder = new ClientIssuesFingerprintBuilder();
         $firstBuildEvent = $this->createEvent('TypeError', 'e is not a function');
         $secondBuildEvent = $this->createEvent('TypeError', 'n is not a function');
-        $secondBuildEvent->frames->getFirstInAppFrame()->file = 'https://dineful.com/_next/static/chunks/app/[lang]/menu/[locationSlug]/page-99aa88bb77cc66dd.js';
+        $secondBuildEvent->frames->getFirstInAppFrame()->file = 'https://shop.example.com/_next/static/chunks/app/[lang]/menu/[locationSlug]/page-99aa88bb77cc66dd.js';
         $secondBuildEvent->frames->getFirstInAppFrame()->column = 17;
 
         $this->assertSame(
@@ -266,7 +266,7 @@ class ClientIssuesIngestTest extends TestCase
             $clientIssuesFingerprintBuilder->normaliseMessage('Order 0b9d3c3e-6f4a-4b8e-9c1d-2a3b4c5d6e7f failed after 1500 ms at 2026-10-29T10:00:00Z')
         );
         $this->assertSame('app/[lang]/menu/[locationSlug]/page', $clientIssuesFingerprintBuilder->normaliseFilePath(
-            'https://dineful.com/_next/static/chunks/app/[lang]/menu/[locationSlug]/page-3f2a9c1b8e7d6f50.js?dpl=abc'
+            'https://shop.example.com/_next/static/chunks/app/[lang]/menu/[locationSlug]/page-3f2a9c1b8e7d6f50.js?dpl=abc'
         ));
     }
 
@@ -275,8 +275,8 @@ class ClientIssuesIngestTest extends TestCase
         $issuesLogRedactor = new IssuesLogRedactor();
 
         $this->assertSame(
-            'https://dineful.com/de/invitations/[REDACTED]/accept?resetToken=[REDACTED]',
-            $issuesLogRedactor->redactUrl('https://dineful.com/de/invitations/q8Zk2LmT/accept?resetToken=s3cr3t')
+            'https://shop.example.com/de/invitations/[REDACTED]/accept?resetToken=[REDACTED]',
+            $issuesLogRedactor->redactUrl('https://shop.example.com/de/invitations/q8Zk2LmT/accept?resetToken=s3cr3t')
         );
         $this->assertSame(
             '/api/public/reservations/[UUID]/cancel',

@@ -8,7 +8,7 @@ use DDD\Domain\Base\Entities\ValueObject;
 
 /**
  * The runtime-error queries against an Elasticsearch / OpenSearch log index: the parameters and the pure assembly of
- * the GROUPS and TREND `_search` bodies (the bodies of rankingCoach's runtime-error dashboard, byte for byte with the
+ * the GROUPS and TREND `_search` bodies (the bodies of an existing runtime-error dashboard, byte for byte with the
  * default {@see ElasticsearchFieldNames}).
  *
  * - Filter: `@timestamp` look-back range + `log.level` (keyword) ∈ levels, optional account / location / workspace

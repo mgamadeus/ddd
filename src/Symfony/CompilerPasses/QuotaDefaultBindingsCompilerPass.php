@@ -26,7 +26,7 @@ use Symfony\Component\DependencyInjection\Definition;
  * default implementations for those ports (and ensures the concrete engine services are autowired), so the container
  * always compiles with zero app-side wiring.
  *
- * It only fills GAPS: a binding the consuming app already declares (e.g. RC aliasing
+ * It only fills GAPS: a binding the consuming app already declares (e.g. aliasing
  * {@see QuotaAccountResolverInterface} to its authenticated-account resolver, or {@see QuotaConsumerInterface} to
  * {@see StoreDispatchingQuotaConsumer}) is left untouched — the app's binding always wins. The default account resolver
  * is {@see NullQuotaAccountResolver} (no account → account-keyed groups fail open; IP / custom quotas still enforce).

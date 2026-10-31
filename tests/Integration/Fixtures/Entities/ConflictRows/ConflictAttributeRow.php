@@ -16,7 +16,7 @@ use Symfony\Component\Validator\Constraints\NotNull;
 /**
  * Same ambiguous shape as {@see AmbiguousConflictRow} (two independent UNIQUE keys, both always set), plus the
  * attribute that disambiguates it: `handle` is declared as the one key this entity's upsert relies on being
- * merged — mirrors the real Dineful `DeviceRegistration`, whose `#[UpsertConflictKey(columns: ['tokenHash',
+ * merged — mirrors a real device registration, whose `#[UpsertConflictKey(columns: ['tokenHash',
  * 'audience'])]` pins the dedup key over its `uuid` public handle.
  */
 #[DatabaseIndex(DatabaseIndex::TYPE_UNIQUE, ['handle'])]

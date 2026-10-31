@@ -215,7 +215,7 @@ MD;
     }
 
     /**
-     * D8/Mig §3.2 (real failure, Dineful on PostgreSQL: `could not identify an ordering operator for type json`):
+     * D8/Mig §3.2 (real failure of a consuming app on PostgreSQL: `could not identify an ordering operator for type json`):
      * a `json` column — including a plain (non-searchable) Translatable, stored as `json` — has no B-tree
      * opclass, so `ORDER BY` needs `JSON_TEXT()` on PostgreSQL (MariaDB sorts the stored JSON text's bytes
      * directly, `utf8mb4_bin`). Never applied when `$routedToSearchColumn` is true — the virtual search column is

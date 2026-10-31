@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Skills-first gate for the DDD Core (and module) repos — the concept of Radbonus' skill-reminder and RC's agent-hooks,
-adapted: a session must have LOADED the matching ddd-* skill before it creates or changes a file of a category
+Skills-first gate for the DDD Core (and module) repos — the skill-reminder concept of consuming apps, adapted: a session must have LOADED the matching ddd-* skill before it creates or changes a file of a category
 (policies.json). Placing a class without its skill broke every consuming app once (a service outside a public
 Services namespace).
 

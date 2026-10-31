@@ -1,6 +1,6 @@
 ---
 name: ddd-issues-log-specialist
-description: "Log, cluster, ship and track errors with the issues log: IssuesLogService::logThrowable (log-once) and logClientIssue (browser / Node / React Native errors, section WEB), sinks (file/stderr/none, ECS JSON), capture, redaction, group / issue hashes; the registry job over Loki, Elasticsearch / OpenSearch or Sentry (environments, workspaces, seed mode, regressions, Slack alerts, health); agent CLI app:issues:list / show / search / resolve / trend --format=json; RuntimeErrorsService, app:runtime-errors:* (rankingCoach-compatible); app:issues:forward-sentry; admin boilerplate incl. error drawer (frames, causes, job fields); DevOps examples. Use when logging an exception, reporting frontend or mobile errors, replacing Sentry, nobody sees production errors, configuring where errors or alerts go, shipping logs, errors logged twice, one bug in many groups, fixing an environment's errors as an agent, querying runtime errors in Elasticsearch, forwarding to Sentry, or building an issues admin screen or error drawer."
+description: "Log, cluster, ship and track errors with the issues log: IssuesLogService::logThrowable (log-once) and logClientIssue (browser / Node / React Native errors, section WEB), sinks (file/stderr/none, ECS JSON), capture, redaction, group / issue hashes; the registry job over Loki, Elasticsearch / OpenSearch or Sentry (environments, workspaces, seed mode, regressions, Slack alerts, health); agent CLI app:issues:list / show / search / resolve / trend --format=json; RuntimeErrorsService, app:runtime-errors:* (ES runtime-error dashboard); app:issues:forward-sentry; admin boilerplate incl. error drawer (frames, causes, job fields); DevOps examples. Use when logging an exception, reporting frontend or mobile errors, replacing Sentry, nobody sees production errors, configuring where errors or alerts go, shipping logs, errors logged twice, one bug in many groups, fixing an environment's errors as an agent, querying runtime errors in Elasticsearch, forwarding to Sentry, or building an issues admin screen or error drawer."
 metadata:
   author: mgamadeus
   version: "1.7.0"
@@ -19,8 +19,8 @@ Three parts, each optional on top of the previous one:
 3. **Registry** — a job queries the backend, keeps one row per root cause in the database, alerts a Slack webhook on new
    causes and regressions, and serves the discovery CLI. On with `ISSUES_QUERY_BACKEND`.
 
-Query backends: Loki, Elasticsearch / OpenSearch (with rankingCoach's `ES_LOGS_*` configuration and its
-`app:runtime-errors:*` commands) and Sentry (fed by `app:issues:forward-sentry`).
+Query backends: Loki, Elasticsearch / OpenSearch (with the `ES_LOGS_*` configuration and the
+`app:runtime-errors:*` commands of an existing runtime-error dashboard) and Sentry (fed by `app:issues:forward-sentry`).
 
 ## Logging in code
 
@@ -165,8 +165,8 @@ try {
 ```
 
 `AppMessageHandler::logIssue($throwable, $appMessage, ?$customMessage)` logs CRITICAL, section `MESSENGER`, with
-`messenger.custom_message` and `messenger.message_payload` (the message's scalar public properties as JSON — what
-rankingCoach's handlers write). `logShortException($logger, $context, $throwable)` keeps its Monolog line and since
+`messenger.custom_message` and `messenger.message_payload` (the message's scalar public properties as JSON — the keys
+existing handlers write). `logShortException($logger, $context, $throwable)` keeps its Monolog line and since
 3.7.1 also reaches the issues log (`messenger.custom_message` = the context), so existing handlers are captured
 unchanged; prefer `logIssue()` for the payload. One throwable is one event, whichever is called first; a failing
 issues log never leaves the catch block. A handler run in its workspace's CLI process (`ProcessCLIMessage`) logs its
@@ -434,7 +434,7 @@ containers:
     env:
       - { name: ISSUES_QUERY_BACKEND, value: loki }
       - { name: ISSUES_QUERY_URL, value: "http://loki-gateway.monitoring.svc:80" }
-      - { name: ISSUES_QUERY_SELECTOR, value: '{service="dineful", environment="prod"}' }
+      - { name: ISSUES_QUERY_SELECTOR, value: '{service="shop", environment="prod"}' }
       - { name: ISSUES_ALERT_WEBHOOK, valueFrom: { secretKeyRef: { name: issues, key: slack-webhook } } }
       - { name: ISSUES_ALERT_LINK_TEMPLATE, value: "https://admin.example.com/issues/{group_hash}" }
     livenessProbe:
@@ -520,7 +520,7 @@ Counts are approximate under collector replays; first seen, the group set and th
 of its own:
 
 ```dotenv
-ISSUES_QUERY_ENVIRONMENTS={"prod": "{project=\"dineful\", workspace=\"prod\"}", "testing": "{project=\"dineful\", workspace=\"testing\"}", "mgn": "{project=\"dineful\", workspace=\"mgn\"}"}
+ISSUES_QUERY_ENVIRONMENTS={"prod": "{project=\"shop\", workspace=\"prod\"}", "testing": "{project=\"shop\", workspace=\"testing\"}", "mgn": "{project=\"shop\", workspace=\"mgn\"}"}
 ```
 
 The names are free keys, typically the workspace codes. Unset, there is one environment: `ISSUES_QUERY_SELECTOR` under
@@ -544,7 +544,7 @@ and the groups and issues without environment. With several, rows without enviro
 | `ISSUES_QUERY_TENANT` | | Loki `X-Scope-OrgID` |
 | `ISSUES_QUERY_TIMEOUT_SECONDS` / `ISSUES_QUERY_TLS_VERIFY` | 10 / true | |
 | `ISSUES_ES_KEYWORD_SUFFIX` | `.keyword` | sub-field of string fields; empty = mapped as keyword |
-| `ISSUES_ES_LOCATION_FIELD` / `ISSUES_ES_WORKSPACE_FIELD` | `lastLocationId` / `workspace` | "affected locations" field; the ONE workspace field of `--workspace` in the runtime-error queries AND `app:issues:search` / the registry's event search. The default `workspace` is rankingCoach's legacy field; for the issues log's own lines set `service.workspace` |
+| `ISSUES_ES_LOCATION_FIELD` / `ISSUES_ES_WORKSPACE_FIELD` | `lastLocationId` / `workspace` | "affected locations" field; the ONE workspace field of `--workspace` in the runtime-error queries AND `app:issues:search` / the registry's event search. The default `workspace` is a legacy field of existing indices; for the issues log's own lines set `service.workspace` |
 | `ISSUES_SENTRY_DSN` | `SENTRY_DSN` | target of `app:issues:forward-sentry` |
 | `ISSUES_ALERT_WEBHOOK` | | Slack-compatible webhook; unset = no alerts |
 | `ISSUES_ALERT_LINK_TEMPLATE` | | link in the alert, `{group_hash}` and `{environment}` replaced |
@@ -778,7 +778,7 @@ backend), real occurrence JSON, the drawer layout, code-context rendering and "C
 ## Runtime errors straight from Elasticsearch — `app:runtime-errors:*`
 
 Next to the registry, `RuntimeErrorsService` groups the errors directly in Elasticsearch / OpenSearch — no tables, no
-job; the read side of rankingCoach's runtime-error dashboard, with the same query bodies (byte for byte), result objects
+job; the read side of an existing runtime-error dashboard, with the same query bodies (byte for byte), result objects
 and JSON. Configuration: the `ISSUES_QUERY_*` variables, falling back to `ES_LOGS_HOST` / `_PORT` (9200) / `_SCHEME`
 (https) / `_USER` / `_PASSWORD` / `_INDEX` / `_INDEX_DEV`, whatever `ISSUES_QUERY_BACKEND` says (`ES_LOGS_*` alone does
 not turn the registry on).
@@ -803,7 +803,7 @@ not turn the registry on).
   outside Messenger). Flat dotted and nested `_source` both read; every user-influenced value redacted; an older line
   leaves them null or empty. Admin screens for it: [references/admin-error-detail.md](references/admin-error-detail.md).
 
-Commands, same names, options and JSON as rankingCoach's:
+Commands, with the names, options and JSON of that dashboard:
 
 ```bash
 php bin/console app:runtime-errors:extract --logstashEnv=DEVELOPMENT --workspace=mgn --minutes=5 --limit=5
@@ -822,9 +822,9 @@ php bin/console app:runtime-errors:probe [--hours=24] [--size=5] [--compositeSiz
 **A framework command yields to an application command of the same name** (a compiler pass removes the framework's):
 an application with its own `app:runtime-errors:extract` keeps it until it deletes it.
 
-## RC-compatible configuration
+## Configuration compatible with an existing issues stream
 
-An application that already writes `issues` lines with a `stream` handler and the ECS formatter (rankingCoach) gets the
+An application that already writes `issues` lines with a `stream` handler and the ECS formatter gets the
 identical line from the DDD sink with:
 
 ```dotenv

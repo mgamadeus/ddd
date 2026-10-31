@@ -48,8 +48,7 @@ interface UpsertBuilder
 
     /**
      * "Insert or lose the race": a plain INSERT that returns null on a unique-key collision instead of merging
-     * onto the row that won the race (architecture §4.3 — Dineful `ServiceTasksService::insertIfAbsent()`,
-     * `TableAssignmentsService::tryAssign()`). Every OTHER error throws.
+     * onto the row that won the race (e.g. an "insert if absent" or a "try to claim" write). Every OTHER error throws.
      * @throws Exception
      */
     public function insertOrNull(DoctrineEntityManager $entityManager, DoctrineModel &$doctrineModel): ?int;

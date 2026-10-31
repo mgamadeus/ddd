@@ -17,7 +17,7 @@ use Doctrine\DBAL\Connection;
 /**
  * §6 step 5 query fixtures that need a column the shared three fixture entities (`CounterRow`/`TranslatedRow`/
  * `SpatialRow`, {@see IntegrationTestCase::FIXTURE_ENTITY_CLASSES}) do not carry: D14 `fullTextMode: DOCUMENT`
- * (`SearchRow.summary`) and D19 `TOKEN_MATCH` (`SearchRow.tags`, the Radbonus `Tracks.allocations` shape). Its own
+ * (`SearchRow.summary`) and D19 `TOKEN_MATCH` (`SearchRow.tags`, a token-list column). Its own
  * `SearchRows` table is created/dropped on top of (never instead of) the shared three, so no golden-captured DDL
  * for the six `GOLDEN_TEST_CLASSES` ({@see \DDD\Tests\GoldenDdl\DdlGoldenTest}) is affected — `SearchRow` is
  * deliberately NOT part of `FIXTURE_ENTITY_CLASSES`.
@@ -131,7 +131,7 @@ class TokenMatchAndDocumentFulltextTest extends IntegrationTestCase
     }
 
     /**
-     * D19/Mig §3.5 (the Radbonus `Tracks.allocations` shape): exact token-list matching, `ALL`/`ANY`/`NONE`.
+     * D19/Mig §3.5 (a token-list column): exact token-list matching, `ALL`/`ANY`/`NONE`.
      * `string_to_array(col, ' ') @> / && / NOT(… && …)` on PostgreSQL ({@see \DDD\Domain\Base\Repo\DB\Dialect\Query\TokenMatch}),
      * `MATCH … AGAINST (… IN BOOLEAN MODE)` on MariaDB (pre-existing, unchanged) — same matched id sets on both.
      *

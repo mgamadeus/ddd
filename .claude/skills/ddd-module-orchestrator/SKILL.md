@@ -1,6 +1,6 @@
 ---
 name: ddd-module-orchestrator
-description: Orchestrates all DDD modules from Core — study, update, release, propagate across the ecosystem. Contains the dependency graph with release order, the reverse-dependency table, the dependency-floor cascade rule (raise each dependent's require floor to the exact fixed version and re-release transitively), the consuming-app registry (Tavlo, Radbonus, RC), the npm frontend client @mgamadeus/ddd-web, the no-scripts policy (fine in module repos, NEVER in consuming apps — post-update-cmd regenerates DB*Model files), the platform-flag policy (apps pin config.platform.php so plain composer update -W; module repos targeted ext ignores only), the package-vs-repo names, the layered documentation architecture (AGENTS.md hierarchy, vendor-skill symlinks), and handoff-doc ingestion. Use when making cross-module changes, deciding release order, raising dependency floors, running composer update in modules or apps, updating docs across repos, wiring vendor skill symlinks, or ingesting a handoff doc.
+description: Orchestrates all DDD modules from Core — study, update, release, propagate across the ecosystem. Contains the dependency graph with release order, the reverse-dependency table, the dependency-floor cascade rule (raise each dependent's require floor to the exact fixed version and re-release transitively), the consuming-app rules, the npm frontend client @mgamadeus/ddd-web, the no-scripts policy (fine in module repos, NEVER in consuming apps — post-update-cmd regenerates DB*Model files), the platform-flag policy (apps pin config.platform.php so plain composer update -W; module repos targeted ext ignores only), the package-vs-repo names, the layered documentation architecture (AGENTS.md hierarchy, vendor-skill symlinks), and handoff-doc ingestion. Use when making cross-module changes, deciding release order, raising dependency floors, running composer update in modules or apps, updating docs across repos, wiring vendor skill symlinks, or ingesting a handoff doc.
 metadata:
   author: mgamadeus
   version: "2.1.0"
@@ -75,8 +75,8 @@ Level 3 (depends on ddd + Level 1/2):
 can resolve.** The published constraint is what gates consumers. If `ddd-ai` declares `ddd-common-money: ^1.0`, then
 *any* app pulling `ddd-ai` may legally resolve money `1.0.x` and silently miss a fix shipped in `1.1.1` — even after
 you `composer update`-d the `ddd-ai` working tree. (Real incident: the Currency `#[Choice]` DRY fix shipped in money
-`1.1.1`, but `ddd-ai` + `ddd-common-translations` both still floored money at `^1.0`, so RC resolved the buggy money
-behind `ddd-ai`. Fix: floors raised to `^1.1.1`, both children re-released → `ddd-ai 1.4.1`, `ddd-translations 1.0.23`.)
+`1.1.1`, but `ddd-ai` + `ddd-common-translations` both still floored money at `^1.0`, so a consuming app resolved the buggy
+money behind `ddd-ai`. Fix: floors raised to `^1.1.1`, both children re-released → `ddd-ai 1.4.1`, `ddd-translations 1.0.23`.)
 
 **Two distinct actions — do not confuse them:**
 
@@ -124,13 +124,9 @@ changed.
 
 Any application using DDD modules needs a `composer update` after module releases. Consuming apps set `config.platform.php`, so a plain `composer update -W` is correct — no `--ignore-platform-reqs` (see the platform note below). Check the application's `composer.json` for `mgamadeus/*` dependencies.
 
-The known consuming apps and their workspace paths:
-
-| App | Path | DATABASE_TABLE_PREFIX |
-|---|---|---|
-| Tavlo | `/Users/marius/Development/Tavlo/tavlo_backend/backend` | `''` (none) |
-| Radbonus | `/Users/marius/Development/Radbonus/rb-backend` | `''` (none) |
-| RC | `/Users/marius/Development/RC/rc-app-backend/app` | `Entity` |
+Keep the list of consuming apps, their checkout paths and their `DATABASE_TABLE_PREFIX` in local, untracked notes —
+not in this public repository. An app with a table prefix (e.g. `Entity`) is the one the `--no-scripts` rule below
+protects.
 
 #### CRITICAL: never pass `--no-scripts` when updating a consuming app
 
@@ -152,8 +148,8 @@ overrides. The `post-update-cmd` hook **regenerates** them against the consumer'
 vendor models on the upstream table names, so any framework-internal code that uses a vendor
 repo directly (`new DBCacheScopeInvalidation()`, etc.) hits a non-existent table at runtime
 (`SQLSTATE[42S02] … doesn't exist`) — surfacing only on the code path that touches it (e.g. a
-cache-hit). This caused a real production 500 on RC (`CacheScopeInvalidations` vs
-`EntityCacheScopeInvalidations`).
+cache-hit). This caused a real production 500 in an app with a table prefix
+(`CacheScopeInvalidations` vs `EntityCacheScopeInvalidations`).
 
 Therefore, the canonical update form **differs between modules and apps**:
 
@@ -164,7 +160,7 @@ Therefore, the canonical update form **differs between modules and apps**:
 # (never the broad --ignore-platform-reqs, never ignore php):
 composer update mgamadeus/ddd --no-scripts -W
 
-# Consuming APPS (Tavlo, Radbonus, RC) — let the scripts run, NEVER --no-scripts.
+# Consuming APPS — let the scripts run, NEVER --no-scripts.
 # Apps set config.platform.php, which already pins resolution — no platform flag needed:
 composer update mgamadeus/ddd -W
 ```
@@ -172,10 +168,10 @@ composer update mgamadeus/ddd -W
 If a throwaway resolver-only check genuinely needs `--no-scripts` on an app, run the generator
 yourself immediately after: `php bin/console app:generate-doctrine-models-for-entities`.
 
-A plain `composer update` (no platform flag) is correct in every consuming app, RC included: they
+A plain `composer update` (no platform flag) is correct in every consuming app: they
 all set `config.platform.php`, which pins resolution to the deployment PHP. Do NOT add the broad
 `--ignore-platform-reqs` — it overrides that pin and can pull newer-PHP-only packages into the lock
-(this is how five PHP-8.4-only packages once landed in RC's committed 8.3 lock). If the local box is
+(this is how five PHP-8.4-only packages once landed in an app's committed 8.3 lock). If the local box is
 missing an extension, ignore only that one (`--ignore-platform-req=ext-<name>`), never `php`. See the
 `ddd-composer-update-version` skill §"Updating Consuming Apps". Still without `--no-scripts`.
 

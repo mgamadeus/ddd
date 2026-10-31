@@ -60,7 +60,7 @@ services:
 
   elasticsearch:
     # The Elasticsearch query backend and the runtime-errors read side (tests/Integration/Issues/Elasticsearch*):
-    # ES 7 like rankingCoach's logging cluster, single node, security off. Port via DDD_TEST_ES_PORT (default 9210);
+    # ES 7 like the existing logging clusters, single node, security off. Port via DDD_TEST_ES_PORT (default 9210);
     # the tests run only when DDD_TEST_ES_URL points here (or at the opensearch service).
     image: elasticsearch:7.17.28
     environment:

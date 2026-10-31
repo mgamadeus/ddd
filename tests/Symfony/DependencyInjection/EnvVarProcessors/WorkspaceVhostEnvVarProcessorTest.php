@@ -33,7 +33,7 @@ class WorkspaceVhostEnvVarProcessorTest extends TestCase
     public function testOutsideAWorkspaceTheDsnIsUntouched(): void
     {
         // production keeps its own vhost — nothing is derived where there is no workspace
-        $this->assertSame(self::DSN, $this->resolve($this->processorFor('/var/www/rc-app-backend/app')));
+        $this->assertSame(self::DSN, $this->resolve($this->processorFor('/var/www/shop-backend/app')));
     }
 
     public function testTheParameterSwitchesItOff(): void
@@ -71,7 +71,7 @@ class WorkspaceVhostEnvVarProcessorTest extends TestCase
     public function testTheDerivationIsTheOneDDDServiceUses(): void
     {
         $this->assertSame('prj6', DDDService::workspaceNameFromRootDir('/var/www/dev-workspaces/prj6/app'));
-        $this->assertNull(DDDService::workspaceNameFromRootDir('/var/www/rc-app-backend/app'));
+        $this->assertNull(DDDService::workspaceNameFromRootDir('/var/www/shop-backend/app'));
         $this->assertSame('alpha', DDDService::workspaceNameFromRootDir('/srv/checkouts/alpha/app', '/checkouts/'));
         $this->assertSame(
             DDDService::WORKSPACES_PATH_SEGMENT,

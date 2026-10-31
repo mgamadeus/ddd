@@ -10,7 +10,7 @@ use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
 /**
  * Marks a request-DTO parameter as a SHARED framework parameter (`outputFormat`, `noCache`, and the paging
  * `skip`/`top`/`skiptoken`) whose meaning is identical wherever it appears. The documenters (OpenApi
- * {@see \DDD\Presentation\Base\OpenApi\Pathes\PathParameter} and the RC MCP documenter) render only a short pointer for
+ * {@see \DDD\Presentation\Base\OpenApi\Pathes\PathParameter} and an application's MCP tool documenter) render only a short pointer for
  * the parameter inline and emit the full documentation ONCE per surface — see
  * {@see \DDD\Presentation\Base\Dtos\SharedRequestParametersSyntax} — instead of repeating the identical description on
  * every tool. The property's own DocComment stays the source of that once-emitted text.

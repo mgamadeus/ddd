@@ -13,7 +13,7 @@ use DDD\Domain\Base\Repo\DB\Database\DatabaseVirtualColumn;
 use DDD\Tests\Integration\Fixtures\Repo\DB\StoredBaseRows\DBStoredBaseChild;
 
 /**
- * A nullable parent FK inside a composite UNIQUE index — the shape of Radbonus' Journals / GoalAchievements: the
+ * A nullable parent FK inside a composite UNIQUE index — a real production shape: the
  * index covers `IFNULL(storedBaseParentId, 0)` STORED, so the FK column is the base of a stored generated column.
  * The FK declares CASCADE for both actions; what each dialect gets is
  * {@see DatabaseForeignKey::getOnUpdateActionForDialect()}.

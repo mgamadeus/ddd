@@ -11,7 +11,7 @@ use Doctrine\ORM\Query\TokenType;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 
 /**
- * D19/§4.8/Mig §3.5: token-list exact matching for the Radbonus `Tracks.allocations` shape (7 raw/DQL sites) — the
+ * D19/§4.8/Mig §3.5: token-list exact matching (a whitespace-joined list of tokens in one column) — the
  * column stays a plain whitespace-joined token string on both engines, no normalisation table. MariaDB keeps
  * `MATCH(col) AGAINST (? IN BOOLEAN MODE) > 0` (golden; this DQL name is never registered on MariaDB). PostgreSQL
  * only; registered by {@see \DDD\Domain\Base\Repo\DB\Dialect\PostgresDialect::configureOrm()}.

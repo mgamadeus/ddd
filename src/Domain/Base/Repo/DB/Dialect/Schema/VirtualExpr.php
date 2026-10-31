@@ -14,7 +14,7 @@ use DDD\Domain\Base\Entities\ValueObject;
  * byte-identical by {@see renderMariaDb()}, so the golden suite never moves a byte), while {@see renderPostgres()}
  * produces the equivalent PostgreSQL generated-column expression.
  *
- * Covers exactly the shapes Dineful/Radbonus use today (Mig §3.7): `IFNULL(col, 0)` / `IFNULL(col, 'literal')`
+ * Covers exactly the shapes in use: `IFNULL(col, 0)` / `IFNULL(col, 'literal')`
  * (intent `coalesce`), and the three `JSON_UNQUOTE(JSON_EXTRACT(col, '$.key'))` forms — plain, `CAST(… AS SIGNED)`,
  * `CAST(… AS DECIMAL(p,s))` (intents `jsonText` / `jsonInt` / `jsonDecimal`). Anything else is not recognised —
  * {@see fromMariaDbExpression()} returns null and the caller ({@see PostgresDdlRenderer}) refuses with a message
@@ -84,7 +84,7 @@ class VirtualExpr extends ValueObject
     /**
      * Strict, whitespace-tolerant recogniser for today's five raw-expression shapes (Mig §3.7). Keyword casing
      * (`IFNULL`, `JSON_UNQUOTE`, `JSON_EXTRACT`, `CAST`, `AS`, `SIGNED`, `DECIMAL`) matches exactly what every
-     * existing `#[DatabaseVirtualColumn(as: …)]` call site in Dineful/Radbonus/the translations module uses. Any
+     * existing `#[DatabaseVirtualColumn(as: …)]` call site of the consuming apps and the translations module uses. Any
      * other shape (different casing, a function not in this list, a multi-argument expression) is not recognised —
      * returns null rather than guessing a translation.
      */
@@ -102,7 +102,7 @@ class VirtualExpr extends ValueObject
             return self::coalesce($as, $m[1], stripslashes($m[2]));
         }
 
-        // (COALESCE(col, STR_TO_DATE('9999-12-31', '%Y-%m-%d'))) — Radbonus TeamMembers/WorldMembers.leftAt
+        // (COALESCE(col, STR_TO_DATE('9999-12-31', '%Y-%m-%d'))) — e.g. a nullable `leftAt` date in a unique key
         if (preg_match("/^\({$ws}COALESCE\({$ws}`?($identifier)`?{$ws},{$ws}STR_TO_DATE\({$ws}'(\d{4}-\d{2}-\d{2})'{$ws},{$ws}'%Y-%m-%d'{$ws}\){$ws}\){$ws}\)\$/", $as, $m)) {
             return self::coalesceDate($as, $m[1], $m[2]);
         }

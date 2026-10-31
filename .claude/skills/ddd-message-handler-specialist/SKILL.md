@@ -177,7 +177,7 @@ This ensures the message is processed with the rights of the account that dispat
 > constructor arguments, annotate them; do not rely on the bundle's definition winning.
 
 Handlers carry NO workspace logic. Several checkouts of one app (dev workspaces, test builds) share a machine, a
-database and a message broker; each checkout has its OWN broker vhost (the app derives it from its code path — in RC
+database and a message broker; each checkout has its OWN broker vhost (the app derives it from its code path, e.g.
 `%env(workspace_vhost:…)%` in messenger.yaml), so a worker only ever consumes what its own checkout dispatched.
 
 `dispatch()` stamps `dispatchedFromWorkspaceDir` and `dispatchedFromEnvironment` (the workspace NAME from

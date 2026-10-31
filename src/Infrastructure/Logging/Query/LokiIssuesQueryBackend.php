@@ -21,7 +21,7 @@ use Throwable;
  *   (count_over_time(<selector> | json | … [<range>]))` — counted in Loki, not capped like raw lines (5000).
  * - Events: `query_range` with the line filters, newest (or oldest) first.
  *
- * `ISSUES_QUERY_SELECTOR` is the stream selector of the issues lines (e.g. `{service="dineful", environment="prod"}`);
+ * `ISSUES_QUERY_SELECTOR` is the stream selector of the issues lines (e.g. `{service="shop", environment="prod"}`);
  * user + token = basic auth, token alone = bearer; `ISSUES_QUERY_TENANT` sets X-Scope-OrgID.
  */
 class LokiIssuesQueryBackend implements IssuesQueryBackend

@@ -156,7 +156,7 @@ class CopyToPostgresService
 
     /**
      * Rows per chunk for a table: the configured chunk size, capped so a chunk stays near CHUNK_TARGET_BYTES given the
-     * source's average row length (Radbonus Tracks carry multi-MB trackDetails blobs; Dineful MediaItems ~1 MB images).
+     * source's average row length (e.g. multi-MB track-detail blobs or ~1 MB image rows).
      */
     protected function chunkSizeFor(string $table): int
     {
@@ -185,7 +185,7 @@ class CopyToPostgresService
 
     /**
      * The entity's persisted columns that also exist in the source table. A column the entity declares but the
-     * source never had (schema drift, e.g. Radbonus CacheScopeInvalidations.locationId) is reported once and left to
+     * source never had (schema drift, e.g. a column added to the entity after the source table was built) is reported once and left to
      * the target's DEFAULT / NULL — the copy moves what exists, it does not invent data.
      */
     protected function columnsPresentInSource(DatabaseModel $databaseModel): DatabaseColumns
@@ -279,7 +279,7 @@ class CopyToPostgresService
      * the renderer's FK statement is a plain `ADD CONSTRAINT`, which still validates inline; fine at spike scale,
      * not at production scale) and, last (Arch §4.10: `DdlStatement::PHASE_CREATE_TRIGGER` sorts after every other
      * CREATE-path phase), every `DatabaseTrigger` — deliberately AFTER the data phase has already finished, since
-     * e.g. the Radbonus Track trigger would otherwise refuse rows the bulk copy inserts unconditionally. Then the
+     * e.g. a trigger that validates rows would otherwise refuse rows the bulk copy inserts unconditionally. Then the
      * identity reset per table.
      *
      * @return CopyTableResults One result per table, with $seconds set.

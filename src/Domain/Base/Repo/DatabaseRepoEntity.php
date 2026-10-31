@@ -768,7 +768,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
                             $updatedChildProperties[$propertyName] = true;
                             // instead of using the repo update itself, we persist the Entity by calling it's udpate method
                             // since otherwise we miss to run custom code that has to be executed on update
-                            // RC plan 36: pass $depth - 1 (NOT the old post-decrement $depth--). $depth-- starved later
+                            // pass $depth - 1 (NOT the old post-decrement $depth--). $depth-- starved later
                             // SIBLINGS — the first child got the full depth, each subsequent child one less, purely by
                             // foreach order — making recursion depth depend on property declaration order. $depth - 1
                             // decrements uniformly per level and mutates nothing. See upstream-handoff doc.

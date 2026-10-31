@@ -1,15 +1,15 @@
 # Moving an app to Symfony 7.4 / mgamadeus/ddd 2.70.x
 
 ddd 2.70.0 moved Core to Symfony 7.4. An app that pins `symfony/* 7.3.*` stays on ddd 2.69.x until it moves too.
-Collected from the Radbonus (prod since 2026-10-23) and RankingCoach (2026-10-24) upgrades. Work through it in
-order; every item cost one of those apps time.
+Collected from the first production upgrades (2026-10). Work through it in order; every item cost one of those apps
+time.
 
 ## 1. Constraints and the resolve
 
 - In the app's `composer.json`, every `symfony/*` constraint `7.3.*` → `7.4.*`. Leave `symfony/monolog-bundle ^4.0`,
   `symfony/mime`, `symfony/deprecation-contracts`, `symfony/proxy-manager-bridge` as they are.
 - **Remove a `conflict` block on `symfony/runtime|framework-bundle|http-kernel|dependency-injection: >=7.4`.**
-  Radbonus, Dineful and Drivebook carried one. It came in with scaffolding, with no recorded reason, and simply pinned
+  Several apps carried one. It came in with scaffolding, with no recorded reason, and simply pinned
   the app while Core was on 7.3 — `git log -S'"symfony/http-kernel": ">=7.4"'` shows where it came from.
 - `composer update -W` — plain, the app's `config.platform.php` (8.3) pins the PHP axis. Never
   `--ignore-platform-reqs`; a targeted `--ignore-platform-req=ext-<name>` for a genuinely missing local extension is
@@ -21,7 +21,7 @@ order; every item cost one of those apps time.
 - `rm -rf var/cache/<env>`. A container dump left by a failed build keeps its `container.error` tags, and
   `cache:clear` did not always rewrite it. `cache:warmup`, then `lint:container`.
 - `git status` for `DB*Model.php`: the post-update `app:generate-doctrine-models-for-entities` regenerates models.
-  Restore hand-tuned ones from git (Dineful: then `composer check:write-guards`), and do not commit models regenerated
+  Restore hand-tuned ones from git (and run the app's own write-guard checks, if it has any), and do not commit models regenerated
   from another branch's entity edits (columns the database does not have yet).
 - The vendor copy of ddd never matches the tag byte for byte afterwards: the same hook rewrites Core's own
   `DB*Model.php` in `vendor/`. Expected.
@@ -85,8 +85,8 @@ order; every item cost one of those apps time.
    `$set->add($service->build())` against `ObjectSet::add(&...$elements)`. Qodana reports them as
    `PhpPassByRefInspection`. Fix: assign to a local variable first. Also diff the fork against
    `vendor/symfony/error-handler/ErrorHandler.php` (normalise `\` prefixes and `private`/`protected`): forks
-   accumulate app features (Dineful's rendered kernel-escaping fatals as JSON on `?errors_as_json`) that
-   disappear with it. (Radbonus had 0 such calls, Dineful 22.)
+   accumulate app features (e.g. rendering kernel-escaping fatals as JSON on a query flag) that
+   disappear with it. (One app had none of these calls, another 22.)
 10. **A cold debug-container build does not fit php-fpm's default 128M.** Measured peak ~170 MB (7.3) and
     ~180 MB (7.4) for a mid-size app; `bin/console` sets 512M itself, FPM does not. Symptom: every `?debug=1`
     request dies with "Allowed memory size … exhausted … DebugClassLoader.php", and `var/cache/dev` holds only
@@ -101,14 +101,14 @@ order; every item cost one of those apps time.
 - The first `?debug=1` request after an upgrade can run out of memory while it builds the container — see 4.10.
 
 - **Long console runs in debug mode on ddd ≤ 2.70.2 can exhaust memory.** The debug error handler keeps every
-  deprecation it sees, and the ddd route loader and `Choice` produced thousands per container / route load. RC's
+  deprecation it sees, and the ddd route loader and `Choice` produced thousands per container / route load. A
   22-turn agent recording died with "Allowed memory size … exhausted" in `PhpFilesAdapter`. Use ddd ≥ 2.70.3, or
   run long jobs with `--no-debug`.
 - Failed-queue envelopes no longer carry a stack trace (`ErrorDetailsStamp`).
 - AMQP retry and heartbeat behaviour changed slightly.
 - SymfonyRuntime auto-detects FrankenPHP worker mode; a custom runtime must check `FRANKENPHP_WORKER` first.
   `APP_RUNTIME_OPTIONS` arrays pass through.
-- Deploy window: Radbonus saw 2× 500 "Could not create proxy directory …/Proxies" in the second its cache was being
+- Deploy window: one app saw 2× 500 "Could not create proxy directory …/Proxies" in the second its cache was being
   rebuilt under traffic. Warm the new cache before switching traffic to it.
 
 ## 6. Related changes in the same ddd line

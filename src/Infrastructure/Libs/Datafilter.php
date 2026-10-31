@@ -138,8 +138,8 @@ class Datafilter
     ];
 
     public static $special = [
-        "'",  // - http://jira.rankingcoach.com/browse/RAN-1223271
-        //'"', - http://jira.rankingcoach.com/browse/RAN-1120871 ,
+        "'",
+        //'"',
         ' ',
         '.',
         ',',
@@ -1142,7 +1142,7 @@ class Datafilter
         $string = mb_strtolower($string);
         //replace html entities to normal characters
         $string = html_entity_decode($string);
-        // fast patch for keywords sent by RC ui.js (eg: children's clothes)
+        // keywords sent with HTML-encoded apostrophes (eg: children's clothes)
         $string = str_replace([
             '&#39;',
             '’'

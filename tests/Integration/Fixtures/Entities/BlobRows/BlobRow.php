@@ -10,7 +10,7 @@ use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 use DDD\Tests\Integration\Fixtures\Repo\DB\BlobRows\DBBlobRow;
 
 /**
- * A BLOB column whose Doctrine field type is `string` — the real Radbonus `Tracks.trackDetails` shape (LONGBLOB
+ * A BLOB column whose Doctrine field type is `string` — the real shape of a gzip track-detail column (LONGBLOB
  * holding gzip). On PostgreSQL the column is `bytea`; bound as text, the gzip bytes fail with "invalid byte
  * sequence for encoding UTF8".
  */

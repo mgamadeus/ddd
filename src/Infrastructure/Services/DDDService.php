@@ -349,7 +349,7 @@ class DDDService
     }
 
     /**
-     * Returns the root directory of the project, e.g. /var/www/dev-workspaces/mgn/app
+     * Returns the root directory of the project, e.g. /var/www/dev-workspaces/<workspace>/app
      * @return string
      */
     public function getRootDir(): string

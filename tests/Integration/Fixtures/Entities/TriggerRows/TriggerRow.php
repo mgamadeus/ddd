@@ -20,7 +20,7 @@ use DDD\Tests\Integration\Fixtures\Repo\DB\TriggerRows\DBTriggerRow;
  * which this entity's trigger body would break; {@see \DDD\Tests\Integration\Schema\TriggerRowTest} manages this
  * fixture's table on its own, through {@see \DDD\Domain\Base\Repo\DB\Dialect\Schema\SqlScriptLexer} instead.
  *
- * Small enough to port 1:1 to PostgreSQL by hand (unlike the Radbonus `Track` trigger this mirrors in shape:
+ * Small enough to port 1:1 to PostgreSQL by hand (unlike the production trigger this mirrors in shape:
  * MariaDB `BEGIN…END` + `SIGNAL`, PostgreSQL `CREATE OR REPLACE FUNCTION` + `RAISE EXCEPTION`), while still
  * exercising the real per-dialect file resolution ({@see DatabaseTrigger::getSqlForDialect()}) and the lexer split
  * on both engines.

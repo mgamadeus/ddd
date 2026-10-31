@@ -699,7 +699,7 @@ With that pin, `composer update` resolves against 8.3 **regardless of the local 
 
 > **Framework / module dev repos** (this `mgamadeus/ddd` repo, the `ddd-*` modules) set **no** `config.platform.php` — they are libraries and must not pin platform. When updating a module's own checkout during development, a *targeted* `--ignore-platform-req=ext-<name>` is acceptable for a missing local extension; still never the broad form, never `php`.
 
-**Local extensions:** missing `ext-imagick` / `ext-amqp` / `ext-redis` etc. are typical on macOS Homebrew PHP installs without those PECL extensions. Ignore only the ones genuinely absent, each by name — `--ignore-platform-req=ext-imagick --ignore-platform-req=ext-redis` — and note that apps which list those extensions in `config.platform` (e.g. Radbonus) don't even need that. Never reach for the broad form to avoid enumerating them; enumerating is the point.
+**Local extensions:** missing `ext-imagick` / `ext-amqp` / `ext-redis` etc. are typical on macOS Homebrew PHP installs without those PECL extensions. Ignore only the ones genuinely absent, each by name — `--ignore-platform-req=ext-imagick --ignore-platform-req=ext-redis` — and note that apps which list those extensions in `config.platform` don't even need that. Never reach for the broad form to avoid enumerating them; enumerating is the point.
 
 **When the resolver needs to upgrade transitive deps along with the targeted package**, also add `-W` (`--with-all-dependencies`). The canonical form for an agent-driven upgrade is a plain update (the app's `config.platform.php` pins the PHP axis):
 
@@ -732,17 +732,17 @@ So: let the scripts run. The minutes the regeneration costs are the price of a c
 generator yourself afterwards: `php bin/console app:generate-doctrine-models-for-entities`.
 
 (Pure-package upgrades inside the framework modules — Core, AI, Geo, … — have no such hook,
-so `--no-scripts` is harmless there. The rule is about CONSUMER apps: Tavlo, Radbonus, RC.)
+so `--no-scripts` is harmless there. The rule is about CONSUMER apps.)
 
 ---
 
 ## Ingest Discipline (Patches From Consumer Apps)
 
-When a patch arrives from a consuming application (Tavlo, Radbonus, ...) tagged for ingest into Core -- handoff docs such as `bitte ingesten`, `DDD-CORE-TRANSFER-*.md`, `DDD_SCHEMA_DIFF_*.md`, `*_REFACTOR.md` etc. -- the following rules apply.
+When a patch arrives from a consuming application tagged for ingest into Core -- handoff docs such as `bitte ingesten`, `DDD-CORE-TRANSFER-*.md`, `DDD_SCHEMA_DIFF_*.md`, `*_REFACTOR.md` etc. -- the following rules apply.
 
 1. **Handoff docs are proposals, not authoritative spec.** The first pass over any incoming patch is a **convention scan**, not a copy. Scan for the violations listed in [Arrays Are Not a Substitute for ValueObjects / ObjectSets](#arrays-are-not-a-substitute-for-valueobjects--objectsets) before reading the rest of the patch.
 2. **Refuse non-conforming patches before merging.** If the patch contains array-shaped public surface, out-parameters, or other convention violations, report them up-front with the proposed reshape and ask the user before applying. Faithful reproduction of bad work is bad work in the framework.
-3. **"Tavlo / Radbonus already did it this way" is not a defense.** Consumer apps are downstream of framework standards, not above them. A consumer's vendor copy can be edited locally before the framework ingests it, but the framework only accepts conforming shapes.
+3. **"The app already did it this way" is not a defense.** Consumer apps are downstream of framework standards, not above them. A consumer's vendor copy can be edited locally before the framework ingests it, but the framework only accepts conforming shapes.
 4. **PHP lint and Qodana catch syntactic errors, not convention violations.** Manual scan is mandatory until a PHPStan rule lives in the repo to automate it.
 5. **Pre-modified vendor copies are NOT automatically trustworthy.** When the user says "ingest the changes from `vendor/mgamadeus/ddd/`" they are delegating quality control. A `diff -rq` against Core shows what changed; reading each change against framework conventions is the ingest, not the copy.
 

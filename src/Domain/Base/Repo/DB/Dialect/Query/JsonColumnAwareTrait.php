@@ -19,7 +19,7 @@ use Doctrine\ORM\Query\AST;
  * (`JSON_TEXT(...)` / a 400 at validation time). This trait is the GENERIC, walker-level fallback for DQL that
  * reaches the same columns directly — a raw `$queryBuilder->orderBy("$alias.name")`, a raw
  * `->andWhere("$alias.name = :x")`, a `->distinct()` hydration of an entity with `json` columns — the exact shapes
- * behind the real failures on the Dineful app (`tmp/runs/pgspike/pg-run5-errors.txt`): "could not identify an
+ * behind the real failures of a consuming app on PostgreSQL: "could not identify an
  * ordering operator for type json" (×9, raw `orderBy` on a Translatable column), "operator does not exist: json =
  * unknown" (a raw equality filter on `Products.name`), and "could not identify an equality operator for type json"
  * (×5, `SELECT DISTINCT` hydrating `OrderItem`, whose `unitPrice`/`optionsPriceDelta` are JSON-persisted

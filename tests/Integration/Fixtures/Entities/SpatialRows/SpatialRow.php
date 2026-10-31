@@ -36,7 +36,7 @@ class SpatialRow extends Entity
     public ?Vector $embedding;
 
     /**
-     * @var Polygon|null Cartesian SRID-0 polygon column — the real Dineful PostgreSQL failure this fixture proves
+     * @var Polygon|null Cartesian SRID-0 polygon column — the real PostgreSQL failure this fixture proves
      * fixed: "Unknown column type 'cartesian_polygon' requested" the moment ClassMetadataFactory loads this
      * entity on a connection whose dialect never registered it (dual-dialect architecture plan §4.9/§6 step 6).
      */

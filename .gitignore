@@ -63,3 +63,7 @@ composer.lock
 
 # Skill gate: per-session record of loaded skills
 /.claude/hooks/skill-gate/state/
+
+# Local Claude Code settings and caches (never committed)
+/.claude/settings.local.json
+__pycache__/

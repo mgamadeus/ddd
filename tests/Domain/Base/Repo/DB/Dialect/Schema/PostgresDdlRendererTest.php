@@ -401,7 +401,7 @@ class PostgresDdlRendererTest extends TestCase
 
     /**
      * §4.10 multi-path cascade fix (pg-run4: deleting a Business → "insert or update on table Bills violates
-     * foreign key constraint Bills_fk_orderId" — Dineful's real shape, reproduced here minimally): a table with
+     * foreign key constraint Bills_fk_orderId" — a real shape, reproduced here minimally): a table with
      * one `ON DELETE CASCADE` FK and one `ON DELETE SET NULL` FK to a DIFFERENT ancestor gets BOTH foreign keys
      * deferred to commit, because a single parent delete can run this table's own cascade-delete and its
      * same-row SET NULL update in either order.

@@ -55,7 +55,7 @@ class ObjectStorageSettings extends ValueObject
         public readonly ?string $secretKey = null,
         /** @var bool S3: `https://endpoint/bucket/key` instead of `https://bucket.endpoint/key` (MinIO needs it) */
         public readonly bool $pathStyle = false,
-        /** @var string Key prefix inside the bucket or directory, e.g. `dineful/`; '' = none */
+        /** @var string Key prefix inside the bucket or directory, e.g. `shop/`; '' = none */
         public readonly string $prefix = '',
         /** @var string|null Filesystem: the root directory */
         public readonly ?string $path = null,

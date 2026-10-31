@@ -33,7 +33,7 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
  * per-column `CHECK` (`#[DatabaseCheck]`, G-R3-1), the trailing-space UNIQUE-key `CHECK`, `VirtualExpr` for any
  * virtual column OTHER than the one Translatable fulltext search column, token-list `TOKEN_MATCH` indexes. Each
  * unimplemented case throws {@see InternalErrorException} rather than emitting silently-wrong SQL — a caller
- * hitting one of these on Dineful's real entity set (152 tables, the next build step) gets a clear, specific
+ * hitting one of these on a real entity set gets a clear, specific
  * refusal instead of a table that type-checks but is wrong.
  *
  * **Cross-table ordering.** `renderCreate()` returns one model's statements in a safe standalone order (table, then
@@ -135,8 +135,8 @@ class PostgresDdlRenderer implements DdlRenderer
         // does, so exact byte-for-byte parity with MariaDB's output is not a goal. Calls only pg_catalog builtins
         // (json_each_text, string_agg, coalesce), so the search_path pin is defensive rather than load-bearing here.
         //
-        // Real data (Radbonus copy, Mig blocker): a Translatable column can hold a JSON ARRAY instead of an
-        // object (`ChatMessages.localizedBody`, 5 rows with `[]`) — `json_each_text()` requires an object and
+        // Real data (a production copy): a Translatable column can hold a JSON ARRAY instead of an
+        // object (e.g. `[]` in a few rows) — `json_each_text()` requires an object and
         // raises "cannot deconstruct an array as an object" on anything else. `json_typeof` guards the shape:
         // non-object input (array, scalar, or SQL NULL — `json_typeof(NULL::json)` is NULL, falling to ELSE too)
         // renders '' instead. This is a deliberate PostgreSQL deviation from MariaDB, which renders the array's
@@ -585,7 +585,7 @@ class PostgresDdlRenderer implements DdlRenderer
 
     /**
      * D14/Mig §3.5: NAME = pg_trgm prefix search on ddd_fold(col); DOCUMENT = to_tsvector fulltext; D19/step 5
-     * TOKEN_MATCH = GIN on `string_to_array(col, ' ')` for the Radbonus `Tracks.allocations` token-list shape —
+     * TOKEN_MATCH = GIN on `string_to_array(col, ' ')` for a token-list column —
      * the identical expression {@see \DDD\Domain\Base\Repo\DB\Dialect\Query\TokenMatch} renders in its predicate,
      * or the planner ignores the index.
      */
@@ -670,7 +670,7 @@ class PostgresDdlRenderer implements DdlRenderer
     /**
      * §4.10 ("FK validation and deferral"), the dual-dialect plan's multi-path cascade fix: true when
      * $databaseModel declares at least one FK with `ON DELETE CASCADE` AND at least one FK with
-     * `ON DELETE SET NULL`/`SET DEFAULT` (e.g. Dineful's `Bills.orderId` CASCADE to `Orders` next to
+     * `ON DELETE SET NULL`/`SET DEFAULT` (e.g. `Bills.orderId` CASCADE to `Orders` next to
      * `Bills.businessId` SET NULL to `Businesses`, with `Orders.businessId` itself CASCADE to `Businesses`).
      *
      * Why an immediate check is unsafe on such a table: deleting the shared ancestor (`Businesses`) fires BOTH
