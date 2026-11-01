@@ -37,7 +37,11 @@ class ChangeHistory extends ValueObject
      */
     public ?DateTime $modifiedTime;
 
-    /** @var bool If true, the created and modified time is overwritten if present on entity, usefull e.g. in case of migrations */
+    /**
+     * @var bool Internal: when true, an update writes {@see $createdTime} / {@see $modifiedTime} as given, also over a
+     *     stored `created` (imports, migrations, test data). Without it the stored `created` is never overwritten.
+     *     Never hydrated from a payload ({@see setPropertiesFromObject()}): set it in code only.
+     */
     #[HideProperty]
     public bool $overwriteCreatedAndModifiedTime = false;
 
@@ -59,6 +63,21 @@ class ChangeHistory extends ValueObject
         $this->modifiedColumn = $modifiedColumn;
         $this->createdColumnStyle = $createdColumnStyle;
         $this->modifiedColumnStyle = $modifiedColumnStyle;
+    }
+
+    /**
+     * Hydrates the times; {@see $overwriteCreatedAndModifiedTime} keeps its current value whatever the payload says —
+     * a request body must not be able to rewrite an entity's creation or modification time.
+     */
+    public function setPropertiesFromObject(
+        object &$object,
+        $throwErrors = true,
+        bool $rootCall = true,
+        bool $sanitizeInput = false
+    ): void {
+        $overwriteCreatedAndModifiedTime = $this->overwriteCreatedAndModifiedTime;
+        parent::setPropertiesFromObject($object, $throwErrors, $rootCall, $sanitizeInput);
+        $this->overwriteCreatedAndModifiedTime = $overwriteCreatedAndModifiedTime;
     }
 
     /**

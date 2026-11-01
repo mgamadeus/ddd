@@ -166,7 +166,7 @@ class RawUpsertExecutor
             $column = '`' . $columnWrite->columnName . '`';
             $assignments[] = match ($columnWrite->updatePolicy) {
                 UpdatePolicy::RAW_ACTION => "$column = " . $columnWrite->rawOnUpdateAction,
-                UpdatePolicy::KEEP_CREATED => "$column = COALESCE(VALUES($column), $column)",
+                UpdatePolicy::KEEP_CREATED => "$column = COALESCE($column, VALUES($column))",
                 UpdatePolicy::MERGE_PATCH => "$column = JSON_MERGE_PATCH(COALESCE($column,'{}'), VALUES($column))",
                 default => "$column = VALUES($column)",
             };
@@ -242,7 +242,7 @@ class RawUpsertExecutor
         return match ($columnWrite->updatePolicy) {
             UpdatePolicy::RAW_ACTION => self::translateRawActionForConflictForm($columnWrite),
             UpdatePolicy::MERGE_PATCH => "$column = ddd_json_merge_patch(COALESCE(t.$column,'{}'), COALESCE(EXCLUDED.$column,'{}'))",
-            UpdatePolicy::KEEP_CREATED => "$column = COALESCE(EXCLUDED.$column, t.$column)",
+            UpdatePolicy::KEEP_CREATED => "$column = COALESCE(t.$column, EXCLUDED.$column)",
             default => "$column = EXCLUDED.$column",
         };
     }

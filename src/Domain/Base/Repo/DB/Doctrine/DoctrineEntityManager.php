@@ -288,8 +288,10 @@ class DoctrineEntityManager extends EntityManager
                     $update[] = "$column = JSON_MERGE_PATCH(COALESCE($column,'{}'), VALUES($column))";
                 }
             } elseif ($fieldName == $createdColumn) {
-                // we do not execute updates on created columns
-                $update[] = "$column = COALESCE(VALUES($column), $column)";
+                // the stored creation time stays (a NULL one is filled); only an explicit overwrite replaces it
+                $update[] = in_array($fieldName, $doctrineModel->columnsToReplaceInsteadOfMerge, true)
+                    ? "$column = VALUES($column)"
+                    : "$column = COALESCE($column, VALUES($column))";
             } elseif (isset($databaseColumnAttributeInstance->onUpdateAction)) {
                 $update[] = "$column = " . $databaseColumnAttributeInstance->onUpdateAction;
             } else {
@@ -641,7 +643,10 @@ class DoctrineEntityManager extends EntityManager
             );
         }
         if ($fieldName == ChangeHistory::DEFAULT_CREATED_COLUMN_NAME) {
-            return new DoctrineBoundSql("$column = COALESCE($valueExpression->sql, $column)", $valueExpression->values, $valueExpression->types);
+            if (in_array($fieldName, $doctrineModel->columnsToReplaceInsteadOfMerge, true)) {
+                return new DoctrineBoundSql("$column = $valueExpression->sql", $valueExpression->values, $valueExpression->types);
+            }
+            return new DoctrineBoundSql("$column = COALESCE($column, $valueExpression->sql)", $valueExpression->values, $valueExpression->types);
         }
         if (isset($databaseColumnAttributeInstance->onUpdateAction)) {
             return $this->buildOnUpdateActionAssignment(
@@ -764,7 +769,7 @@ class DoctrineEntityManager extends EntityManager
      *
      * Column forms: spatial `ST_GeomFromText(?)` (NULL bound plainly, always one bound value), vector
      * `VEC_FromText(?)` or the zero vector for NULL, a mergable JSON string decoded like upsert() does; on a duplicate
-     * key: created `COALESCE(VALUES(c), c)`, mergable JSON `JSON_MERGE_PATCH(COALESCE(c,'{}'), COALESCE(VALUES(c),'{}'))`
+     * key: created `COALESCE(c, VALUES(c))` (the stored time stays; `VALUES(c)` when the model replaces it), mergable JSON `JSON_MERGE_PATCH(COALESCE(c,'{}'), COALESCE(VALUES(c),'{}'))`
      * (a NULL keeps the stored value) or `VALUES(c)` for a replace column, an onUpdateAction verbatim, else `VALUES(c)`.
      *
      * @param DoctrineModel[] $doctrineModels Models of one class
@@ -837,7 +842,9 @@ class DoctrineEntityManager extends EntityManager
                 $column = $fieldDefinition['column'];
                 $columns[] = $column;
                 if ($fieldName == ChangeHistory::DEFAULT_CREATED_COLUMN_NAME) {
-                    $updateAssignments[] = "$column = COALESCE(VALUES($column), $column)";
+                    $updateAssignments[] = in_array($fieldName, $run['columnsToReplace'], true)
+                        ? "$column = VALUES($column)"
+                        : "$column = COALESCE($column, VALUES($column))";
                 } elseif ($fieldDefinition['isIdentifier']) {
                     // makes lastInsertId() return the id of an updated row too
                     $updateAssignments[] = "$column = LAST_INSERT_ID($column)";

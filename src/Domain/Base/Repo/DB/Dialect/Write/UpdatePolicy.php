@@ -12,7 +12,9 @@ namespace DDD\Domain\Base\Repo\DB\Dialect\Write;
  *
  * - {@see UpdatePolicy::MERGE_PATCH}: `#[DatabaseColumn(isMergableJSONColumn: true)]` columns whose value is an
  *   array/object, unless the field is in the model's `columnsToReplaceInsteadOfMerge` (then {@see self::REPLACE}).
- * - {@see UpdatePolicy::KEEP_CREATED}: the entity's ChangeHistory `created` column — never overwritten once set.
+ * - {@see UpdatePolicy::KEEP_CREATED}: the entity's ChangeHistory `created` column — the stored value stays
+ *   (`COALESCE(stored, new)`; a NULL one is filled). {@see self::REPLACE} when the model lists `created` in
+ *   `columnsToReplaceInsteadOfMerge` (the internal `ChangeHistory::$overwriteCreatedAndModifiedTime`).
  * - {@see UpdatePolicy::RAW_ACTION}: a `#[DatabaseColumn(onUpdateAction: '...')]` column. The attribute's value is
  *   MariaDB SQL written against `VALUES(`col`)`; {@see \DDD\Domain\Base\Repo\DB\Dialect\Write\PostgresUpsertBuilder}
  *   translates it generically (`VALUES(`col`)` → `EXCLUDED."col"`, remaining backtick identifiers → double-quoted)

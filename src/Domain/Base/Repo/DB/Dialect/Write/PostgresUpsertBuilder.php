@@ -665,7 +665,9 @@ class PostgresUpsertBuilder implements UpsertBuilder
                 ? UpdatePolicy::REPLACE
                 : UpdatePolicy::MERGE_PATCH;
         } elseif ($fieldName === ChangeHistory::DEFAULT_CREATED_COLUMN_NAME) {
-            $updatePolicy = UpdatePolicy::KEEP_CREATED;
+            $updatePolicy = in_array($fieldName, $doctrineModel->columnsToReplaceInsteadOfMerge, true)
+                ? UpdatePolicy::REPLACE
+                : UpdatePolicy::KEEP_CREATED;
         } elseif (isset($databaseColumnAttributeInstance->onUpdateAction)) {
             $updatePolicy = UpdatePolicy::RAW_ACTION;
             $rawOnUpdateAction = $databaseColumnAttributeInstance->onUpdateAction;
@@ -981,7 +983,7 @@ class PostgresUpsertBuilder implements UpsertBuilder
         return match ($columnWrite->updatePolicy) {
             UpdatePolicy::RAW_ACTION => $this->renderRawActionForConflictForm($columnWrite),
             UpdatePolicy::MERGE_PATCH => "$column = ddd_json_merge_patch(COALESCE(t.$column,'{}'), COALESCE(EXCLUDED.$column,'{}'))",
-            UpdatePolicy::KEEP_CREATED => "$column = COALESCE(EXCLUDED.$column, t.$column)",
+            UpdatePolicy::KEEP_CREATED => "$column = COALESCE(t.$column, EXCLUDED.$column)",
             default => "$column = EXCLUDED.$column",
         };
     }
@@ -1001,7 +1003,7 @@ class PostgresUpsertBuilder implements UpsertBuilder
             return new DoctrineBoundSql("$column = ddd_json_merge_patch(COALESCE($column,'{}'), $expr)", $values, $types);
         }
         if ($columnWrite->updatePolicy === UpdatePolicy::KEEP_CREATED) {
-            return new DoctrineBoundSql("$column = COALESCE($expr, $column)", $values, $types);
+            return new DoctrineBoundSql("$column = COALESCE($column, $expr)", $values, $types);
         }
         return new DoctrineBoundSql("$column = $expr", $values, $types);
     }

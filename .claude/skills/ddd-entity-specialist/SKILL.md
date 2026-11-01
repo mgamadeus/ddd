@@ -1162,6 +1162,15 @@ class Product extends Entity
 
 Access methods: `$entity->getCreatedTime()`, `$entity->getModifiedTime()`, `$entity->getLastEditTime()`
 
+**What a write does with the two columns (MariaDB and PostgreSQL, single and batch upsert):**
+- `updated` is the time of the write, every time.
+- `created` is the time of the write for a NEW row (also one inserted with an explicit id). An EXISTING row keeps its
+  stored `created` whatever the update carries — an edit form that sends the entity without `changeHistory` does not
+  reset it (`COALESCE(stored, new)`; a NULL one is filled).
+- Only code replaces it: set `createdTime` / `modifiedTime` and `$entity->getChangeHistory()->overwriteCreatedAndModifiedTime
+  = true` (imports, migrations, test data). The flag is never hydrated from a payload — a request body sending
+  `changeHistory.overwriteCreatedAndModifiedTime` changes nothing.
+
 ---
 
 ## Common Entity Patterns

@@ -602,8 +602,17 @@ class DBEntity extends DatabaseRepoEntity
             } elseif ($changeHistoryAttributeInstance->getModifiedColumnStyle() == ChangeHistory::DATETIME_SIMPLE) {
                 $modifiedTime = $entityModifiedTime;
             }
+            // The time is written for a new row; the write keeps the stored `created` of an existing row
+            // (UpdatePolicy::KEEP_CREATED). Only the internal overwrite flag replaces it: the column is then written
+            // like any other one.
+            $overwriteCreatedTime = isset($entity->changeHistory->createdTime) && $entity->changeHistory->overwriteCreatedAndModifiedTime;
             if ($createdTime && property_exists($this->ormInstance, $createdColumn)) {
-                if (!($this->ormInstance->$createdColumn ?? null)) {
+                if ($overwriteCreatedTime) {
+                    $this->ormInstance->$createdColumn = $createdTime;
+                    if (!in_array($createdColumn, $this->ormInstance->columnsToReplaceInsteadOfMerge, true)) {
+                        $this->ormInstance->columnsToReplaceInsteadOfMerge[] = $createdColumn;
+                    }
+                } elseif (!($this->ormInstance->$createdColumn ?? null)) {
                     $this->ormInstance->$createdColumn = $createdTime;
                 }
             }

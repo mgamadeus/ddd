@@ -306,3 +306,11 @@ Unchanged:
   any more (neutral wording; the consuming-app registry lives in local notes). `.claude/settings.local.json` is no
   longer tracked. No code change.
 - 3.13.6 — docs and comments only: the last mentions of a consuming application from 3.13.5 reworded.
+- 3.13.7 — fix: an update of an existing entity keeps its stored ChangeHistory `created`. Before, an update with an id
+  but without `changeHistory.createdTime` (every edit form) wrote the save time into `created` on both engines, single
+  and batch. The write now renders `created = COALESCE(created, <new>)` (MariaDB `COALESCE(c, VALUES(c))`, PostgreSQL
+  `COALESCE(t.c, EXCLUDED.c)` / `COALESCE(c, ?)`): a new row gets the current time, an existing row keeps its own, a
+  NULL one is filled. Only code that sets `ChangeHistory::$overwriteCreatedAndModifiedTime` replaces it; the flag is no
+  longer hydrated from a payload (`ChangeHistory::setPropertiesFromObject()` keeps its value), so a request body
+  cannot set `created` / `updated`. A workaround that copies the stored `createdTime` into the entity before saving can
+  be removed.
