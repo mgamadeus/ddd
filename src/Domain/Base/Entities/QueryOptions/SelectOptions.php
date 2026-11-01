@@ -257,8 +257,8 @@ MD;
                 $propertiesToHide[$publicProperty->getName()] = true;
             }
         }
-        // handle ChangeHistory
-        if (isset($propertiesToHide['changeHistory']) && (isset($selectedProperties[ChangeHistory::DEFAULT_CREATED_COLUMN_NAME]) || isset($selectedProperties[ChangeHistory::DEFAULT_MODIFIED_COLUMN_NAME]))) {
+        // ChangeHistory: selecting `created` or `updated` (the column names) keeps `changeHistory` in the output
+        if (isset($propertiesToHide['changeHistory']) && (isset($selectedPropertiesAssoc[ChangeHistory::DEFAULT_CREATED_COLUMN_NAME]) || isset($selectedPropertiesAssoc[ChangeHistory::DEFAULT_MODIFIED_COLUMN_NAME]))) {
             unset($propertiesToHide['changeHistory']);
         }
         self::$propertiesToHideByJoinPath[$joinPath] = array_keys($propertiesToHide);

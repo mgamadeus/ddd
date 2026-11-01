@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Tests\Integration\Repo;
 
+use DDD\Domain\Base\Entities\QueryOptions\SelectOptions;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Tests\Integration\Fixtures\Entities\ChangeHistoryRows\ChangeHistoryRow;
@@ -170,6 +171,24 @@ class ChangeHistoryCreatedTimeTest extends IntegrationTestCase
             $this->fetchStoredCreated((int)$newRow->id),
             $newRow->getChangeHistory()->createdTime?->format('Y-m-d H:i:s')
         );
+    }
+
+    public function testSelectingTheCreatedColumnReturnsTheCreatedTime(): void
+    {
+        $id = $this->insertRowCreatedInThePast('selected');
+        ChangeHistoryRows::setDefaultQueryOptionsSnapshot();
+        try {
+            $select = SelectOptions::fromString('label,created');
+            ChangeHistoryRows::getDefaultQueryOptions()->setSelect($select, false);
+            $loadedRows = ChangeHistoryRows::getService()->findAll();
+        } finally {
+            ChangeHistoryRows::restoreDefaultQueryOptionsSnapshot();
+        }
+
+        $serialized = json_decode((string)json_encode($loadedRows->first()?->toObject()), true);
+        self::assertSame($id, (int)$serialized['id']);
+        self::assertSame('selected', $serialized['label']);
+        self::assertStringStartsWith('2001-02-03', (string)($serialized['changeHistory']['createdTime'] ?? ''));
     }
 
     public function testCodeCanStillOverwriteTheCreatedTime(): void
