@@ -1170,6 +1170,9 @@ Access methods: `$entity->getCreatedTime()`, `$entity->getModifiedTime()`, `$ent
 - Only code replaces it: set `createdTime` / `modifiedTime` and `$entity->getChangeHistory()->overwriteCreatedAndModifiedTime
   = true` (imports, migrations, test data). The flag is never hydrated from a payload — a request body sending
   `changeHistory.overwriteCreatedAndModifiedTime` changes nothing.
+- The written entity carries the persisted times afterwards (`update()` / `insert()` return value and the object
+  passed in): `modifiedTime` = the time just written, `createdTime` = the stored one (for an entity with an id read
+  back with one `SELECT created`), never the payload's. An update response therefore shows the real creation time.
 
 ---
 

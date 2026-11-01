@@ -628,6 +628,59 @@ class DBEntity extends DatabaseRepoEntity
     }
 
     /**
+     * Puts the persisted ChangeHistory times on the entity after its write, so the saved entity a caller returns
+     * (e.g. as an update response) shows what the database holds, not what the payload carried: `modifiedTime` is
+     * the time just written, `createdTime` the stored one. A new row's `created` is the time just written; for an
+     * entity with an id it is read back (one SELECT of `created` — the write keeps a stored `created`, see
+     * {@see \DDD\Domain\Base\Repo\DB\Dialect\Write\UpdatePolicy::KEEP_CREATED}). Only the default
+     * `DATETIME_SIMPLE` column style is handled; other styles leave the entity as it is.
+     *
+     * @param DefaultObject $entity The entity just written
+     * @param bool $readStoredCreatedTime True when the row may have existed before the write (the entity had an id)
+     */
+    public function applyPersistedChangeHistory(DefaultObject &$entity, bool $readStoredCreatedTime): void
+    {
+        /** @var ChangeHistoryTrait $entityClass */
+        $entityClass = $this->ormInstance::ENTITY_CLASS;
+        if (!method_exists($entityClass, 'getChangeHistoryAttribute') || !method_exists($entity, 'getChangeHistory')) {
+            return;
+        }
+        $changeHistoryAttributeInstance = $entityClass::getChangeHistoryAttribute(true);
+        $createdColumn = $changeHistoryAttributeInstance->getCreatedColumn();
+        $modifiedColumn = $changeHistoryAttributeInstance->getModifiedColumn();
+        $changeHistory = $entity->getChangeHistory();
+        if (
+            $changeHistoryAttributeInstance->getModifiedColumnStyle() === ChangeHistory::DATETIME_SIMPLE
+            && ($this->ormInstance->$modifiedColumn ?? null) instanceof \DateTimeInterface
+        ) {
+            $changeHistory->modifiedTime = DateTime::fromTimestamp($this->ormInstance->$modifiedColumn->getTimestamp());
+        }
+        if ($changeHistoryAttributeInstance->getCreatedColumnStyle() !== ChangeHistory::DATETIME_SIMPLE) {
+            return;
+        }
+        $writtenCreatedTime = $this->ormInstance->$createdColumn ?? null;
+        if ($readStoredCreatedTime && isset($this->ormInstance->id) && $this->ormInstance->id) {
+            $connection = EntityManagerFactory::getInstance()->getConnection();
+            $storedCreatedTime = $connection->fetchOne(
+                'SELECT ' . $connection->quoteIdentifier($createdColumn) . ' FROM '
+                . $connection->quoteIdentifier($this->ormInstance->getTableName()) . ' WHERE '
+                . $connection->quoteIdentifier('id') . ' = ?',
+                [$this->ormInstance->id]
+            );
+            if (is_string($storedCreatedTime) && $storedCreatedTime !== '') {
+                $storedDateTime = $connection->convertToPHPValue($storedCreatedTime, 'datetime');
+                if ($storedDateTime instanceof \DateTimeInterface) {
+                    $changeHistory->createdTime = DateTime::fromTimestamp($storedDateTime->getTimestamp());
+                    return;
+                }
+            }
+        }
+        if ($writtenCreatedTime instanceof \DateTimeInterface) {
+            $changeHistory->createdTime = DateTime::fromTimestamp($writtenCreatedTime->getTimestamp());
+        }
+    }
+
+    /**
      * Maps single property from Entity to repository
      * @param Entity $entity
      * @param string $propertyName

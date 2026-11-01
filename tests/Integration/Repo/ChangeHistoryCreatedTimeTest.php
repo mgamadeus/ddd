@@ -147,6 +147,31 @@ class ChangeHistoryCreatedTimeTest extends IntegrationTestCase
         self::assertSame(self::PAST_CREATED, $this->fetchStoredCreated($id));
     }
 
+    public function testTheSavedEntityCarriesThePersistedTimesNotThePayloads(): void
+    {
+        $id = $this->insertRowCreatedInThePast('before');
+
+        $formSave = $this->newFormSave($id, 'after');
+        $formSave->update();
+        self::assertSame(self::PAST_CREATED, $formSave->getChangeHistory()->createdTime?->format('Y-m-d H:i:s'));
+        self::assertLessThan(120, abs(time() - (int)$formSave->getChangeHistory()->modifiedTime?->getTimestamp()));
+
+        $forgedSave = new ChangeHistoryRow();
+        $payload = (object)['id' => $id, 'label' => 'forged', 'changeHistory' => (object)['createdTime' => '2030-01-01 00:00:00']];
+        $forgedSave->setPropertiesFromObject($payload);
+        $forgedSave->update();
+        self::assertSame(self::PAST_CREATED, $forgedSave->getChangeHistory()->createdTime?->format('Y-m-d H:i:s'));
+
+        $newRow = new ChangeHistoryRow();
+        $newRow->label = 'new';
+        $newRow->update();
+        self::assertNotNull($newRow->id);
+        self::assertSame(
+            $this->fetchStoredCreated((int)$newRow->id),
+            $newRow->getChangeHistory()->createdTime?->format('Y-m-d H:i:s')
+        );
+    }
+
     public function testCodeCanStillOverwriteTheCreatedTime(): void
     {
         $id = $this->insertRowCreatedInThePast('before');
@@ -157,5 +182,6 @@ class ChangeHistoryCreatedTimeTest extends IntegrationTestCase
         $changeHistoryRow->update();
 
         self::assertSame('1999-12-31 23:59:58', $this->fetchStoredCreated($id));
+        self::assertSame('1999-12-31 23:59:58', $changeHistoryRow->getChangeHistory()->createdTime?->format('Y-m-d H:i:s'));
     }
 }

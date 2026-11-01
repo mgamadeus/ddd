@@ -314,3 +314,8 @@ Unchanged:
   longer hydrated from a payload (`ChangeHistory::setPropertiesFromObject()` keeps its value), so a request body
   cannot set `created` / `updated`. A workaround that copies the stored `createdTime` into the entity before saving can
   be removed.
+- 3.13.8 — fix: after `update()` / `insert()` the entity carries the persisted ChangeHistory times instead of the
+  payload's — `modifiedTime` the time just written, `createdTime` the stored one (an entity with an id: one extra
+  `SELECT created` by id; a new row: the time just written). An update response showed an empty or client-sent
+  `createdTime` until the next read. `DBEntity::applyPersistedChangeHistory()`; with `DB_USE_READ_AFTER_WRITE` the
+  re-read entity already has them.

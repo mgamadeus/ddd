@@ -602,6 +602,10 @@ abstract class DatabaseRepoEntity extends RepoEntity
                         } elseif (!$entityId) {
                             $entity->id = $updatedID;
                         }
+                        if ($changeHistoryAttributeInstance && !($entityId && $useReadAfterWrite) && $this instanceof DBEntity) {
+                            // the response shows the persisted times, not the payload's (a re-read already has them)
+                            $this->applyPersistedChangeHistory($entity, (bool)$entityId);
+                        }
                         if ($hasTranslations) {
                             $translationAttributeInstance->updateOrCreateTranslation($entity, $this);
                         }
@@ -623,6 +627,9 @@ abstract class DatabaseRepoEntity extends RepoEntity
                         $this->ormInstance,
                         $updateRightsQueryBuilder
                     );
+                    if ($this instanceof DBEntity) {
+                        $this->applyPersistedChangeHistory($entity, true);
+                    }
                 }
                 $translationAttributeInstance->updateOrCreateTranslation($entity, $this);
             }
