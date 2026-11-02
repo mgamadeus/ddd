@@ -19,6 +19,8 @@ use DDD\Tests\Integration\Fixtures\Repo\DB\StoredBaseRows\DBStoredBaseChild;
  * {@see DatabaseForeignKey::getOnUpdateActionForDialect()}.
  */
 #[DatabaseIndex(DatabaseIndex::TYPE_UNIQUE, ['label', 'virtualStoredBaseParentId'])]
+// abbreviates to the same name as the index above (`uniq_lab_vSto`): the second one gets a distinct name
+#[DatabaseIndex(DatabaseIndex::TYPE_UNIQUE, ['labelCode', 'virtualStoredBaseParentId'])]
 #[LazyLoadRepo(LazyLoadRepo::DB, DBStoredBaseChild::class)]
 class StoredBaseChild extends Entity
 {
@@ -31,4 +33,6 @@ class StoredBaseChild extends Entity
     public ?StoredBaseParent $storedBaseParent = null;
 
     public ?string $label = null;
+
+    public ?string $labelCode = null;
 }

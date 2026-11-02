@@ -29,6 +29,9 @@ class DBStoredBaseChildModel extends DoctrineModel
 	#[ORM\Column(type: 'string')]
 	public ?string $label;
 
+	#[ORM\Column(type: 'string')]
+	public ?string $labelCode;
+
 	#[ORM\Id]
 	#[ORM\GeneratedValue]
 	#[ORM\Column(type: 'integer')]

@@ -593,6 +593,7 @@ class DatabaseModel extends ValueObject
             $triggerAttributeInstance = $triggerAttribute->newInstance();
             $databaseModel->triggers->add($triggerAttributeInstance);
         }
+        $databaseModel->indexes->assignDistinctIndexNames();
         return $databaseModel;
     }
 

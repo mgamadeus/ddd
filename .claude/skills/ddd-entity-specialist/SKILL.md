@@ -867,6 +867,12 @@ class Track extends Entity {
 }
 ```
 
+**Index names:** type prefix + the column name (one column) or the first three characters of each column (composite):
+`idx_acc_sta_cre`, `uniq_externalId`. Two composite indexes that abbreviate alike (`(label, parentId)` and
+`(labelCode, parentId)` → `uniq_lab_par`) are kept apart: the first declared keeps the name, every later one gets
+`_` + 6 hex characters of its columns (`uniq_lab_par_3f2a9c`), stable across generations. The schema diff matches
+indexes by type and columns, never by name.
+
 ---
 
 ## Constants-Only Subclasses Across Root Namespaces (`#[ReuseParentEntitySet]`)
