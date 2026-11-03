@@ -319,3 +319,9 @@ Unchanged:
   `SELECT created` by id; a new row: the time just written). An update response showed an empty or client-sent
   `createdTime` until the next read. `DBEntity::applyPersistedChangeHistory()`; with `DB_USE_READ_AFTER_WRITE` the
   re-read entity already has them.
+- 3.13.9 — fixes: `select=created,updated` keeps `changeHistory` in the output (it was always hidden;
+  `SelectOptions::addPropertiesToHideByByJoinPath()` read the wrong array). Composite indexes that abbreviate to the
+  same name (`(label, parentId)` and `(labelCode, parentId)` → `uniq_lab_par`) get distinct names: the first declared
+  keeps its name, each later one gets `_` + 6 hex characters of its columns. Before, MariaDB silently skipped the
+  second index and PostgreSQL refused it ("relation already exists"); after the update the schema diff proposes the
+  missing index as an ADD under its new name. Existing index names do not change.
