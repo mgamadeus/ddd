@@ -46,8 +46,11 @@ class WorkspaceVhostEnvVarProcessor implements EnvVarProcessorInterface
      */
     public const string PATH_SEGMENT_PARAMETER = 'ddd.workspaces_path_segment';
 
-    /** @var array<string, bool> Per-process memo of probed workspace DSNs → whether their vhost exists */
-    protected static array $vhostExists = [];
+    /** @var array<string, bool> Per-process memo: probed workspace DSN → whether its vhost exists */
+    protected static array $vhostExistsByDsn = [];
+
+    /** @var array<string, bool> Per-process memo: workspace DSNs whose fallback was already logged */
+    protected static array $fallbackLoggedByDsn = [];
 
     /**
      * The #[Autowire] attributes are LOAD-BEARING, not decoration. Applications auto-register the framework's own
@@ -82,7 +85,20 @@ class WorkspaceVhostEnvVarProcessor implements EnvVarProcessorInterface
         if ($workspaceDsn === $dsn) {
             return $dsn;
         }
-        return $this->vhostExists($workspaceDsn) ? $workspaceDsn : $dsn;
+        if ($this->vhostExists($workspaceDsn)) {
+            return $workspaceDsn;
+        }
+        // visible, once per process: the checkout now shares the default vhost's queues with its other consumers
+        if (isset(self::$fallbackLoggedByDsn[$workspaceDsn])) {
+            return $dsn;
+        }
+        self::$fallbackLoggedByDsn[$workspaceDsn] = true;
+        error_log(sprintf(
+            'WorkspaceVhostEnvVarProcessor: broker vhost "%s" does not exist, using the vhost of %s instead — create the vhost to isolate this workspace',
+            (string)DDDService::workspaceNameFromRootDir($this->projectDir, $this->workspacesPathSegment),
+            $name
+        ));
+        return $dsn;
     }
 
     /**
@@ -97,22 +113,22 @@ class WorkspaceVhostEnvVarProcessor implements EnvVarProcessorInterface
      */
     protected function vhostExists(string $dsn): bool
     {
-        if (isset(self::$vhostExists[$dsn])) {
-            return self::$vhostExists[$dsn];
+        if (isset(self::$vhostExistsByDsn[$dsn])) {
+            return self::$vhostExistsByDsn[$dsn];
         }
         if (!class_exists(\AMQPConnection::class)
             || !in_array(parse_url($dsn, PHP_URL_SCHEME), ['amqp', 'amqps'], true)) {
-            return self::$vhostExists[$dsn] = true;
+            return self::$vhostExistsByDsn[$dsn] = true;
         }
         try {
             $channel = Connection::fromDsn($dsn, ['connect_timeout' => 2])->channel();
             $channel->getConnection()->disconnect();
-            return self::$vhostExists[$dsn] = true;
-        } catch (\AMQPException $e) {
-            $message = $e->getPrevious()?->getMessage() ?? $e->getMessage();
-            return self::$vhostExists[$dsn] = !self::isVhostNotFound($message);
+            return self::$vhostExistsByDsn[$dsn] = true;
+        } catch (\AMQPException $amqpException) {
+            $connectionErrorMessage = $amqpException->getPrevious()?->getMessage() ?? $amqpException->getMessage();
+            return self::$vhostExistsByDsn[$dsn] = !self::isVhostNotFound($connectionErrorMessage);
         } catch (\Exception) {
-            return self::$vhostExists[$dsn] = true;
+            return self::$vhostExistsByDsn[$dsn] = true;
         }
     }
 
@@ -121,13 +137,13 @@ class WorkspaceVhostEnvVarProcessor implements EnvVarProcessorInterface
      * ("NOT_ALLOWED - vhost adk not found") and a refused access to an existing one ("NOT_ALLOWED - access to vhost
      * 'adk' refused for user 'x'") with 530 NOT_ALLOWED; only the first justifies a fallback.
      *
-     * @param string $message
+     * @param string $connectionErrorMessage
      * @return bool
      */
-    public static function isVhostNotFound(string $message): bool
+    public static function isVhostNotFound(string $connectionErrorMessage): bool
     {
-        $message = strtolower($message);
-        return str_contains($message, 'vhost') && str_contains($message, 'not found');
+        $lowerCaseMessage = strtolower($connectionErrorMessage);
+        return str_contains($lowerCaseMessage, 'vhost') && str_contains($lowerCaseMessage, 'not found');
     }
 
     /**

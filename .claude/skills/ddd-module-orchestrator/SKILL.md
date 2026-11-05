@@ -286,6 +286,12 @@ When updating AGENTS.md, skills, or README across multiple modules:
 - **Version in `composer.json`** must match tag (without `v` prefix)
 - **Co-Authored-By** header required on all commits — use the exact trailer your harness specifies for the current model (the templates above show the generic form)
 
+### Ingesting a pull request
+
+Follow AGENTS.md › "Ingesting a Pull Request": fetch `pull/<n>/head` without checking out, review the NET diff
+against conventions, skills, behaviour, tests and the public-repository rule, squash with the contributor as author,
+add your own follow-up commit for findings, verify, release.
+
 ### Ingesting an upstream handoff doc
 
 A handoff/donation doc is a **proposal, not authoritative spec**. Workflow for each one:

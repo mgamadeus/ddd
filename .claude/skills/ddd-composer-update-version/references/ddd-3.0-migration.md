@@ -325,3 +325,8 @@ Unchanged:
   keeps its name, each later one gets `_` + 6 hex characters of its columns. Before, MariaDB silently skipped the
   second index and PostgreSQL refused it ("relation already exists"); after the update the schema diff proposes the
   missing index as an ADD under its new name. Existing index names do not change.
+- 3.13.10 — `%env(workspace_vhost:…)%`: when the workspace's broker vhost does not exist, a workspace checkout falls
+  back to the `.env` DSN instead of dying with "530 NOT_ALLOWED - vhost <name> not found" (one probe per process
+  through Symfony's AMQP `Connection`, 2 s connect timeout; only "vhost not found" falls back; one `error_log` line per
+  process). Outside a workspace nothing changes. A fallen-back workspace shares the default vhost's queues — create the
+  vhost at provisioning. Contributed in PR #5.

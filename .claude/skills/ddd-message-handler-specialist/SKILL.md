@@ -180,6 +180,17 @@ Handlers carry NO workspace logic. Several checkouts of one app (dev workspaces,
 database and a message broker; each checkout has its OWN broker vhost (the app derives it from its code path, e.g.
 `%env(workspace_vhost:…)%` in messenger.yaml), so a worker only ever consumes what its own checkout dispatched.
 
+**A missing workspace vhost falls back to the `.env` vhost.** Inside a workspace the processor probes the broker once
+per process (Symfony's own `Connection::fromDsn(…, ['connect_timeout' => 2])`, nothing declared). Only "530
+NOT_ALLOWED - vhost <name> not found" falls back, to the DSN from `.env` unchanged, and writes one `error_log` line per
+process ("broker vhost "<name>" does not exist, using the vhost of … instead"); a refused access to an existing vhost,
+a broker that is down, bad credentials or an invalid DSN keep the workspace DSN, so the real error surfaces. Outside a
+workspace nothing is probed. The fallback keeps a checkout alive, but it then shares the default vhost's queues with
+every other consumer of it: messages without a workspace stamp may run on this checkout's code, and the checkout's own
+stamped messages are refused by the other consumers (guard below). Create the vhost when the workspace is provisioned —
+that stays the real fix. In FPM the probe runs once per request that builds a transport (statics do not survive
+requests).
+
 `dispatch()` stamps `dispatchedFromWorkspaceDir` and `dispatchedFromEnvironment` (the workspace NAME from
 `DDDService::getWorkspaceName()`, null outside a workspace). The framework's `WorkspaceOriginGuardMiddleware`
 (registered on every bus by `FreshWorkerStateMiddlewarePass`, right behind the fresh-state middleware) compares the
