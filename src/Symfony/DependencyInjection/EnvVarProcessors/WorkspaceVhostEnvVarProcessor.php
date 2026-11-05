@@ -8,6 +8,7 @@ use Closure;
 use DDD\Infrastructure\Services\DDDService;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\DependencyInjection\EnvVarProcessorInterface;
+use Symfony\Component\Messenger\Bridge\Amqp\Transport\Connection;
 
 /**
  * `%env(workspace_vhost:MESSENGER_TRANSPORT_DSN)%` — a broker DSN with its vhost segment replaced by the name of the
@@ -22,10 +23,11 @@ use Symfony\Component\DependencyInjection\EnvVarProcessorInterface;
  * Outside a workspace (production, a developer's machine) the DSN is returned UNCHANGED: production keeps its vhost.
  * The parameter {@see self::ENABLED_PARAMETER} is the rollback switch — false means unchanged everywhere.
  *
- * Operational precondition, worth knowing before rolling this out: the vhost must exist on the broker BEFORE a
- * checkout runs with it. A worker that boots without it dies with "530 NOT_ALLOWED - vhost <name> not found".
- * Nothing here probes the broker or falls back to the default vhost — a silent fallback would quietly restore the
- * wrong-code problem this exists to prevent.
+ * Inside a workspace the broker is probed once per process: when the workspace vhost does not exist ("530 NOT_ALLOWED
+ * - vhost <name> not found"), the DSN from `.env` is returned unchanged, so the checkout falls back to its default
+ * vhost. Any other failure — broker down, bad credentials, access to an existing vhost refused — keeps the workspace
+ * DSN so the real error surfaces. The probe opens the connection through Symfony's own
+ * {@see Connection::fromDsn()}, so credentials, TLS and every DSN option are exactly those the transport will use.
  *
  * Runtime processor: Symfony resolves `%env()%` when the container reads the value, so each process derives its own
  * vhost from its own path.
@@ -44,6 +46,9 @@ class WorkspaceVhostEnvVarProcessor implements EnvVarProcessorInterface
      */
     public const string PATH_SEGMENT_PARAMETER = 'ddd.workspaces_path_segment';
 
+    /** @var array<string, bool> Per-process memo of probed workspace DSNs → whether their vhost exists */
+    protected static array $vhostExists = [];
+
     /**
      * The #[Autowire] attributes are LOAD-BEARING, not decoration. Applications auto-register the framework's own
      * sources (`resource: vendor/mgamadeus/ddd/src/*` with autowire: true), and such a definition REPLACES the one
@@ -58,16 +63,71 @@ class WorkspaceVhostEnvVarProcessor implements EnvVarProcessorInterface
     ) {
     }
 
+    /**
+     * @param string $prefix
+     * @param string $name
+     * @param Closure $getEnv
+     * @return string
+     */
     public function getEnv(string $prefix, string $name, Closure $getEnv): string
     {
         $dsn = (string)$getEnv($name);
         if (!$this->enabled) {
             return $dsn;
         }
-        return self::replaceVhost(
+        $workspaceDsn = self::replaceVhost(
             $dsn,
             DDDService::workspaceNameFromRootDir($this->projectDir, $this->workspacesPathSegment)
         );
+        if ($workspaceDsn === $dsn) {
+            return $dsn;
+        }
+        return $this->vhostExists($workspaceDsn) ? $workspaceDsn : $dsn;
+    }
+
+    /**
+     * Probes the broker once per process and DSN through Symfony's AMQP {@see Connection}: the DSN is parsed and the
+     * connection opened exactly as the transport does it, nothing is declared. Returns false only for "vhost <name>
+     * not found"; a refused access to an existing vhost is also a 530 NOT_ALLOWED but must surface, so it returns
+     * true. Without ext-amqp or for a non-AMQP scheme the probe is skipped and the vhost is assumed to exist; an
+     * invalid DSN or TLS configuration fails the transport itself the same way, so it is left to surface there.
+     *
+     * @param string $dsn
+     * @return bool
+     */
+    protected function vhostExists(string $dsn): bool
+    {
+        if (isset(self::$vhostExists[$dsn])) {
+            return self::$vhostExists[$dsn];
+        }
+        if (!class_exists(\AMQPConnection::class)
+            || !in_array(parse_url($dsn, PHP_URL_SCHEME), ['amqp', 'amqps'], true)) {
+            return self::$vhostExists[$dsn] = true;
+        }
+        try {
+            $channel = Connection::fromDsn($dsn, ['connect_timeout' => 2])->channel();
+            $channel->getConnection()->disconnect();
+            return self::$vhostExists[$dsn] = true;
+        } catch (\AMQPException $e) {
+            $message = $e->getPrevious()?->getMessage() ?? $e->getMessage();
+            return self::$vhostExists[$dsn] = !self::isVhostNotFound($message);
+        } catch (\Exception) {
+            return self::$vhostExists[$dsn] = true;
+        }
+    }
+
+    /**
+     * Whether a broker connection error says the vhost does not exist. RabbitMQ answers both a missing vhost
+     * ("NOT_ALLOWED - vhost adk not found") and a refused access to an existing one ("NOT_ALLOWED - access to vhost
+     * 'adk' refused for user 'x'") with 530 NOT_ALLOWED; only the first justifies a fallback.
+     *
+     * @param string $message
+     * @return bool
+     */
+    public static function isVhostNotFound(string $message): bool
+    {
+        $message = strtolower($message);
+        return str_contains($message, 'vhost') && str_contains($message, 'not found');
     }
 
     /**
