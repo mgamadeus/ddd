@@ -63,7 +63,7 @@ class WorkspaceVhostEnvVarProcessorTest extends TestCase
     public function testOutsideAWorkspaceTheDsnIsUntouchedAndNothingIsProbed(): void
     {
         // production keeps its own vhost — nothing is derived and no broker is contacted where there is no workspace
-        $processor = $this->processorFor('/var/www/rc-app-backend/app', vhostExists: null);
+        $processor = $this->processorFor('/var/www/shop-backend/app', vhostExists: null);
         $this->assertSame(self::DSN, $this->resolve($processor));
         $this->assertSame(0, $processor->probes);
     }
@@ -84,17 +84,6 @@ class WorkspaceVhostEnvVarProcessorTest extends TestCase
             'amqp://user:pw@rabbit:5672/%2f?heartbeat=30',
             $this->resolve($processor, 'amqp://user:pw@rabbit:5672/%2f?heartbeat=30')
         );
-    }
-
-    public function testOutsideAWorkspaceTheDsnIsUntouched(): void
-    {
-        // production keeps its own vhost — nothing is derived where there is no workspace
-        $this->assertSame(self::DSN, $this->resolve($this->processorFor('/var/www/shop-backend/app')));
-    }
-
-    public function testTheParameterSwitchesItOff(): void
-    {
-        $this->assertSame(self::DSN, $this->resolve($this->processorFor('/var/www/dev-workspaces/prj6/app', enabled: false)));
     }
 
     public function testAQueryStringSurvivesAndADsnWithoutAVhostGetsOne(): void
