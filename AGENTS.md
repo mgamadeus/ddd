@@ -598,7 +598,10 @@ $cache->increment('quota.42', 1, 60);
 // Short-lived lock (Redis across hosts, APCu one host): one atomic SET NX EX, released only by its owner
 $lockToken = $cache->acquireLock('import.42', 30);       // null = someone else holds it
 if ($lockToken !== null) {
-    try { /* … */ } finally { $cache->releaseLock('import.42', $lockToken); }
+    try {
+        // … long work: re-arm the TTL from a heartbeat; false = the lock was lost, stop
+        $cache->refreshLock('import.42', $lockToken, 30);
+    } finally { $cache->releaseLock('import.42', $lockToken); }
 }
 ```
 

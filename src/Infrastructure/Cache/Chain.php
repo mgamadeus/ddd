@@ -164,5 +164,10 @@ class Chain extends Cache
         return $this->getLockTier()->releaseLock($key, $token);
     }
 
+    public function refreshLock(string $key, string $token, int $ttlSeconds): bool
+    {
+        return $this->getLockTier()->refreshLock($key, $token, $ttlSeconds);
+    }
+
     // endregion
 }

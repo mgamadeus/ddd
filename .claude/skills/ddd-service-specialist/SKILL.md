@@ -760,6 +760,9 @@ with such a tier — every other backend throws `BadMethodCallException`):
   expires by itself (a dead holder never blocks forever); a TTL below 1 throws. `releaseLock($key, $token): bool` —
   compare-and-delete: a holder whose lock expired and was re-taken never removes the new holder's lock. Release in
   `finally`; make the TTL longer than the work.
+- `refreshLock($key, $token, $ttlSeconds): bool` — re-arms the TTL only while `$token` still owns the lock (a lease
+  with a heartbeat). false = the lock expired or another holder took it: stop the work. Redis compares and expires in
+  one Lua step; APCu compares, then re-stores (two steps, one host).
 - Redis locks hold across hosts; APCu locks only within one host. A Chain takes locks from its first Redis tier,
   else its first APCu tier.
 
@@ -770,7 +773,8 @@ if ($lockToken === null) {
     return;   // another process holds it
 }
 try {
-    // … the work only one process may do …
+    // … the work only one process may do; for long work refresh from a heartbeat:
+    // if (!$cache->refreshLock("import.{$importId}", $lockToken, 30)) { return; }   // lock lost
 } finally {
     $cache->releaseLock("import.{$importId}", $lockToken);
 }

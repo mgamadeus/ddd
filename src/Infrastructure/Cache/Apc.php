@@ -81,5 +81,20 @@ class Apc extends Cache
         return apcu_delete($lockKey);
     }
 
+    /**
+     * Compares the token, then stores it again with the new TTL — two steps, like {@see releaseLock()}: a lock that
+     * expires in between and is taken by another process could be overwritten in that instant.
+     */
+    public function refreshLock(string $key, string $token, int $ttlSeconds): bool
+    {
+        $this->assertLockTtl($ttlSeconds);
+        $lockKey = $this->lockKey($key);
+        $currentToken = apcu_fetch($lockKey, $success);
+        if (!$success || $currentToken !== $token) {
+            return false;
+        }
+        return apcu_store($lockKey, $token, $ttlSeconds);
+    }
+
     // endregion
 }

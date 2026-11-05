@@ -41,6 +41,14 @@ trait RedisAtomicCounterTrait
         return 0
         LUA;
 
+    /** EXPIRE only when the lock still carries this owner's token. KEYS[1] lock, ARGV[1] token, ARGV[2] TTL. */
+    protected const string REFRESH_LOCK_SCRIPT = <<<'LUA'
+        if redis.call('get', KEYS[1]) == ARGV[1] then
+            return redis.call('expire', KEYS[1], ARGV[2])
+        end
+        return 0
+        LUA;
+
     /** The native Redis client (captured by the using class in getCacheAdapter()), used for atomic commands. */
     protected Redis|RedisArray|RedisCluster|Relay|ClientInterface $nativeRedisConnection;
 
@@ -86,6 +94,16 @@ trait RedisAtomicCounterTrait
     public function releaseLock(string $key, string $token): bool
     {
         return (int)$this->evaluateScript(self::RELEASE_LOCK_SCRIPT, [$this->lockKey($key)], [$token]) === 1;
+    }
+
+    public function refreshLock(string $key, string $token, int $ttlSeconds): bool
+    {
+        $this->assertLockTtl($ttlSeconds);
+        return (int)$this->evaluateScript(
+            self::REFRESH_LOCK_SCRIPT,
+            [$this->lockKey($key)],
+            [$token, (string)$ttlSeconds]
+        ) === 1;
     }
 
     /** `SET <key> <value> NX EX <ttl>` — true when the key was absent and is now set. */

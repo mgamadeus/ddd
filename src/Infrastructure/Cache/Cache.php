@@ -335,6 +335,34 @@ abstract class Cache
         throw new BadMethodCallException(static::class . ' does not support locks.');
     }
 
+    /**
+     * Gives the lock at $key a new lifetime of $ttlSeconds, only while $token still owns it — for a holder whose work
+     * runs longer than one TTL and re-arms the lock on a heartbeat.
+     *
+     * @param string $key Lock name passed to {@see acquireLock()}
+     * @param string $token The token {@see acquireLock()} returned
+     * @param int $ttlSeconds New lifetime from now, at least 1
+     * @return bool True when the lock was re-armed; false when it had expired or another holder owns it (then stop:
+     *     the work is no longer protected)
+     * @throws \InvalidArgumentException When $ttlSeconds is below 1
+     */
+    public function refreshLock(string $key, string $token, int $ttlSeconds): bool
+    {
+        throw new BadMethodCallException(static::class . ' does not support locks.');
+    }
+
+    /**
+     * Rejects a lock lifetime below 1 second (a lock without expiry could block forever).
+     *
+     * @throws \InvalidArgumentException
+     */
+    protected function assertLockTtl(int $ttlSeconds): void
+    {
+        if ($ttlSeconds < 1) {
+            throw new \InvalidArgumentException("A lock needs a TTL of at least 1 second, got {$ttlSeconds}.");
+        }
+    }
+
     /** Namespaces a lock key — a keyspace of its own, apart from cache entries and counters. */
     protected function lockKey(string $key): string
     {
@@ -350,9 +378,7 @@ abstract class Cache
      */
     protected function createLockToken(int $ttlSeconds): string
     {
-        if ($ttlSeconds < 1) {
-            throw new \InvalidArgumentException("A lock needs a TTL of at least 1 second, got {$ttlSeconds}.");
-        }
+        $this->assertLockTtl($ttlSeconds);
         return bin2hex(random_bytes(16));
     }
 

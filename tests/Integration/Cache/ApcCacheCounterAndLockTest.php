@@ -21,4 +21,9 @@ class ApcCacheCounterAndLockTest extends CacheCounterAndLockContractTestCase
         }
         return new Apc(['namespace' => 'ddd-test', 'defaultTTL' => 60]);
     }
+
+    protected function getExpiryToleranceSeconds(): float
+    {
+        return 1.0;
+    }
 }

@@ -17,6 +17,15 @@ abstract class CacheCounterAndLockContractTestCase extends TestCase
     /** The backend under test; the test is skipped when it is not available */
     abstract protected function createCache(): Cache;
 
+    /**
+     * How late after its TTL the backend may still report an entry: Redis expires to the millisecond, APCu compares
+     * whole seconds. Below 1.1 s, so a TTL re-armed at 1.5 s (alive until 3.5 s) is still caught at 2 + 0.4 + 1.1.
+     */
+    protected function getExpiryToleranceSeconds(): float
+    {
+        return 0.0;
+    }
+
     protected Cache $cache;
 
     protected string $keyPrefix;
@@ -50,12 +59,53 @@ abstract class CacheCounterAndLockContractTestCase extends TestCase
     public function testAnExpiredLockCanBeTakenAgainAndTheOldOwnerCannotReleaseIt(): void
     {
         $firstToken = (string)$this->cache->acquireLock($this->keyPrefix . 'lock', 1);
-        usleep(2_200_000);
+        usleep((int)((2.2 + $this->getExpiryToleranceSeconds()) * 1_000_000));
 
         $secondToken = $this->cache->acquireLock($this->keyPrefix . 'lock', 30);
         self::assertIsString($secondToken);
         self::assertFalse($this->cache->releaseLock($this->keyPrefix . 'lock', $firstToken), 'the expired owner never removes the new lock');
         self::assertTrue($this->cache->releaseLock($this->keyPrefix . 'lock', $secondToken));
+    }
+
+    public function testTheOwnerRefreshKeepsTheLockPastItsFirstTtl(): void
+    {
+        $token = (string)$this->cache->acquireLock($this->keyPrefix . 'lease', 2);
+        // a heartbeat every second re-arms the 2 s lock: 3.5 s after the acquire it is still held
+        for ($beat = 0; $beat < 3; $beat++) {
+            usleep(1_000_000);
+            self::assertTrue($this->cache->refreshLock($this->keyPrefix . 'lease', $token, 2));
+        }
+        usleep(500_000);
+
+        self::assertNull($this->cache->acquireLock($this->keyPrefix . 'lease', 30), 'still held after 3.5 s');
+        self::assertTrue($this->cache->releaseLock($this->keyPrefix . 'lease', $token));
+    }
+
+    public function testARefreshWithAWrongTokenFailsAndDoesNotExtend(): void
+    {
+        $token = (string)$this->cache->acquireLock($this->keyPrefix . 'lease', 2);
+
+        self::assertFalse($this->cache->refreshLock($this->keyPrefix . 'lease', 'not-the-owner', 60));
+        usleep((int)((2.4 + $this->getExpiryToleranceSeconds()) * 1_000_000));
+        self::assertIsString($this->cache->acquireLock($this->keyPrefix . 'lease', 30), 'expired on its own 2 s TTL');
+        self::assertFalse($this->cache->releaseLock($this->keyPrefix . 'lease', $token));
+    }
+
+    public function testARefreshAfterExpiryFails(): void
+    {
+        $token = (string)$this->cache->acquireLock($this->keyPrefix . 'lease', 1);
+        usleep((int)((2.2 + $this->getExpiryToleranceSeconds()) * 1_000_000));
+
+        self::assertFalse($this->cache->refreshLock($this->keyPrefix . 'lease', $token, 30));
+        self::assertIsString($this->cache->acquireLock($this->keyPrefix . 'lease', 30), 'the refresh did not revive it');
+    }
+
+    public function testARefreshNeedsATtl(): void
+    {
+        $token = (string)$this->cache->acquireLock($this->keyPrefix . 'lease', 30);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->cache->refreshLock($this->keyPrefix . 'lease', $token, 0);
     }
 
     public function testALockNeedsATtl(): void
@@ -81,7 +131,7 @@ abstract class CacheCounterAndLockContractTestCase extends TestCase
             usleep(500_000);
             $this->cache->increment($this->keyPrefix . 'lease', 1, 2);
         }
-        usleep((int)max(0, ($createdAt + 2.4 - microtime(true)) * 1_000_000));
+        usleep((int)max(0, ($createdAt + 2.4 + $this->getExpiryToleranceSeconds() - microtime(true)) * 1_000_000));
 
         self::assertSame(0, $this->cache->getCounter($this->keyPrefix . 'lease'), 'expired 2 s after its creation');
         self::assertSame(1, $this->cache->increment($this->keyPrefix . 'lease', 1, 2), 'created anew');

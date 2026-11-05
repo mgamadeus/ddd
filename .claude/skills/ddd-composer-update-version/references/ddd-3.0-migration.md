@@ -337,3 +337,7 @@ Unchanged:
   and a process killed between INCRBY and EXPIRE left it without TTL; the expiry is now set only on creation, in one
   Lua step (APCu already behaved so). A counter used as a lease should move to `acquireLock()`. The test harness has
   a Redis service (`DDD_TEST_REDIS_HOST`).
+- 3.14.1 — `Cache::refreshLock($key, $token, $ttlSeconds): bool`: re-arms a lock's TTL only while `$token` still owns
+  it (heartbeat for a lease) — Redis / RedisSentinel compare-and-expire in Lua, Apc compare then re-store (two steps),
+  Chain on the tier `acquireLock()` uses; a TTL below 1 throws. A counter used as a lease (`increment($key, 0, $ttl)`
+  as heartbeat) moves to `acquireLock()` / `refreshLock()` / `releaseLock()`.
