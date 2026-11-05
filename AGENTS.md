@@ -750,6 +750,62 @@ When a patch arrives from a consuming application tagged for ingest into Core --
 
 ---
 
+## Ingesting a Pull Request
+
+A pull request on this repository (or a module repository) is an ingest like any other: the [Ingest
+Discipline](#ingest-discipline-patches-from-consumer-apps) applies, and a PR that passes review is merged and
+released in one pass. The steps, in order:
+
+**1. Fetch, never check out over your own work.**
+```bash
+git status --porcelain                                   # clean, or only your own known work
+git fetch origin pull/<n>/head:refs/remotes/pr/<n>       # works without a GitHub login on a public repo
+curl -s https://api.github.com/repos/mgamadeus/ddd/pulls/<n>   # title, body, author, mergeable (or: gh pr view <n>)
+```
+
+**2. Inspect what actually arrives.**
+```bash
+git log --oneline main..pr/<n>                           # commits, incl. merges from main and reverts
+git merge-base main pr/<n> | xargs git log -1 --oneline  # based on the current main?
+git diff --stat main...pr/<n> && git diff main...pr/<n>  # the net change — review THIS, not the commit series
+```
+A PR based on an old main is merged into the current one locally; a revert inside the series means the net diff is
+what counts.
+
+**3. Review the net diff** against, in this order:
+- the conventions: no `private` / `final`, one class per file (tests included), descriptive names, no struct-shaped
+  arrays on public surface, no out-parameters, `declare(strict_types=1)`, `#[Autowire]` on scalar constructor
+  arguments of framework services;
+- the skills: load the skill of every touched class category first ([Skills First](#designing-and-placing-core-classes--skills-first));
+  a change that contradicts a documented rule either updates that skill in the same ingest or is sent back;
+- behaviour: what changes for production, for development workspaces, on MariaDB and PostgreSQL; failure modes and
+  timeouts; whether a silent fallback hides an error the documentation says must surface;
+- tests: the new behaviour is covered, the old cases still are;
+- the public-repository rule: code, docs, tests and commit messages carry no local paths, internal application or
+  workspace names, people or internal procedures.
+
+**4. Decide.** Accept as is; accept and fix the findings in a follow-up commit of your own (convention and
+documentation gaps); or send it back with the findings (design problems, missing tests, behaviour the owner has not
+agreed to). Never rewrite or force-push the contributor's branch.
+
+**5. Land it.** Squash the PR into ONE commit with the contributor as author and a neutral message — the net change,
+not the series:
+```bash
+git merge --squash pr/<n>
+git commit --author="<contributor name> <email from the PR commits>" -m "<what changes, why> (PR #<n>)"
+```
+then your follow-up commit (findings, skill and changelog updates). A merge commit that keeps the series is the
+alternative when the series itself is clean; it lets GitHub mark the PR merged, a squash does not — close the PR with
+a pointer to the squash commit.
+
+**6. Verify** as for any release: `php -l` on the touched files, `vendor/bin/phpunit`, the integration suite on
+MariaDB AND PostgreSQL when persistence, queries or schema are touched, and the prod-mode compile gate on a scratch
+copy of a consuming app when the kernel, DI, bundles, attributes or constraints are touched
+([`ddd-composer-update-version`](.claude/skills/ddd-composer-update-version/SKILL.md)).
+
+**7. Release** with the `ddd-composer-update-version` skill (version read from `composer.json`, changelog entry,
+tag), wait for Packagist, then tell the consuming apps what changed for them.
+
 ## Designing and Placing Core Classes — Skills First
 
 Before designing or placing ANY class in Core (or a module), load the matching skill and follow it. The skills ARE the
