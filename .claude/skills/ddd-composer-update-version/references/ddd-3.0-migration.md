@@ -330,3 +330,10 @@ Unchanged:
   through Symfony's AMQP `Connection`, 2 s connect timeout; only "vhost not found" falls back; one `error_log` line per
   process). Outside a workspace nothing changes. A fallen-back workspace shares the default vhost's queues — create the
   vhost at provisioning. Contributed in PR #5.
+- 3.14.0 — `Cache::acquireLock($key, $ttlSeconds): ?string` / `Cache::releaseLock($key, $token): bool`: a short-lived
+  lock in its own keyspace (`ddd.lock.<namespace>.<key>`) — Redis / RedisSentinel `SET NX EX` + compare-and-delete in
+  Lua (phpredis and Predis), Apc `apcu_add` (one host only), Chain via its first Redis tier, else APCu. Fix:
+  `increment()` on Redis re-armed the counter's TTL on every call, so a counter incremented regularly never expired,
+  and a process killed between INCRBY and EXPIRE left it without TTL; the expiry is now set only on creation, in one
+  Lua step (APCu already behaved so). A counter used as a lease should move to `acquireLock()`. The test harness has
+  a Redis service (`DDD_TEST_REDIS_HOST`).

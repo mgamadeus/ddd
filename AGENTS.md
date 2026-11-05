@@ -591,6 +591,15 @@ use DDD\Infrastructure\Cache\Cache;
 $cache = Cache::instance();                         // Auto-selects backend from config (APC, Redis, PhpFiles)
 // Backends: Apc (fastest, single-server), Redis (distributed), PhpFiles (no dependencies)
 // TTL constants: CACHE_TTL_ONE_HOUR, CACHE_TTL_ONE_DAY, CACHE_TTL_TEN_MINUTES, CACHE_TTL_ONE_WEEK
+
+// Atomic counter (APCu / Redis): the TTL counts from creation, an increment never extends it
+$cache->increment('quota.42', 1, 60);
+
+// Short-lived lock (Redis across hosts, APCu one host): one atomic SET NX EX, released only by its owner
+$lockToken = $cache->acquireLock('import.42', 30);       // null = someone else holds it
+if ($lockToken !== null) {
+    try { /* … */ } finally { $cache->releaseLock('import.42', $lockToken); }
+}
 ```
 
 ### Encryption & Hashing

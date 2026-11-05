@@ -264,7 +264,9 @@ abstract class Cache
 
     /**
      * Atomically add $by to the counter at $key and return the NEW value. Creates the counter (at $by) if missing.
-     * On creation the entry gets $ttl seconds to live (null → the cache's default TTL).
+     * Only on creation the entry gets $ttl seconds to live; a later increment never extends it, so a counter expires
+     * $ttl after it was created however often it is incremented. Null: APCu uses the cache's default TTL, Redis sets
+     * no expiry.
      */
     public function increment(string $key, int $by = 1, ?int $ttl = null): int
     {
@@ -297,6 +299,61 @@ abstract class Cache
     protected function counterKey(string $key): string
     {
         return 'ddd.ctr.' . ($this->config['namespace'] ?? '') . '.' . $key;
+    }
+
+    // endregion
+
+    // region Locks
+    //
+    // A short-lived mutual-exclusion lock in the shared cache, in its own keyspace (`ddd.lock.<namespace>.<key>`).
+    // Taking it is ONE atomic server-side operation; it expires by itself after its TTL, so a holder that died never
+    // blocks forever. Releasing it compares the owner token first, so a holder whose lock expired and was taken by
+    // someone else never removes the new holder's lock. Supported by Redis / RedisSentinel (across hosts) and Apc (one
+    // host only); every other backend throws.
+
+    /**
+     * Takes the lock at $key for $ttlSeconds when nobody holds it.
+     *
+     * @param string $key Lock name, unique per protected resource
+     * @param int $ttlSeconds Lifetime of the lock, at least 1 — longer than the work it protects
+     * @return string|null An opaque owner token for {@see releaseLock()}, or null when the lock is held
+     */
+    public function acquireLock(string $key, int $ttlSeconds): ?string
+    {
+        throw new BadMethodCallException(static::class . ' does not support locks.');
+    }
+
+    /**
+     * Releases the lock at $key only when $token still owns it (compare-and-delete).
+     *
+     * @param string $key Lock name passed to {@see acquireLock()}
+     * @param string $token The token {@see acquireLock()} returned
+     * @return bool True when this call released the lock; false when it had expired or another holder owns it
+     */
+    public function releaseLock(string $key, string $token): bool
+    {
+        throw new BadMethodCallException(static::class . ' does not support locks.');
+    }
+
+    /** Namespaces a lock key — a keyspace of its own, apart from cache entries and counters. */
+    protected function lockKey(string $key): string
+    {
+        return 'ddd.lock.' . ($this->config['namespace'] ?? '') . '.' . $key;
+    }
+
+    /**
+     * A random owner token for a new lock.
+     *
+     * @param int $ttlSeconds Lifetime requested for the lock
+     * @return string 32 hex characters
+     * @throws \InvalidArgumentException When $ttlSeconds is below 1 (a lock without expiry could block forever)
+     */
+    protected function createLockToken(int $ttlSeconds): string
+    {
+        if ($ttlSeconds < 1) {
+            throw new \InvalidArgumentException("A lock needs a TTL of at least 1 second, got {$ttlSeconds}.");
+        }
+        return bin2hex(random_bytes(16));
     }
 
     // endregion

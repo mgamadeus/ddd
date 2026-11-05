@@ -30,7 +30,8 @@ use Throwable;
  * and fails at RUNTIME (e.g. Redis going down mid-operation) throws exactly as it would as a standalone group.
  *
  * Atomic counters delegate to the FIRST tier whose backend supports them (APCu/Redis) — counters are native
- * single-backend operations and are never chained.
+ * single-backend operations and are never chained. Locks delegate to the first Redis tier (shared across hosts),
+ * else to the first APCu tier.
  */
 class Chain extends Cache
 {
@@ -135,6 +136,32 @@ class Chain extends Cache
     public function deleteCounter(string $key): void
     {
         $this->getCounterTier()->deleteCounter($key);
+    }
+
+    // endregion
+
+    // region Locks — delegated to the first Redis tier (shared across hosts), else the first Apc tier (one host)
+
+    protected function getLockTier(): Cache
+    {
+        $apcTier = null;
+        foreach ($this->getTierCacheInstances() as $tierCacheInstance) {
+            if ($tierCacheInstance instanceof Redis || $tierCacheInstance instanceof RedisSentinel) {
+                return $tierCacheInstance;
+            }
+            $apcTier ??= $tierCacheInstance instanceof Apc ? $tierCacheInstance : null;
+        }
+        return $apcTier ?? throw new BadMethodCallException('No tier of this cache chain supports locks.');
+    }
+
+    public function acquireLock(string $key, int $ttlSeconds): ?string
+    {
+        return $this->getLockTier()->acquireLock($key, $ttlSeconds);
+    }
+
+    public function releaseLock(string $key, string $token): bool
+    {
+        return $this->getLockTier()->releaseLock($key, $token);
     }
 
     // endregion

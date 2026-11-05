@@ -97,3 +97,16 @@ services:
       - "127.0.0.1:${DDD_TEST_S3_PORT:-9212}:8333"
     tmpfs:
       - /data
+
+  redis:
+    # Redis for the cache counter and lock tests: DDD_TEST_REDIS_HOST=127.0.0.1 DDD_TEST_REDIS_PORT=6380.
+    # Port via DDD_TEST_REDIS_PORT (default 6380, distinct from a local 6379). No persistence.
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--requirepass", "ddd-test"]
+    ports:
+      - "127.0.0.1:${DDD_TEST_REDIS_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "ddd-test", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30

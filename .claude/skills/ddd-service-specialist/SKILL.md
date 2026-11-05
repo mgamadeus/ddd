@@ -1,6 +1,6 @@
 ---
 name: ddd-service-specialist
-description: DDD services, business logic, QueryBuilder and rights in mgamadeus/ddd — vector/semantic search, Translatable fulltext, concurrency-safe atomic writes, updatePartialIgnoringRights, strict insert() throwing on a duplicate key. Covers instantiation (container, never new or cache), caller-side vs in-service find(), the null-getService() fix (ReuseParentEntitySet), createQueryBuilder(true), conventions (entity owns non-repo logic, objects not IDs), PHPDoc @throws, update/delete overrides, junctions, async, shared-service throwErrors (enableThrowErrors/restoreThrowErrors), utilities (Config, Cache, Encrypt, IssuesLogService, ObjectStorage: S3 / Hetzner / MinIO / R2 files, presigned URLs). Use when creating services, writing custom queries, implementing rights, vector or fulltext search, storing files in object storage, concurrency-safe, partial or collision-checked writes, making a lookup throw instead of return null, or debugging a null getService(), No-alias-was-set or a lookup that throws only sometimes.
+description: "DDD services, business logic, QueryBuilder and rights in mgamadeus/ddd — vector/semantic search, Translatable fulltext, concurrency-safe atomic writes, updatePartialIgnoringRights, strict insert() throwing on a duplicate key. Covers instantiation (container, never new or cache), caller-side vs in-service find(), the null-getService() fix (ReuseParentEntitySet), createQueryBuilder(true), conventions (entity owns non-repo logic, objects not IDs), PHPDoc @throws, update/delete overrides, junctions, async, shared-service throwErrors (enableThrowErrors/restoreThrowErrors), utilities (Config, Cache counters/locks, Encrypt, IssuesLogService, ObjectStorage (S3, Hetzner, MinIO, R2, presigned URLs)). Use when creating services, writing custom queries, implementing rights, vector or fulltext search, storing files in object storage, concurrency-safe, partial or collision-checked writes, making a lookup throw instead of return null, or debugging a null getService(), No-alias-was-set or a lookup throwing only sometimes."
 metadata:
   author: mgamadeus
   version: "1.1.0"
@@ -748,6 +748,32 @@ use DDD\Infrastructure\Cache\Cache;
 $cache = Cache::instance();
 // Use for expensive computations, external API results, or rankings
 // TTL constants: CACHE_TTL_ONE_HOUR (3600), CACHE_TTL_ONE_DAY (86400), CACHE_TTL_TEN_MINUTES (600)
+```
+
+**Atomic counters and locks** (own keyspaces, not visible to `get()` / `set()`; Apc / Redis / RedisSentinel and a Chain
+with such a tier — every other backend throws `BadMethodCallException`):
+
+- `increment($key, $by, $ttl)` / `decrement()` / `getCounter()` / `deleteCounter()` — one atomic server-side step.
+  The TTL applies on creation only: a counter expires `$ttl` after it was created however often it is incremented,
+  so it is a rate window, never a lease.
+- `acquireLock($key, $ttlSeconds): ?string` — `SET NX EX` in one step; an owner token, or null when held. The lock
+  expires by itself (a dead holder never blocks forever); a TTL below 1 throws. `releaseLock($key, $token): bool` —
+  compare-and-delete: a holder whose lock expired and was re-taken never removes the new holder's lock. Release in
+  `finally`; make the TTL longer than the work.
+- Redis locks hold across hosts; APCu locks only within one host. A Chain takes locks from its first Redis tier,
+  else its first APCu tier.
+
+```php
+$cache = Cache::instance();
+$lockToken = $cache->acquireLock("import.{$importId}", 30);
+if ($lockToken === null) {
+    return;   // another process holds it
+}
+try {
+    // … the work only one process may do …
+} finally {
+    $cache->releaseLock("import.{$importId}", $lockToken);
+}
 ```
 
 ### Encryption
