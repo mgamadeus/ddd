@@ -39,7 +39,7 @@ class IssuesRegistrySettings extends ValueObject
     public const string ENV_SENTRY_DSN = 'ISSUES_SENTRY_DSN';
     public const string ENV_QUERY_ENVIRONMENTS = 'ISSUES_QUERY_ENVIRONMENTS';
 
-    /** The read-only Elasticsearch variables of rankingCoach's runtime-error dashboard: the fallback of the ES backend */
+    /** The read-only Elasticsearch variables of an existing runtime-error dashboard (`ES_LOGS_*`): the fallback of the ES backend */
     public const string ENV_ES_LOGS_HOST = 'ES_LOGS_HOST';
     public const string ENV_ES_LOGS_PORT = 'ES_LOGS_PORT';
     public const string ENV_ES_LOGS_SCHEME = 'ES_LOGS_SCHEME';

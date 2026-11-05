@@ -18,7 +18,7 @@ use Throwable;
 
 /**
  * DatabaseRepoEntitySet::batchUpdate() → DoctrineEntityManager::upsertMultiple(): stored values equal the input, an
- * omitted preserved property keeps its value, a batch of several statements is all or nothing, and the Radbonus
+ * omitted preserved property keeps its value, a batch of several statements is all or nothing, and the
  * heatmap shape (no id, business-key UNIQUE, incrementing onUpdateAction) counts as before.
  */
 class BatchUpsertTest extends IntegrationTestCase

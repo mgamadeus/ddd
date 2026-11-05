@@ -13,7 +13,7 @@ use DDD\Tests\Integration\IntegrationTestCase;
 /**
  * BLOB columns written through the model upsert path round-trip arbitrary bytes on both engines. PostgreSQL
  * renders them as `bytea`; the Doctrine field type stays `string`, so the PostgreSQL upsert builder must bind them
- * as binary. Real failure: every Radbonus track upload (`Tracks.trackDetails`, gzip) failed with "invalid byte
+ * as binary. Real failure: every track upload of a consuming app (a gzip blob column) failed with "invalid byte
  * sequence for encoding UTF8: 0x8b". {@see BlobRow} is not part of {@see IntegrationTestCase::FIXTURE_ENTITY_CLASSES}
  * (would change the golden fixture DDL), so this class creates its table itself.
  */
@@ -54,7 +54,7 @@ class BinaryColumnWriteTest extends IntegrationTestCase
         $gzipBytes = gzencode(str_repeat("lat;lng;ts\n", 50), 9);
         $this->assertFalse(mb_check_encoding($gzipBytes, 'UTF-8'), 'fixture must contain invalid UTF-8 bytes');
 
-        // The model, not the entity: the entity-to-model mapping of a raw binary string is app-side (Radbonus
+        // The model, not the entity: the entity-to-model mapping of a raw binary string is app-side (e.g.
         // writes `TrackLocations::toString()`); the upsert of the model is the path that failed on PostgreSQL.
         $blobRowModel = new DBBlobRowModel();
         $blobRowModel->label = 'track';

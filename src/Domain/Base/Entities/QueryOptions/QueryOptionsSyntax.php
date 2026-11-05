@@ -8,7 +8,7 @@ namespace DDD\Domain\Base\Entities\QueryOptions;
  * Single source of truth for the generic, endpoint-INDEPENDENT QueryOptions grammar (filters / orderBy / expand /
  * select). The grammar used to live as PHPDoc on the {@see \DDD\Presentation\Base\QueryOptions\DtoQueryOptionsTrait}
  * properties, which both documenters (OpenApi {@see \DDD\Presentation\Base\OpenApi\Pathes\PathParameterSchema} and the
- * RC MCP documenter) pulled and emitted into EVERY parameter description — byte-identical on every endpoint/tool.
+ * an application's MCP tool documenter) pulled and emitted into EVERY parameter description — byte-identical on every endpoint/tool.
  *
  * This class aggregates each Options type's own {@see FiltersOptions::getSyntaxDocumentation()} etc. so the grammar can
  * be emitted ONCE per surface (OpenApi `info.description`; the MCP/agent system instructions; the external MCP server

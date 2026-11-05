@@ -15,7 +15,7 @@ use DDD\Tests\Integration\IntegrationTestCase;
  * rename used to be `_rights_<expand join alias>`; when an expand reused a root rights join named after its path, the
  * join `<base>_<prop>_rights` inside one subquery became `_rights_<join>_<prop>_rights` — exactly the rename of the
  * next subquery, whose expand reused the root's `<join>_<prop>_rights`. Doctrine: "already defined" (HTTP 500 on
- * Radbonus `supportTickets/list?expand=supportContact(expand=relatedAccounts)`).
+ * e.g. `supportTickets/list?expand=supportContact(expand=relatedAccounts)`).
  */
 class RightsSubqueryAliasTest extends IntegrationTestCase
 {

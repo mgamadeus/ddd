@@ -41,7 +41,7 @@ class FilterAgainstDatabaseTest extends IntegrationTestCase
         static::insertRow('TranslatedRows', ['name' => json_encode(['en' => 'Pizza']), 'title' => json_encode(['en' => 'Zebra pizza'])]);
         static::insertRow('TranslatedRows', ['name' => json_encode(['en' => 'Pasta', 'de' => 'Nudeln']), 'title' => json_encode(['en' => 'Apple'])]);
         static::insertRow('TranslatedRows', ['name' => null, 'title' => json_encode(['en' => 'Mango'])]);
-        // Radbonus copy blocker, real data (`ChatMessages.localizedBody`): a Translatable column can hold a JSON
+        // Real data from a production copy: a Translatable column can hold a JSON
         // ARRAY instead of an object (`[]`). `ddd_translatable_text()` used to call `json_each_text()` directly,
         // which requires an object and raised "cannot deconstruct an array as an object" on PostgreSQL for this
         // row — MariaDB's REGEXP_REPLACE/JSON_UNQUOTE template never minds the shape and renders the array's JSON
@@ -150,7 +150,7 @@ class FilterAgainstDatabaseTest extends IntegrationTestCase
      * {@see FiltersOptions::setFiltersDefinition()} (a trusted runtime value, never through the 400-validated
      * public filters= grammar — {@see FiltersOptions::validateAgainstDefinitions()} would reject `amount eq ''`
      * outright for not fitting the int column kind) can still bind a bare `''` against an int column — the real
-     * Dineful shape is `StaffMembershipsService`'s "business-wide" scope, `locationId IS NULL OR locationId =
+     * shape is a "business-wide" scope, `locationId IS NULL OR locationId =
      * ''`, against legacy rows a pre-normalization write left holding `''` instead of NULL. MariaDB coerces the
      * string '' to 0 for an int comparison (`amount = ''` is `amount = 0`); PostgreSQL's pdo_pgsql driver instead
      * rejects the bind ("invalid input syntax for type bigint"). Only the zero-amount row must match, on both

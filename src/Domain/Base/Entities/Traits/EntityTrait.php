@@ -396,7 +396,7 @@ trait EntityTrait
         // declaration order stamps the WRONG FK column (the conversation #298 self-edge: a message's own conversation
         // id written into delegatedConversationId). So when ambiguous, the property explicitly marked addAsParent wins;
         // a non-addAsParent forward FK is never adopted as the parent. (Mirrors the addAsParent exclusion the cascade
-        // already applies in DatabaseRepoEntity::updateDependentEntities.) RC plan 36 §3.2 — see upstream-handoff doc.
+        // already applies in DatabaseRepoEntity::updateDependentEntities.)
         $firstMatchPropertyContainingId = null;
         $addAsParentPropertyContainingId = null;
         foreach ($propertiesToLazyLoad as $propertyName => $repoTypeAndLazyloadAttributeInstance) {

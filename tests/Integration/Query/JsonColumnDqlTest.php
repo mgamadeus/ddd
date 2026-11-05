@@ -19,7 +19,7 @@ use Doctrine\ORM\Query\Expr\Join;
  * {@see \DDD\Domain\Base\Entities\QueryOptions\OrderByOptions} / {@see \DDD\Domain\Base\Entities\QueryOptions\FiltersOptions}'s
  * own `JSON_TEXT`/400 handling, so it needs the fix at the walker level. `TranslatedRow.title` is a PLAIN
  * Translatable (no `fullTextIndex`, so no virtual search column to route through) — exactly the shape behind the
- * real Dineful PostgreSQL failures in `tmp/runs/pgspike/pg-run5-errors.txt`: "could not identify an ordering
+ * real PostgreSQL failures of a consuming app: "could not identify an ordering
  * operator for type json" (×9), "operator does not exist: json = unknown", and "could not identify an equality
  * operator for type json" (×5, `SELECT DISTINCT` hydrating an entity with `json` columns —
  * {@see \DDD\Domain\Base\Repo\DB\Doctrine\DoctrineQueryBuilder::distinct()}'s own to-many-LEFT-JOIN-dedup use case).

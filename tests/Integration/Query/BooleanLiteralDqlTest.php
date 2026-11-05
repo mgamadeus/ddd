@@ -10,7 +10,7 @@ use DDD\Tests\Integration\IntegrationTestCase;
 
 /**
  * App DQL compares boolean columns with the integer literals 0/1 (MariaDB BOOL = TINYINT(1)); PostgreSQL has no
- * boolean = integer operator. Real failure on Radbonus: `c0_."archived" <> 1` made every track upload fail on PG.
+ * boolean = integer operator. Real failure in a consuming app: `c0_."archived" <> 1` made every track upload fail on PG.
  * PostgresSqlWalker renders the literal as TRUE/FALSE; MariaDB SQL is unchanged.
  */
 class BooleanLiteralDqlTest extends IntegrationTestCase

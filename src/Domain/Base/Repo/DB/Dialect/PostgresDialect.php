@@ -195,7 +195,7 @@ class PostgresDialect implements SqlDialect
         $configuration->addCustomDatetimeFunction('CURRENT_DATE', PostgresCurrentDate::class);
         $configuration->addCustomDatetimeFunction('CURRENT_TIME', PostgresCurrentTime::class);
 
-        // ─── Column types (§4.9/§6 step 6 subset): the real Dineful PostgreSQL failure this registers against —
+        // ─── Column types (§4.9/§6 step 6 subset): the real PostgreSQL failure this registers against —
         // "Unknown column type 'cartesian_polygon' requested" the moment ClassMetadataFactory loads an entity
         // with a Cartesian/vector/JSON-override property on a connection whose dialect never ran this method
         // (`Type::addType()`/`Type::overrideType()` are process-wide, not per-connection, so a pure-PostgreSQL

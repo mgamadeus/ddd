@@ -9,7 +9,7 @@ use DDD\Infrastructure\Logging\IssuesRegistrySettings;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The Elasticsearch settings fall back to rankingCoach's ES_LOGS_* variables; ISSUES_QUERY_* wins.
+ * The Elasticsearch settings fall back to the ES_LOGS_* variables of an existing dashboard; ISSUES_QUERY_* wins.
  */
 class IssuesRegistrySettingsTest extends TestCase
 {

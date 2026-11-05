@@ -61,7 +61,7 @@ start EMPTY — a dump left by an earlier build keeps its error tags.
 
 **Moving an app to ddd 3.0:** follow [references/ddd-3.0-migration.md](references/ddd-3.0-migration.md) — a root filter on an expanded collection no longer cuts the collection down; where that shows up and how to keep the old output.
 
-**Moving an app to Symfony 7.4 / ddd 2.70.x:** follow [references/symfony-7.4-migration.md](references/symfony-7.4-migration.md) — every trap the Radbonus and RankingCoach upgrades hit, in order.
+**Moving an app to Symfony 7.4 / ddd 2.70.x:** follow [references/symfony-7.4-migration.md](references/symfony-7.4-migration.md) — every trap the first production upgrades hit, in order.
 
 ### Step 2: Determine Version Bump
 

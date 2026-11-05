@@ -69,7 +69,9 @@ abstract class DatabaseRepoEntitySet
     /**
      * High performance Batch update method:
      * It does not return ids of updated Entities, it does not adapt translations if required, it is not updating recurively,
-     * best used in data import scenarios
+     * best used in data import scenarios. Any number of rows: the statements are split below the 65 535 bound
+     * parameters a statement may carry ({@see \DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder::MAX_BOUND_PARAMETERS_PER_STATEMENT})
+     * and run in one transaction (a savepoint inside the caller's).
      *
      * @param EntitySet $entitySet
      * @param bool $useInsertIgnore

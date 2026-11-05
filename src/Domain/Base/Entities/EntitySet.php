@@ -81,7 +81,8 @@ class EntitySet extends ObjectSet
     }
 
     /**
-     * Batch persists all Entities from Set
+     * Batch persists all Entities from Set — any number of them: the repository splits the rows into statements below
+     * the database's bound-parameter limit and writes them atomically ({@see \DDD\Domain\Base\Repo\DatabaseRepoEntitySet::batchUpdate()})
      * @param bool $useInsertIgnore
      * @return void
      */

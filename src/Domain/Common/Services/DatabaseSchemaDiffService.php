@@ -876,6 +876,15 @@ class DatabaseSchemaDiffService
                 $append($risky, "ADD FULLTEXT INDEX `$indexName` (FULLTEXT index creation forces ALGORITHM=COPY)");
             }
         }
+        if (!$this->isPostgres()) {
+            foreach ($diff->foreignKeyDiffs->getElements() as $foreignKeyDiff) {
+                if ($foreignKeyDiff->changeKind !== DBForeignKeyDiff::CHANGE_KIND_DROP
+                    && $foreignKeyDiff->targetForeignKey?->requiresCopyAlgorithmOnMariaDb()) {
+                    $append($risky, "ADD FOREIGN KEY on `{$foreignKeyDiff->targetForeignKey->internalIdColumn}` "
+                        . '(ON DELETE CASCADE on the base of a STORED generated column needs ALGORITHM=COPY)');
+                }
+            }
+        }
         return $risky;
     }
 
@@ -1541,7 +1550,8 @@ class DatabaseSchemaDiffService
             $constraintName = $constraintNameOverride ?? substr('fk_' . $tableName . '_' . $fk->internalIdColumn, 0, 63);
             return 'ALTER TABLE "' . $tableName . '" ADD CONSTRAINT "' . $constraintName . '" FOREIGN KEY ("'
                 . $fk->internalIdColumn . '") REFERENCES "' . $fk->foreignTable . '" ("' . $fk->foreignIdColumn . '")'
-                . ' ON DELETE ' . $fk->onDeleteAction . ' ON UPDATE ' . $fk->onUpdateAction;
+                . ' ON DELETE ' . $fk->getOnDeleteActionForDialect(SqlDialect::POSTGRES)
+                . ' ON UPDATE ' . $fk->getOnUpdateActionForDialect(SqlDialect::POSTGRES);
         }
         return sprintf('ALTER TABLE `%s` %s', $tableName, $fk->getSql($tableName, $constraintNameOverride));
     }
@@ -1775,8 +1785,9 @@ class DatabaseSchemaDiffService
             $canonical->internalIdColumn = $fk->internalIdColumn;
             $canonical->foreignTable = $fk->foreignTable;
             $canonical->foreignIdColumn = $fk->foreignIdColumn;
-            $canonical->onUpdateAction = $fk->onUpdateAction;
-            $canonical->onDeleteAction = $fk->onDeleteAction;
+            $dialect = $this->isPostgres() ? SqlDialect::POSTGRES : SqlDialect::MARIADB;
+            $canonical->onUpdateAction = $fk->getOnUpdateActionForDialect($dialect);
+            $canonical->onDeleteAction = $fk->getOnDeleteActionForDialect($dialect);
             $canonical->constraintName = null; // target side: not yet named.
             $foreignKeys->add($canonical);
         }

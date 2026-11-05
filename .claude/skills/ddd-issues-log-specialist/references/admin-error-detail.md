@@ -198,7 +198,7 @@ empty set plus a message — the group itself comes from the database and still 
 
 ## 3. The occurrence — real JSON
 
-Two lines Dineful wrote with 3.12.6 (`tests/Infrastructure/Logging/Fixtures/issues-event-shapes.json`), serialised
+Two lines a consuming app wrote with 3.12.6 (`tests/Infrastructure/Logging/Fixtures/issues-event-shapes.json`), serialised
 (`objectType` and frames shortened). A failed job on its last attempt:
 
 ```json

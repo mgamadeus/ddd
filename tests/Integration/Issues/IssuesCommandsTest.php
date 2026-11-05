@@ -115,7 +115,7 @@ class IssuesCommandsTest extends IssuesRegistryTestCase
     public function testShowResolvesTheFramesOfAClientEventThroughTheSourceMapStore(): void
     {
         $temporaryDirectory = sys_get_temp_dir() . '/ddd-show-resolve-' . bin2hex(random_bytes(4));
-        $chunkUrl = 'https://dineful.com/_next/static/chunks/app/[lang]/menu/page-3f2a9c1b8e7d6f50.js';
+        $chunkUrl = 'https://shop.example.com/_next/static/chunks/app/[lang]/menu/page-3f2a9c1b8e7d6f50.js';
         // a real client line, written by the issues log and read back as the backend returns it
         $logFile = $temporaryDirectory . '/issues.log';
         $streamHandler = new StreamHandler($logFile);

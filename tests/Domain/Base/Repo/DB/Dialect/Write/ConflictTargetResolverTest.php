@@ -17,7 +17,7 @@ use PHPUnit\Framework\TestCase;
  * connection needed (mirrors `UpsertMultipleStatementsTest`'s own "the entity manager never connects" pattern).
  *
  * Fixtures ({@see AmbiguousConflictRow}, {@see ConflictAttributeRow}): two independent NOT-NULL-backed UNIQUE
- * keys (`handle`, `code`), both always set — the real Dineful `DeviceRegistration` shape
+ * keys (`handle`, `code`), both always set — the shape of a real device registration
  * (`(tokenHash, audience)` + `uuid`), minus/plus the `#[UpsertConflictKey]` that disambiguates it.
  */
 class ConflictTargetResolverTest extends TestCase

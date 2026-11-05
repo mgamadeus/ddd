@@ -47,7 +47,7 @@ class ProbeSourceMapResolver extends SourceMapResolverService
 class SourceMapResolverTest extends TestCase
 {
     public const string RELEASE = 'web-2026.10.29';
-    public const string CHUNK_URL = 'https://dineful.com/_next/static/chunks/app/[lang]/menu/page-3f2a9c1b8e7d6f50.js?dpl=x';
+    public const string CHUNK_URL = 'https://shop.example.com/_next/static/chunks/app/[lang]/menu/page-3f2a9c1b8e7d6f50.js?dpl=x';
 
     protected string $temporaryDirectory;
 
@@ -211,7 +211,7 @@ class SourceMapResolverTest extends TestCase
             $sourceMapResolverService->getSourceMapKey('web-r7', 'file:///app/apps/web/.next/server/app/page.js')
         );
         $this->assertSame('server/chunks/ssr/x.js.map', $sourceMapResolverService->getSourceMapKey('dev', '/code/apps/web/.next/dev/server/chunks/ssr/x.js'));
-        $this->assertSame('static/chunks/app/page.js.map', $sourceMapResolverService->getSourceMapKey('dev', 'https://ame.dev.dineful.com/_next/static/chunks/app/page.js'));
+        $this->assertSame('static/chunks/app/page.js.map', $sourceMapResolverService->getSourceMapKey('dev', 'https://ame.dev.example.com/_next/static/chunks/app/page.js'));
     }
 
     public function testDevelopmentMapsComeFromTheBuildOutputAndAreNeverStale(): void

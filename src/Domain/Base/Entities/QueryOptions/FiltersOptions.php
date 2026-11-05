@@ -1297,7 +1297,7 @@ MD;
             // {@see self::createExpression()} (runtime values, no {@see self::validateAgainstDefinitions()} call —
             // that is what rejects a user-facing `locationId eq ''` as a 400 for not matching the int column kind,
             // {@see self::isFilterValueValidForColumnKind()}) can still bind a bare `''` against an int/float
-            // column (Dineful `StaffMembershipsService`-style "business-wide" scope: `locationId IS NULL OR
+            // column (a "business-wide" scope as a consuming app writes it: `locationId IS NULL OR
             // locationId = ''`, legacy rows pre-dating a write-side normalization that would have stored NULL).
             // MariaDB coerces the string '' to the number 0 when comparing it with an int/float column (`5 = ''`
             // is `5 = 0`, false); PostgreSQL's pdo_pgsql driver instead rejects the bind outright ("invalid input

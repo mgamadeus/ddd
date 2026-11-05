@@ -85,6 +85,9 @@ class DatabaseIndex extends ValueObject
      */
     public ?VectorIndexProfile $vectorIndexProfile = null;
 
+    /** Appended to the name when another index of the table would get the same one ({@see DatabaseIndexes::assignDistinctIndexNames()}) */
+    protected ?string $indexNameSuffix = null;
+
     /**
      * @param string $indexType
      * @param array $indexColumns
@@ -141,7 +144,16 @@ class DatabaseIndex extends ValueObject
             }
             $indexName .= $columnsShort;
         }
-        return $indexName;
+        return $indexName . ($this->indexNameSuffix ?? '');
+    }
+
+    /**
+     * Makes the name distinct from another index of the table that abbreviates to the same name (e.g. `(label,
+     * parentId)` and `(labelCode, parentId)` are both `uniq_lab_par`): `_` + 6 hex characters of the column list.
+     */
+    public function setIndexNameSuffixFromColumns(): void
+    {
+        $this->indexNameSuffix = '_' . substr(hash('sha256', $this->indexType . ':' . implode(',', $this->indexColumns)), 0, 6);
     }
 
     public function getSql(string $tableName): string

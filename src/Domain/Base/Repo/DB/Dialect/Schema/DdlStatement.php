@@ -41,7 +41,7 @@ class DdlStatement extends ValueObject
     /**
      * `DatabaseTrigger` per dialect (Arch §4.10): last of the CREATE-path phases, deliberately — a copy/migration
      * caller (`app:db:copy-to-postgres` finalise) must create every trigger only after a table's data phase has
-     * finished, since e.g. the Radbonus Track trigger refuses a row the bulk copy would otherwise insert
+     * finished, since e.g. a trigger that validates rows refuses a row the bulk copy would otherwise insert
      * unconditionally.
      */
     public const string PHASE_CREATE_TRIGGER = 'CREATE_TRIGGER';

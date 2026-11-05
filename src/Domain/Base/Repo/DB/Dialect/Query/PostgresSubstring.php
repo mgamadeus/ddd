@@ -11,7 +11,7 @@ use Doctrine\ORM\Query\SqlWalker;
 use Doctrine\ORM\Query\TokenType;
 
 /**
- * PostgreSQL rendering of Doctrine's BUILT-IN `SUBSTRING` DQL function (real failure, Dineful on PostgreSQL:
+ * PostgreSQL rendering of Doctrine's BUILT-IN `SUBSTRING` DQL function (real failure of a consuming app on PostgreSQL:
  * `function pg_catalog.substring(timestamp without time zone, integer, integer) does not exist` — a date-key trick,
  * `SUBSTRING(o0_.someDatetime, 1, 10)`, used where Mig §3.6 / architecture §4.8 would prefer `TS_DAY_KEY`/
  * `TS_MINUTE_KEY`/`DATE_BUCKET`, but the live call sites still use `SUBSTRING` directly). MariaDB's `SUBSTR`/
@@ -25,7 +25,7 @@ use Doctrine\ORM\Query\TokenType;
  * DQL: `SUBSTRING(expr, start [, length])` (unchanged grammar)
  * SQL: `SUBSTRING(CAST(expr AS TEXT) FROM start [FOR length])`
  *
- * Real failure (Dineful, 4 occurrences): `TypeError: Cannot assign Doctrine\ORM\Query\AST\Literal to property
+ * Real failure (a consuming app, 4 occurrences): `TypeError: Cannot assign Doctrine\ORM\Query\AST\Literal to property
  * …PostgresSubstring::$firstSimpleArithmeticExpression of type SimpleArithmeticExpression` — a bare literal
  * `start`/`length` argument (`SUBSTRING(x, 1, 10)`) never reaches `Parser::SimpleArithmeticExpression()`'s
  * `SimpleArithmeticExpression` wrapper at all: that method's own "Phase 1 AST optimization" comment collapses a

@@ -93,7 +93,7 @@ Unchanged:
   `app:issues:list|show|search|resolve|ignore|reopen --format=json`. Each issues line gains `error.entry_point`.
 - 3.4.0 — issues log, phase C (skill `ddd-issues-log-specialist`). Query backends `elasticsearch` / `opensearch`
   (plain `_search`, ES 7/8 and OpenSearch 2; `ISSUES_ES_KEYWORD_SUFFIX` for keyword-mapped indices) and `sentry`.
-  `RuntimeErrorsService` plus `app:runtime-errors:extract` / `probe` with rankingCoach's query bodies, options and JSON,
+  `RuntimeErrorsService` plus `app:runtime-errors:extract` / `probe` with the query bodies, options and JSON of an existing runtime-error dashboard,
   configured by `ISSUES_QUERY_*` or the `ES_LOGS_*` fallback. A framework command now yields to an application command
   of the same name, so an app's own `app:runtime-errors:*` stays in charge until it is deleted. New
   `app:issues:forward-sentry` (files → Sentry, read positions in `.issues-sentry-forward.json` next to the logs). No
@@ -129,7 +129,7 @@ Unchanged:
   3.6.0's `IssueTrend` is gone. `RuntimeErrorTrend::fromDateTimeValueSequence()` adapts a series to the runtime-error
   trend shape.
 - 3.7.1 — caught message-handler errors reach the issues log: `AppMessageHandler::logShortException()` also logs the
-  throwable there (CRITICAL, section MESSENGER, `messenger.custom_message`), `logIssue()` writes rankingCoach's keys
+  throwable there (CRITICAL, section MESSENGER, `messenger.custom_message`), `logIssue()` writes the established keys
   `messenger.custom_message` / `messenger.message_payload` (before: `message.custom_message` / `message.payload`) and
   no longer loses the payload on an unset typed property; neither throws out of a catch block. `ProcessCLIMessage`
   logs the failing handler's own error (unwrapped, uncaught).
@@ -290,3 +290,38 @@ Unchanged:
   `../../../../../apps/web/src/route.ts` → `apps/web/src/route.ts`); a map's `names` entry replaces only a minified or
   missing function name and never with an error constructor (`Error` at the throw site) —
   `SourceMapResolverService::getOriginalFunctionName()`.
+- 3.13.3 — FK actions on the base of a STORED generated column (the `IFNULL(x, 0)` columns of composite UNIQUE indexes)
+  depend on the dialect (`DatabaseForeignKey::getOnUpdateActionForDialect()` / `getOnDeleteActionForDialect()`);
+  `DatabaseModel` no longer downgrades them. PostgreSQL gets the declared actions. MariaDB gets RESTRICT only for the
+  actions that write the base column (ON UPDATE CASCADE / SET NULL / SET DEFAULT, ON DELETE SET NULL / SET DEFAULT,
+  ERROR 1901) and keeps ON DELETE CASCADE, added with `ALGORITHM=COPY` (in place it fails with ERROR 138 under
+  `FOREIGN_KEY_CHECKS=0`); the production guard counts that ADD as copy-forcing on a large table. Databases built with
+  ≤ 3.13.2: the schema diff proposes `RESTRICT → CASCADE` on these FKs — metadata-only on PostgreSQL, a table copy on
+  MariaDB.
+- 3.13.4 — `batchUpdate()` (`DoctrineEntityManager::upsertMultiple()`, `PostgresUpsertBuilder::upsertMultiple()`)
+  splits a run of rows into statements below 65 535 bound parameters (`UpsertBuilder::MAX_BOUND_PARAMETERS_PER_STATEMENT`),
+  inside the existing atomic handling. A large set failed before with PostgreSQL "number of parameters must be between
+  0 and 65535" or MariaDB error 1390. Caller-side chunking for the limit can go.
+- 3.13.5 — docs and comments only: the repository names no consuming applications, local paths or internal workflows
+  any more (neutral wording; the consuming-app registry lives in local notes). `.claude/settings.local.json` is no
+  longer tracked. No code change.
+- 3.13.6 — docs and comments only: the last mentions of a consuming application from 3.13.5 reworded.
+- 3.13.7 — fix: an update of an existing entity keeps its stored ChangeHistory `created`. Before, an update with an id
+  but without `changeHistory.createdTime` (every edit form) wrote the save time into `created` on both engines, single
+  and batch. The write now renders `created = COALESCE(created, <new>)` (MariaDB `COALESCE(c, VALUES(c))`, PostgreSQL
+  `COALESCE(t.c, EXCLUDED.c)` / `COALESCE(c, ?)`): a new row gets the current time, an existing row keeps its own, a
+  NULL one is filled. Only code that sets `ChangeHistory::$overwriteCreatedAndModifiedTime` replaces it; the flag is no
+  longer hydrated from a payload (`ChangeHistory::setPropertiesFromObject()` keeps its value), so a request body
+  cannot set `created` / `updated`. A workaround that copies the stored `createdTime` into the entity before saving can
+  be removed.
+- 3.13.8 — fix: after `update()` / `insert()` the entity carries the persisted ChangeHistory times instead of the
+  payload's — `modifiedTime` the time just written, `createdTime` the stored one (an entity with an id: one extra
+  `SELECT created` by id; a new row: the time just written). An update response showed an empty or client-sent
+  `createdTime` until the next read. `DBEntity::applyPersistedChangeHistory()`; with `DB_USE_READ_AFTER_WRITE` the
+  re-read entity already has them.
+- 3.13.9 — fixes: `select=created,updated` keeps `changeHistory` in the output (it was always hidden;
+  `SelectOptions::addPropertiesToHideByByJoinPath()` read the wrong array). Composite indexes that abbreviate to the
+  same name (`(label, parentId)` and `(labelCode, parentId)` → `uniq_lab_par`) get distinct names: the first declared
+  keeps its name, each later one gets `_` + 6 hex characters of its columns. Before, MariaDB silently skipped the
+  second index and PostgreSQL refused it ("relation already exists"); after the update the schema diff proposes the
+  missing index as an ADD under its new name. Existing index names do not change.

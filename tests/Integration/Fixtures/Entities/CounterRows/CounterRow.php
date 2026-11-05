@@ -16,7 +16,7 @@ use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Tests\Integration\Fixtures\Repo\DB\CounterRows\DBCounterRow;
 
 /**
- * Scalar fixture: a business-key UNIQUE, an incrementing onUpdateAction (the Radbonus TrackGeoHash shape), a
+ * Scalar fixture: a business-key UNIQUE, an incrementing onUpdateAction (a heatmap counter shape), a
  * VALUES-free keep-existing action, int / bool / float / date / datetime columns and a property preserved on omission.
  */
 #[LazyLoadRepo(LazyLoadRepo::DB, DBCounterRow::class)]

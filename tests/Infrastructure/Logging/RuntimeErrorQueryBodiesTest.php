@@ -10,8 +10,8 @@ use DDD\Infrastructure\Logging\Query\Elasticsearch\RuntimeErrorDetailAggregation
 use PHPUnit\Framework\TestCase;
 
 /**
- * The Elasticsearch bodies equal rankingCoach's runtime-error dashboard bodies byte for byte (key order included).
- * Fixtures/rc-runtime-errors-bodies.json was produced by RC's own query classes with the same arguments. The detail's
+ * The Elasticsearch bodies equal an existing runtime-error dashboard's bodies byte for byte (key order included).
+ * Fixtures/runtime-errors-dashboard-bodies.json was produced by that dashboard's own query classes with the same arguments. The detail's
  * `recent_occurrences` additionally reads {@see DetailQuery::OCCURRENCE_SOURCE_FIELDS}; everything else is unchanged.
  */
 class RuntimeErrorQueryBodiesTest extends TestCase
@@ -41,9 +41,9 @@ class RuntimeErrorQueryBodiesTest extends TestCase
     /**
      * @dataProvider bodyCases
      */
-    public function testBodyEqualsRankingCoachBody(string $fixtureKey, callable $buildBody): void
+    public function testBodyEqualsTheDashboardBody(string $fixtureKey, callable $buildBody): void
     {
-        $fixtures = json_decode((string)file_get_contents(__DIR__ . '/Fixtures/rc-runtime-errors-bodies.json'), true);
+        $fixtures = json_decode((string)file_get_contents(__DIR__ . '/Fixtures/runtime-errors-dashboard-bodies.json'), true);
         $expectedBody = $fixtures[$fixtureKey];
         if (str_starts_with($fixtureKey, 'detail_')) {
             $expectedBody['aggs'][Query::OUTER_AGG_KEY]['aggs']['recent_occurrences']['top_hits']['_source'] = [

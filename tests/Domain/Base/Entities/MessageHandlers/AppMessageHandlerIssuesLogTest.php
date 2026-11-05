@@ -18,7 +18,7 @@ use Symfony\Component\Routing\RouterInterface;
 use Throwable;
 
 /**
- * Caught job errors reach the issues log: logIssue() with rankingCoach's context keys and the message's scalar
+ * Caught job errors reach the issues log: logIssue() with the established context keys and the message's scalar
  * properties, logShortException() next to its Monolog line, once per throwable, and a failing issues log never leaves
  * the handler's catch block.
  */
@@ -71,7 +71,7 @@ class AppMessageHandlerIssuesLogTest extends TestCase
         return $appMessage;
     }
 
-    public function testLogIssueWritesRankingCoachsContext(): void
+    public function testLogIssueWritesTheEstablishedContextKeys(): void
     {
         $this->createHandler()->failWithLogIssue(new RuntimeException('qr scan failed'), $this->createMessage(), 'QR scan 42');
 

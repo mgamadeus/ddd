@@ -816,6 +816,30 @@ class Table extends Entity {
 - Indexes reference virtual column name (`virtualFoo`), NOT the property
 - Do NOT create a separate PHP property for the virtual column
 
+**Foreign keys on the base of a STORED generated column.** When the NULL-collapsing column is `stored: true` and its
+base column is a FK (`teamId` → `IFNULL(teamId, 0)` STORED in a composite UNIQUE index), the FK's declared actions stay
+the intent; what each dialect gets is decided when the DDL is rendered
+(`DatabaseForeignKey::getOnUpdateActionForDialect()` / `getOnDeleteActionForDialect()`):
+
+| Declared | PostgreSQL | MariaDB |
+|---|---|---|
+| ON DELETE CASCADE (the parent-relation default) | CASCADE | CASCADE, added with `ALGORITHM=COPY` |
+| ON DELETE SET NULL / SET DEFAULT | as declared | RESTRICT |
+| ON UPDATE CASCADE / SET NULL / SET DEFAULT | as declared | RESTRICT |
+| RESTRICT / NO ACTION | as declared | as declared |
+
+- MariaDB forbids an action that WRITES the base column of a stored column: `ERROR 1901 … 'teamId' cannot be used in the
+  GENERATED ALWAYS AS clause of 'virtualTeamId'` (ON UPDATE CASCADE, ON DELETE SET NULL). ON DELETE CASCADE deletes the
+  row instead and is allowed — but the in-place algorithm refuses it (`ERROR 138 Cannot add foreign key on the base
+  column of stored column`), and MariaDB adds a FK in place whenever `FOREIGN_KEY_CHECKS=0` (the schema diff's apply
+  default). So the FK is emitted with `, ALGORITHM=COPY` (`DatabaseForeignKey::requiresCopyAlgorithmOnMariaDb()`): a
+  table rebuild, which the schema diff's production guard counts as copy-forcing on a large table.
+- PostgreSQL recomputes a generated column when its base changes; no action is restricted.
+- A `stored: false` (VIRTUAL) column does not restrict anything on MariaDB. On PostgreSQL every generated column is
+  stored, without restrictions.
+- MySQL 8 forbids CASCADE on either action as well; DDD has no MySQL dialect.
+- Declaring SET NULL on a non-nullable FK column fails generation, independent of this rule.
+
 ### JSON Virtual Column Extraction
 
 Extract values from JSON-stored properties into indexed virtual columns:
@@ -842,6 +866,12 @@ class Track extends Entity {
     public ?string $externalId = null;
 }
 ```
+
+**Index names:** type prefix + the column name (one column) or the first three characters of each column (composite):
+`idx_acc_sta_cre`, `uniq_externalId`. Two composite indexes that abbreviate alike (`(label, parentId)` and
+`(labelCode, parentId)` → `uniq_lab_par`) are kept apart: the first declared keeps the name, every later one gets
+`_` + 6 hex characters of its columns (`uniq_lab_par_3f2a9c`), stable across generations. The schema diff matches
+indexes by type and columns, never by name.
 
 ---
 
@@ -1138,6 +1168,18 @@ class Product extends Entity
 
 Access methods: `$entity->getCreatedTime()`, `$entity->getModifiedTime()`, `$entity->getLastEditTime()`
 
+**What a write does with the two columns (MariaDB and PostgreSQL, single and batch upsert):**
+- `updated` is the time of the write, every time.
+- `created` is the time of the write for a NEW row (also one inserted with an explicit id). An EXISTING row keeps its
+  stored `created` whatever the update carries — an edit form that sends the entity without `changeHistory` does not
+  reset it (`COALESCE(stored, new)`; a NULL one is filled).
+- Only code replaces it: set `createdTime` / `modifiedTime` and `$entity->getChangeHistory()->overwriteCreatedAndModifiedTime
+  = true` (imports, migrations, test data). The flag is never hydrated from a payload — a request body sending
+  `changeHistory.overwriteCreatedAndModifiedTime` changes nothing.
+- The written entity carries the persisted times afterwards (`update()` / `insert()` return value and the object
+  passed in): `modifiedTime` = the time just written, `createdTime` = the stored one (for an entity with an id read
+  back with one `SELECT created`), never the payload's. An update response therefore shows the real creation time.
+
 ---
 
 ## Common Entity Patterns
@@ -1226,6 +1268,14 @@ $clone = $entity->clone();
 **Merging:** `$set1->mergeFromOtherSet($set2)`
 **Entity-specific:** `$set->getEntityIds()`, `$set->update()`, `$set->batchUpdate()`, `$set->delete()`
 **Iteration:** EntitySets are `Iterable` -- use `foreach` directly.
+
+**Batch writes — `$set->batchUpdate(bool $useInsertIgnore = false)`.** Multi-row upserts (`INSERT … ON DUPLICATE KEY
+UPDATE` on MariaDB, `INSERT … ON CONFLICT` on PostgreSQL) for imports and bulk data: no ids returned, no translations
+adapted, no recursion into dependents, each row writes only its initialized properties. Pass the whole set — the
+repository splits it into statements below 65 535 bound parameters (both engines stop there: MariaDB error 1390,
+PostgreSQL "number of parameters must be between 0 and 65535"; `UpsertBuilder::MAX_BOUND_PARAMETERS_PER_STATEMENT`)
+and writes them atomically, in an own transaction or behind a savepoint in the caller's. No caller-side chunking for
+the limit; chunk only to bound memory (each row is an entity plus its row write, ~8 KB on PostgreSQL).
 
 ## Validation
 

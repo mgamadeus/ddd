@@ -14,7 +14,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * An occurrence of the runtime-error detail built from the event shapes an issues log of mgamadeus/ddd ≥ 3.12.6 writes
- * (Fixtures/issues-event-shapes.json: four lines Dineful wrote, redacted, plus one line from before the issues log).
+ * (Fixtures/issues-event-shapes.json: four lines a consuming app wrote, redacted, plus one line from before the issues log).
  */
 class RuntimeErrorOccurrenceTest extends TestCase
 {
