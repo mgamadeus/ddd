@@ -123,7 +123,38 @@ class ModuleCompilerPass implements CompilerPassInterface
                 }
             }
 
+            $this->applyAutoconfiguredInstanceofTags($container, $definition, $className);
             $container->setDefinition($className, $definition);
+        }
+    }
+
+    /**
+     * Gives a module service the tags the container's autoconfiguration assigns to its interfaces and parents
+     * (`EventSubscriberInterface` → `kernel.event_subscriber`, `ResetInterface` → `kernel.reset`, …). This pass runs
+     * after Symfony resolved the autoconfiguration (`ResolveInstanceofConditionalsPass`), so `setAutoconfigured(true)`
+     * alone has no effect on the definitions it adds. Attribute-based autoconfiguration (`#[AsMessageHandler]`,
+     * `#[AsCommand]`, …) is not applied here.
+     */
+    protected function applyAutoconfiguredInstanceofTags(
+        ContainerBuilder $container,
+        Definition $definition,
+        string $className
+    ): void {
+        if (!class_exists($className)) {
+            return;
+        }
+        foreach ($container->getAutoconfiguredInstanceof() as $autoconfiguredType => $autoconfiguredDefinition) {
+            if (!is_a($className, $autoconfiguredType, true)) {
+                continue;
+            }
+            foreach ($autoconfiguredDefinition->getTags() as $tagName => $tagAttributesList) {
+                if ($definition->hasTag($tagName)) {
+                    continue;
+                }
+                foreach ($tagAttributesList as $tagAttributes) {
+                    $definition->addTag($tagName, $tagAttributes);
+                }
+            }
         }
     }
 

@@ -345,3 +345,9 @@ Unchanged:
   mirror exists at the same path (`DDD\X` → `App\X`) under the service-class-map entry of the application class,
   which is usually absent — a warning on every call, and under a throwing error handler the framework class was cached
   and returned instead of the application class. It now caches the application class.
+- 3.14.3 — Fix: module services (`ModuleCompilerPass`) get the tags the container's autoconfiguration assigns to
+  their interfaces and parents (`EventSubscriberInterface` → `kernel.event_subscriber`, `ResetInterface` →
+  `kernel.reset`, `AbstractController` → `controller.service_arguments` / `container.service_subscriber`,
+  `ConstraintValidator` → `validator.constraint_validator`). The pass runs after Symfony resolved the autoconfiguration,
+  so `setAutoconfigured(true)` had no effect and a module's event subscriber or resettable service never ran.
+  Attribute-based autoconfiguration (`AsMessageHandler`, `AsCommand`) is still not applied to module services.
