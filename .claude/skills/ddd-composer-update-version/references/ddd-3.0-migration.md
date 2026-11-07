@@ -341,3 +341,7 @@ Unchanged:
   it (heartbeat for a lease) — Redis / RedisSentinel compare-and-expire in Lua, Apc compare then re-store (two steps),
   Chain on the tier `acquireLock()` uses; a TTL below 1 throws. A counter used as a lease (`increment($key, 0, $ttl)`
   as heartbeat) moves to `acquireLock()` / `refreshLock()` / `releaseLock()`.
+- 3.14.2 — Fix: `DDDService::getContainerServiceClassNameForClass()` cached a framework class whose application
+  mirror exists at the same path (`DDD\X` → `App\X`) under the service-class-map entry of the application class,
+  which is usually absent — a warning on every call, and under a throwing error handler the framework class was cached
+  and returned instead of the application class. It now caches the application class.

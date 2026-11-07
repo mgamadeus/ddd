@@ -92,7 +92,6 @@ class DDDService
         if (isset(StaticRegistry::$frameworkToAppClassNames[$className])) {
             return StaticRegistry::$frameworkToAppClassNames[$className];
         }
-        $path = self::getCacheDirPrivate(false) . '/service_class_map.php';
         if (!StaticRegistry::$containerServiceClassMap) {
             StaticRegistry::$containerServiceClassMap = include_once self::getCacheDirPrivate(
                     false
@@ -106,7 +105,7 @@ class DDDService
             $appClassName = self::APP_ROOT_NAMESPACE . substr($className, strlen(self::FRAMEWORK_ROOT_NAMESPACE));
             try {
                 if (class_exists($appClassName)) {
-                    StaticRegistry::$frameworkToAppClassNames[$className] = StaticRegistry::$containerServiceClassMap[$appClassName];
+                    StaticRegistry::$frameworkToAppClassNames[$className] = $appClassName;
                     return $appClassName;
                 }
             }
