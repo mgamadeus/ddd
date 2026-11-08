@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Common\Entities\MediaItems;
 
 use DDD\Domain\Base\Entities\Entity;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseIndex;
 use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Validation\Constraints\Choice;
@@ -27,7 +28,8 @@ abstract class MediaItem extends Entity
     #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
     public ?string $publicUrl;
 
-    /** @var string|null Description can be displayed on directories */
+    /** @var string|null Description can be displayed on directories (TEXT: generated descriptions exceed 255 characters) */
+    #[DatabaseColumn(sqlType: DatabaseColumn::SQL_TYPE_TEXT)]
     #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
     public ?string $description;
 

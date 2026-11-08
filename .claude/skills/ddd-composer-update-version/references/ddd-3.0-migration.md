@@ -351,3 +351,9 @@ Unchanged:
   `ConstraintValidator` → `validator.constraint_validator`). The pass runs after Symfony resolved the autoconfiguration,
   so `setAutoconfigured(true)` had no effect and a module's event subscriber or resettable service never ran.
   Attribute-based autoconfiguration (`AsMessageHandler`, `AsCommand`) is still not applied to module services.
+- 3.14.4 — `MediaItem::$description` is a `TEXT` column without index (was `VARCHAR(255)`): generated image
+  descriptions are longer. MariaDB truncated them silently, PostgreSQL rejects the write
+  (`SQLSTATE[22001] value too long for type character varying(255)`). Schema change per database:
+  PostgreSQL `ALTER TABLE "MediaItems" ALTER COLUMN "description" TYPE text COLLATE "ddd_ci_ai"` (metadata only);
+  MariaDB `ALTER TABLE MediaItems MODIFY description TEXT …` (table rebuild). Generate it with the schema diff; an
+  application that already declares the column as TEXT has nothing to change.
