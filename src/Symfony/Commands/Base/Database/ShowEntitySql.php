@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Symfony\Commands\Base\Database;
 
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseModels;
 use DDD\Domain\Base\Repo\DB\Dialect\DialectResolver;
 use DDD\Domain\Common\Services\EntityModelGeneratorService;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
@@ -67,11 +68,15 @@ class ShowEntitySql extends Command
             $entityClassNames = [$entityClassName];
         }
 
+        if ($entityClassNames !== null) {
+            $this->writeExcludedTableNote($entityClassNames[0], $output);
+        }
+
         if ($dialectOption === 'postgres') {
             return $this->executePostgres($entityClassNames, (bool)$input->getOption('create-only'), $output);
         }
 
-        $sql = EntityModelGeneratorService::getDatabaseModels($entityClassNames, filterOverriddenEntities: true)->getSql();
+        $sql = $this->getDatabaseModelsToRender($entityClassNames)->getSql();
         if ($sql === '') {
             $message = $entityClassNames === null
                 ? '-- (no entities found)'
@@ -94,7 +99,7 @@ class ShowEntitySql extends Command
             return Command::FAILURE;
         }
 
-        $databaseModels = EntityModelGeneratorService::getDatabaseModels($entityClassNames, filterOverriddenEntities: true);
+        $databaseModels = $this->getDatabaseModelsToRender($entityClassNames);
         // One renderer (and one IdentifierPolicy) for the WHOLE set: PostgreSQL index/constraint names are
         // schema-wide, so a duplicate across two different tables must be caught here, across every model, not
         // per-model (dual-dialect architecture plan §4.5).
@@ -130,6 +135,33 @@ class ShowEntitySql extends Command
         $sql = implode(";\n\n", $statements->sortedByPhase()->getSqlList()) . ";\n";
         $output->writeln($sql, OutputInterface::OUTPUT_RAW);
         return Command::SUCCESS;
+    }
+
+    /**
+     * The models to render: every entity without the tables this application excludes (`excludedTables`), or the one
+     * entity asked for — also an excluded one, so an application can fetch its DDL when it opts in.
+     *
+     * @param string[]|null $entityClassNames
+     */
+    protected function getDatabaseModelsToRender(?array $entityClassNames): DatabaseModels
+    {
+        $databaseModels = EntityModelGeneratorService::getDatabaseModels($entityClassNames, filterOverriddenEntities: true);
+        return $entityClassNames === null
+            ? EntityModelGeneratorService::filterOutExcludedTables($databaseModels)
+            : $databaseModels;
+    }
+
+    /** Notes that an explicitly asked entity's table is excluded by this application */
+    protected function writeExcludedTableNote(string $entityClassName, OutputInterface $output): void
+    {
+        $sqlTableName = DatabaseModel::getSqlTableNameOfEntityClass($entityClassName);
+        if (EntityModelGeneratorService::isExcludedSqlTableName($sqlTableName)) {
+            $output->writeln(
+                "-- $sqlTableName is excluded by " . EntityModelGeneratorService::EXCLUDED_TABLES_CONFIG_KEY
+                . ' of this application: the schema diff and the SQL create leave it out. To use it, remove the entry and create the table with this DDL.',
+                OutputInterface::OUTPUT_RAW
+            );
+        }
     }
 
     /**

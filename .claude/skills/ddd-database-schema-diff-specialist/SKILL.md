@@ -1,6 +1,6 @@
 ---
 name: ddd-database-schema-diff-specialist
-description: "Operate the DDD live-vs-target schema diff: compute diffs between the entity-derived and the live schema on MariaDB and PostgreSQL, apply drift fixes per table or in bulk, build the admin interface in a consuming app, and set up a new PostgreSQL database (app:db:postgres:install-extensions-collation-functions, pre-deploy hook). Covers the diff value objects, the 13-phase SQL assembler, the false-positive normalisation catalog, VECTOR reset semantics, severity, the which-side-is-wrong pre-apply checklist, the large-table production guard (bypass is CLI/messenger-only, never HTTP), the diff-signature gate and apply lock, the admin-screen build guide, pt-online-schema-change FK-rename coexistence, and troubleshooting (openApi 500, DIFF_SIGNATURE_MISMATCH, DIFF_APPLY_LOCK_BUSY, stale caches). Use when setting up a PostgreSQL database, computing or applying schema diffs, debugging false-positive MODIFYs, deciding entity-vs-DB, migrating to v2.20, wiring the diff admin screen, or reasoning about pt-osc."
+description: "Operate the DDD live-vs-target schema diff: compute diffs between the entity-derived and the live schema on MariaDB and PostgreSQL, apply drift fixes per table or in bulk, build the admin interface in a consuming app, set up a new PostgreSQL database (app:db:postgres:install-extensions-collation-functions, pre-deploy hook), and leave a module's tables out of an app (Base.Repo.database.excludedTables). Covers the diff value objects, the 13-phase SQL assembler, false-positive normalisation, VECTOR resets, severity, the which-side-is-wrong checklist, the large-table production guard (bypass CLI/messenger only), the diff-signature gate and apply lock, the admin-screen guide, pt-online-schema-change FK renames, and troubleshooting (openApi 500, DIFF_SIGNATURE_MISMATCH, DIFF_APPLY_LOCK_BUSY, stale caches). Use when excluding tables, setting up a PostgreSQL database, computing or applying schema diffs, debugging false-positive MODIFYs, deciding entity-vs-DB, wiring the diff admin screen, or reasoning about pt-osc."
 metadata:
   author: mgamadeus
   version: "2.0.0"
@@ -162,6 +162,31 @@ spec:
           command: ["php", "bin/console", "app:db:postgres:install-extensions-collation-functions"]
           envFrom: [{ secretRef: { name: app-database } }]
 ```
+
+## Leaving Tables Out of an Application's Schema (`excludedTables`)
+
+An application that installs a module but does not use some of its tables lists their entity classes in its committed
+`config/app/Base/Repo/database.php`:
+
+```php
+return [
+    'excludedTables' => [
+        \Vendor\Module\Domain\Usage\Entities\UsageLog::class,
+    ],
+];
+```
+
+- **Matched by table:** each class resolves to its SQL table (`DATABASE_TABLE_PREFIX`, `#[DatabaseTableName]`), so an entry
+  also covers a subclass on the same table. A class that does not exist or has no table is logged and ignored.
+- **Left out:** the schema diff (no CREATE, no ALTER, and an existing live table is left alone — no DROP), the SQL create
+  (`app:entity:show-sql` without argument, `createOrUpdateDatabaseTablesForEntities()` without a class list) and
+  `app:db:copy-to-postgres`. `app:entity:show-sql <Entity>` still prints the DDL, with a note that the table is excluded.
+- **Kept:** the Doctrine models are generated as before, so code that references the repository or model still loads.
+- **Writes refused:** an insert, update, upsert, batch update, partial update or delete through the table's repository
+  throws `InternalErrorException` naming the table and the key — never the database's "table doesn't exist".
+- **Opting in later:** remove the line and create the table (the DDL from `app:entity:show-sql <Entity>` or the diff).
+- Neither the framework nor a module ships a `Base/Repo/database.php`: the configuration is read per file, a shipped
+  file would shadow the application's or be shadowed by it.
 
 ## Phase-Ordered SQL Assembly
 

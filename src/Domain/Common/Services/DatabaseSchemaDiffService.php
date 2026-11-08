@@ -107,14 +107,17 @@ class DatabaseSchemaDiffService
 
     /**
      * The entity-derived target models the diff compares against — every entity of the framework, the application and
-     * its modules ({@see EntityModelGeneratorService::getDatabaseModels()}), or only $entityClasses of them.
+     * its modules ({@see EntityModelGeneratorService::getDatabaseModels()}), or only $entityClasses of them — without
+     * the tables the application excludes ({@see EntityModelGeneratorService::getExcludedSqlTableNames()}).
      *
      * @param string[]|null $entityClasses
      * @throws ReflectionException
      */
     protected function getTargetDatabaseModels(?array $entityClasses = null): DatabaseModels
     {
-        return EntityModelGeneratorService::getDatabaseModels($entityClasses, filterOverriddenEntities: true);
+        return EntityModelGeneratorService::filterOutExcludedTables(
+            EntityModelGeneratorService::getDatabaseModels($entityClasses, filterOverriddenEntities: true)
+        );
     }
 
     protected function isPostgres(): bool
@@ -893,12 +896,19 @@ class DatabaseSchemaDiffService
      */
     protected function getIgnoredLiveTables(): array
     {
+        // a table the application excludes is left alone when it exists live: no DROP, no diff
+        $ignoredLiveTables = array_merge(
+            self::DEFAULT_IGNORED_LIVE_TABLES,
+            EntityModelGeneratorService::getExcludedSqlTableNames()
+        );
         $envValue = Config::getEnv('DB_DIFF_IGNORED_TABLES');
-        if (!$envValue) {
-            return self::DEFAULT_IGNORED_LIVE_TABLES;
+        if ($envValue) {
+            $ignoredLiveTables = array_merge(
+                $ignoredLiveTables,
+                array_filter(array_map('trim', explode(',', (string)$envValue)))
+            );
         }
-        $custom = array_filter(array_map('trim', explode(',', (string)$envValue)));
-        return array_values(array_unique(array_merge(self::DEFAULT_IGNORED_LIVE_TABLES, $custom)));
+        return array_values(array_unique($ignoredLiveTables));
     }
 
     /**

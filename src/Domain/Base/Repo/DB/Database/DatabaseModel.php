@@ -123,6 +123,17 @@ class DatabaseModel extends ValueObject
      * @return string
      * @throws ReflectionException
      */
+    /**
+     * The SQL table an entity class maps to: its `#[DatabaseTableName]` (on the entity or its set), else
+     * `DATABASE_TABLE_PREFIX` + the entity set's short name. Subclasses on the same table resolve to the same name.
+     *
+     * @throws ReflectionException
+     */
+    public static function getSqlTableNameOfEntityClass(string $entityClassName): string
+    {
+        return self::resolveSqlTableName($entityClassName);
+    }
+
     protected static function resolveSqlTableName(string $entityClassName): string
     {
         $entityReflectionClass = ReflectionClass::instance($entityClassName);

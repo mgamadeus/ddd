@@ -13,6 +13,7 @@ use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatements;
 use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Libs\ClassFinder;
+use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Modules\DDDModule;
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
 use DDD\Infrastructure\Reflection\ReflectionClass;
@@ -21,6 +22,7 @@ use DDD\Symfony\CompilerPasses\ModuleCompilerPass;
 use Doctrine\DBAL\Exception;
 use ReflectionAttribute;
 use ReflectionException;
+use Throwable;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
@@ -38,6 +40,12 @@ class EntityModelGeneratorService
      */
     protected static array $databaseModelsByFilterMode = [];
 
+    /** @var string The application config key listing entity classes whose tables this application leaves out */
+    public const string EXCLUDED_TABLES_CONFIG_KEY = 'Base.Repo.database.excludedTables';
+
+    /** @var string[]|null The SQL tables of {@see EXCLUDED_TABLES_CONFIG_KEY}, resolved once per process */
+    protected static ?array $excludedSqlTableNames = null;
+
     /**
      * The SQL that creates or updates the tables of the given entity classes (null = every entity of the project), in
      * the dialect of the default connection: MariaDB `CREATE TABLE IF NOT EXISTS` / `ALTER TABLE … ADD COLUMN IF NOT
@@ -52,8 +60,12 @@ class EntityModelGeneratorService
      */
     public function createOrUpdateDatabaseTablesForEntities(?array $entityClasses = null): string
     {
-        // $entityClasses is a list of FQN strings (or null = all); getDatabaseModels() filters by them.
+        // $entityClasses is a list of FQN strings (or null = all); getDatabaseModels() filters by them. The whole
+        // schema leaves out the tables this application excludes; an explicit list is rendered as asked.
         $databaseModels = self::getDatabaseModels($entityClasses, filterOverriddenEntities: true);
+        if ($entityClasses === null) {
+            $databaseModels = self::filterOutExcludedTables($databaseModels);
+        }
         $sqlDialect = EntityManagerFactory::getDialect();
         if ($sqlDialect->name() !== SqlDialect::POSTGRES) {
             return $databaseModels->getSql();
@@ -306,6 +318,76 @@ class EntityModelGeneratorService
     public static function invalidateCache(): void
     {
         self::$databaseModelsByFilterMode = [];
+        self::$excludedSqlTableNames = null;
+    }
+
+    /**
+     * The SQL tables this application leaves out of its schema: the tables of the entity classes listed in the
+     * application config `config/app/Base/Repo/database.php` → `excludedTables` (no file or no key: none). An entry
+     * covers every class on the same table (a subclass that adds columns to it, too). A listed class that does not
+     * exist or has no database table is reported as a warning and ignored. The schema diff, the SQL create and the
+     * copy to PostgreSQL leave these tables out, and a write through their repository is refused; the Doctrine models
+     * are still generated, so code referencing them keeps loading.
+     *
+     * @return string[]
+     */
+    public static function getExcludedSqlTableNames(): array
+    {
+        if (self::$excludedSqlTableNames !== null) {
+            return self::$excludedSqlTableNames;
+        }
+        // the file is read as a whole: the framework and its modules ship no Base/Repo/database.php
+        $databaseConfig = Config::get('Base.Repo.database');
+        $listedEntityClasses = is_array($databaseConfig) ? ($databaseConfig['excludedTables'] ?? []) : [];
+        $excludedSqlTableNames = [];
+        foreach (is_array($listedEntityClasses) ? $listedEntityClasses : [] as $listedEntityClass) {
+            $sqlTableName = self::findSqlTableNameOfListedEntityClass($listedEntityClass);
+            if ($sqlTableName === null) {
+                error_log(
+                    'DDD: ' . self::EXCLUDED_TABLES_CONFIG_KEY . ' lists "' . (is_string($listedEntityClass) ? $listedEntityClass : gettype($listedEntityClass))
+                    . '", which is no entity class with a database table; the entry is ignored'
+                );
+                continue;
+            }
+            $excludedSqlTableNames[$sqlTableName] = true;
+        }
+        return self::$excludedSqlTableNames = array_keys($excludedSqlTableNames);
+    }
+
+    /** The table of a listed entity class, or null when it is no class or has no database table */
+    protected static function findSqlTableNameOfListedEntityClass(mixed $listedEntityClass): ?string
+    {
+        if (!is_string($listedEntityClass) || !class_exists($listedEntityClass)
+            || !method_exists($listedEntityClass, 'getRepoClass')
+            || !$listedEntityClass::getRepoClass(LazyLoadRepo::DB)) {
+            return null;
+        }
+        try {
+            return DatabaseModel::getSqlTableNameOfEntityClass($listedEntityClass);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /** Whether this application leaves the table out of its schema ({@see getExcludedSqlTableNames()}) */
+    public static function isExcludedSqlTableName(string $sqlTableName): bool
+    {
+        return in_array($sqlTableName, self::getExcludedSqlTableNames(), true);
+    }
+
+    /** The models whose tables this application keeps ({@see getExcludedSqlTableNames()}) */
+    public static function filterOutExcludedTables(DatabaseModels $databaseModels): DatabaseModels
+    {
+        if (self::getExcludedSqlTableNames() === []) {
+            return $databaseModels;
+        }
+        $keptDatabaseModels = new DatabaseModels();
+        foreach ($databaseModels->getElements() as $databaseModel) {
+            if (!self::isExcludedSqlTableName($databaseModel->sqlTableName)) {
+                $keptDatabaseModels->add($databaseModel);
+            }
+        }
+        return $keptDatabaseModels;
     }
 
     public static function getDatabaseModels(

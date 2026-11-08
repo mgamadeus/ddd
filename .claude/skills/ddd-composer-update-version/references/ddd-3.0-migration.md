@@ -357,3 +357,10 @@ Unchanged:
   PostgreSQL `ALTER TABLE "MediaItems" ALTER COLUMN "description" TYPE text COLLATE "ddd_ci_ai"` (metadata only);
   MariaDB `ALTER TABLE MediaItems MODIFY description TEXT …` (table rebuild). Generate it with the schema diff; an
   application that already declares the column as TEXT has nothing to change.
+- 3.15.0 — `excludedTables`: an application lists entity classes in its committed `config/app/Base/Repo/database.php`
+  (`'excludedTables' => [Entity::class, …]`) to leave their tables out of its schema. Matched by table (a subclass on
+  the same table is covered). The schema diff (no CREATE / ALTER, no DROP of an existing live table), the SQL create
+  without a class list and `app:db:copy-to-postgres` leave them out; `app:entity:show-sql <Entity>` still prints the DDL
+  with a note; the Doctrine models are still generated. A write through the repository of such a table throws
+  `InternalErrorException` naming the table and the key. No key = no change. Neither Core nor a module ships a
+  `Base/Repo/database.php`.

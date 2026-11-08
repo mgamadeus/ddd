@@ -517,6 +517,7 @@ class DBEntity extends DatabaseRepoEntity
         if (!is_a($entity::class, (string)$this::BASE_ENTITY_CLASS, true)) {
             return null;
         }
+        static::assertTableIsWritable();
         $this->ormInstance = new (static::getBaseModelNameForEntityInstance($entity))();
         $this->mapToRepository($entity, $propertyNames);
         $entityManager = EntityManagerFactory::getInstance();

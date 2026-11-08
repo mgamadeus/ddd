@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Base\Repo;
 
+use DDD\Domain\Common\Services\EntityModelGeneratorService;
 use DDD\Domain\Base\Entities\Attributes\NoRecursiveUpdate;
 use DDD\Domain\Base\Entities\Attributes\RolesRequiredForUpdate;
 use DDD\Domain\Base\Entities\ChangeHistory\ChangeHistory;
@@ -54,6 +55,38 @@ abstract class DatabaseRepoEntity extends RepoEntity
 
     /** @var int The default decursive depth for update operations */
     public const int UPDATE_DEFAULT_RECURSIVE_DEPTH = 2;
+
+    /** @var bool[] Whether the table of a repository class is excluded by the application, by repository class */
+    protected static array $isTableExcludedByRepoClass = [];
+
+    /**
+     * Refuses a write through this repository when the application leaves its table out of the schema
+     * (`Base.Repo.database.excludedTables`, {@see EntityModelGeneratorService::getExcludedSqlTableNames()}) — instead
+     * of the database's "table doesn't exist". Checked once per repository class and process.
+     *
+     * @throws InternalErrorException
+     */
+    public static function assertTableIsWritable(): void
+    {
+        if (!isset(self::$isTableExcludedByRepoClass[static::class])) {
+            $tableName = static::BASE_ORM_MODEL ? (static::BASE_ORM_MODEL)::getTableName() : null;
+            self::$isTableExcludedByRepoClass[static::class] = $tableName !== null
+                && EntityModelGeneratorService::isExcludedSqlTableName($tableName);
+        }
+        if (self::$isTableExcludedByRepoClass[static::class]) {
+            throw new InternalErrorException(
+                'table ' . (static::BASE_ORM_MODEL)::getTableName() . ' is listed in '
+                . EntityModelGeneratorService::EXCLUDED_TABLES_CONFIG_KEY . ' of this app; ' . static::class
+                . ' cannot write it (remove the entry and create the table to use it)'
+            );
+        }
+    }
+
+    /** Forgets the cached exclusion checks (tests, a changed configuration) */
+    public static function forgetTableExclusionChecks(): void
+    {
+        self::$isTableExcludedByRepoClass = [];
+    }
 
     protected static $applyRightsRestrictions = true;
 
@@ -478,6 +511,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
         if (!DefaultObject::isEntity($entity)) {
             return $entity;
         }
+        static::assertTableIsWritable();
         /** @var Entity $entity */
         $validationResults = $entity->validate(depth: $depth);
         if ($validationResults !== true) {
@@ -834,6 +868,7 @@ abstract class DatabaseRepoEntity extends RepoEntity
      */
     public function delete(DefaultObject &$entity): bool
     {
+        static::assertTableIsWritable();
         if (is_a($entity, $this::BASE_ENTITY_CLASS ?? '') && $entity->id) {
             $baseOrmModelAlias = (static::BASE_ORM_MODEL)::MODEL_ALIAS;
             // we apply delete rights on query

@@ -80,6 +80,9 @@ abstract class DatabaseRepoEntitySet
      */
     public function batchUpdate(EntitySet &$entitySet, bool $useInsertIgnore = false): void
     {
+        /** @var DatabaseRepoEntity $baseRepoClass */
+        $baseRepoClass = static::BASE_REPO_CLASS;
+        $baseRepoClass::assertTableIsWritable();
         $doctrineModels = [];
         foreach ($entitySet->getElements() as $entity) {
             /** @var DatabaseRepoEntity $dbEntity */

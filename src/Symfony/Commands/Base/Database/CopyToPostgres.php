@@ -191,11 +191,23 @@ class CopyToPostgres extends Command
         );
 
         $allModels = [];
+        $excludedTables = [];
         foreach ($entityClassNames as $entityClassName) {
             $databaseModel = DatabaseModel::fromEntityClass($entityClassName);
             if ($databaseModel !== null && $databaseModel->parentEntityCLassWithNamespace === null) {
+                // a table the application excludes (Base.Repo.database.excludedTables) is not copied
+                if (EntityModelGeneratorService::isExcludedSqlTableName($databaseModel->sqlTableName)) {
+                    $excludedTables[$databaseModel->sqlTableName] = true;
+                    continue;
+                }
                 $allModels[$databaseModel->sqlTableName] = $databaseModel;
             }
+        }
+        if ($excludedTables !== []) {
+            $io->note(
+                'app:db:copy-to-postgres: excluded by ' . EntityModelGeneratorService::EXCLUDED_TABLES_CONFIG_KEY
+                . ', not copied: ' . implode(', ', array_keys($excludedTables))
+            );
         }
 
         $skipped = [];
@@ -205,7 +217,7 @@ class CopyToPostgres extends Command
                 'SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = \'BASE TABLE\'',
                 [$sourceDbName]
             );
-            $skipped = array_values(array_diff($sourceTables, array_keys($allModels)));
+            $skipped = array_values(array_diff($sourceTables, array_keys($allModels), array_keys($excludedTables)));
         } catch (Throwable $throwable) {
             $io->warning('app:db:copy-to-postgres: could not list source tables to report unmatched ones: ' . $throwable->getMessage());
         }
@@ -220,6 +232,8 @@ class CopyToPostgres extends Command
         foreach ($tableFilter as $table) {
             if (isset($allModels[$table])) {
                 $selectedModels->add($allModels[$table]);
+            } elseif (isset($excludedTables[$table])) {
+                $io->warning("app:db:copy-to-postgres: --table \"$table\" is excluded by " . EntityModelGeneratorService::EXCLUDED_TABLES_CONFIG_KEY . '; skipped.');
             } else {
                 $io->warning("app:db:copy-to-postgres: --table \"$table\" matches no entity; skipped.");
             }
