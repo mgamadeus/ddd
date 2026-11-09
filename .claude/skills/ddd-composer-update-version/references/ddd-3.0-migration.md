@@ -364,3 +364,13 @@ Unchanged:
   with a note; the Doctrine models are still generated. A write through the repository of such a table throws
   `InternalErrorException` naming the table and the key. No key = no change. Neither Core nor a module ships a
   `Base/Repo/database.php`.
+- 3.15.1 — Fix: a paginated query (joins + limit/offset) whose to-many joins only filter (the joined alias is not
+  selected) keeps its WHERE again in the query that loads the page's roots. Since 3.0 that query ran without the WHERE
+  on MariaDB (on PostgreSQL a paginated query always did), so it joined every child row of every root on the page: on a
+  large child table one statement read every child row instead of the matching ones and could run into the server's
+  statement timeout, and on MariaDB an `ORDER BY` or `GROUP BY` over the joined rows (`ORDER BY COUNT(child.id)`, an
+  order by a child column) ranked the page by children the filter excluded. Only a query that fetch-joins a collection
+  still loads its roots without the WHERE, so that the collection comes back complete (3.0 semantics unchanged); the
+  decision is `DoctrineQueryBuilder::filtersFetchJoinedCollection()` (new). The protected
+  `RowNumberPagePagination::buildMainSqlWithoutWhereOrLimit()` is now `buildMainSqlWithoutLimit()`. Still open: a query
+  that fetch-joins a collection AND joins another to-many relation only to filter loads that join unfiltered.

@@ -287,7 +287,8 @@ for "orders with a Pizza, showing only their Pizza items". Several conditions on
 filter hold for one and the same child. Mechanism: a query that filters and fetch-joins a collection selects the
 qualifying root ids in a subquery and loads the roots with their joins without the WHERE
 (`DoctrineQueryBuilder::applyDistinctSubqueryIfNeededAndGetResult()`, paginated or not); the expand's own filter sits
-in the join's ON clause. `count()` counts distinct roots.
+in the join's ON clause. `count()` counts distinct roots. A paginated query that only filters on a joined collection
+(joined, not selected) keeps the WHERE in both steps (`DoctrineQueryBuilder::filtersFetchJoinedCollection()` decides).
 
 ### The `expand()` Method on Entities
 

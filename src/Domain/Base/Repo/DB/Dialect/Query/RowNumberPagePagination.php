@@ -32,12 +32,15 @@ use RuntimeException;
  *    first/max results, and driving it through the ordinary `getSQL()` pipeline needs no manual AST/parser-result
  *    plumbing. The id column's alias (`SELECT DISTINCT <alias> FROM …`) is read back off the rendered SQL text —
  *    the ORM assigns it (`id_0`-style), there is no public accessor for it.
- * 2. **Main query.** The SAME query builder, `WHERE` and limit/offset removed (restored afterwards), rendered
- *    through the DEFAULT output walker ({@see PostgresSqlWalker}, the PostgreSQL default — see
+ * 2. **Main query.** The SAME query builder, limit/offset removed (restored afterwards), rendered through the
+ *    DEFAULT output walker ({@see PostgresSqlWalker}, the PostgreSQL default — see
  *    {@see \DDD\Domain\Base\Repo\DB\Dialect\PostgresDialect::configureOrm()}): every join, every select column,
- *    the original `ORDER BY` (child order), but no row-restricting predicate — the id page already decided which
- *    roots are on this page, and NOT reapplying the filter here is what keeps a to-many expand's filtered-on-child
- *    predicate from silently hiding sibling child rows of a root that qualified through a DIFFERENT child.
+ *    the original `ORDER BY` (child order). When the query fetch-joins a collection, the `WHERE` is removed as well
+ *    (restored afterwards): the id page already decided which roots are on this page, and NOT reapplying the filter
+ *    here is what keeps a to-many expand's filtered-on-child predicate from silently hiding sibling child rows of a
+ *    root that qualified through a DIFFERENT child. Any other main query keeps its `WHERE`, so a join that only
+ *    filters returns the matching rows, not every child of every root on the page
+ *    ({@see DoctrineQueryBuilder::filtersFetchJoinedCollection()}).
  * 3. The id page SQL is injected as `INNER JOIN (<id SQL>) page ON page.<idAlias> = <root>.id` right after the
  *    main query's `FROM <table> <rootAlias>`, and the page rank `page.dctrn_minrownum` (`page.<idAlias>` when the
  *    query has no ORDER BY) is prepended to the main query's own `ORDER BY` (or appended as a new one) so roots
@@ -64,7 +67,7 @@ class RowNumberPagePagination implements PaginationStrategy
         }
 
         $idPageSql = $this->buildIdPageSql($queryBuilder, $maxResults, $firstResult);
-        $mainPaginationSql = $this->buildMainSqlWithoutWhereOrLimit($queryBuilder);
+        $mainPaginationSql = $this->buildMainSqlWithoutLimit($queryBuilder);
 
         $combinedSql = $this->injectIdPageJoin($mainPaginationSql->sql, $idPageSql->sql, $idPageSql->alias, $mainPaginationSql->alias);
 
@@ -121,14 +124,21 @@ class RowNumberPagePagination implements PaginationStrategy
         )->withAlias($idAlias);
     }
 
-    /** @return PaginationSql The main query's named-token SQL, its root table alias as `alias`, and the bind maps */
-    protected function buildMainSqlWithoutWhereOrLimit(DoctrineQueryBuilder $queryBuilder): PaginationSql
+    /**
+     * The main query without limit/offset; without its WHERE too when the query fetch-joins a collection (see the
+     * class docblock, point 2).
+     *
+     * @return PaginationSql The main query's named-token SQL, its root table alias as `alias`, and the bind maps
+     */
+    protected function buildMainSqlWithoutLimit(DoctrineQueryBuilder $queryBuilder): PaginationSql
     {
         $savedWhere = $queryBuilder->getDQLPart('where');
         $savedMaxResults = $queryBuilder->getMaxResults();
         $savedFirstResult = $queryBuilder->getFirstResult();
 
-        $queryBuilder->resetDQLPart('where');
+        if ($queryBuilder->filtersFetchJoinedCollection()) {
+            $queryBuilder->resetDQLPart('where');
+        }
         $queryBuilder->setMaxResults(null);
         $queryBuilder->setFirstResult(null);
 

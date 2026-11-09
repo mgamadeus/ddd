@@ -11,9 +11,11 @@ use Doctrine\ORM\Query\Parameter;
 /**
  * The regex-based SQL-text rewrite of {@see DoctrineQueryBuilder::applyDistinctSubqueryIfNeededAndGetResult()}: the
  * FULL query (with its WHERE, limit and offset) becomes `INNER JOIN (SELECT DISTINCT <root>.id …) AS subquery`, and the
- * outer query — rendered WITHOUT the WHERE — loads those roots with all their joins. The WHERE selects roots only;
- * a fetch-joined collection is never cut down to the matching children (its own filter sits in the join's ON). This
- * class is the MariaDB arm of
+ * outer query loads those roots with all their joins. When the query fetch-joins a collection, the outer query is
+ * rendered WITHOUT the WHERE: the WHERE selects roots only, and the collection is never cut down to the matching
+ * children (its own filter sits in the join's ON). Any other outer query keeps the WHERE, so a join that only filters
+ * returns the matching rows, not every child of every root on the page
+ * ({@see DoctrineQueryBuilder::filtersFetchJoinedCollection()}). This class is the MariaDB arm of
  * {@see \DDD\Domain\Base\Repo\DB\Dialect\MariaDbDialect::pagination()}, selected via
  * {@see \DDD\Domain\Base\Repo\DB\Dialect\PostgresDialect::pagination()}'s PostgreSQL sibling,
  * {@see RowNumberPagePagination}.
@@ -35,10 +37,15 @@ class MariaDbDistinctSubqueryPagination implements PaginationStrategy
         $fullPaginationSql = $this->allocateNamedPlaceholders($queryBuilder, $query, 'param');
         $mainQuerySQL = $fullPaginationSql->sql;
 
-        // The OUTER query loads the page's roots with their joins WITHOUT the WHERE: the subquery already decided which
-        // roots qualify, and re-applying the filter would cut fetch-joined collections down to the matching children
-        // (OData: a root filter selects roots; a collection is filtered by its expand's own filter, in the join's ON).
-        $outerPaginationSql = $this->buildOuterSqlWithoutWhere($queryBuilder);
+        // The OUTER query loads the page's roots with their joins. With a fetch-joined collection it runs WITHOUT the
+        // WHERE: the subquery already decided which roots qualify, and re-applying the filter would cut the collection
+        // down to the matching children (OData: a root filter selects roots; a collection is filtered by its expand's
+        // own filter, in the join's ON). Without one it keeps the WHERE: unfiltered, a join that only filters would
+        // add every child row of every root on the page, and an ORDER BY or GROUP BY over the joined rows would rank
+        // the page by children the filter excluded.
+        $outerPaginationSql = $queryBuilder->filtersFetchJoinedCollection()
+            ? $this->buildOuterSqlWithoutWhere($queryBuilder)
+            : $this->allocateNamedPlaceholders($queryBuilder, $query, 'outerparam');
         $outerQuerySQL = $outerPaginationSql->sql;
         $paramsAllocation = [...$fullPaginationSql->parametersByToken, ...$outerPaginationSql->parametersByToken];
         $typesAllocation = [...$fullPaginationSql->typesByToken, ...$outerPaginationSql->typesByToken];
@@ -159,8 +166,8 @@ class MariaDbDistinctSubqueryPagination implements PaginationStrategy
 
     /**
      * Renders the query builder's query WITHOUT its WHERE (limit/offset are already reset by the caller) — the outer
-     * query of the page — with its own named placeholders (`:outerparamN`), so its bind values never mix with the id
-     * subquery's. The builder's WHERE is restored afterwards.
+     * query of a page whose query fetch-joins a collection — with its own named placeholders (`:outerparamN`), so its
+     * bind values never mix with the id subquery's. The builder's WHERE is restored afterwards.
      */
     protected function buildOuterSqlWithoutWhere(DoctrineQueryBuilder $queryBuilder): PaginationSql
     {
