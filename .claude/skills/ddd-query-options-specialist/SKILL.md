@@ -289,6 +289,8 @@ qualifying root ids in a subquery and loads the roots with their joins without t
 (`DoctrineQueryBuilder::applyDistinctSubqueryIfNeededAndGetResult()`, paginated or not); the expand's own filter sits
 in the join's ON clause. `count()` counts distinct roots. A paginated query that only filters on a joined collection
 (joined, not selected) keeps the WHERE in both steps (`DoctrineQueryBuilder::filtersFetchJoinedCollection()` decides).
+Known limitation: a query that fetch-joins a collection AND joins another to-many relation only to filter loads that
+second join unfiltered (results are correct; the statement reads more child rows than needed).
 
 ### The `expand()` Method on Entities
 

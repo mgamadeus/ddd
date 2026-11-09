@@ -45,7 +45,9 @@ use RuntimeException;
  *    main query's `FROM <table> <rootAlias>`, and the page rank `page.dctrn_minrownum` (`page.<idAlias>` when the
  *    query has no ORDER BY) is prepended to the main query's own `ORDER BY` (or appended as a new one) so roots
  *    come back in the requested order, ties broken by the existing child order —
- *    `ORDER BY page.dctrn_minrownum, <child order>`.
+ *    `ORDER BY page.dctrn_minrownum, <child order>`. Only the query's own (top-level) ORDER BY is used: one inside
+ *    a WHERE subselect or an aggregate belongs to that expression. A grouped query orders by `MIN(<rank>)` — it may
+ *    order only by grouped columns or aggregates, and every root has exactly one rank.
  * 4. Both fragments' `?` placeholders are renamed to deterministic named tokens before assembly (mirroring
  *    {@see MariaDbDistinctSubqueryPagination}'s own technique) so the final combined SQL can be rescanned in
  *    appearance order to build one ordered parameter/type array, then run as a SINGLE
@@ -69,7 +71,13 @@ class RowNumberPagePagination implements PaginationStrategy
         $idPageSql = $this->buildIdPageSql($queryBuilder, $maxResults, $firstResult);
         $mainPaginationSql = $this->buildMainSqlWithoutLimit($queryBuilder);
 
-        $combinedSql = $this->injectIdPageJoin($mainPaginationSql->sql, $idPageSql->sql, $idPageSql->alias, $mainPaginationSql->alias);
+        $combinedSql = $this->injectIdPageJoin(
+            $mainPaginationSql->sql,
+            $idPageSql->sql,
+            $idPageSql->alias,
+            $mainPaginationSql->alias,
+            !empty($queryBuilder->getDQLPart('groupBy'))
+        );
 
         // Both fragments still carry their own named tokens (`:ddd_id_param_N` / `:ddd_main_param_N`). One final
         // rescan of the now-COMBINED text, in textual appearance order, converts every token back to `?` and
@@ -178,8 +186,13 @@ class RowNumberPagePagination implements PaginationStrategy
      * `FROM <table> <rootTableAlias>`, and sorts by the page rank first — `page.dctrn_minrownum` when the id page
      * carries one, `page.<idAlias>` otherwise (the existing `ORDER BY`, if any, becomes the tie-breaker).
      */
-    protected function injectIdPageJoin(string $mainSql, string $idSql, string $idAlias, string $rootTableAlias): string
-    {
+    protected function injectIdPageJoin(
+        string $mainSql,
+        string $idSql,
+        string $idAlias,
+        string $rootTableAlias,
+        bool $isGrouped = false
+    ): string {
         // The ORDER BY rewrite MUST run on $mainSql alone, before the id-page SQL is embedded: $idSql carries its
         // OWN inner `ROW_NUMBER() OVER (ORDER BY …)` clause, and a single `/ORDER BY/` rescan over the COMBINED
         // text would hit THAT one first (it appears first, textually, once the join is injected right after
@@ -187,13 +200,21 @@ class RowNumberPagePagination implements PaginationStrategy
         // FROM-clause entry for table \"page\"").
         // The id page ranks its roots by the requested ORDER BY in `dctrn_minrownum` (present whenever the query
         // has one); sorting by the root id instead would return the page's roots in id order.
-        $pageOrder = preg_match('/\bAS\s+dctrn_minrownum\b/i', $idSql) ? 'page.dctrn_minrownum' : "page.$idAlias";
-        if (preg_match('/\bORDER\s+BY\s+/i', $mainSql)) {
-            $mainSql = (string)preg_replace('/\bORDER\s+BY\s+/i', 'ORDER BY ' . $pageOrder . ', ', $mainSql, 1);
+        $pageRankColumn = preg_match('/\bAS\s+dctrn_minrownum\b/i', $idSql) ? 'page.dctrn_minrownum' : "page.$idAlias";
+        // A grouped main query may order only by grouped columns or aggregates (PostgreSQL: SQLSTATE 42803); the
+        // page join gives every root exactly one rank, so MIN() is that rank.
+        $pageOrder = $isGrouped ? "MIN($pageRankColumn)" : $pageRankColumn;
+        // Only the main query's own (top-level) ORDER BY: one inside a WHERE subselect or an aggregate
+        // (`string_agg(… ORDER BY …)`) belongs to that expression, and the page is not in its scope.
+        $orderByListOffset = $this->findTopLevelOrderByListOffset($mainSql);
+        if ($orderByListOffset !== null) {
+            $mainSql = substr($mainSql, 0, $orderByListOffset) . $pageOrder . ', ' . substr($mainSql, $orderByListOffset);
         } else {
             $mainSql .= ' ORDER BY ' . $pageOrder;
         }
 
+        // The root table alias is unique within the query, so the first `FROM <table> <rootAlias>` is the main
+        // query's own — a subselect on the same table carries another alias.
         $fromPattern = '/\bFROM\s+"?[A-Za-z0-9_]+"?\s+' . preg_quote($rootTableAlias, '/') . '\b/';
         $joinClause = " INNER JOIN ($idSql) page ON page.$idAlias = $rootTableAlias.id";
 
@@ -203,6 +224,51 @@ class RowNumberPagePagination implements PaginationStrategy
         }
 
         return $sql;
+    }
+
+    /**
+     * Where the column list of the query's own ORDER BY starts: the last `ORDER BY` outside parentheses, string
+     * literals and quoted identifiers; null when the query has none.
+     */
+    protected function findTopLevelOrderByListOffset(string $sql): ?int
+    {
+        $orderByListOffset = null;
+        $parenthesisDepth = 0;
+        $sqlLength = strlen($sql);
+        for ($position = 0; $position < $sqlLength; $position++) {
+            $character = $sql[$position];
+            if ($character === "'" || $character === '"') {
+                // a quoted literal or identifier; a doubled quote inside it is an escaped quote
+                $position++;
+                while ($position < $sqlLength) {
+                    if ($sql[$position] === $character) {
+                        if ($position + 1 < $sqlLength && $sql[$position + 1] === $character) {
+                            $position += 2;
+                            continue;
+                        }
+                        break;
+                    }
+                    $position++;
+                }
+                continue;
+            }
+            if ($character === '(') {
+                $parenthesisDepth++;
+                continue;
+            }
+            if ($character === ')') {
+                $parenthesisDepth = max(0, $parenthesisDepth - 1);
+                continue;
+            }
+            if ($parenthesisDepth === 0
+                && ($character === 'O' || $character === 'o')
+                && ($position === 0 || !preg_match('/[A-Za-z0-9_]/', $sql[$position - 1]))
+                && preg_match('/\GORDER\s+BY\s+/i', $sql, $orderByMatch, 0, $position)) {
+                $orderByListOffset = $position + strlen($orderByMatch[0]);
+                $position = $orderByListOffset - 1;
+            }
+        }
+        return $orderByListOffset;
     }
 
     /**

@@ -374,3 +374,6 @@ Unchanged:
   decision is `DoctrineQueryBuilder::filtersFetchJoinedCollection()` (new). The protected
   `RowNumberPagePagination::buildMainSqlWithoutWhereOrLimit()` is now `buildMainSqlWithoutLimit()`. Still open: a query
   that fetch-joins a collection AND joins another to-many relation only to filter loads that join unfiltered.
+  Also in 3.15.1, PostgreSQL: a paginated `GROUP BY` query with joins no longer fails with SQLSTATE 42803 (the page
+  rank is ordered as `MIN(…)` in a grouped query), and the page rank goes into the query's own top-level `ORDER BY`
+  only, never into one inside a WHERE subselect or an ordered aggregate.
