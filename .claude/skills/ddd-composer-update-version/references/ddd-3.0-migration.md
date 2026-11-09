@@ -377,3 +377,15 @@ Unchanged:
   Also in 3.15.1, PostgreSQL: a paginated `GROUP BY` query with joins no longer fails with SQLSTATE 42803 (the page
   rank is ordered as `MIN(…)` in a grouped query), and the page rank goes into the query's own top-level `ORDER BY`
   only, never into one inside a WHERE subselect or an ordered aggregate.
+- 3.15.2 — Fix: `DoctrineQueryBuilder::hasFetchJoinedCollection()` reads the parsed query's result set mapping
+  instead of comparing the select text with the joined aliases, so a collection selected in any syntax Doctrine accepts
+  counts as fetch-joined, including inside one comma-separated select (`select('p, c')` is one select part) and under
+  a result alias (`c AS alias`). Before, a root filter on such a query cut the collection down to the matching
+  children: since 3.0 when the query was not paginated, and since 3.15.1 also when it was. A fetch-joined to-one
+  relation is still no fetch-joined collection, nor is a collection joined off a join on an entity class (a top-level
+  result of its own, which the WHERE also filters); a query without joins is answered without parsing. Still open: on
+  MariaDB, a paginated query that fetch-joins a collection, filters on it and orders by a child column returns the
+  page in the order of all the children, not only the matching ones.
+  Also in 3.15.2, PostgreSQL: a `SELECT DISTINCT` query on the two-step path (paginated, or a root filter on a
+  fetch-joined collection) no longer fails with SQLSTATE 42P10 ("for SELECT DISTINCT, ORDER BY expressions must
+  appear in select list"): the main query also selects the page rank it is ordered by, as `dctrn_page_rank`.

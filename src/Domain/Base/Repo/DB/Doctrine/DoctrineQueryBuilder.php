@@ -16,6 +16,7 @@ use Doctrine\ORM\Query;
 use Doctrine\ORM\Query\Expr;
 use Doctrine\ORM\Query\Parameter;
 use Doctrine\ORM\Query\QueryExpressionVisitor;
+use Doctrine\ORM\Query\ResultSetMapping;
 use Doctrine\ORM\QueryBuilder;
 use InvalidArgumentException;
 use RuntimeException;
@@ -227,10 +228,9 @@ class DoctrineQueryBuilder extends QueryBuilder
         // collections down to the matching children (OData: the filter selects, the expand loads everything — a
         // collection is filtered by the expand's own filter, in its join condition). So such a query takes the same
         // two-step path as a paginated one: the qualifying root ids first, then the roots with their joins, unfiltered.
-        $filtersFetchJoinedCollection = $this->filtersFetchJoinedCollection();
-
-        // If no joins or no limit/offset, return the result directly
-        if (!$hasJoins || (!$hasLimitOrOffset && !$filtersFetchJoinedCollection)) {
+        // Without joins, or joined without limit/offset and without that case, the result is read directly. (The check
+        // parses the query, so it runs only where it decides something: a paginated query takes the two-step path anyway.)
+        if (!$hasJoins || (!$hasLimitOrOffset && !$this->filtersFetchJoinedCollection())) {
             $query = $this->getQuery();
             // $refresh (a set-load with useEntityRegistrCache=false) must FORCE a fresh hydration: Doctrine's identity
             // map otherwise returns the already-managed entity — with its STALE field/embedded-VO values from an earlier
@@ -256,50 +256,47 @@ class DoctrineQueryBuilder extends QueryBuilder
     }
 
     /**
-     * Whether the query fetch-joins a collection-valued association: a join whose alias is selected (as an entity or a
-     * partial) and whose association is to-many. Joins on an entity class (no association path) are not inspected.
+     * Whether the query fetch-joins a collection-valued association: a joined alias the query hydrates into its parent
+     * (selected as an entity or a partial, in its own select, inside a comma-separated one or under a result alias)
+     * whose association is to-many. Read from the parsed query's result set mapping, so every select syntax Doctrine
+     * accepts counts. Only collections hydrated into the query's roots count: a join on an entity class (no association
+     * path) is a top-level result of its own, and a collection joined off it belongs to that result. A query without
+     * joins is answered without parsing.
      */
     public function hasFetchJoinedCollection(): bool
     {
-        $selectedAliases = [];
-        foreach ($this->getDQLPart('select') as $selectExpression) {
-            foreach ($selectExpression->getParts() as $selectPart) {
-                $selectPart = trim((string)$selectPart);
-                if (preg_match('/^partial\s+([A-Za-z0-9_]+)\./i', $selectPart, $partialMatch)) {
-                    $selectPart = $partialMatch[1];
-                }
-                $selectedAliases[$selectPart] = true;
+        if (count($this->getDQLPart('join')) === 0) {
+            return false;
+        }
+        $resultSetMapping = $this->getQuery()->parse()->getResultSetMapping();
+        $rootAliases = array_flip($this->getRootAliases());
+        foreach ($resultSetMapping->relationMap as $joinedAlias => $associationName) {
+            $parentAlias = $resultSetMapping->parentAliasMap[$joinedAlias] ?? null;
+            $parentEntityClass = $parentAlias !== null ? ($resultSetMapping->aliasMap[$parentAlias] ?? null) : null;
+            if ($parentEntityClass === null) {
+                continue;
             }
-        }
-        $entityClassByAlias = [];
-        foreach ($this->getDQLPart('from') as $fromExpression) {
-            $entityClassByAlias[$fromExpression->getAlias()] = $fromExpression->getFrom();
-        }
-        foreach ($this->getDQLPart('join') as $joinsOfRootAlias) {
-            foreach ($joinsOfRootAlias as $joinExpression) {
-                $joinPath = $joinExpression->getJoin();
-                if (!str_contains($joinPath, '.')) {
-                    continue;
-                }
-                [$parentAlias, $associationName] = explode('.', $joinPath, 2);
-                $parentEntityClass = $entityClassByAlias[$parentAlias] ?? null;
-                if ($parentEntityClass === null) {
-                    continue;
-                }
-                $parentClassMetadata = $this->em->getClassMetadata($parentEntityClass);
-                if (!$parentClassMetadata->hasAssociation($associationName)) {
-                    continue;
-                }
-                $entityClassByAlias[$joinExpression->getAlias()] = $parentClassMetadata->getAssociationTargetClass($associationName);
-                if (
-                    isset($selectedAliases[$joinExpression->getAlias()])
-                    && $parentClassMetadata->isCollectionValuedAssociation($associationName)
-                ) {
-                    return true;
-                }
+            if (!isset($rootAliases[$this->findHydrationRootAlias($resultSetMapping, $joinedAlias)])) {
+                continue;
+            }
+            if ($this->em->getClassMetadata($parentEntityClass)->isCollectionValuedAssociation($associationName)) {
+                return true;
             }
         }
         return false;
+    }
+
+    /**
+     * The alias at the top of a joined alias's hydration chain, following its parents: a root alias of the query when
+     * the chain starts at the root, the alias of a join on an entity class when it starts there.
+     */
+    protected function findHydrationRootAlias(ResultSetMapping $resultSetMapping, string $joinedAlias): string
+    {
+        $alias = $joinedAlias;
+        while (isset($resultSetMapping->parentAliasMap[$alias])) {
+            $alias = $resultSetMapping->parentAliasMap[$alias];
+        }
+        return $alias;
     }
 
     /**

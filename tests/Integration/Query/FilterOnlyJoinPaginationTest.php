@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace DDD\Tests\Integration\Query;
 
+use DDD\Tests\Integration\Fixtures\Repo\DB\TieBreakerRows\DBTieBreakerChild;
 use DDD\Tests\Integration\Fixtures\Repo\DB\TieBreakerRows\DBTieBreakerParent;
 use DDD\Tests\Integration\Fixtures\Repo\DB\TieBreakerRows\DBTieBreakerParentModel;
 use DDD\Tests\Integration\Fixtures\Repo\DB\TieBreakerRows\DBTieBreakerChildModel;
 use DDD\Tests\Integration\IntegrationTestCase;
 use DDD\Tests\Integration\Query\Support\MainSqlRenderingRowNumberPagePagination;
 use Doctrine\ORM\Query\Expr\Join;
+use Doctrine\ORM\Query\QueryException;
 
 /**
  * A paginated query whose to-many join only FILTERS (the joined alias is not selected) keeps its WHERE in the query
@@ -73,6 +75,43 @@ class FilterOnlyJoinPaginationTest extends IntegrationTestCase
         );
     }
 
+    /**
+     * A fetch-joined TO-ONE is no reason to drop the WHERE: children loaded with their parent and filtered through
+     * their grandchildren keep the filter, so the page is ordered by the matching grandchildren only.
+     */
+    public function testAFetchJoinedToOneKeepsTheWhereOfAFilterOnlyJoin(): void
+    {
+        // "late-child" has a grandchild that sorts before every match but does not match the filter.
+        $grandchildLabelsByChildLabel = ['late-child' => ['apple', 'pear'], 'early-child' => ['peach']];
+        foreach ($grandchildLabelsByChildLabel as $childLabel => $grandchildLabels) {
+            $this->insertParentWithChildren("parent-of-$childLabel", [$childLabel]);
+            $childId = $this->findParentIdByBusinessKey("parent-of-$childLabel") * 1000 + 1;
+            foreach ($grandchildLabels as $position => $grandchildLabel) {
+                static::insertRow(
+                    'TieBreakerGrandchildren',
+                    ['id' => $childId * 1000 + $position + 1, 'tieBreakerChildId' => $childId, 'label' => $grandchildLabel]
+                );
+            }
+        }
+        $childAlias = DBTieBreakerChildModel::MODEL_ALIAS;
+
+        $queryBuilder = DBTieBreakerChild::createQueryBuilder(true);
+        $queryBuilder->leftJoin("$childAlias.tieBreakerParent", 'fetchedParent')
+            ->addSelect('fetchedParent')
+            ->leftJoin("$childAlias.tieBreakerGrandchildren", 'filterOnlyGrandchildren')
+            ->andWhere('filterOnlyGrandchildren.label LIKE :labelPrefix')
+            ->setParameter('labelPrefix', 'p%')
+            ->orderBy('filterOnlyGrandchildren.label', 'ASC')
+            ->setMaxResults(2);
+        $this->assertFalse($queryBuilder->filtersFetchJoinedCollection());
+
+        $childLabels = [];
+        foreach ($queryBuilder->applyDistinctSubqueryIfNeededAndGetResult(true) as $childModel) {
+            $childLabels[] = $childModel->label;
+        }
+        $this->assertSame(['early-child', 'late-child'], $childLabels);
+    }
+
     public function testAPaginatedGroupedQueryRanksTheRootsByTheirMatchingChildrenOnly(): void
     {
         // "one-match" has the most children, but only one of them matches the filter.
@@ -134,6 +173,32 @@ class FilterOnlyJoinPaginationTest extends IntegrationTestCase
 
         $this->assertMatchesRegularExpression('/\bWHERE\b/i', $mainSqlRenderingPagination->renderMainSqlWithoutLimit($filterOnlyQueryBuilder));
         $this->assertDoesNotMatchRegularExpression('/\bWHERE\b/i', $mainSqlRenderingPagination->renderMainSqlWithoutLimit($fetchJoinQueryBuilder));
+        foreach ([$filterOnlyQueryBuilder, $fetchJoinQueryBuilder] as $renderedQueryBuilder) {
+            $this->assertNotNull($renderedQueryBuilder->getDQLPart('where'), 'the builder keeps its WHERE afterwards');
+            $this->assertSame(2, $renderedQueryBuilder->getMaxResults(), 'the builder keeps its limit afterwards');
+        }
+    }
+
+    /** The builder gets its limit and offset back even when the parse behind the main query throws */
+    public function testTheMainQueryRestoresTheLimitWhenItsParseFails(): void
+    {
+        $parentAlias = DBTieBreakerParentModel::MODEL_ALIAS;
+        $childrenAlias = self::FILTER_ONLY_ALIAS;
+        $queryBuilder = DBTieBreakerParent::createQueryBuilder(true);
+        $queryBuilder->leftJoin("$parentAlias.tieBreakerChildren", $childrenAlias)
+            ->addSelect($childrenAlias)
+            ->andWhere("$childrenAlias.noSuchField = 1")
+            ->setMaxResults(2)
+            ->setFirstResult(4);
+
+        try {
+            (new MainSqlRenderingRowNumberPagePagination())->renderMainSqlWithoutLimit($queryBuilder);
+            $this->fail('A WHERE on an unknown field must not parse');
+        } catch (QueryException) {
+        }
+        $this->assertSame(2, $queryBuilder->getMaxResults());
+        $this->assertSame(4, $queryBuilder->getFirstResult());
+        $this->assertNotNull($queryBuilder->getDQLPart('where'));
     }
 
     public function testAnOrderByInsideAWhereSubselectLeavesThePageOrderIntact(): void
