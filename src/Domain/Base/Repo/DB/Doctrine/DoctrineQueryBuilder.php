@@ -227,7 +227,7 @@ class DoctrineQueryBuilder extends QueryBuilder
         // collections down to the matching children (OData: the filter selects, the expand loads everything — a
         // collection is filtered by the expand's own filter, in its join condition). So such a query takes the same
         // two-step path as a paginated one: the qualifying root ids first, then the roots with their joins, unfiltered.
-        $filtersFetchJoinedCollection = $this->getDQLPart('where') !== null && $this->hasFetchJoinedCollection();
+        $filtersFetchJoinedCollection = $this->filtersFetchJoinedCollection();
 
         // If no joins or no limit/offset, return the result directly
         if (!$hasJoins || (!$hasLimitOrOffset && !$filtersFetchJoinedCollection)) {
@@ -300,6 +300,18 @@ class DoctrineQueryBuilder extends QueryBuilder
             }
         }
         return false;
+    }
+
+    /**
+     * Whether the query has a WHERE and fetch-joins a collection ({@see hasFetchJoinedCollection()}). Only then does
+     * the query that loads the roots with their joins run WITHOUT the WHERE: the WHERE selects the roots, and the
+     * fetched collection comes back complete. Every other query keeps its WHERE there — a join that only filters
+     * would otherwise add every child row of every selected root, and an ORDER BY or GROUP BY over the joined rows
+     * would see the children the filter excluded.
+     */
+    public function filtersFetchJoinedCollection(): bool
+    {
+        return $this->getDQLPart('where') !== null && $this->hasFetchJoinedCollection();
     }
 
     /**
