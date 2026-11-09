@@ -144,13 +144,14 @@ class RowNumberPagePagination implements PaginationStrategy
         $savedMaxResults = $queryBuilder->getMaxResults();
         $savedFirstResult = $queryBuilder->getFirstResult();
 
-        if ($queryBuilder->filtersFetchJoinedCollection()) {
-            $queryBuilder->resetDQLPart('where');
-        }
-        $queryBuilder->setMaxResults(null);
-        $queryBuilder->setFirstResult(null);
-
         try {
+            // Limit/offset first: the check parses the query, and without them its query-cache key is the same for
+            // every page. Inside the try, so the builder gets its limit back even when that parse throws.
+            $queryBuilder->setMaxResults(null);
+            $queryBuilder->setFirstResult(null);
+            if ($queryBuilder->filtersFetchJoinedCollection()) {
+                $queryBuilder->resetDQLPart('where');
+            }
             $mainQuery = $queryBuilder->getQuery();
             // Mirrors MariaDbDistinctSubqueryPagination's own hints on the equivalent "full column" render.
             $mainQuery->setHint(Query::HINT_FORCE_PARTIAL_LOAD, true);
