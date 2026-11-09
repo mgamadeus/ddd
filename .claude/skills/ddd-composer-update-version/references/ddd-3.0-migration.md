@@ -377,3 +377,5 @@ Unchanged:
   Also in 3.15.1, PostgreSQL: a paginated `GROUP BY` query with joins no longer fails with SQLSTATE 42803 (the page
   rank is ordered as `MIN(…)` in a grouped query), and the page rank goes into the query's own top-level `ORDER BY`
   only, never into one inside a WHERE subselect or an ordered aggregate.
+- 3.15.2 — the repository moved to the ddd-framework organisation (github.com/ddd-framework/ddd); links and
+  `composer.json` homepage/support updated. No code changes; the package name stays `mgamadeus/ddd`.

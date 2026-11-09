@@ -3,7 +3,12 @@
     "description": "A DDD Entity Framework on top of symfony and doctrine",
     "minimum-stability": "stable",
     "license": "MIT",
-    "version": "3.15.1",
+    "homepage": "https://github.com/ddd-framework/ddd",
+    "support": {
+        "issues": "https://github.com/ddd-framework/ddd/issues",
+        "source": "https://github.com/ddd-framework/ddd"
+    },
+    "version": "3.15.2",
     "authors": [
         {
             "name": "Marius-Eugen Gerdan",

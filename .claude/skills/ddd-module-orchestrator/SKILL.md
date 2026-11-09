@@ -112,9 +112,9 @@ refresh, token utilities, and TS types of the DDD wire format. No UI components,
 | | |
 |---|---|
 | Package | `@mgamadeus/ddd-web` on npm (public) — `pnpm add @mgamadeus/ddd-web` |
-| Repo | `github.com/mgamadeus/ddd-web` |
+| Repo | `github.com/ddd-framework/ddd-web` |
 | Release | not Packagist: tag `vX.Y.Z` → GitHub Actions `release.yml` (npm trusted publisher, staged publish); never part of a Core release |
-| Contract | the OpenAPI document Core emits (`src/Presentation/Base/OpenApi/`); planned `x-ddd-*` extensions (`x-ddd-contract`, `x-ddd-query`, `x-ddd-side-effects`, `x-ddd-entity`) and a golden spec test in Core. A change to the OpenAPI output is a contract change: it must show up in the golden spec test, be listed as a contract change in the CHANGELOG and be checked against ddd-web (github.com/mgamadeus/ddd-web) before release |
+| Contract | the OpenAPI document Core emits (`src/Presentation/Base/OpenApi/`); planned `x-ddd-*` extensions (`x-ddd-contract`, `x-ddd-query`, `x-ddd-side-effects`, `x-ddd-entity`) and a golden spec test in Core. A change to the OpenAPI output is a contract change: it must show up in the golden spec test, be listed as a contract change in the CHANGELOG and be checked against ddd-web (github.com/ddd-framework/ddd-web) before release |
 | Skills | in the package, `node_modules/@mgamadeus/ddd-web/.claude/skills`, linked into an app's `.claude/skills` like the vendor skills — consumer use and maintaining the package are documented there, not here |
 
 Not part of the Composer dependency graph: a Core release needs no ddd-web release unless the OpenAPI contract
