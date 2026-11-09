@@ -386,3 +386,6 @@ Unchanged:
   result of its own, which the WHERE also filters); a query without joins is answered without parsing. Still open: on
   MariaDB, a paginated query that fetch-joins a collection, filters on it and orders by a child column returns the
   page in the order of all the children, not only the matching ones.
+  Also in 3.15.2, PostgreSQL: a `SELECT DISTINCT` query on the two-step path (paginated, or a root filter on a
+  fetch-joined collection) no longer fails with SQLSTATE 42P10 ("for SELECT DISTINCT, ORDER BY expressions must
+  appear in select list"): the main query also selects the page rank it is ordered by, as `dctrn_page_rank`.

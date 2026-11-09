@@ -47,7 +47,10 @@ use RuntimeException;
  *    come back in the requested order, ties broken by the existing child order —
  *    `ORDER BY page.dctrn_minrownum, <child order>`. Only the query's own (top-level) ORDER BY is used: one inside
  *    a WHERE subselect or an aggregate belongs to that expression. A grouped query orders by `MIN(<rank>)` — it may
- *    order only by grouped columns or aggregates, and every root has exactly one rank.
+ *    order only by grouped columns or aggregates, and every root has exactly one rank. A `SELECT DISTINCT` main query
+ *    also selects that rank expression (as `dctrn_page_rank`): its ORDER BY may only use expressions of its select
+ *    list. The root id is always selected (Doctrine's paginator refuses a query without it), so one rank per root
+ *    leaves the distinct rows as they were; the hydration ignores the extra column.
  * 4. Both fragments' `?` placeholders are renamed to deterministic named tokens before assembly (mirroring
  *    {@see MariaDbDistinctSubqueryPagination}'s own technique) so the final combined SQL can be rescanned in
  *    appearance order to build one ordered parameter/type array, then run as a SINGLE
@@ -185,7 +188,8 @@ class RowNumberPagePagination implements PaginationStrategy
     /**
      * Injects `INNER JOIN (<idSql>) page ON page.<idAlias> = <rootTableAlias>.id` right after the main query's
      * `FROM <table> <rootTableAlias>`, and sorts by the page rank first — `page.dctrn_minrownum` when the id page
-     * carries one, `page.<idAlias>` otherwise (the existing `ORDER BY`, if any, becomes the tie-breaker).
+     * carries one, `page.<idAlias>` otherwise (the existing `ORDER BY`, if any, becomes the tie-breaker). A
+     * `SELECT DISTINCT` main query selects the rank expression as well.
      */
     protected function injectIdPageJoin(
         string $mainSql,
@@ -212,6 +216,18 @@ class RowNumberPagePagination implements PaginationStrategy
             $mainSql = substr($mainSql, 0, $orderByListOffset) . $pageOrder . ', ' . substr($mainSql, $orderByListOffset);
         } else {
             $mainSql .= ' ORDER BY ' . $pageOrder;
+        }
+        // PostgreSQL: the ORDER BY of a SELECT DISTINCT may only use expressions of its select list (SQLSTATE 42P10).
+        // The root id is always selected and every root has exactly one rank, so selecting the rank leaves the
+        // distinct rows as they were.
+        $mainSql = preg_replace_callback(
+            '/^\s*SELECT\s+DISTINCT\s+/i',
+            static fn(array $selectDistinct): string => $selectDistinct[0] . $pageOrder . ' AS dctrn_page_rank, ',
+            $mainSql,
+            1
+        );
+        if ($mainSql === null) {
+            throw new RuntimeException('RowNumberPagePagination: failed to add the page rank to the DISTINCT select list.');
         }
 
         // The root table alias is unique within the query, so the first `FROM <table> <rootAlias>` is the main
