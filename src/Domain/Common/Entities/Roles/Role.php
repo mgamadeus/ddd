@@ -48,9 +48,15 @@ class Role extends Entity
         return $this->name;
     }
 
-    public function setName(string $name)
+    /**
+     * Sets the name; a name of {@see self::ADMIN_ROLES} makes the role an admin role. Another name leaves
+     * `isAdminRole` as it is: an application's own admin roles carry the flag in their stored row.
+     */
+    public function setName(string $name): void
     {
         $this->name = $name;
-        $this->isAdminRole = isset($this->adminRoles[$name]);
+        if (isset(static::ADMIN_ROLES[$name])) {
+            $this->isAdminRole = true;
+        }
     }
 }

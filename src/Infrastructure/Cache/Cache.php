@@ -68,7 +68,7 @@ abstract class Cache
     public function __construct(array $config, protected ?MarshallerInterface $marshaller = null)
     {
         $this->config = $config;
-        $this->ttl = (int)$config['defaultTTL'] ?? self::DEEFAULT_TTL;
+        $this->ttl = (int)($config['defaultTTL'] ?? self::DEEFAULT_TTL);
     }
 
     public static function instance(?string $cacheGroup = null): static

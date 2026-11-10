@@ -13,10 +13,10 @@ use DDD\Domain\Common\Entities\Accounts\Account;
 /**
  * @method Account find(DoctrineQueryBuilder|string|int $idOrQueryBuilder, bool $useEntityRegistryCache = true, ?DoctrineModel &$loadedOrmInstance = null, bool $deferredCaching = false)
  * @method Account update(Entity &$entity, int $depth = 1)
- * @property DBAccount $ormInstance
+ * @property DBAccountModel $ormInstance
  */
 class DBAccount extends DBEntity
 {
     public const string BASE_ENTITY_CLASS = Account::class;
-    public const string BASE_ORM_MODEL = DBAccount::class;
+    public const string BASE_ORM_MODEL = DBAccountModel::class;
 }

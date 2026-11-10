@@ -695,6 +695,12 @@ trait SerializerTrait
                     $visiblePropertyName = SerializeInToonFormat::getToonPropertyName($propertyName);
                 }
 
+                if ($propertyName === 'objectType' && is_string($serializedValue)) {
+                    // a moved class may write its former name for readers that know only that one
+                    // (Common.objectTypeSerializationAliases, read back through Common.objectTypeMigrations)
+                    $serializedValue = ReflectionClass::getObjectTypeSerializationAliases()[$serializedValue] ?? $serializedValue;
+                }
+
                 if ($serializedValue !== '*RECURSION*') // serialization created recursion loop, we skip the property
                 {
                     $resultArray[$visiblePropertyName] = $serializedValue;
@@ -1554,11 +1560,14 @@ trait SerializerTrait
                     // § single-type). Honor a per-ITEM objectType only when it is that type or a genuine subclass;
                     // ignore anything else (stale / non-existent / model-hallucinated) and fall back to the declared
                     // type. Read objectType off the array ITEM ($arrayItem) — the previous $value->objectType read the
-                    // ARRAY, so a legitimate per-item subtype was silently ignored. Migrations lookup dropped here
-                    // (redundant for a single allowed type).
+                    // ARRAY, so a legitimate per-item subtype was silently ignored. The per-item objectType is read
+                    // through objectTypeMigrations: a moved subclass written under its former name.
                     $typeToInstance = array_key_first($allowedTypes->allowedTypes);
-                    if (isset($arrayItem->objectType) && class_exists($arrayItem->objectType) && is_a($arrayItem->objectType, $typeToInstance, true)) {
-                        $typeToInstance = $arrayItem->objectType;
+                    $providedItemObjectType = isset($arrayItem->objectType) && is_string($arrayItem->objectType)
+                        ? ReflectionClass::resolveMigratedObjectType($arrayItem->objectType)
+                        : null;
+                    if ($providedItemObjectType !== null && class_exists($providedItemObjectType) && is_a($providedItemObjectType, $typeToInstance, true)) {
+                        $typeToInstance = $providedItemObjectType;
                     } elseif (isset($arrayItem->objectType) && count(get_object_vars((object)$arrayItem)) <= 1) {
                         // corrupt husk → skip this element (see the single-property branch below); a null
                         // $typeToInstance flows into the `$item = null` arm and the element is not added
@@ -1819,12 +1828,15 @@ trait SerializerTrait
                 // non-existent, or (on an agent-facing MCP write tool) model-hallucinated — is IGNORED and we fall back
                 // to the declared type, instead of dropping the object (which left the typed property uninitialized:
                 // "must not be accessed before initialization"). See setPropertyFromObject() docblock § single-type.
-                // With one allowed type the objectTypeMigrations lookup is redundant (a stale name fails is_a() and
-                // falls back to the current declared type anyway) — migrations stay load-bearing in the multi-type
-                // branch + DBEntity only.
+                // The provided objectType is read through objectTypeMigrations first: a moved class written under its
+                // former name (Common.objectTypeSerializationAliases) names the subclass of an abstract declared type,
+                // which the declared type alone cannot instantiate.
                 $typeToInstance = array_key_first($allowedTypes->allowedTypes);
-                if (isset($value->objectType) && class_exists($value->objectType) && is_a($value->objectType, $typeToInstance, true)) {
-                    $typeToInstance = $value->objectType;
+                $providedObjectType = isset($value->objectType) && is_string($value->objectType)
+                    ? ReflectionClass::resolveMigratedObjectType($value->objectType)
+                    : null;
+                if ($providedObjectType !== null && class_exists($providedObjectType) && is_a($providedObjectType, $typeToInstance, true)) {
+                    $typeToInstance = $providedObjectType;
                 } elseif (isset($value->objectType) && count(get_object_vars((object)$value)) <= 1) {
                     // Foreign objectType AND no data fields: a corrupt husk (stale-cache splice, see the root-pass
                     // clear in toObject()) — instantiating the declared type would create a field-empty object whose

@@ -80,6 +80,17 @@ class Config
     }
 
     /**
+     * Every config root directory in search order (application roots first, then module roots) — for code that lists
+     * what the roots hold (e.g. every skill file of every module) instead of resolving one key through {@see get()}.
+     *
+     * @return string[]
+     */
+    public static function getConfigRootDirectories(): array
+    {
+        return static::getRootDirectories();
+    }
+
+    /**
      * @param string $searchString
      * @param bool $prioritizeDirectorySearch
      * @return mixed

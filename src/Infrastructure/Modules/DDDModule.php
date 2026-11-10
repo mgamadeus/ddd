@@ -40,6 +40,18 @@ abstract class DDDModule
     }
 
     /**
+     * Namespace prefixes whose services the container builds lazily (a proxy until first use) — the module's
+     * equivalent of `lazy: true` on an application's resource block.
+     * e.g. ['DDD\Domain\AI\Services\Conversations\']
+     *
+     * @return string[]
+     */
+    public static function getLazyServiceNamespaces(): array
+    {
+        return [];
+    }
+
+    /**
      * Namespace substrings to exclude from auto-wiring.
      * Matches against the fully qualified class name.
      */

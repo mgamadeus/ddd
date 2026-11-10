@@ -67,6 +67,11 @@ swallow the next message's writes. A transaction that was already open before th
 - Opt out per handler: `public const bool RESET_WORKER_STATE_BEFORE_JOB = false;` (a batch handler that accumulates
   across messages). The middleware skips the reset when ANY handler of the message says so.
 - Opt out per app: parameter `ddd.messenger.fresh_worker_state: false` (the pass then registers nothing).
+- **State of your own** (a static flag, a process memo, an open stack of a shared service): implement
+  `DDD\Symfony\Messenger\WorkerStateResetterInterface` on a service — `resetWorkerStateForNewJob()` then runs before
+  every consumed job, after the handler reset, whatever base class the handler extends. Collected by interface
+  autoconfiguration (tag `ddd.worker_state_resetter`, also for module services); a resetter that throws stops
+  neither the others nor the job; a handler that opts out skips the resetters too.
 - A stale baseline read in a worker is a SESSION problem, never a reason for a per-write transaction: a transaction
   joins the already open one and keeps its snapshot. Renew the connection instead (`renewDatabaseConnection()`).
 - Do not rely on registry-cached entities across messages; reload by id at the start of the job.

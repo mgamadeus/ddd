@@ -11,6 +11,7 @@ use DDD\Domain\Base\Entities\ObjectSet;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Reflection\ReflectionClass;
+use DDD\Infrastructure\Services\DDDService;
 use ReflectionException;
 use ReflectionNamedType;
 use ReflectionUnionType;
@@ -30,6 +31,19 @@ class ExpandDefinitions extends ObjectSet
     public string $referenceClassName;
 
     /**
+     * The class the container resolves for `$className` (an application's same-path subclass of a framework entity, or
+     * the class itself) — the class {@see \DDD\Domain\Base\Entities\LazyLoad\LazyLoadTrait::getPropertiesToLazyLoad()}
+     * reads the lazy-load properties of.
+     *
+     * @param string $className
+     * @return string
+     */
+    protected static function resolveContainerClassName(string $className): string
+    {
+        return DDDService::instance()->getContainerServiceClassNameForClass($className) ?? $className;
+    }
+
+    /**
      * Returns LazyLoad Properties of reference Class name as Expand options
      * @param string $referenceClassName
      * @return ExpandDefinitions
@@ -45,7 +59,9 @@ class ExpandDefinitions extends ObjectSet
         if (isset(self::$expandDefinitionsForClass[$referenceClassName])) {
             return self::$expandDefinitionsForClass[$referenceClassName];
         }
-        $reflectionClass = ReflectionClass::instance($referenceClassName);
+        // the class lazy loading reads its properties from (getPropertiesToLazyLoad()): an application's same-path
+        // subclass of a framework entity may declare relations the framework class does not have
+        $reflectionClass = ReflectionClass::instance(self::resolveContainerClassName($referenceClassName));
 
         $expandOnParentElements = Config::getEnv('QUERY_OPTIONS_EXPAND_ON_PARENT_ELEMENTS') ?? false;
         $expandDefinitions = new ExpandDefinitions();
@@ -79,7 +95,7 @@ class ExpandDefinitions extends ObjectSet
                 $elementTypeClass = $arrayType->getName();
                 if (is_a($elementTypeClass, DefaultObject::class, true)) {
                     $elementPropertiesToLazyLoad = $elementTypeClass::getPropertiesToLazyLoad();
-                    $elementReflectionClass = ReflectionClass::instance($elementTypeClass);
+                    $elementReflectionClass = ReflectionClass::instance(self::resolveContainerClassName($elementTypeClass));
                     foreach ($elementPropertiesToLazyLoad as $propertyName => $lazyLoadDefinitions) {
                         $reflectionProperty = $elementReflectionClass->getProperty($propertyName);
                         $propertiesToLazyLoadWithDetails[$propertyName] = [

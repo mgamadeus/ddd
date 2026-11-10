@@ -8,6 +8,7 @@ use DDD\Domain\Base\Entities\MessageHandlers\AppMessageHandler;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\ServicesThrowErrorsResetter;
+use DDD\Symfony\Messenger\WorkerStateResetterInterface;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Handler\HandlersLocatorInterface;
 use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
@@ -23,6 +24,11 @@ use Throwable;
  * ({@see ConsumedByWorkerStamp}) reaches its handler, this middleware runs
  * {@see AppMessageHandler::resetWorkerStateForNewJob()}: Doctrine unit-of-work caches cleared, every connection without
  * an active transaction closed (lazy reconnect), both static entity registries emptied.
+ *
+ * Right after that reset, every registered {@see WorkerStateResetterInterface} runs (tag
+ * {@see WorkerStateResetterInterface::TAG}, in tag priority order), whatever base class the handler extends: a module or
+ * an application puts back its own process statics there instead of in a handler base class. The resetters belong to
+ * the fresh state, so a handler opting out of it skips them as well.
  *
  * Independent of the reset opt-out, `throwErrors` of every instantiated DDD service goes back to its declared default
  * before the job ({@see ServicesThrowErrorsResetter}): a flag an earlier job switched on and left on would otherwise make
@@ -44,9 +50,16 @@ use Throwable;
  */
 class FreshWorkerStateMiddleware implements MiddlewareInterface
 {
+    /**
+     * @param HandlersLocatorInterface|null $handlersLocator The bus's handlers, to find the handler class whose reset runs
+     * @param ServicesThrowErrorsResetter|null $servicesThrowErrorsResetter Puts `throwErrors` of every instantiated service back
+     * @param iterable<WorkerStateResetterInterface> $workerStateResetters Every service tagged {@see WorkerStateResetterInterface::TAG}
+     */
     public function __construct(
         protected ?HandlersLocatorInterface $handlersLocator = null,
         protected ?ServicesThrowErrorsResetter $servicesThrowErrorsResetter = null,
+        /** @var iterable<WorkerStateResetterInterface> */
+        protected iterable $workerStateResetters = [],
     ) {
     }
 
@@ -61,6 +74,7 @@ class FreshWorkerStateMiddleware implements MiddlewareInterface
             } catch (Throwable) {
                 // fail-soft, see the class docblock
             }
+            $this->runWorkerStateResetters();
         }
         try {
             $this->servicesThrowErrorsResetter?->resetThrowErrorsOfInstantiatedServices();
@@ -72,6 +86,28 @@ class FreshWorkerStateMiddleware implements MiddlewareInterface
             return $stack->next()->handle($envelope, $stack);
         } finally {
             $this->rollBackTransactionsLeftOpenByJob($envelope, $transactionNestingLevelsBeforeJob);
+        }
+    }
+
+    /**
+     * Runs every registered {@see WorkerStateResetterInterface}, each on its own: one that throws stops neither the
+     * others nor the job (fail-soft, see the class docblock). Iterating the tagged iterator instantiates the resetters
+     * lazily, on the first consumed job.
+     *
+     * @return void
+     */
+    protected function runWorkerStateResetters(): void
+    {
+        try {
+            foreach ($this->workerStateResetters as $workerStateResetter) {
+                try {
+                    $workerStateResetter->resetWorkerStateForNewJob();
+                } catch (Throwable) {
+                    // fail-soft, see the class docblock
+                }
+            }
+        } catch (Throwable) {
+            // a resetter that cannot even be instantiated: fail-soft as well
         }
     }
 

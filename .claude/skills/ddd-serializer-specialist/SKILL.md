@@ -126,6 +126,16 @@ public string $nickname;
 
 For API consumers transitioning from old field names. Aliases are emitted only in the **output** direction (`SerializerTrait.php:699-708`) — an alias key in an **input** payload is NOT read; hydration matches the real property name only.
 
+### Moved or renamed classes -- `objectType` in stored data
+
+A serialized object carries its class as `objectType`. Two config maps keep stored data readable when a class moves:
+
+- `Common.objectTypeMigrations` (`old class => new class`): a stored `objectType` is read as the new class — for
+  union types, for a property of one allowed type (single object and array item) and for ObjectSet elements.
+- `Common.objectTypeSerializationAliases` (`class => objectType to write`): the moved class keeps WRITING its former
+  name while code that knows only the old name still reads the data. Remove the entry once every reader runs the
+  new class.
+
 ### `#[ExposePropertyInsteadOfClass('innerProperty')]` -- Flatten nested object
 ```php
 // The attribute is Attribute::TARGET_CLASS (read OFF THE CLASS) — it goes on the class, NOT on a

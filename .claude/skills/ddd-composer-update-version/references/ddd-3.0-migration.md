@@ -422,3 +422,21 @@ Unchanged:
   Behaviour change: such a property is no longer set after a plain load — `isset($parent->detail)` is false until
   the property is read or expanded (reading it loads it, as for every lazy-loaded property). A find by id with a
   `select` hides the properties that were not selected, as a list does (they appeared with their class defaults).
+- 3.19.0 — Modules register their services like an application's resource block: `ModuleCompilerPass` runs before
+  Symfony's autoconfiguration, so module handlers, commands and tagged services need no application wiring;
+  `#[Exclude]` and abstract classes are no services, module interfaces carry their `#[AutoconfigureTag]` to
+  implementations, a singly implemented interface gets an alias, `#[AsAlias]` is honoured (an application alias of
+  the same id wins). `DDDModule::getLazyServiceNamespaces()`, `DDDKernel::getAdditionalModuleClasses()`, parameter
+  `ddd.modules` / `DDDModules::getModuleClasses()`. Check after the update: a module service that an application
+  did not cover with a resource block is now autoconfigured by its attributes and interfaces (it may gain a tag),
+  and an abstract module class is no longer fetchable by its id. `WorkerStateResetterInterface`: a service
+  implementing it is reset before every consumed Messenger job. `Common.objectTypeSerializationAliases` (a moved
+  class keeps writing its former `objectType`) and `Common.objectTypeMigrations` now also for single-type
+  properties and ObjectSet elements. A relation declared with `LazyLoad::$entityClassName` naming a subclass uses
+  that class for the foreign key and for mapping a joined row; expand definitions reflect an application's
+  same-path subclass. New: `PublicUrlGuard` (refuses URLs that resolve to private, loopback or link-local hosts),
+  `WebsiteHostName`, `Account::isAdminWithAccessToAllResources()`, `AuthService::getAdminAccountOrNull()` /
+  `isCurrentSessionAdmin()`, `Config::getConfigRootDirectories()`, `Translatable::CONTEXT_ONE` / `CONTEXT_MANY`.
+  Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
+  never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
+  the cache's configured `defaultTTL` is read as an integer.

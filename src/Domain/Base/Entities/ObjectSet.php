@@ -237,13 +237,18 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
 
             foreach ($object->elements as $index => $value) {
                 $typeToInstance = null;
+                // a stored element's objectType names its class today through objectTypeMigrations (a moved class
+                // written under its former name, Common.objectTypeSerializationAliases)
+                $elementObjectType = isset($value->objectType) && is_string($value->objectType)
+                    ? ReflectionClass::resolveMigratedObjectType($value->objectType)
+                    : null;
                 if (count($allowedTypes) > 1) {
                     // by convention we need an objectType in case of multiple types possible
-                    if (isset($value->objectType)) {
+                    if ($elementObjectType !== null) {
                         foreach ($allowedTypes as $allowedType => $bool) {
                             // we check if type to instance is valid type or child
-                            if (is_a($value->objectType, $allowedType, true)) {
-                                $typeToInstance = $value->objectType;
+                            if (is_a($elementObjectType, $allowedType, true)) {
+                                $typeToInstance = $elementObjectType;
                             }
                         }
                     }
@@ -267,9 +272,9 @@ class ObjectSet extends ValueObject implements ArrayAccess, Iterator, Countable,
                         }
                         return;
                     }
-                } elseif (isset($value->objectType) && is_a($value->objectType, array_keys($allowedTypes)[0], true)) {
+                } elseif ($elementObjectType !== null && is_a($elementObjectType, array_keys($allowedTypes)[0], true)) {
                     // we have only one element
-                    $typeToInstance = $value->objectType;
+                    $typeToInstance = $elementObjectType;
                 } elseif (isset($value->objectType) && count(get_object_vars((object)$value)) <= 1) {
                     // Foreign objectType AND no data fields: a corrupt husk (stale toObject-cache splice, see the
                     // root-pass clear in SerializerTrait::toObject()) — instantiating the declared type would create

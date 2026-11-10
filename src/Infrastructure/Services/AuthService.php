@@ -112,6 +112,37 @@ class AuthService
     }
 
     /**
+     * The admin account acting behind the authenticated account (an impersonation), or null when there is none.
+     * {@see getAdminAccount()} is declared non-nullable and fails when no admin account is set; this method returns
+     * null instead. An application that detects the impersonating admin itself (a login-as cookie, a token claim)
+     * overrides it.
+     *
+     * @return Account|null
+     */
+    public function getAdminAccountOrNull(): ?Account
+    {
+        return self::$adminAccount;
+    }
+
+    /**
+     * True when the authenticated account or the impersonating admin account (if any) has admin access to all
+     * resources ({@see Account::isAdminWithAccessToAllResources()}). Use it instead of checking both
+     * {@see getAccount()} and {@see getAdminAccountOrNull()} by hand.
+     *
+     * @return bool
+     */
+    public function isCurrentSessionAdmin(): bool
+    {
+        $authAccount = $this->getAccount();
+        if ($authAccount && $authAccount->isAdminWithAccessToAllResources()) {
+            return true;
+        }
+
+        $adminAccount = $this->getAdminAccountOrNull();
+        return $adminAccount !== null && $adminAccount->isAdminWithAccessToAllResources();
+    }
+
+    /**
      * @param string|null $authToken
      * @param string|null $authTokenType
      * @return bool

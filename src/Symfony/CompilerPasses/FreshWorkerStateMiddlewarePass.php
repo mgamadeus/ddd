@@ -9,6 +9,8 @@ use DDD\Infrastructure\Services\ServicesThrowErrorsResetter;
 use DDD\Symfony\Messenger\Middleware\FreshWorkerStateMiddleware;
 use DDD\Symfony\Messenger\Middleware\WorkerMonitoringMiddleware;
 use DDD\Symfony\Messenger\Middleware\WorkspaceOriginGuardMiddleware;
+use DDD\Symfony\Messenger\WorkerStateResetterInterface;
+use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -27,6 +29,9 @@ use Symfony\Component\DependencyInjection\Reference;
  *
  * Opt-out for a whole app: parameter `ddd.messenger.fresh_worker_state: false`. Idempotent: a bus that already
  * lists the middleware (an app pinning it by hand) is left alone.
+ *
+ * The middleware receives every service tagged {@see WorkerStateResetterInterface::TAG} (interface autoconfiguration,
+ * {@see \DDD\Symfony\Kernels\DDDKernel::build()}) as a tagged iterator, in tag priority order.
  *
  * The same pass registers the {@see WorkspaceOriginGuardMiddleware} right behind it (a consumed message dispatched by
  * ANOTHER workspace is refused, never run on the wrong code); its own opt-out is `ddd.messenger.workspace_origin_guard: false`.
@@ -82,6 +87,7 @@ class FreshWorkerStateMiddlewarePass implements CompilerPassInterface
                     (new Definition(FreshWorkerStateMiddleware::class))
                         ->setArgument(0, new Reference($busId . '.messenger.handlers_locator', ContainerInterface::NULL_ON_INVALID_REFERENCE))
                         ->setArgument(1, new Reference(ServicesThrowErrorsResetter::class, ContainerInterface::NULL_ON_INVALID_REFERENCE))
+                        ->setArgument(2, new TaggedIteratorArgument(WorkerStateResetterInterface::TAG))
                 );
                 array_unshift($middleware, ['id' => $middlewareId]);
             }

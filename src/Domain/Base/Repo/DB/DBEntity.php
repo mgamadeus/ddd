@@ -10,6 +10,7 @@ use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\Entity;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Entities\Traits\EntityTrait;
 use DDD\Domain\Base\Entities\Traits\ValueObjectTrait;
@@ -410,7 +411,11 @@ class DBEntity extends DatabaseRepoEntity
                 DefaultObject::isEntity($possibleEntityTypeName) && $this->ormInstance->isLoaded($propertyName)
             ) {
                 /** @var Entity $entityType */
-                $entityType = $possibleEntityTypeName;
+                $entityType = static::resolveEntityClassOfLoadedRelation(
+                    $entityReflectionClass,
+                    $entityPropertyName,
+                    $possibleEntityTypeName
+                );
                 $repoClassName = $entityType::getRepoClass(LazyLoadRepo::DB);
                 /** @var DoctrineModel $ormModelInstance */
                 $ormModelInstance = $this->ormInstance->$propertyName;
@@ -439,6 +444,33 @@ class DBEntity extends DatabaseRepoEntity
                 }
             }
         }
+    }
+
+    /**
+     * The entity class whose repo maps the already loaded row of a relation property: the `entityClassName` of the
+     * property's `#[LazyLoad]` when it names a subclass of the declared type — a subclass that redeclares a relation
+     * with the parent's (invariant) type and a more specific class — else the declared type. The same rule as the lazy
+     * load and the foreign key ({@see DatabaseModel::resolveForeignEntityClassName()}), so a row loaded with the parent
+     * entity is mapped by the same repo a later lazy load would use.
+     *
+     * @param ReflectionClass $entityReflectionClass The reflection of the entity that holds the relation
+     * @param string $entityPropertyName The relation property
+     * @param string $declaredClassName The declared (entity) type of the property
+     * @return string The entity class to map the loaded row with
+     * @throws ReflectionException
+     */
+    public static function resolveEntityClassOfLoadedRelation(
+        ReflectionClass $entityReflectionClass,
+        string $entityPropertyName,
+        string $declaredClassName
+    ): string {
+        /** @var LazyLoad|null $propertyLazyLoadAttribute */
+        $propertyLazyLoadAttribute = $entityReflectionClass->getAttributeInstanceForProperty(
+            $entityPropertyName,
+            LazyLoad::class,
+            ReflectionAttribute::IS_INSTANCEOF
+        );
+        return DatabaseModel::resolveForeignEntityClassName($declaredClassName, $propertyLazyLoadAttribute?->entityClassName);
     }
 
     /**

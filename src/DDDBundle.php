@@ -8,8 +8,8 @@ use DDD\Infrastructure\Libs\Config;
 use DDD\Infrastructure\Logging\IssuesDuplicateRequestRecordFilterHandler;
 use DDD\Infrastructure\Logging\IssuesLogSinkHandler;
 use DDD\Infrastructure\Modules\DDDModule;
+use DDD\Infrastructure\Modules\DDDModules;
 use DDD\Infrastructure\Services\DDDService;
-use DDD\Symfony\CompilerPasses\ModuleCompilerPass;
 use DDD\Infrastructure\Services\DDDService as DDDServiceForDefaults;
 use DDD\Symfony\DependencyInjection\EnvVarProcessors\WorkspaceVhostEnvVarProcessor;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -39,10 +39,9 @@ class DDDBundle extends Bundle
         // Load DDD framework config (module-level: lower priority than app configs)
         Config::addConfigDirectory(DDDService::instance()->getFrameworkRootDir() . '/config/app', isModule: true);
 
-        // Load module configs (module-level: lower priority than app configs)
-        $containerBuilder = new ContainerBuilder();
-        $containerBuilder->setParameter('kernel.project_dir', $projectDirectory);
-        foreach (ModuleCompilerPass::discoverModules($containerBuilder) as $moduleClass) {
+        // Load module configs (module-level: lower priority than app configs) — every module the container
+        // registered, the kernel's additional modules included
+        foreach (DDDModules::getModuleClasses($this->container, $projectDirectory) as $moduleClass) {
             /** @var DDDModule $moduleClass */
             $configPath = $moduleClass::getConfigPath();
             if ($configPath !== null && is_dir($configPath)) {

@@ -14,16 +14,16 @@ use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Infrastructure\Libs\ClassFinder;
 use DDD\Infrastructure\Libs\Config;
+use DDD\DDDBundle;
 use DDD\Infrastructure\Modules\DDDModule;
+use DDD\Infrastructure\Modules\DDDModules;
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Services\DDDService;
-use DDD\Symfony\CompilerPasses\ModuleCompilerPass;
 use Doctrine\DBAL\Exception;
 use ReflectionAttribute;
 use ReflectionException;
 use Throwable;
-use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 /**
  * Service for generation of SQL table definitions and Doctrine models based on Entites
@@ -115,10 +115,8 @@ class EntityModelGeneratorService
             $classesFromApplication = ClassFinder::getClassesInDirectory(DDDService::instance()->getRootDir() . '/src/Domain');
             $allClasses = array_merge($classesFromFramework, $classesFromApplication);
 
-            // Include entity classes from registered DDD modules
-            $containerBuilder = new ContainerBuilder();
-            $containerBuilder->setParameter('kernel.project_dir', DDDService::instance()->getRootDir());
-            foreach (ModuleCompilerPass::discoverModules($containerBuilder) as $moduleClass) {
+            // Include entity classes from registered DDD modules (the kernel's additional modules included)
+            foreach (DDDModules::getModuleClasses(DDDBundle::getContainer(), DDDService::instance()->getRootDir()) as $moduleClass) {
                 /** @var DDDModule $moduleClass */
                 $moduleDomainPath = $moduleClass::getSourcePath() . '/Domain';
                 if (is_dir($moduleDomainPath)) {

@@ -528,12 +528,15 @@ abstract class DDDModule
     abstract public static function getSourcePath(): string;      // Required: path to src/
     public static function getConfigPath(): ?string               // Optional: config directory
     public static function getPublicServiceNamespaces(): array    // Optional: public services
+    public static function getLazyServiceNamespaces(): array      // Optional: services built lazily (proxy until first use)
     public static function getExcludePatterns(): array            // Optional: autowiring exclusions
     public static function getControllerPaths(): array            // Optional: controller directories
 }
 ```
 
-**Discovery:** `ModuleCompilerPass` reads `vendor/composer/installed.json`, finds packages with `extra.ddd-module`, validates the class exists and extends `DDDModule`, then auto-registers all module services.
+**Discovery:** `ModuleCompilerPass` reads `vendor/composer/installed.json`, finds packages with `extra.ddd-module`, validates the class exists and extends `DDDModule`, then auto-registers all module services. A kernel adds modules Composer does not list (a module's own test kernel) with `DDDKernel::getAdditionalModuleClasses()`; the list is the container parameter `ddd.modules` (`DDDModules::getModuleClasses()` at runtime).
+
+**Module services are registered like an application's resource block:** autowired and autoconfigured (handlers, commands, tagged interfaces work without application wiring); a class with `#[Exclude]` and an abstract class are no services; an interface's `#[AutoconfigureTag]` reaches its implementations; an interface with exactly one implementation in the module gets an alias; `#[AsAlias]` publishes an alias — an application alias of the same id wins.
 
 **Entity Discovery:** `EntityModelGeneratorService` scans framework, application, AND module `Domain/` directories for entity classes when generating database models.
 

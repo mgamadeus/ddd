@@ -10,6 +10,7 @@ use DDD\Symfony\CompilerPasses\QuotaDefaultBindingsCompilerPass;
 use DDD\Symfony\CompilerPasses\ServiceClassCollectorPass;
 use DDD\Symfony\CompilerPasses\ServicesThrowErrorsResetterPass;
 use DDD\Symfony\CompilerPasses\WorkerTransportsPass;
+use DDD\Symfony\Messenger\WorkerStateResetterInterface;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\Container;
@@ -46,6 +47,19 @@ class DDDKernel extends Kernel
     public function getKernelPrefix(): ?string
     {
         return $this->kernelPrefix;
+    }
+
+    /**
+     * Module classes this kernel registers in addition to the ones Composer lists (`extra.ddd-module` in
+     * `vendor/composer/installed.json`): a module's own test kernel, whose vendor never lists the module itself, or a
+     * module installed by path. Each entry must be a concrete {@see \DDD\Infrastructure\Modules\DDDModule} subclass;
+     * anything else is skipped by the {@see ModuleCompilerPass}.
+     *
+     * @return string[] DDDModule subclass names
+     */
+    public function getAdditionalModuleClasses(): array
+    {
+        return [];
     }
 
     /**
@@ -184,8 +198,15 @@ class DDDKernel extends Kernel
 
     protected function build(ContainerBuilder $container): void
     {
-        // Register module services from discovered DDD modules
-        $container->addCompilerPass(new ModuleCompilerPass());
+        // Every service implementing WorkerStateResetterInterface — framework, module and application — is run by the
+        // FreshWorkerStateMiddleware before every consumed job, whatever base class the job's handler extends.
+        $container->registerForAutoconfiguration(WorkerStateResetterInterface::class)
+            ->addTag(WorkerStateResetterInterface::TAG);
+        // Register module services from discovered DDD modules (Composer's list plus the kernel's additional modules).
+        // Before Symfony's autoconfiguration passes (priority 100 of this phase), so module handlers, commands and
+        // tagged services are autoconfigured like the application's own services.
+        $container->setParameter(ModuleCompilerPass::ADDITIONAL_MODULES_PARAMETER, $this->getAdditionalModuleClasses());
+        $container->addCompilerPass(new ModuleCompilerPass(), PassConfig::TYPE_BEFORE_OPTIMIZATION, ModuleCompilerPass::PASS_PRIORITY);
         // In the ServiceClassCollectorPass we register all class / service name associations
         $container->addCompilerPass(new ServiceClassCollectorPass());
         // A framework service the application subclasses (IssuesLogService) is ONE instance: typed injections of the

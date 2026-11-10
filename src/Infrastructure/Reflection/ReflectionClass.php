@@ -97,6 +97,9 @@ class ReflectionClass extends \ReflectionClass
 
     protected static ?array $objectTypeMigrations = null;
 
+    /** @var array<string, string>|null class => objectType written on serialization, see getObjectTypeSerializationAliases() */
+    protected static ?array $objectTypeSerializationAliases = null;
+
     /** @var UseStatement[] */
     protected $useStatements = [];
 
@@ -110,6 +113,49 @@ class ReflectionClass extends \ReflectionClass
             self::$objectTypeMigrations = Config::get('Common.objectTypeMigrations') ?? [];
         }
         return self::$objectTypeMigrations;
+    }
+
+    /**
+     * The write-side counterpart of {@see getObjectTypeMigrations()}: config `Common.objectTypeSerializationAliases`,
+     * class => the objectType serialization writes for an instance of exactly that class. Used while a class moved
+     * (e.g. into a module) and code that knows only the old name still reads what the new code writes: the new code
+     * keeps writing the old name, and reads it back through the forward map `Common.objectTypeMigrations`
+     * (old => new). Remove an entry once every reader runs the new class.
+     *
+     * @return array<string, string> Associative array class => objectType to write
+     */
+    public static function getObjectTypeSerializationAliases(): array
+    {
+        if (!isset(self::$objectTypeSerializationAliases)) {
+            self::$objectTypeSerializationAliases = Config::get('Common.objectTypeSerializationAliases') ?? [];
+        }
+        return self::$objectTypeSerializationAliases;
+    }
+
+    /**
+     * The class a stored objectType names today: its target in `Common.objectTypeMigrations` (a moved or renamed
+     * class's former name), else the name itself. Read wherever a stored objectType picks the class to instantiate —
+     * also for a property with ONE allowed type, whose stored subclass name (written under an alias, see
+     * {@see getObjectTypeSerializationAliases()}) would otherwise be ignored for the declared, possibly abstract, type.
+     *
+     * @param string $objectType The stored objectType
+     * @return string The class name to resolve
+     */
+    public static function resolveMigratedObjectType(string $objectType): string
+    {
+        return self::getObjectTypeMigrations()[$objectType] ?? $objectType;
+    }
+
+    /**
+     * Forgets the cached `Common.objectTypeMigrations` and `Common.objectTypeSerializationAliases`, so the next read
+     * loads the config again (tests, a long process whose config changed).
+     *
+     * @return void
+     */
+    public static function clearObjectTypeConfigCaches(): void
+    {
+        self::$objectTypeMigrations = null;
+        self::$objectTypeSerializationAliases = null;
     }
 
     /**

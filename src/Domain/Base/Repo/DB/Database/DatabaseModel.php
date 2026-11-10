@@ -161,6 +161,24 @@ class DatabaseModel extends ValueObject
     }
 
     /**
+     * The entity class a relation property's foreign key points to: the `entityClassName` of its `#[LazyLoad]` when it
+     * names a subclass of the declared type (as lazy loading resolves it, see `LazyLoadTrait::getRepoClass()`), else
+     * the declared type. A subclass that redeclares a relation with the parent's (invariant) type and a more specific
+     * `entityClassName` therefore keeps the foreign key of the specific class (its repo, its table).
+     *
+     * @param string $declaredClassName the declared property type
+     * @param string|null $lazyLoadEntityClassName the `entityClassName` of the property's `#[LazyLoad]`, if any
+     * @return string
+     */
+    public static function resolveForeignEntityClassName(string $declaredClassName, ?string $lazyLoadEntityClassName): string
+    {
+        if ($lazyLoadEntityClassName !== null && $lazyLoadEntityClassName !== '' && is_a($lazyLoadEntityClassName, $declaredClassName, true)) {
+            return $lazyLoadEntityClassName;
+        }
+        return $declaredClassName;
+    }
+
+    /**
      * Generates DatabaseModel from Entity class definitions
      * @param string $entityClassName
      * @return DatabaseModel
@@ -462,10 +480,12 @@ class DatabaseModel extends ValueObject
                 $propertyLazyLoadAttributes = $reflectionProperty->getAttributes(LazyLoad::class, ReflectionAttribute::IS_INSTANCEOF);
                 $propertyDBRepoLazyloadAttribute = null;
                 $propertyRepresentsParentClass = false;
+                $propertyLazyLoadEntityClassName = null;
                 foreach ($propertyLazyLoadAttributes as $propertyLazyLoadAttribute) {
                     /** @var LazyLoad $propertyLazyLoadAttributeInstance */
                     $propertyLazyLoadAttributeInstance = $propertyLazyLoadAttribute->newInstance();
                     $propertyRepresentsParentClass = $propertyRepresentsParentClass || $propertyLazyLoadAttributeInstance->addAsParent;
+                    $propertyLazyLoadEntityClassName ??= $propertyLazyLoadAttributeInstance->entityClassName;
                     if ($propertyLazyLoadAttributeInstance->repoType == LazyLoadRepo::DB) {
                         $propertyDBRepoLazyloadAttribute = $propertyLazyLoadAttributeInstance;
                         break;
@@ -473,7 +493,10 @@ class DatabaseModel extends ValueObject
                 }
 
                 /** @var Entity $foreignClassName */
-                $foreignClassName = $reflectionProperty->getType()->getName();
+                $foreignClassName = static::resolveForeignEntityClassName(
+                    $reflectionProperty->getType()->getName(),
+                    $propertyLazyLoadEntityClassName
+                );
                 $foreignClassReflectionClass = ReflectionClass::instance((string)$foreignClassName);
                 $hasDBRelatedRepo = false;
                 foreach ($foreignClassReflectionClass->getAttributes(LazyLoadRepo::class, ReflectionAttribute::IS_INSTANCEOF) as $repoAttribute) {

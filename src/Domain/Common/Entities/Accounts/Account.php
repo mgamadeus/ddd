@@ -75,4 +75,30 @@ class Account extends Entity implements UserInterface, AccountDependentEntityInt
     {
         return $this;
     }
+
+    /**
+     * THE admin check for "may read and change every account's resources". Use it instead of `roles->isAdmin()`:
+     * every role besides the login role counts as an admin role for `isAdmin()`, so that check leaks across tenant
+     * boundaries (e.g. an agency's own admin role).
+     *
+     * True when the account has the role SUPERADMIN, or the role ADMIN while its roles count as admin roles.
+     *
+     * @return bool
+     */
+    public function isAdminWithAccessToAllResources(): bool
+    {
+        if ($this->roles->hasRoles(Role::SUPERADMIN)) {
+            return true;
+        }
+
+        if (!$this->roles->isAdmin()) {
+            return false;
+        }
+
+        if ($this->roles->hasRoles(Role::ADMIN)) {
+            return true;
+        }
+
+        return false;
+    }
 }

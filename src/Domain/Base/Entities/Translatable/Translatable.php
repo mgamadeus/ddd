@@ -27,6 +27,12 @@ class Translatable extends ValueObject
 
     public const string DEFAULT_LANGUAGE_CODE = 'en';
 
+    /** @var string Translation context of a count of one: the singular value of a singular/plural key */
+    public const string CONTEXT_ONE = 'ONE';
+
+    /** @var string Translation context of any count but one: the plural value of a singular/plural key */
+    public const string CONTEXT_MANY = 'MANY';
+
     /** @var string */
     public static string $currentLanguageCode;
 
