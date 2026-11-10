@@ -432,6 +432,7 @@ The property **description** is the `@var` docblock text *after* the type token 
 | `#[Ignore]` | property omitted from the schema entirely |
 | `#[Parameter(in: PATH/QUERY/BODY/RESPONSE/FILES)]` | which surface the property documents; a request-DTO body schema skips PATH/QUERY props (RESPONSE documents all). Since v2.64.1 a property declared `in: RESPONSE` is documented in EVERY scope — see the component-scope note below |
 | `#[OverwritePropertyName('x')]` | renames the output key (see `ddd-serializer-specialist`) |
+| `#[ExposePropertyInsteadOfClass('x')]` (on the property's CLASS) | the property is documented with the schema of the class' property `x` (e.g. `type: array, items: number`) instead of a `$ref` — as the serializer emits it |
 
 > **One schema component per class, and its scope is whoever registered it FIRST.** `Components::addSchemaForClass()`
 > keys the component by class name alone and returns early if it already exists; a class reached as a NESTED property

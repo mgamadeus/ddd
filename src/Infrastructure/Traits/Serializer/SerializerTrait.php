@@ -706,12 +706,17 @@ trait SerializerTrait
             }
             if ($propertyNameToExposeInsteadOfClass) {
                 // in case we are here, we just ran through the property that is to be exposed, since otherwise we would have continued;
-                $resultArray = $resultArray[$visiblePropertyName];
+                $exposedValueIsSet = array_key_exists($visiblePropertyName, $resultArray);
+                $resultArray = $resultArray[$visiblePropertyName] ?? null;
                 break;
             }
         }
         if ($cached) {
             SerializerRegistry::setToObjectCacheForObjectId($cacheKey, $resultArray);
+        }
+        // The exposed value stands for the whole object as it is: an empty list stays [] (not {}), a scalar stays a scalar
+        if ($propertyNameToExposeInsteadOfClass && ($exposedValueIsSet ?? false)) {
+            return $resultArray;
         }
         if (empty($resultArray)) {
             return new stdClass(); // Leeres Objekt statt leeres Array zurückgeben
@@ -1840,9 +1845,18 @@ trait SerializerTrait
                     if (is_array($value)) {
                         // Make it possible to set elements to ObjectSets without passing the values in .elements property
                         // and allow values being passed as array directly
+                        $propertyNameToExpose = ExposePropertyInsteadOfClass::getPropertyNameToExposeForClass(
+                            $this->$propertyName::class
+                        );
                         if ($this->$propertyName instanceof ObjectSet) {
                             $tObject = new stdClass();
                             $tObject->elements = $value;
+                            $value = $tObject;
+                        } elseif ($propertyNameToExpose !== null && array_is_list($value)) {
+                            // a class serialized as one of its properties (#[ExposePropertyInsteadOfClass]) is read back
+                            // from that property's value
+                            $tObject = new stdClass();
+                            $tObject->$propertyNameToExpose = $value;
                             $value = $tObject;
                         } else {
                             // empty objects come as arrays and have to be converted

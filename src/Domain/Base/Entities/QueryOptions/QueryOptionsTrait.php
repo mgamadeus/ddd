@@ -266,6 +266,8 @@ trait QueryOptionsTrait
                 }
 
                 $targetPropertyHasQueryOptions = false;
+                /** @var string[] $classesWithScopedDefaultQueryOptions target classes whose defaults carry this expand clause */
+                $classesWithScopedDefaultQueryOptions = [];
                 $propertyType = $reflectionClass->getProperty($propertyName)->getType();
                 $targetPropertyTypes = [];
                 if ($propertyType instanceof ReflectionNamedType) {
@@ -287,43 +289,53 @@ trait QueryOptionsTrait
                         // a subproperty of the property needs to be expanded.
                         $defaultQueryOptions = isset($this->$propertyName) ? $this?->$propertyName?->getQueryOptions(
                         ) : $targetPropertyClass::getDefaultQueryOptions();
+                        // the expand clause is the target class' default only while this property loads: a later load
+                        // of the same class in the request must not inherit its filters, order, page or select
+                        $targetPropertyClass::setDefaultQueryOptionsSnapshot();
+                        $classesWithScopedDefaultQueryOptions[] = $targetPropertyClass;
                         $defaultQueryOptions->setQueryOptionsFromExpandOption($expandOption);
                         $targetPropertyClass::setDefaultQueryOptions($defaultQueryOptions);
                     }
                 }
-                $propertyAlreadyLoaded = isset($this->$propertyName);
-                $loadedProperty = $this->$propertyName;
-                // if property has been loaded from cache, we need to apply expand options to it
-                if (isset($loadedProperty) && is_object($loadedProperty)) {
-                    $targetPropertyReflectionClass = ReflectionClass::instance($loadedProperty::class);
-                    if (
-                        $targetPropertyReflectionClass && $targetPropertyReflectionClass->hasTrait(
-                            QueryOptionsTrait::class
-                        )
-                    ) {
-                        /** @var QueryOptionsTrait $loadedProperty */
-                        $loadedProperty->getQueryOptions()->setQueryOptionsFromExpandOption($expandOption);
-                    }
-                }
-
-                // Opt-in legacy reload: if the property has been already loaded, we check if the
-                // expand option would influence the items — e.g. filters/orderBy/top/skip on the
-                // expand could imply a different result set than what's currently cached. Example
-                // of unintended drift: expand on Account with filter on subscriptions, and a
-                // previous lazyload of ->settings already populated subscriptions; without the
-                // reload the new filter would be silently ignored.
-                //
-                // This branch is now opt-in via $reloadAlreadyLoadedSetsOnScopedExpand. Default
-                // behavior is fill-in-the-gaps: keep the already-loaded set and only descend
-                // recursively to resolve sub-properties that aren't loaded yet (typical case
-                // when the parent was eager-fetched via the Set-Find delegation in
-                // EntitiesService::find — a re-fetch here would discard that work).
-                if ($reloadAlreadyLoadedSetsOnScopedExpand
-                    && $propertyAlreadyLoaded
-                    && $this->$propertyName instanceof ObjectSet
-                    && (($expandOption?->filters ?? null) || ($expandOption?->orderByOptions ?? null) || ($expandOption?->top ?? null) || ($expandOption?->skip ?? null))) {
-                    unset($this->$propertyName);
+                try {
+                    $propertyAlreadyLoaded = isset($this->$propertyName);
                     $loadedProperty = $this->$propertyName;
+                    // if property has been loaded from cache, we need to apply expand options to it
+                    if (isset($loadedProperty) && is_object($loadedProperty)) {
+                        $targetPropertyReflectionClass = ReflectionClass::instance($loadedProperty::class);
+                        if (
+                            $targetPropertyReflectionClass && $targetPropertyReflectionClass->hasTrait(
+                                QueryOptionsTrait::class
+                            )
+                        ) {
+                            /** @var QueryOptionsTrait $loadedProperty */
+                            $loadedProperty->getQueryOptions()->setQueryOptionsFromExpandOption($expandOption);
+                        }
+                    }
+
+                    // Opt-in legacy reload: if the property has been already loaded, we check if the
+                    // expand option would influence the items — e.g. filters/orderBy/top/skip on the
+                    // expand could imply a different result set than what's currently cached. Example
+                    // of unintended drift: expand on Account with filter on subscriptions, and a
+                    // previous lazyload of ->settings already populated subscriptions; without the
+                    // reload the new filter would be silently ignored.
+                    //
+                    // This branch is now opt-in via $reloadAlreadyLoadedSetsOnScopedExpand. Default
+                    // behavior is fill-in-the-gaps: keep the already-loaded set and only descend
+                    // recursively to resolve sub-properties that aren't loaded yet (typical case
+                    // when the parent was eager-fetched via the Set-Find delegation in
+                    // EntitiesService::find — a re-fetch here would discard that work).
+                    if ($reloadAlreadyLoadedSetsOnScopedExpand
+                        && $propertyAlreadyLoaded
+                        && $this->$propertyName instanceof ObjectSet
+                        && (($expandOption?->filters ?? null) || ($expandOption?->orderByOptions ?? null) || ($expandOption?->top ?? null) || ($expandOption?->skip ?? null))) {
+                        unset($this->$propertyName);
+                        $loadedProperty = $this->$propertyName;
+                    }
+                } finally {
+                    foreach (array_reverse($classesWithScopedDefaultQueryOptions) as $classWithScopedDefaultQueryOptions) {
+                        $classWithScopedDefaultQueryOptions::restoreDefaultQueryOptionsSnapshot();
+                    }
                 }
                 if ($loadedProperty && isset($expandOption->expandOptions) && $targetPropertyHasQueryOptions) {
                     /** @var QueryOptionsTrait $loadedProperty */

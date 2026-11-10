@@ -139,6 +139,13 @@ class TagGroup
 // (Real example: TagGroups.php → `#[ExposePropertyInsteadOfClass('elements')] class TagGroups extends ObjectSet`.)
 ```
 
+The exposed value IS the object on every surface:
+- **Output:** the value as it is — an empty list stays `[]` (not `{}`), a scalar stays a scalar.
+- **Input:** a property typed with such a class is hydrated from a plain list (`"samples": [1.5, 2.5]`), so a value
+  object that is a list on the wire needs no `toObject()` / hydration override.
+- **Schema:** OpenAPI documents the exposed property's schema in place of the class (`type: array, items: number`
+  for `/** @var float[] */ public array $values`), also as an array element — no `$ref` to an object component.
+
 ### `#[DontPersistProperty]` -- Visible in API, not in DB
 ```php
 #[DontPersistProperty]

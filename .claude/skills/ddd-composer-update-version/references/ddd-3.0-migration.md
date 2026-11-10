@@ -390,3 +390,10 @@ Unchanged:
   MariaDB unchanged. An explicit `#[DatabaseIndex(TYPE_SPATIAL)]` on a nullable geometry column is now created as a
   GiST index on PostgreSQL (still left out on MariaDB) — such an existing declaration gets its index on the next
   PostgreSQL diff. Object storage: the application logger goes to async-aws, so its retries are logged (info).
+- 3.17.0 — `#[ExposePropertyInsteadOfClass]` holds on every surface: the OpenAPI schema documents the exposed
+  property's schema in place of the class (contract change: a property typed with such a class is now e.g.
+  `type: array, items: number` instead of a `$ref` to an object component, also as an array element — generated TS
+  types follow); the serializer emits an empty exposed list as `[]` (was `{}`); a property typed with such a class is
+  hydrated from a plain list. `expand()` sets an expand clause as the target class' default QueryOptions only while
+  that property loads and restores the previous defaults afterwards — a later load of the same class in the request no
+  longer inherits the clause's select, filters, order or page.

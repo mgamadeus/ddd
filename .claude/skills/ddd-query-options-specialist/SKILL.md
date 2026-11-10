@@ -303,6 +303,11 @@ After loading entities, call `$entity->expand()` or `$entitySet->expand()` to tr
 
 ---
 
+The expand clause is the target class' default QueryOptions **only while that property loads** (snapshot and restore
+around the load, since v3.17.0): a later load of the same class in the request gets the class' own defaults again —
+no inherited select, filters, order or page. The loaded set keeps the clause on its own instance options, so a
+nested expand still works.
+
 ## Select (Field Selection)
 
 ```

@@ -11,6 +11,7 @@ use DDD\Infrastructure\Reflection\ReflectionArrayType;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionDocComment;
 use DDD\Infrastructure\Reflection\ReflectionUnionType;
+use DDD\Infrastructure\Traits\Serializer\Attributes\ExposePropertyInsteadOfClass;
 use DDD\Infrastructure\Traits\Serializer\Attributes\OverwritePropertyName;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 use DDD\Presentation\Base\OpenApi\Attributes\ClassName;
@@ -339,6 +340,15 @@ class SchemaProperty
                                         ) . '->$' . $schemaClassReflectionProperty->getName() . ' does not exist'
                                     );
                                 }
+                                if ($exposedSchemaProperty = $this->createSchemaPropertyOfExposedProperty($arrayType, $scope, $maxRecursiveSchemaDepth)) {
+                                    // an element serialized as one of its properties: its schema is that property's
+                                    if ($unionType) {
+                                        $this->items['oneOf'][] = $exposedSchemaProperty->getSchemaFragment();
+                                    } else {
+                                        $this->items = $exposedSchemaProperty->getSchemaFragment();
+                                    }
+                                    continue;
+                                }
                                 $schemaRefForClass = Document::getInstance()->components->getSchemaRefForClass($propertyClass);
                                 if ($unionType) {
                                     $this->items['oneOf'][] = [
@@ -412,6 +422,28 @@ class SchemaProperty
                     if ($maxRecursiveSchemaDepth === 0){
                         $this->description = 'max recursion depth reached';
                     }
+                    elseif ($exposedSchemaProperty = $this->createSchemaPropertyOfExposedProperty($type->getName(), $scope, $maxRecursiveSchemaDepth)) {
+                        // the class is serialized as one of its properties (#[ExposePropertyInsteadOfClass]): document
+                        // that property's schema, as the wire carries it, instead of the class
+                        $exposedSchemaFragment = $exposedSchemaProperty->getSchemaFragment();
+                        if ($unionType) {
+                            if (!$this->oneOf) {
+                                $this->oneOf = [];
+                            }
+                            $this->oneOf[] = $exposedSchemaFragment;
+                        } else {
+                            $this->type = $exposedSchemaProperty->type;
+                            $this->format = $exposedSchemaProperty->format;
+                            $this->enum = $exposedSchemaProperty->enum;
+                            $this->items = $exposedSchemaProperty->items;
+                            $this->oneOf = $exposedSchemaProperty->oneOf;
+                            $this->ref = $exposedSchemaProperty->ref;
+                            if ($this->ref !== null) {
+                                $this->description = null;
+                                $this->type = null;
+                            }
+                        }
+                    }
                     else {
                         $propertyClass = new ClassWithNamespace($type->getName());
                         // in case of Union Type we have oneOf and multiple $ref in an array below oneOf
@@ -442,5 +474,52 @@ class SchemaProperty
                 }
             }
         }
+    }
+
+    /**
+     * The schema of the property a class is serialized as ({@see ExposePropertyInsteadOfClass}), or null when the
+     * class has no such attribute.
+     *
+     * @param string $className The declared class of the documented property
+     * @param string $scope
+     * @param int|null $maxRecursiveSchemaDepth
+     * @return SchemaProperty|null
+     * @throws ReflectionException
+     * @throws TypeDefinitionMissingOrWrong
+     */
+    protected function createSchemaPropertyOfExposedProperty(
+        string $className,
+        string $scope,
+        ?int $maxRecursiveSchemaDepth
+    ): ?SchemaProperty {
+        $propertyNameToExpose = ExposePropertyInsteadOfClass::getPropertyNameToExposeForClass($className);
+        if ($propertyNameToExpose === null) {
+            return null;
+        }
+        $exposingReflectionClass = ReflectionClass::instance($className);
+        if (!$exposingReflectionClass->hasProperty($propertyNameToExpose)) {
+            return null;
+        }
+        $exposedReflectionProperty = $exposingReflectionClass->getProperty($propertyNameToExpose);
+        // a schema of its own: the exposed property's required flag belongs to no schema of the document
+        $detachedSchema = new Schema();
+        return new SchemaProperty($exposingReflectionClass, $exposedReflectionProperty, $scope, $detachedSchema, $maxRecursiveSchemaDepth);
+    }
+
+    /**
+     * @return array The type part of this property's schema (type, format, enum, items, oneOf or $ref), for a oneOf
+     */
+    public function getSchemaFragment(): array
+    {
+        if ($this->ref !== null) {
+            return ['$ref' => $this->ref];
+        }
+        return array_filter([
+            'type' => $this->type,
+            'format' => $this->format,
+            'enum' => $this->enum,
+            'items' => $this->items,
+            'oneOf' => $this->oneOf,
+        ], static fn(mixed $value): bool => $value !== null);
     }
 }

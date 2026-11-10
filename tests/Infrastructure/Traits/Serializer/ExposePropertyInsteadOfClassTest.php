@@ -1,0 +1,69 @@
+<?php
+
+declare(strict_types=1);
+
+namespace DDD\Tests\Infrastructure\Traits\Serializer;
+
+use DDD\Infrastructure\Reflection\ClassWithNamespace;
+use DDD\Presentation\Base\OpenApi\Attributes\Parameter;
+use DDD\Presentation\Base\OpenApi\Components\Schema;
+use DDD\Tests\Infrastructure\Traits\Serializer\Fixtures\ExposedNumberSeries;
+use DDD\Tests\Infrastructure\Traits\Serializer\Fixtures\ExposedNumberSeriesHolder;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * A class with #[ExposePropertyInsteadOfClass] is that property on the wire: serialized as its value (an empty list
+ * stays []), read back from it, and documented with its schema.
+ */
+class ExposePropertyInsteadOfClassTest extends TestCase
+{
+    public function testTheClassSerializesAsTheExposedList(): void
+    {
+        $holder = new ExposedNumberSeriesHolder();
+        $holder->samples = new ExposedNumberSeries();
+        $holder->samples->values = [1.5, 2.5];
+
+        $this->assertSame([1.5, 2.5], $holder->toObject(false, forPersistence: false)['samples']);
+    }
+
+    public function testAnEmptyListStaysAnEmptyList(): void
+    {
+        $holder = new ExposedNumberSeriesHolder();
+        $holder->samples = new ExposedNumberSeries();
+
+        $this->assertSame('{"samples":[],"seriesList":[]}', json_encode(
+            array_diff_key($holder->toObject(false, forPersistence: false), ['objectType' => true])
+        ));
+    }
+
+    public function testTheClassIsReadBackFromTheExposedList(): void
+    {
+        $payload = json_decode('{"samples":[1.5,2.5],"optionalSamples":[]}');
+        $holder = new ExposedNumberSeriesHolder();
+        $holder->setPropertiesFromObject($payload);
+
+        $this->assertSame([1.5, 2.5], $holder->samples->values);
+        $this->assertSame([], $holder->optionalSamples->values);
+    }
+
+    public function testTheSchemaIsTheExposedPropertys(): void
+    {
+        $classWithNamespace = new ClassWithNamespace(ExposedNumberSeriesHolder::class);
+        $schema = new Schema($classWithNamespace, Parameter::RESPONSE);
+        $schema->buildSchema();
+
+        $samples = $schema->properties['samples'];
+        $this->assertSame('array', $samples->type);
+        $this->assertSame(['type' => 'number'], $samples->items);
+        $this->assertNull($samples->ref);
+        $this->assertSame('Samples of a measurement', $samples->description);
+
+        $optionalSamples = $schema->properties['optionalSamples'];
+        $this->assertSame('array', $optionalSamples->type);
+        $this->assertTrue($optionalSamples->nullable);
+
+        $seriesList = $schema->properties['seriesList'];
+        $this->assertSame('array', $seriesList->type);
+        $this->assertSame(['type' => 'array', 'items' => ['type' => 'number']], $seriesList->items);
+    }
+}
