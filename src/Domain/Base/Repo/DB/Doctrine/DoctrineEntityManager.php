@@ -9,6 +9,7 @@ use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 use DDD\Domain\Base\Repo\DB\Dialect\DialectResolver;
 use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder;
+use DDD\Domain\Base\Repo\DB\Doctrine\Hydration\LazyInverseToOneObjectHydrator;
 use DDD\Infrastructure\Exceptions\ForbiddenException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Services\AuthService;
@@ -27,6 +28,7 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Exception\ORMException;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\Mapping\MappingException;
+use Doctrine\ORM\Query;
 use Doctrine\ORM\Query\Parser;
 use Doctrine\ORM\QueryBuilder;
 use ReflectionException;
@@ -925,6 +927,20 @@ class DoctrineEntityManager extends EntityManager
             $statements->add($statement);
         }
         return $statements;
+    }
+
+    /**
+     * Objects are hydrated without the eager load of inverse to-one associations, see
+     * {@see LazyInverseToOneObjectHydrator}.
+     *
+     * {@inheritDoc}
+     */
+    public function newHydrator($hydrationMode)
+    {
+        if ($hydrationMode === Query::HYDRATE_OBJECT) {
+            return new LazyInverseToOneObjectHydrator($this);
+        }
+        return parent::newHydrator($hydrationMode);
     }
 
     public function createQuery($dql = ''): DoctrineQuery

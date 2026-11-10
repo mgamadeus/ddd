@@ -23,6 +23,12 @@ trait TieBreakerFixtureTablesTrait
         TieBreakerGrandchild::class,
     ];
 
+    /** @return string[] The fixture entity classes whose tables the test class manages, referenced tables first */
+    protected static function getExtraFixtureEntityClasses(): array
+    {
+        return self::EXTRA_FIXTURE_ENTITY_CLASSES;
+    }
+
     public static function setUpBeforeClass(): void
     {
         parent::setUpBeforeClass();
@@ -31,10 +37,10 @@ trait TieBreakerFixtureTablesTrait
         }
         // Reverse-order drop first, in case a previous run left the tables behind: a FK-referenced table cannot
         // be dropped (without CASCADE) while another table's FK still points at it.
-        foreach (array_reverse(self::EXTRA_FIXTURE_ENTITY_CLASSES) as $entityClass) {
+        foreach (array_reverse(static::getExtraFixtureEntityClasses()) as $entityClass) {
             static::dropExtraFixtureTable($entityClass);
         }
-        foreach (self::EXTRA_FIXTURE_ENTITY_CLASSES as $entityClass) {
+        foreach (static::getExtraFixtureEntityClasses() as $entityClass) {
             static::createExtraFixtureTable($entityClass);
         }
     }
@@ -42,7 +48,7 @@ trait TieBreakerFixtureTablesTrait
     public static function tearDownAfterClass(): void
     {
         if (static::isIntegrationDatabaseEnabled()) {
-            foreach (array_reverse(self::EXTRA_FIXTURE_ENTITY_CLASSES) as $entityClass) {
+            foreach (array_reverse(static::getExtraFixtureEntityClasses()) as $entityClass) {
                 static::dropExtraFixtureTable($entityClass);
             }
         }
@@ -57,7 +63,7 @@ trait TieBreakerFixtureTablesTrait
         }
         // Reverse order: deleting a parent row while a child row's FK still references it is the same ordering
         // problem the class docblock describes for DROP, just at the row level instead of the table level.
-        foreach (array_reverse(self::EXTRA_FIXTURE_ENTITY_CLASSES) as $entityClass) {
+        foreach (array_reverse(static::getExtraFixtureEntityClasses()) as $entityClass) {
             $connection = static::connection();
             $connection->executeStatement(
                 'DELETE FROM ' . static::quoteIdentifier(DatabaseModel::fromEntityClass($entityClass)->sqlTableName)

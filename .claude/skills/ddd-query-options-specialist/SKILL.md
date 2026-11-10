@@ -50,7 +50,8 @@ When `DBEntitySet::find()` executes, `applyQueryOptions()` applies in this order
 4. **orderBy** -> `ORDER BY` clauses
 5. **select** -> `partial SELECT` with property hiding for unselected fields
 
-For single entities (`DBEntity::find()`), only **select** is applied from default QueryOptions.
+For single entities (`DBEntity::find()`), only **select** is applied from default QueryOptions; the properties that
+were not selected are hidden from the output, as in a list.
 
 ---
 

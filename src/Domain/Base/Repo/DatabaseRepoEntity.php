@@ -15,6 +15,7 @@ use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoad;
 use DDD\Domain\Base\Entities\LazyLoad\LazyLoadRepo;
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptionsTrait;
+use DDD\Domain\Base\Entities\QueryOptions\SelectOptions;
 use DDD\Domain\Base\Entities\StaticRegistry;
 use DDD\Domain\Base\Repo\DB\Attributes\DatabaseTranslation;
 use DDD\Domain\Base\Repo\DB\Database\DatabaseModel;
@@ -192,12 +193,24 @@ abstract class DatabaseRepoEntity extends RepoEntity
 
         $entityRegistry = DoctrineEntityRegistry::getInstance();
 
-        $queryBuilder = $this->buildFindQueryBuilder($idOrQueryBuilder);
+        // The select of this find decides which properties of the entity it loads are hidden; the hides an
+        // enclosing set load collected stay untouched
+        $propertiesToHideOfEnclosingLoad = SelectOptions::$propertiesToHideByJoinPath;
+        SelectOptions::$propertiesToHideByJoinPath = [];
+        try {
+            $queryBuilder = $this->buildFindQueryBuilder($idOrQueryBuilder);
+            $propertiesToHideBasedOnSelectOptions = $loadedOrmInstance ? [] : SelectOptions::$propertiesToHideByJoinPath;
+        } finally {
+            SelectOptions::$propertiesToHideByJoinPath = $propertiesToHideOfEnclosingLoad;
+        }
 
         if ($useEntityRegistrCache) {
             // Check if an element exists in the registry.
             $entityInstance = $entityRegistry->get(static::class, $queryBuilder);
             if ($entityInstance) {
+                if ($propertiesToHideBasedOnSelectOptions) {
+                    $entityInstance->addPropertiesToHideRecursively($propertiesToHideBasedOnSelectOptions);
+                }
                 // If we have a loaded Orm Instance, it is possible that it has expanded options that are different to the ones of the cached entity
                 // Therefor we have to run mapToEntity again as otherwise we could end up with an enity that does not contain the expanded properties
                 if ($loadedOrmInstance){
@@ -244,6 +257,11 @@ abstract class DatabaseRepoEntity extends RepoEntity
 
         $this->ormInstance = $ormInstance;
         $entityInstance = $this->mapToEntity($useEntityRegistrCache, $initiatorClasses);
+        // A find with a select shows what a list with the same select shows: the properties that were not selected
+        // are hidden, they do not appear with their class defaults
+        if ($propertiesToHideBasedOnSelectOptions && $entityInstance) {
+            $entityInstance->addPropertiesToHideRecursively($propertiesToHideBasedOnSelectOptions);
+        }
         // The registry key is the plain find of this id. A model a caller loaded with a select (a list with
         // `select=…`, an expand with `select=…`, a partial DQL) lacks the unselected columns: registered under that key,
         // it would be served to every later find of the id — and with the extended registry cache to other requests.

@@ -416,3 +416,9 @@ Unchanged:
   index next to a declared unique (or plain) index over exactly that column, and a class-level single-column
   `UNIQUE` replaces the column's default plain index. An app that declared such a unique index sees one `DROP INDEX
   idx_<column>` per affected table in its next schema diff; an index over several columns changes nothing.
+- 3.18.2 — Read performance: the inverse side of a one-to-one relation (the entity whose counterpart holds the
+  unique foreign key) is no longer read with every row. Doctrine loaded it with one statement per row and relation,
+  on every find and list; it is now read only by an expand (joined) or by touching the lazy-loaded property.
+  Behaviour change: such a property is no longer set after a plain load — `isset($parent->detail)` is false until
+  the property is read or expanded (reading it loads it, as for every lazy-loaded property). A find by id with a
+  `select` hides the properties that were not selected, as a list does (they appeared with their class defaults).
