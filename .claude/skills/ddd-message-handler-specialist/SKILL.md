@@ -1,9 +1,9 @@
 ---
 name: ddd-message-handler-specialist
-description: "Symfony Messenger in mgamadeus/ddd, from an async job to watching its workers. Covers AppMessage and slim AppMessageHandler pairs, the service-side bool async pattern, auth context, fresh worker state per message, the workspace-origin guard, messenger.yaml transports and routing, supervisor consumers, worker recycling limits, the worker list (config/system/workers.yaml) and the worker monitoring with app:workers:* console commands (check, list, overview, transport, history, processes, runs, queues, stats, sample, restart; --format=json for agents), WorkersOverviewService and the workers admin endpoints and screen guide. Use when adding an async background job, wiring a transport or consumer, messages wait and nothing consumes them, workers crash-loop or run stale config, state leaks between messages, a message refused for another workspace, which message fails or is slow, messages per minute or per worker, restarting workers, a process shows LOST, SILENT or stays BUSY, or building a workers admin screen."
+description: "Symfony Messenger in mgamadeus/ddd, from an async job to watching its workers. Covers AppMessage and slim AppMessageHandler pairs, the service-side bool async pattern, auth context, fresh worker state per message, the workspace-origin guard, messenger.yaml transports and routing, supervisor consumers, worker recycling limits, the worker list (config/system/workers.yaml) and the worker monitoring with app:workers:* console commands (check, list, overview, transport, history, processes, runs, queues, stats, sample, restart; --format=json for agents), WorkersOverviewService, the admin endpoints, screen guide and UX examples. Use when adding an async background job, wiring a transport or consumer, messages wait and nothing consumes them, workers crash-loop or run stale config, state leaks between messages, a message refused for another workspace, which message fails or is slow, messages per minute or per worker, restarting workers, a process shows LOST, SILENT or stays BUSY, or building a workers admin screen."
 metadata:
   author: mgamadeus
-  version: "2.0.0"
+  version: "2.1.0"
   framework: mgamadeus/ddd
 ---
 
@@ -47,7 +47,8 @@ write or run anything.
 | `workers.yaml` keys, `app:workers:check` codes, `--limit` / `--time-limit` / `--memory-limit`, `busySilentSeconds` | [references/worker-list-and-limits.md](references/worker-list-and-limits.md) |
 | Switch the monitoring on, its settings, what is stored, transport and process states, `WorkersOverviewService`, the admin controller | [references/monitoring-and-settings.md](references/monitoring-and-settings.md) |
 | Ask what the workers do or did: failing or slow messages, throughput, processes, queue counts; JSON shapes | [references/console-for-agents.md](references/console-for-agents.md) |
-| Build a workers admin screen | [references/admin-screen-guide.md](references/admin-screen-guide.md) |
+| Build a workers admin screen: endpoints, payloads, rules | [references/admin-screen-guide.md](references/admin-screen-guide.md) |
+| Wireframes and component sketches of that screen (live row, throughput table, charts, restart flow, wording) | [references/admin-screen-examples.md](references/admin-screen-examples.md) |
 | Nothing consumes, crash loops, LOST / SILENT / BUSY after a kill, nothing is written, gaps in a chart | [references/troubleshooting.md](references/troubleshooting.md) |
 
 ## Commands

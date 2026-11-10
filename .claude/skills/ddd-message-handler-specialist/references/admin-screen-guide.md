@@ -27,7 +27,7 @@ relative to the prefix of the application's controller (e.g. `/api/admin/mainten
 - Every date-time of a window and of a sequence point comes back as ISO 8601 UTC (`2026-01-31T10:00:00Z`): `interval`
   and `x`. Entity date-times (`startedAt`, `lastSeenAt`, …) are `Y-m-d H:i:s` in UTC.
 - Every payload is also readable from the console (`app:workers:overview`, `transport`, `history`, `processes`,
-  `runs` with `--format=json`), see the skill's section "From the console".
+  `runs` with `--format=json`), see [console-for-agents.md](console-for-agents.md).
 - `stepSeconds`: 60, 300, 900 or 3600; default chosen by the window. More than 1500 points per sequence: 400.
 - Lists are newest first (`startedAt desc`) unless ordered otherwise; default page size 50.
 - Every set serialises as `{"elements": [...]}`.
@@ -96,15 +96,23 @@ carries the route or command of the message that led to it.
    per window from `totals.throughputWindows`); two banners:
    monitoring off (`monitoringEnabled` false — only the worker list and live queue counts are shown) and sampler not
    running (`samplerActive` false — queue history has holes, lost processes are closed late).
-2. **Transport table**, one row per transport, sorted by state severity (`NOT_CONSUMED`, `STUCK`, `UNDEFINED`,
+2. **Live row per transport**: workers running against the configured range (`liveProcessCount`, `effectiveMin`,
+   `effectiveMax`, `isAutoscaled`), messages in work (`inFlight`) and waiting (`waiting`, `waitingState`), each
+   number with its unit; below it the live processes of that transport from `workersOverview.processes`.
+3. **Throughput table**, one row per transport and one for all transports (`totals`): per window of
+   `throughputWindows` the finished count and the rate, failed messages, the rate per worker, and the time until the
+   queue is empty at the rate of the last 5 minutes.
+4. **Transport table**, one row per transport, sorted by state severity (`NOT_CONSUMED`, `STUCK`, `UNDEFINED`,
    `BACKLOG`, `WORKING`, `IDLE`): state badge, waiting, in work, processes against `effectiveMin`–`effectiveMax`,
    finished / failed and the rates per minute and per worker from `throughputWindows`, average duration and wait
    (label them with `recentWindowSeconds`), sparklines from `sequences`, last error, restart button
    (`restartPending` shows a request is open).
-3. **Transport drawer or page** (`/transports/{transport}`): window picker, the charts below, the message class
+5. **Transport drawer or page** (`/transports/{transport}`): window picker, the charts below, the message class
    table, tabs for processes and message runs (paged lists; filter the runs with `filters=outcome ne 'HANDLED'`).
-4. **History view** (`/history`): all transports over a window — processes and process starts per transport, to see
+6. **History view** (`/history`): all transports over a window — processes and process starts per transport, to see
    how many workers of which kind ran when.
+
+Wireframes and component sketches of every part: [admin-screen-examples.md](admin-screen-examples.md).
 
 Refresh the overview every 10–30 seconds; a shorter interval shows nothing new (workers write every
 `flushSeconds` / `heartbeatSeconds`).
@@ -142,6 +150,7 @@ transports together use `totals`, not a client-side sum.
 - [ ] Controller with `WorkersControllerTrait` mounted, access restricted to admins
 - [ ] Monitoring tables exist, `enabled` set, workers restarted, sampler runs every minute
 - [ ] Both banners (monitoring off, sampler not running) implemented
+- [ ] Live row per transport with labelled numbers; throughput table per window
 - [ ] Gaps instead of zeros in charts (`y: null`); `waiting` null handled
 - [ ] Window labels come from the payload (`recentWindowSeconds`, `throughputWindows[].windowSeconds`)
 - [ ] Restart shows pending state and its outcome
