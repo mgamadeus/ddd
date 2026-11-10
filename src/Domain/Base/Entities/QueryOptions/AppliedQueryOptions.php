@@ -6,6 +6,7 @@ namespace DDD\Domain\Base\Entities\QueryOptions;
 
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Infrastructure\Exceptions\BadRequestException;
+use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Presentation\Base\Dtos\RequestDto;
 use DDD\Presentation\Base\QueryOptions\DtoQueryOptionsTrait;
 
@@ -468,5 +469,52 @@ class AppliedQueryOptions extends ValueObject
             }
             return $this->orderByDefinitions;
         }
+    }
+
+    /**
+     * The options of a class with a {@see QueryOptionsProjection}, translated for its target class: filters, orderBy
+     * and select in the target's property names, validated against the target's definitions; top and skip carried
+     * over (the target's maxTop applies). Expand options are not carried over. A loader of the projected class applies
+     * the result to the target class' repository, e.g. inside setDefaultQueryOptionsSnapshot() /
+     * restoreDefaultQueryOptionsSnapshot() of the target class.
+     *
+     * @param string|null $targetClassName The class to translate to; null = the projection's target class (an entity
+     *                                     set may name the entity set of an entity target)
+     * @return AppliedQueryOptions New options with the target class as reference class
+     * @throws BadRequestException The reference class has no projection, or an option does not fit the target
+     */
+    public function createProjectedQueryOptions(?string $targetClassName = null): AppliedQueryOptions
+    {
+        $queryOptionsProjection = isset($this->referenceClass)
+            ? QueryOptionsProjection::getProjectionForClass($this->referenceClass)
+            : null;
+        if (!$queryOptionsProjection) {
+            throw new BadRequestException(
+                'QueryOptions of ' . ($this->referenceClass ?? 'an unknown class') . ' have no QueryOptionsProjection'
+            );
+        }
+        $targetClassName ??= $queryOptionsProjection->targetClass;
+        /** @var QueryOptions|null $targetQueryOptionsAttribute */
+        $targetQueryOptionsAttribute = ReflectionClass::instance($targetClassName)->getAttributeInstance(QueryOptions::class);
+        $projectedQueryOptions = new AppliedQueryOptions($targetQueryOptionsAttribute ?: new QueryOptions(), $targetClassName);
+        if (isset($this->top)) {
+            $projectedQueryOptions->setTop($this->top);
+        }
+        if (isset($this->skip)) {
+            $projectedQueryOptions->setSkip($this->skip);
+        }
+        if (isset($this->filters)) {
+            $projectedFiltersOptions = $this->filters->createProjectedFiltersOptions($queryOptionsProjection);
+            $projectedQueryOptions->setFilters($projectedFiltersOptions);
+        }
+        if (isset($this->orderBy)) {
+            $projectedOrderByOptions = $this->orderBy->createProjectedOrderByOptions($queryOptionsProjection);
+            $projectedQueryOptions->setOrderBy($projectedOrderByOptions);
+        }
+        if (isset($this->select)) {
+            $projectedSelectOptions = $this->select->createProjectedSelectOptions($queryOptionsProjection);
+            $projectedQueryOptions->setSelect($projectedSelectOptions);
+        }
+        return $projectedQueryOptions;
     }
 }

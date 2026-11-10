@@ -1524,4 +1524,40 @@ MD;
         }
         return $return;
     }
+
+    /**
+     * A copy of the filter tree with every property name translated into the target class of a
+     * {@see QueryOptionsProjection}; operators, values, join operators and the grouping stay as they are. The copy is
+     * not validated: set it on the target class' options with setFilters(), which validates it against the target.
+     *
+     * @param QueryOptionsProjection $queryOptionsProjection
+     * @return FiltersOptions
+     */
+    public function createProjectedFiltersOptions(QueryOptionsProjection $queryOptionsProjection): FiltersOptions
+    {
+        $projectedFiltersOptions = new FiltersOptions();
+        if (isset($this->type)) {
+            $projectedFiltersOptions->type = $this->type;
+        }
+        if (isset($this->joinOperator)) {
+            $projectedFiltersOptions->joinOperator = $this->joinOperator;
+        }
+        if (isset($this->property)) {
+            $projectedFiltersOptions->property = $queryOptionsProjection->getTargetPropertyName($this->property);
+        }
+        if (isset($this->operator)) {
+            $projectedFiltersOptions->operator = $this->operator;
+        }
+        if (isset($this->value) || (isset($this->type) && $this->type === self::TYPE_EXPRESSION)) {
+            $projectedFiltersOptions->value = $this->value ?? null;
+        }
+        if (isset($this->baseAlias)) {
+            $projectedFiltersOptions->baseAlias = $this->baseAlias;
+        }
+        foreach ($this->getElements() as $childFiltersOptions) {
+            $projectedChildFiltersOptions = $childFiltersOptions->createProjectedFiltersOptions($queryOptionsProjection);
+            $projectedFiltersOptions->add($projectedChildFiltersOptions);
+        }
+        return $projectedFiltersOptions;
+    }
 }

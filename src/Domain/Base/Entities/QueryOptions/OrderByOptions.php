@@ -338,4 +338,23 @@ MD;
         return $queryBuilder;
     }
 
+    /**
+     * A copy with every property name translated into the target class of a {@see QueryOptionsProjection}, directions
+     * unchanged; validate it with setOrderBy() on the target class' options.
+     *
+     * @param QueryOptionsProjection $queryOptionsProjection
+     * @return OrderByOptions
+     */
+    public function createProjectedOrderByOptions(QueryOptionsProjection $queryOptionsProjection): OrderByOptions
+    {
+        $projectedOrderByOptions = new OrderByOptions();
+        foreach ($this->getElements() as $orderByOption) {
+            $projectedOrderByOption = new OrderByOption(
+                $queryOptionsProjection->getTargetPropertyName((string)$orderByOption->propertyName),
+                $orderByOption->direction
+            );
+            $projectedOrderByOptions->add($projectedOrderByOption);
+        }
+        return $projectedOrderByOptions;
+    }
 }

@@ -312,4 +312,23 @@ MD;
         $key = md5(json_encode($this->toObject(true, true)));
         return self::uniqueKeyStatic($key);
     }
+
+    /**
+     * A copy with every property name translated into the target class of a {@see QueryOptionsProjection}; set it
+     * with setSelect() on the target class' options.
+     *
+     * @param QueryOptionsProjection $queryOptionsProjection
+     * @return SelectOptions
+     */
+    public function createProjectedSelectOptions(QueryOptionsProjection $queryOptionsProjection): SelectOptions
+    {
+        $projectedSelectOptions = new SelectOptions();
+        foreach ($this->getElements() as $selectOption) {
+            $projectedSelectOption = new SelectOption(
+                $queryOptionsProjection->getTargetPropertyName((string)$selectOption->propertyName)
+            );
+            $projectedSelectOptions->add($projectedSelectOption);
+        }
+        return $projectedSelectOptions;
+    }
 }

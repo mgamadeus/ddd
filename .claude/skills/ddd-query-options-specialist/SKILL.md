@@ -1,6 +1,6 @@
 ---
 name: ddd-query-options-specialist
-description: OData-style QueryOptions in mgamadeus/ddd — database-level filtering, sorting, pagination, select, expand, fulltext over Translatable properties. Wire syntax filters=/expand=/orderBy=/select=/top=/skip= (no dollar prefix; default top 50). Covers QueryOptionsTrait on Entity AND EntitySet, controller DTOs, the filter grammar (eq/ne/gt/ge/lt/le/in/ni/bw, ft/fb, and/or, dot-notation, escaping, createExpression), value validation (400 for a bad int or date, a comparison on JSON or a plain Translatable, ft/fb without an index), nested expand and join read-rights, propertyScore, snapshot/restore, inescapable scope filters (addFiltersConnectedByAnd), Argus shared defaults, HideProperty never filterable, temporal filters (FiltersDefinition::$temporalKind, normalizeMomentLiterals). Use when a filter answers 400 or 500, when a query param is ignored, when results cap at 50, when enforcing an inescapable scope filter, when Argus defaults have no effect, or when date-time filters compare against the wrong zone.
+description: OData-style QueryOptions in mgamadeus/ddd — database-level filtering, sorting, pagination, select, expand, fulltext over Translatable properties. Wire syntax filters=/expand=/orderBy=/select=/top=/skip= (no dollar prefix; default top 50). Covers QueryOptionsTrait on Entity AND EntitySet, controller DTOs, the filter grammar (operators, ft/fb, and/or, dot-notation, escaping, createExpression), value validation (400 for a bad value, JSON or plain-Translatable comparisons, ft/fb without an index), nested expand and join read-rights, propertyScore, snapshot/restore, inescapable scope filters (addFiltersConnectedByAnd), Argus shared defaults, HideProperty never filterable, temporal filters (FiltersDefinition::$temporalKind, normalizeMomentLiterals), QueryOptionsProjection. Use when a filter answers 400/500, a query param is ignored, results cap at 50, an inescapable scope filter is needed, Argus defaults have no effect, date-time filters use the wrong zone, or old clients still query a renamed entity.
 metadata:
   author: mgamadeus
   version: "1.3.0"
@@ -502,6 +502,53 @@ ChildEntities::setDefaultQueryOptions($originalQueryOptions);
 ```
 
 ---
+
+## Renamed Entities: `#[QueryOptionsProjection]`
+
+An entity was renamed (new class, new table, partly new property names) and old clients still send
+`expand=oldThings(filters=…;orderBy=…;select=…;top=…)`. The old class keeps no table and no DB repository; it declares
+a projection onto the new class:
+
+```php
+#[QueryOptionsProjection(targetClass: Thing::class, propertyMap: ['title' => 'headline'])]
+class OldThing extends Entity
+{
+    use QueryOptionsTrait;
+
+    public ?string $title = null;   // = Thing::$headline
+    public ?int $amount = null;     // same name on Thing
+}
+// OldThings (EntitySet, with QueryOptionsTrait) takes the projection from OldThing, or declares its own.
+```
+
+- **Validation:** the filter / orderBy / select definitions of `OldThing(s)` are Thing's, under OldThing's names: a
+  property of the same name maps 1:1, a renamed one through `propertyMap` (own name => target name). Only properties
+  `OldThing` declares are exposed; a target property whose name `OldThing` uses for a renamed one is not. Column kind,
+  temporal kind and fulltext support come from the target, so a value that does not fit is a 400 as usual, and so is
+  an unknown name.
+- **Expand:** a property of type `OldThings` on another entity, loaded by `#[LazyLoad(loadMethod: …)]`, validates its
+  expand clause through the projection. No Doctrine association to the old table is needed.
+- **Execution:** the load method translates the received options and applies them to the target's repository, under
+  its rights:
+
+```php
+public function loadOldThings(): OldThings
+{
+    $projectedQueryOptions = OldThings::getDefaultQueryOptions()->createProjectedQueryOptions(Things::class);
+    Things::setDefaultQueryOptionsSnapshot();
+    try {
+        Things::setDefaultQueryOptions($projectedQueryOptions);
+        $things = Things::getService()->findForOwner($this);   // any find on Thing's repository
+    } finally {
+        Things::restoreDefaultQueryOptionsSnapshot();
+    }
+    return OldThings::fromThings($things);                      // the app maps the result to the old shape
+}
+```
+
+`createProjectedQueryOptions(?string $targetClassName = null)` translates filters (the whole tree, values unchanged),
+orderBy and select into the target's names, validates them against the target and carries top and skip over (the
+target's `maxTop` applies). Expand options are not carried over. A dotted name maps its first segment.
 
 ## Temporal Filters and Model-Facing Time Zones
 

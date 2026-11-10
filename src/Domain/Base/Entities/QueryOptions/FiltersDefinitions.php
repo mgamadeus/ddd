@@ -119,6 +119,12 @@ class FiltersDefinitions extends ObjectSet
         if (self::$filtersDefinitionsForClass[$referenceClassName] ?? null) {
             return self::$filtersDefinitionsForClass[$referenceClassName];
         }
+        $queryOptionsProjection = QueryOptionsProjection::getProjectionForClass($referenceClassName);
+        if ($queryOptionsProjection) {
+            $filtersDefinitions = static::getProjectedFiltersDefinitions($referenceClassName, $queryOptionsProjection);
+            self::$filtersDefinitionsForClass[$referenceClassName] = $filtersDefinitions;
+            return $filtersDefinitions;
+        }
         $filtersDefinitions = new FiltersDefinitions();
         // we only generate filters for all property names if the class has a Lazyload repo of type DB
         /** @var Entity $referenceClassName */
@@ -149,6 +155,47 @@ class FiltersDefinitions extends ObjectSet
         }
         self::$filtersDefinitionsForClass[$referenceClassName] = $filtersDefinitions;
         return $filtersDefinitions;
+    }
+
+    /**
+     * The filters definitions of a class with a {@see QueryOptionsProjection}: the target class' definitions under the
+     * projected class' property names. A target property is exposed when the projected class declares the property
+     * under its own name; a target property whose name the projected class uses for a renamed property is not.
+     *
+     * @param string $referenceClassName The projected class (entity or entity set)
+     * @param QueryOptionsProjection $queryOptionsProjection Its projection
+     * @return FiltersDefinitions Definitions whose reference class is the target class
+     */
+    protected static function getProjectedFiltersDefinitions(
+        string $referenceClassName,
+        QueryOptionsProjection $queryOptionsProjection
+    ): FiltersDefinitions {
+        $projectedFiltersDefinitions = new FiltersDefinitions();
+        $targetFiltersDefinitions = static::getFiltersDefinitionsForReferenceClass($queryOptionsProjection->targetClass);
+        if (!$targetFiltersDefinitions) {
+            return $projectedFiltersDefinitions;
+        }
+        $projectedFiltersDefinitions->referenceClassName = $queryOptionsProjection->targetClass;
+        $ownEntityClassName = is_a($referenceClassName, EntitySet::class, true)
+            ? $referenceClassName::getEntityClass()
+            : $referenceClassName;
+        foreach ($targetFiltersDefinitions->getElements() as $targetFiltersDefinition) {
+            $targetPropertyName = (string)$targetFiltersDefinition->propertyName;
+            $ownPropertyName = $queryOptionsProjection->getOwnPropertyName($targetPropertyName);
+            if ($ownPropertyName === $targetPropertyName && isset($queryOptionsProjection->propertyMap[$ownPropertyName])) {
+                // the projected class uses this name for another (renamed) target property
+                continue;
+            }
+            if (!property_exists($ownEntityClassName, $ownPropertyName)) {
+                continue;
+            }
+            $projectedFiltersDefinition = new FiltersDefinition($ownPropertyName, $targetFiltersDefinition->options);
+            $projectedFiltersDefinition->temporalKind = $targetFiltersDefinition->temporalKind;
+            $projectedFiltersDefinition->supportsFulltext = $targetFiltersDefinition->supportsFulltext;
+            $projectedFiltersDefinition->columnKind = $targetFiltersDefinition->columnKind;
+            $projectedFiltersDefinitions->add($projectedFiltersDefinition);
+        }
+        return $projectedFiltersDefinitions;
     }
 
     /**
