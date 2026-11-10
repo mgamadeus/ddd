@@ -379,3 +379,6 @@ Unchanged:
   only, never into one inside a WHERE subselect or an ordered aggregate.
 - 3.15.2 — the repository moved to the ddd-framework organisation (github.com/ddd-framework/ddd); links and
   `composer.json` homepage/support updated. No code changes; the package name stays `mgamadeus/ddd`.
+- 3.15.3 — Fix: `ModuleCompilerPass` no longer registers abstract classes of a module as services, as Symfony's
+  resource loading does. Since 3.14.3 an abstract base of a module's console commands got the `console.command` tag and
+  every `bin/console` run tried to instantiate it (fatal error).

@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace DDD\Tests\Symfony\CompilerPasses;
 
+use DDD\Tests\Symfony\CompilerPasses\Fixtures\CommandsFixtureModule;
+use DDD\Tests\Symfony\CompilerPasses\Fixtures\ModuleSource\AbstractModuleCommand;
+use DDD\Tests\Symfony\CompilerPasses\Fixtures\ModuleSource\ConcreteModuleCommand;
 use DDD\Tests\Symfony\CompilerPasses\Fixtures\ResettingModuleSubscriber;
 use DDD\Tests\Symfony\CompilerPasses\Fixtures\TagApplyingModuleCompilerPass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\DependencyInjection\AddConsoleCommandPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -39,5 +44,18 @@ class ModuleCompilerPassTest extends TestCase
         (new TagApplyingModuleCompilerPass())->applyTags($container, $definition, ResettingModuleSubscriber::class);
 
         self::assertSame([['method' => 'resetOwnState']], $definition->getTag('kernel.reset'));
+    }
+
+    public function testAnAbstractCommandBaseOfAModuleIsNoServiceAndNoCommand(): void
+    {
+        $container = new ContainerBuilder();
+        $container->registerForAutoconfiguration(Command::class)->addTag('console.command');
+
+        (new TagApplyingModuleCompilerPass())->registerServicesOfModule($container, CommandsFixtureModule::class);
+        (new AddConsoleCommandPass())->process($container);
+
+        self::assertFalse($container->hasDefinition(AbstractModuleCommand::class));
+        self::assertTrue($container->getDefinition(ConcreteModuleCommand::class)->hasTag('console.command'));
+        self::assertSame([], $container->getParameter('console.command.ids'));
     }
 }

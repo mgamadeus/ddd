@@ -9,6 +9,7 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\Finder\Finder;
+use ReflectionClass;
 
 /**
  * Discovers DDD modules from installed Composer packages and registers
@@ -106,6 +107,12 @@ class ModuleCompilerPass implements CompilerPassInterface
                 continue;
             }
 
+            // An abstract class is no service (as with Symfony's resource loading): an abstract base of console
+            // commands would otherwise get the `console.command` tag and be instantiated when the console starts
+            if (!$this->isInstantiableClass($className)) {
+                continue;
+            }
+
             // Don't re-register if already defined (e.g. by app override in services.yaml)
             if ($container->hasDefinition($className) || $container->hasAlias($className)) {
                 continue;
@@ -156,6 +163,19 @@ class ModuleCompilerPass implements CompilerPassInterface
                 }
             }
         }
+    }
+
+    /**
+     * @param string $className
+     * @return bool false for an abstract class; true for a class that cannot be loaded here, which stays registered
+     *              as before
+     */
+    protected function isInstantiableClass(string $className): bool
+    {
+        if (!class_exists($className)) {
+            return true;
+        }
+        return !(new ReflectionClass($className))->isAbstract();
     }
 
     /**
