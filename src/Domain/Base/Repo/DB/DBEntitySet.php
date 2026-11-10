@@ -13,6 +13,7 @@ use DDD\Domain\Base\Entities\QueryOptions\AppliedQueryOptions;
 use DDD\Domain\Base\Entities\QueryOptions\FiltersOptions;
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptionsTrait;
 use DDD\Domain\Base\Entities\QueryOptions\SelectOptions;
+use DDD\Domain\Base\Repo\DatabaseRepoEntity;
 use DDD\Domain\Base\Repo\DatabaseRepoEntitySet;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityRegistry;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineModel;
@@ -256,6 +257,12 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
         $entitySetInstance = new $baseEntitySetClass();
 
         $propertiesToHideBasedOnSelectOptions = SelectOptions::$propertiesToHideByJoinPath;
+        // the fetch joins of this query decide which relations of the loaded models are mapped
+        $fetchJoinedRelationPathsOfEnclosingLoad = DatabaseRepoEntity::$fetchJoinedRelationPathsOfCurrentLoad;
+        $relationPathOfEnclosingMapping = DatabaseRepoEntity::$relationPathOfCurrentMapping;
+        DatabaseRepoEntity::$fetchJoinedRelationPathsOfCurrentLoad = $queryBuilder->getFetchJoinedRelationPaths();
+        DatabaseRepoEntity::$relationPathOfCurrentMapping = '';
+        try {
         foreach ($ormInstances as $ormInstance) {
             /** @var DBEntity $baseRepoInstance */
             $baseRepoInstance = new $baseRepoClass();
@@ -283,6 +290,10 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
                 }
                 $entitySetInstance->add($entityInstance);
             }
+        }
+        } finally {
+            DatabaseRepoEntity::$fetchJoinedRelationPathsOfCurrentLoad = $fetchJoinedRelationPathsOfEnclosingLoad;
+            DatabaseRepoEntity::$relationPathOfCurrentMapping = $relationPathOfEnclosingMapping;
         }
 
         $entityRegistry->add($entitySetInstance, static::class, $queryBuilder, true);

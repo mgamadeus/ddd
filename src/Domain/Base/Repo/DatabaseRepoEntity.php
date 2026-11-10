@@ -61,6 +61,73 @@ abstract class DatabaseRepoEntity extends RepoEntity
     protected static array $isTableExcludedByRepoClass = [];
 
     /**
+     * @var string The application config key that switches back to mapping every relation Doctrine holds as loaded,
+     * also those an earlier query of the request left in the unit of work
+     */
+    public const string MAP_RELATIONS_LOADED_BY_EARLIER_QUERIES_CONFIG_KEY = 'Base.Repo.database.mapRelationsLoadedByEarlierQueries';
+
+    /**
+     * @var string[]|null The relations the query of the load being mapped fetch-joins, as dotted paths of model
+     * properties from the root (`customer`, `customer.address`). Null outside a load: nothing is known about the
+     * query a passed model came from, and every loaded relation is mapped.
+     */
+    public static ?array $fetchJoinedRelationPathsOfCurrentLoad = null;
+
+    /** @var string The path of the relation whose model is being mapped; empty on the root of the load */
+    public static string $relationPathOfCurrentMapping = '';
+
+    /**
+     * @var bool|null {@see MAP_RELATIONS_LOADED_BY_EARLIER_QUERIES_CONFIG_KEY}; null = read from the config on first
+     * use
+     */
+    public static ?bool $mapRelationsLoadedByEarlierQueries = null;
+
+    /**
+     * Whether a relation of the model being mapped becomes a property of the entity: Doctrine holds it as loaded AND
+     * the query of this load fetch-joined it (an expand, or a join with `addSelect()` of a service's own query).
+     *
+     * Doctrine also reports a relation as loaded when an earlier query of the request left its target in the unit of
+     * work. Mapping that would give an entity a relation nobody asked for — depending on what ran before, and without
+     * the read rights of the target being applied to this load. Such a relation stays unset and lazy-loads on access.
+     *
+     * @param string $propertyName The relation property of the model
+     * @return bool
+     */
+    protected function isRelationFetchedByCurrentLoad(string $propertyName): bool
+    {
+        if (!$this->ormInstance->isLoaded($propertyName)) {
+            return false;
+        }
+        if (self::$fetchJoinedRelationPathsOfCurrentLoad === null) {
+            return true;
+        }
+        if (self::$mapRelationsLoadedByEarlierQueries === null) {
+            self::$mapRelationsLoadedByEarlierQueries = (bool)Config::get(self::MAP_RELATIONS_LOADED_BY_EARLIER_QUERIES_CONFIG_KEY);
+        }
+        if (self::$mapRelationsLoadedByEarlierQueries) {
+            return true;
+        }
+        return in_array(
+            static::getRelationPathInCurrentMapping($propertyName),
+            self::$fetchJoinedRelationPathsOfCurrentLoad,
+            true
+        );
+    }
+
+    /**
+     * The path of a relation of the model being mapped, from the root of the load
+     *
+     * @param string $propertyName
+     * @return string
+     */
+    protected static function getRelationPathInCurrentMapping(string $propertyName): string
+    {
+        return self::$relationPathOfCurrentMapping === ''
+            ? $propertyName
+            : self::$relationPathOfCurrentMapping . '.' . $propertyName;
+    }
+
+    /**
      * Refuses a write through this repository when the application leaves its table out of the schema
      * (`Base.Repo.database.excludedTables`, {@see EntityModelGeneratorService::getExcludedSqlTableNames()}) — instead
      * of the database's "table doesn't exist". Checked once per repository class and process.
@@ -256,7 +323,22 @@ abstract class DatabaseRepoEntity extends RepoEntity
         }
 
         $this->ormInstance = $ormInstance;
-        $entityInstance = $this->mapToEntity($useEntityRegistrCache, $initiatorClasses);
+        if ($loadedOrmInstance) {
+            // a model of an enclosing load: the relations that load fetch-joined decide
+            $entityInstance = $this->mapToEntity($useEntityRegistrCache, $initiatorClasses);
+        } else {
+            // this find ran its own query: its fetch joins decide which relations are mapped
+            $fetchJoinedRelationPathsOfEnclosingLoad = self::$fetchJoinedRelationPathsOfCurrentLoad;
+            $relationPathOfEnclosingMapping = self::$relationPathOfCurrentMapping;
+            self::$fetchJoinedRelationPathsOfCurrentLoad = $queryBuilder->getFetchJoinedRelationPaths();
+            self::$relationPathOfCurrentMapping = '';
+            try {
+                $entityInstance = $this->mapToEntity($useEntityRegistrCache, $initiatorClasses);
+            } finally {
+                self::$fetchJoinedRelationPathsOfCurrentLoad = $fetchJoinedRelationPathsOfEnclosingLoad;
+                self::$relationPathOfCurrentMapping = $relationPathOfEnclosingMapping;
+            }
+        }
         // A find with a select shows what a list with the same select shows: the properties that were not selected
         // are hidden, they do not appear with their class defaults
         if ($propertiesToHideBasedOnSelectOptions && $entityInstance) {

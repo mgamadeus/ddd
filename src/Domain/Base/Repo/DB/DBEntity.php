@@ -336,7 +336,7 @@ class DBEntity extends DatabaseRepoEntity
             }
             // one to many relations implicitly loaded
             if (is_a($possibleEntityTypeName, EntitySet::class, true)) {
-                if ($this->ormInstance->isLoaded($propertyName)) {
+                if ($this->isRelationFetchedByCurrentLoad($propertyName)) {
                     /** @var EntitySet $entitySetClass */
                     $entitySetClass = $possibleEntityTypeName;
                     /** @var DBEntitySet $dbEntitySetClass */
@@ -349,17 +349,23 @@ class DBEntity extends DatabaseRepoEntity
                         $dbEntityClass = $dbEntitySetClass::BASE_REPO_CLASS;
                         $dbEntity = new $dbEntityClass();
                         $initiatorClasses[$entity::class] = true;
-                        /** @var DoctrineModel $dependentOrmInstance */
-                        foreach ($this->ormInstance->$propertyName as $dependentOrmInstance) {
-                            $dependentEntity = $dbEntity->find(
-                                $dependentOrmInstance->id,
-                                $useEntityRegistryCache,
-                                $dependentOrmInstance,
-                                false,
-                                $initiatorClasses
-                            );
-                            $entitySet->add($dependentEntity);
-                            $entitySet->addChildren($dependentEntity);
+                        $relationPathOfEnclosingMapping = self::$relationPathOfCurrentMapping;
+                        self::$relationPathOfCurrentMapping = static::getRelationPathInCurrentMapping($propertyName);
+                        try {
+                            /** @var DoctrineModel $dependentOrmInstance */
+                            foreach ($this->ormInstance->$propertyName as $dependentOrmInstance) {
+                                $dependentEntity = $dbEntity->find(
+                                    $dependentOrmInstance->id,
+                                    $useEntityRegistryCache,
+                                    $dependentOrmInstance,
+                                    false,
+                                    $initiatorClasses
+                                );
+                                $entitySet->add($dependentEntity);
+                                $entitySet->addChildren($dependentEntity);
+                            }
+                        } finally {
+                            self::$relationPathOfCurrentMapping = $relationPathOfEnclosingMapping;
                         }
                         $entity->$entityPropertyName = $entitySet;
                         $entity->addChildren($entitySet);
@@ -406,9 +412,9 @@ class DBEntity extends DatabaseRepoEntity
                     $valueObject->setParent($entity);
                 }
             }
-            // in case that ormInstance contains initialized dependent Mode, we load it
+            // a dependent model the query of this load fetch-joined is mapped as well
             if (
-                DefaultObject::isEntity($possibleEntityTypeName) && $this->ormInstance->isLoaded($propertyName)
+                DefaultObject::isEntity($possibleEntityTypeName) && $this->isRelationFetchedByCurrentLoad($propertyName)
             ) {
                 /** @var Entity $entityType */
                 $entityType = static::resolveEntityClassOfLoadedRelation(
@@ -423,14 +429,20 @@ class DBEntity extends DatabaseRepoEntity
                     /** @var DBEntity $repo */
                     $repo = new $repoClassName();
                     $initiatorClasses[$entity::class] = true;
-                    /** @var Entity $propertyEntity */
-                    $propertyEntity = $repo->find(
-                        $ormModelInstance->id,
-                        $useEntityRegistryCache,
-                        $ormModelInstance,
-                        false,
-                        $initiatorClasses
-                    );
+                    $relationPathOfEnclosingMapping = self::$relationPathOfCurrentMapping;
+                    self::$relationPathOfCurrentMapping = static::getRelationPathInCurrentMapping($propertyName);
+                    try {
+                        /** @var Entity $propertyEntity */
+                        $propertyEntity = $repo->find(
+                            $ormModelInstance->id,
+                            $useEntityRegistryCache,
+                            $ormModelInstance,
+                            false,
+                            $initiatorClasses
+                        );
+                    } finally {
+                        self::$relationPathOfCurrentMapping = $relationPathOfEnclosingMapping;
+                    }
                     $entity->$entityPropertyName = $propertyEntity;
                     // check if entity needs to be added as child or as parent
                     $addAsParent = $entityReflectionClass->isLazyLoadedPropertyToBeAddedAsParent($entityPropertyName);

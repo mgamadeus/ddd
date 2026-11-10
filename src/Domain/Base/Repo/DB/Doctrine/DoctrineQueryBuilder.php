@@ -261,16 +261,7 @@ class DoctrineQueryBuilder extends QueryBuilder
      */
     public function hasFetchJoinedCollection(): bool
     {
-        $selectedAliases = [];
-        foreach ($this->getDQLPart('select') as $selectExpression) {
-            foreach ($selectExpression->getParts() as $selectPart) {
-                $selectPart = trim((string)$selectPart);
-                if (preg_match('/^partial\s+([A-Za-z0-9_]+)\./i', $selectPart, $partialMatch)) {
-                    $selectPart = $partialMatch[1];
-                }
-                $selectedAliases[$selectPart] = true;
-            }
-        }
+        $selectedAliases = array_fill_keys($this->getSelectedModelAliases(), true);
         $entityClassByAlias = [];
         foreach ($this->getDQLPart('from') as $fromExpression) {
             $entityClassByAlias[$fromExpression->getAlias()] = $fromExpression->getFrom();
@@ -300,6 +291,65 @@ class DoctrineQueryBuilder extends QueryBuilder
             }
         }
         return false;
+    }
+
+    /**
+     * The aliases this query selects as a model, whole or as a partial (`alias`, `partial alias.{…}`). A select part
+     * may list several, separated by commas; expressions and scalar columns are no model aliases.
+     *
+     * @return string[]
+     */
+    public function getSelectedModelAliases(): array
+    {
+        $selectedAliases = [];
+        foreach ($this->getDQLPart('select') as $selectExpression) {
+            foreach ($selectExpression->getParts() as $selectPart) {
+                // split at the commas outside of a partial's field list
+                foreach (preg_split('/,(?![^{]*\})/', (string)$selectPart) as $selectedItem) {
+                    if (preg_match('/^\s*(?:partial\s+)?([A-Za-z0-9_]+)\s*(?:\.\s*\{[^}]*\}\s*)?$/i', $selectedItem, $aliasMatch)) {
+                        $selectedAliases[$aliasMatch[1]] = true;
+                    }
+                }
+            }
+        }
+        return array_map('strval', array_keys($selectedAliases));
+    }
+
+    /**
+     * The relations this query fetch-joins: every join on an association whose alias is selected, as the dotted path
+     * of model properties from the root (`customer`, `customer.address`). A join that only filters or orders (not
+     * selected) and a join on a model class (no association path) are no fetch joins.
+     *
+     * @return string[]
+     */
+    public function getFetchJoinedRelationPaths(): array
+    {
+        $selectedAliases = array_fill_keys($this->getSelectedModelAliases(), true);
+        $relationPathByAlias = [];
+        foreach ($this->getDQLPart('from') as $fromExpression) {
+            $relationPathByAlias[$fromExpression->getAlias()] = '';
+        }
+        $fetchJoinedRelationPaths = [];
+        foreach ($this->getDQLPart('join') as $joinsOfRootAlias) {
+            foreach ($joinsOfRootAlias as $joinExpression) {
+                $joinPath = (string)$joinExpression->getJoin();
+                if (!str_contains($joinPath, '.')) {
+                    continue;
+                }
+                [$parentAlias, $associationName] = explode('.', $joinPath, 2);
+                if (!isset($relationPathByAlias[$parentAlias])) {
+                    continue;
+                }
+                $relationPath = $relationPathByAlias[$parentAlias] === ''
+                    ? $associationName
+                    : $relationPathByAlias[$parentAlias] . '.' . $associationName;
+                $relationPathByAlias[$joinExpression->getAlias()] = $relationPath;
+                if (isset($selectedAliases[$joinExpression->getAlias()])) {
+                    $fetchJoinedRelationPaths[] = $relationPath;
+                }
+            }
+        }
+        return $fetchJoinedRelationPaths;
     }
 
     /**

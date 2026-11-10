@@ -3,7 +3,7 @@ name: ddd-query-options-specialist
 description: OData-style QueryOptions in mgamadeus/ddd — database-level filtering, sorting, pagination, select, expand, fulltext over Translatable properties. Wire syntax filters=/expand=/orderBy=/select=/top=/skip= (no dollar prefix; default top 50). Covers QueryOptionsTrait on Entity AND EntitySet, controller DTOs, the filter grammar (operators, ft/fb, and/or, dot-notation, escaping, createExpression), value validation (400 for a bad value, JSON or plain-Translatable comparisons, ft/fb without an index), nested expand and join read-rights, propertyScore, snapshot/restore, inescapable scope filters (addFiltersConnectedByAnd), Argus shared defaults, HideProperty never filterable, temporal filters (FiltersDefinition::$temporalKind, normalizeMomentLiterals), QueryOptionsProjection. Use when a filter answers 400/500, a query param is ignored, results cap at 50, an inescapable scope filter is needed, Argus defaults have no effect, date-time filters use the wrong zone, or old clients still query a renamed entity.
 metadata:
   author: mgamadeus
-  version: "1.3.0"
+  version: "1.3.1"
   framework: mgamadeus/ddd
 ---
 
@@ -292,6 +292,16 @@ in the join's ON clause. `count()` counts distinct roots. A paginated query that
 (joined, not selected) keeps the WHERE in both steps (`DoctrineQueryBuilder::filtersFetchJoinedCollection()` decides).
 Known limitation: a query that fetch-joins a collection AND joins another to-many relation only to filter loads that
 second join unfiltered (results are correct; the statement reads more child rows than needed).
+
+### A relation appears only when the load asked for it
+
+A loaded entity carries a relation only when the query of that load fetch-joined it: an expand, or a join with
+`addSelect()` in a service's own query (`DoctrineQueryBuilder::getFetchJoinedRelationPaths()`). A join that only
+filters or orders maps nothing, and neither does a row an earlier query of the request left in Doctrine's unit of
+work (the signed-in account the auth layer loaded, a collection another list expanded): that relation stays unset
+and lazy-loads on access. A response therefore never depends on what ran before it. An application that still relies
+on the earlier mapping sets `Base.Repo.database.mapRelationsLoadedByEarlierQueries` to `true` until its routes send
+the expand.
 
 ### The `expand()` Method on Entities
 

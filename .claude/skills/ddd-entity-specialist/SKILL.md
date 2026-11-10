@@ -3,7 +3,7 @@ name: ddd-entity-specialist
 description: Create and design DDD entities, entity sets, value objects, DB repositories, lazy loading, relationships and attributes in mgamadeus/ddd. Covers folder layout, naming, critical rules (never redeclare id, NotNull → NOT NULL, @var T[] feeds the API schema, framework Date/DateTime only, protected), getService()->find(), the isset lazy-load trap, Translatable properties, ChangeHistory, junction entities, indexes, virtual columns, SubclassIndicator, DatabaseTrigger, ReuseParentEntitySet, displayOrder, PreserveOnOmission, validation (Choice, UniqueProperty), chart types (DateTimeValueSequence, TimeInterval, KeyValue), and update() (upsert) vs strict insert() (a duplicate key throws). Use when creating or modifying entities and their persistence, returning chart or time-series data, placing entity files, adding translations or auditing, defining indexes or triggers, fixing a null getService(), a lazy relation that never loads, a partial update overwriting a stored value, or a write that must fail on a duplicate key.
 metadata:
   author: mgamadeus
-  version: "1.1.0"
+  version: "1.1.1"
   framework: mgamadeus/ddd
 ---
 
@@ -1012,6 +1012,10 @@ The corresponding service provides `getNextDisplayOrder()` (see `ddd-service-spe
 ## Lazy Loading
 
 **Lazy loading makes most service query methods unnecessary.** Relationships load automatically on property access.
+
+A relation property is set after a load only when that load fetch-joined it (expand, or a join with `addSelect()`);
+otherwise it is unset until the first read lazy-loads it — also when another query of the request already loaded the
+target row. Never rely on a relation being "there anyway": expand it or read it.
 
 ### What triggers a lazy load — and what does NOT (the `isset` / `empty` footgun)
 
