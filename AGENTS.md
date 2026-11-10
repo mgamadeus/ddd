@@ -652,6 +652,15 @@ $translated = __('greeting.hello', 'de', 'DE', 'FORMAL', ['%name%' => 'Max']);
 
 Entities `Cron` and `CronExecution` in `Domain/Common/Entities/Crons/` provide scheduled task execution via Symfony console commands. Managed by `app:crons:execute` (the tick), `app:crons:list`, `app:crons:upsert` (create/edit one Cron), `app:crons:activate` / `app:crons:deactivate` (switch Crons by name; activation re-anchors the next slot via `Cron::activate()`) and `app:crons:executions` (run history).
 
+### Workers
+
+The Messenger workers of an application: the worker list (`config/system/workers.yaml`, checked against the Messenger
+configuration by `app:workers:check`) and the opt-in worker monitoring (`Common.Workers` `enabled`): statistics,
+worker processes, queue samples and message runs in `Domain/Common/Entities/Workers/`, read through
+`WorkersOverviewService`, the commands `app:workers:list` / `check` / `sample` (every minute) / `stats` / `restart`
+and the admin endpoints of `WorkersControllerTrait` (`Presentation/Api/Admin/Common/Workers/`). The framework observes
+and asks for a restart; it never starts or scales a process. Details: `ddd-workers-specialist`.
+
 ### Object Storage
 
 ```php
@@ -831,6 +840,7 @@ conventions; a class placed from memory or from a brief breaks every consuming a
 | Console command | `ddd-cli-command-specialist` |
 | Message + handler | `ddd-message-handler-specialist` |
 | Issues logging, registry, client errors | `ddd-issues-log-specialist` |
+| Worker list, worker monitoring, workers admin endpoints | `ddd-workers-specialist` |
 
 - **Anything fetched with `getService()` lives in a public `…\Services\` namespace** of `services.yaml` and ends in
   `Service`. Elsewhere it is private in an application's compiled container: removed or inlined, and the fetch fails at

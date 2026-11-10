@@ -397,3 +397,16 @@ Unchanged:
   hydrated from a plain list. `expand()` sets an expand clause as the target class' default QueryOptions only while
   that property loads and restores the previous defaults afterwards — a later load of the same class in the request no
   longer inherits the clause's select, filters, order or page.
+- 3.18.0 — Messenger workers as a framework concept, all opt-in. Worker list (`config/system/workers.yaml`:
+  consumers per transport, loops) with `app:workers:list` and `app:workers:check` (CI: a consumed transport without a
+  consumer entry is an error). Worker monitoring, off unless `Common.Workers` `enabled` / `WORKERS_ENABLED` is set
+  and its four tables exist (`WorkerStatBuckets`, `WorkerTransportSamples`, `WorkerProcesses`, `WorkerMessageRuns` —
+  an app that does not want them lists them in `Base.Repo.database.excludedTables`): statistics per minute, transport
+  and message class, worker processes with heartbeat and inferred stop reason, queue samples, message runs;
+  `app:workers:sample` (run every minute), `app:workers:stats`, `app:workers:restart`. `WorkersOverviewService`
+  (overview, transport detail, history as chart sequences) and the admin endpoints as `WorkersControllerTrait`, which
+  an app mounts with one controller. A monitoring middleware and an event subscriber are registered on every bus
+  (they do nothing while the monitoring is off; parameter `ddd.messenger.worker_monitoring: false` removes them).
+  Skill: `ddd-workers-specialist`. Fix for every app: an entity string property whose value is the name of a
+  ValueObject class (e.g. a stored message class) failed to persist with "Call to a member function
+  mapToRepository() on string" — the mapper now decides by the value being an object.

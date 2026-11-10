@@ -506,4 +506,5 @@ public function doSomething(int $fooBarId, bool $async = false): void
 
 - **The service the handler delegates to** — all business logic and the `bool $async = false` method live in the service; see `ddd-service-specialist`.
 - **Loading the entity by ID in the handler** — `FooBar::byId(...)` and the repository/lazy-load mechanics are owned by `ddd-entity-specialist`.
+- **Which transports get workers, what the workers did, restarting them** — the worker list (`app:workers:check`: a transport without a consumer entry), the worker monitoring (a middleware on every bus measures each consumed message, no handler change; opt-out parameter `ddd.messenger.worker_monitoring: false`) and `app:workers:restart`; see `ddd-workers-specialist`.
 - **Triggering a message from a console command** — see `ddd-cli-command-specialist` for the dispatch-from-CLI entry point.

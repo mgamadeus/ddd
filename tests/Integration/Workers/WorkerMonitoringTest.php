@@ -253,7 +253,7 @@ class WorkerMonitoringTest extends IntegrationTestCase
     }
 
     /**
-     * A failed write pauses the monitoring for less than it takes to count as lost, is reported to the issues log
+     * A failed write pauses the monitoring for less than it takes to count as lost while the heartbeat goes on, is reported to the issues log
      * once per process, and a process closed as lost that beats again is running again.
      */
     public function testAFailedWritePausesShortlyAndALostProcessThatBeatsAgainIsRunning(): void
@@ -270,10 +270,19 @@ class WorkerMonitoringTest extends IntegrationTestCase
         self::assertFalse($workerMonitoringService->isEnabled());
         self::assertSame(1, $workerMonitoringService->failuresReportedToIssuesLog);
 
-        $workerMonitoringService->currentTime += $secondsUntilLost - $settings->heartbeatSeconds - 1;
+        // the heartbeat goes on during the pause
+        $workerMonitoringService->currentTime += $settings->heartbeatSeconds;
+        $workerMonitoringService->tickHeartbeat();
+        self::assertFalse($workerMonitoringService->isEnabled());
+        self::assertSame(
+            (int)$workerMonitoringService->currentTime,
+            DateTime::fromString((string)$this->rows(WorkerProcess::class)[0]['lastSeenAt'])->getTimestamp()
+        );
+
+        $workerMonitoringService->currentTime += $secondsUntilLost - 2 * $settings->heartbeatSeconds - 1;
         self::assertTrue($workerMonitoringService->isEnabled(), 'the pause ends before the process counts as lost');
 
-        // closed as lost by another process' prune (e.g. while a long pause-less gap), then the process beats again
+        // closed as lost by another process' prune, then the process beats again
         $workerMonitoringService->currentTime += $secondsUntilLost;
         DDDService::instance()->deactivateEntityRightsRestrictions();
         try {

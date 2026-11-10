@@ -46,7 +46,8 @@ use Throwable;
  *
  * Off unless `Common.Workers` `enabled` is set (the tables must exist). Fail-soft: a failed write never touches a
  * job; the monitoring of the process pauses ({@see self::getFailureBackoffSeconds()}), says so in the log and once per
- * process in the issues log. A process that beats again after it was closed as lost is running again.
+ * process in the issues log; its heartbeat goes on. A process that beats again after it was closed as lost is running
+ * again.
  *
  * Called by {@see \DDD\Symfony\Messenger\Middleware\WorkerMonitoringMiddleware},
  * {@see \DDD\Symfony\EventListeners\WorkerMonitoringSubscriber} and
@@ -341,19 +342,22 @@ class WorkerMonitoringService extends Service
      */
     public function tick(): bool
     {
-        if (!$this->workerIsRegistered || !$this->isEnabled()) {
+        if (!$this->workerIsRegistered || !$this->getSettings()->enabled) {
             return false;
         }
+        // the heartbeat goes on while the monitoring pauses after a failed write: a pause must not make a live
+        // process look lost
+        $isPaused = !$this->isEnabled();
         try {
             $now = $this->getCurrentTime();
             $settings = $this->getSettings();
-            if ($now - $this->lastFlushAt >= $settings->flushSeconds
-                || ($this->pendingWorkerMessageRuns?->count() ?? 0) >= self::MAX_PENDING_MESSAGE_RUNS) {
+            if (!$isPaused && ($now - $this->lastFlushAt >= $settings->flushSeconds
+                || ($this->pendingWorkerMessageRuns?->count() ?? 0) >= self::MAX_PENDING_MESSAGE_RUNS)) {
                 $this->flush();
             }
             if ($now - $this->lastHeartbeatAt >= $settings->heartbeatSeconds) {
                 $this->lastHeartbeatAt = $now;
-                $this->runWithoutRightsRestrictions(function () use ($now): void {
+                $this->runWithoutRightsRestrictions(function () use ($now, $isPaused): void {
                     $this->writeProcess(WorkerProcess::STATE_RUNNING, $now);
                     $workerProcessesNotStopped = $this->getWorkerProcessesService()->findWorkerProcessesNotStopped();
                     $ownWorkerProcess = $this->processKey !== null
@@ -362,12 +366,16 @@ class WorkerMonitoringService extends Service
                     if ($ownWorkerProcess !== null && isset($ownWorkerProcess->restartRequestedAt)) {
                         $this->restartWasRequested = true;
                     }
-                    $this->writeSamples($this->transportNames, $workerProcessesNotStopped, $now, false);
+                    if (!$isPaused) {
+                        $this->writeSamples($this->transportNames, $workerProcessesNotStopped, $now, false);
+                    }
                 });
             }
             return $this->restartWasRequested;
         } catch (Throwable $throwable) {
-            $this->pauseAfterFailure($throwable);
+            if (!$isPaused) {
+                $this->pauseAfterFailure($throwable);
+            }
             return false;
         }
     }
