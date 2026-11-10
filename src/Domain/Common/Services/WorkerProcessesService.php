@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Common\Services;
 
-use DDD\Domain\Base\Services\EntitiesService;
 use DDD\Domain\Common\Entities\Workers\WorkerProcess;
 use DDD\Domain\Common\Entities\Workers\WorkerProcesses;
+use DDD\Domain\Common\Entities\Workers\WorkerTransportHistories;
+use DDD\Domain\Common\Entities\Workers\WorkerTransportHistory;
 use DDD\Domain\Common\Repo\DB\Workers\DBWorkerProcess;
 use DDD\Domain\Common\Repo\DB\Workers\DBWorkerProcesses;
 use DDD\Infrastructure\Base\DateTime\DateTime;
@@ -17,7 +18,7 @@ use DDD\Infrastructure\Base\DateTime\DateTime;
  * @method DBWorkerProcess getEntityRepoClassInstance()
  * @method DBWorkerProcesses getEntitySetRepoClassInstance()
  */
-class WorkerProcessesService extends EntitiesService
+class WorkerProcessesService extends WorkerMonitoringEntitiesService
 {
     public const string DEFAULT_ENTITY_CLASS = WorkerProcess::class;
 
@@ -154,5 +155,53 @@ class WorkerProcessesService extends EntitiesService
             }
         }
         return $workerProcessesOfTransport;
+    }
+
+    /**
+     * How many worker processes started per step of a window, as the sequence processStarts per transport. A process
+     * that consumes several transports counts for each of them.
+     *
+     * @param string|null $transport Only this transport
+     */
+    public function findProcessStartSequencesByTransport(DateTime $from, DateTime $to, int $stepSeconds, ?string $transport = null): WorkerTransportHistories
+    {
+        $startsByTransport = [];
+        foreach ($this->streamRowsInWindow('startedAt', ['transport', 'startedAt'], $from, $to) as $row) {
+            $stepStart = $this->getStepStart($row['startedAt'], $stepSeconds);
+            foreach (array_filter(explode(WorkerProcess::TRANSPORT_SEPARATOR, (string)$row['transport'])) as $transportName) {
+                if ($transport !== null && $transportName !== $transport) {
+                    continue;
+                }
+                $startsByTransport[$transportName][$stepStart] = ($startsByTransport[$transportName][$stepStart] ?? 0) + 1;
+            }
+        }
+        $workerTransportHistories = new WorkerTransportHistories();
+        foreach ($startsByTransport as $transportName => $startsByStepStart) {
+            $workerTransportHistories->getOrCreateByTransport((string)$transportName)
+                ->addSequence(WorkerTransportHistory::SEQUENCE_PROCESS_STARTS, $from, $to, $stepSeconds, $startsByStepStart);
+        }
+        return $workerTransportHistories;
+    }
+
+    /**
+     * The processes that consume a transport, as the set's QueryOptions say (filters, order, page). The transport is
+     * matched as a member of the process' transport list.
+     */
+    public function findWorkerProcessesOfTransport(string $transport): WorkerProcesses
+    {
+        $repoClass = $this->getEntitySetRepoClassInstance();
+        $alias = $repoClass::getBaseModelAlias();
+        $separator = WorkerProcess::TRANSPORT_SEPARATOR;
+        $escapedTransport = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $transport);
+        $queryBuilder = $repoClass::createQueryBuilder(true)
+            ->andWhere(
+                "({$alias}.transport = :transport OR {$alias}.transport LIKE :transportFirst ESCAPE '!'"
+                . " OR {$alias}.transport LIKE :transportLast ESCAPE '!' OR {$alias}.transport LIKE :transportInner ESCAPE '!')"
+            )
+            ->setParameter('transport', $transport)
+            ->setParameter('transportFirst', $escapedTransport . $separator . '%')
+            ->setParameter('transportLast', '%' . $separator . $escapedTransport)
+            ->setParameter('transportInner', '%' . $separator . $escapedTransport . $separator . '%');
+        return $repoClass->find($queryBuilder, false) ?? new WorkerProcesses();
     }
 }

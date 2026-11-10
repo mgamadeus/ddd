@@ -52,4 +52,16 @@ class WorkerMessageRunsService extends EntitiesService
             ->getQuery()->execute();
         return $deletedHandled + $deletedFailed;
     }
+
+    /**
+     * The message runs of a transport, as the set's QueryOptions say (filters, order, page).
+     */
+    public function findWorkerMessageRunsOfTransport(string $transport): WorkerMessageRuns
+    {
+        $repoClass = $this->getEntitySetRepoClassInstance();
+        $alias = $repoClass::getBaseModelAlias();
+        $queryBuilder = $repoClass::createQueryBuilder(true)
+            ->andWhere("{$alias}.transport = :transport")->setParameter('transport', $transport);
+        return $repoClass->find($queryBuilder, false) ?? new WorkerMessageRuns();
+    }
 }

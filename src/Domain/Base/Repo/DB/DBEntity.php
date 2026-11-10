@@ -725,7 +725,8 @@ class DBEntity extends DatabaseRepoEntity
         $hasDBOrVirtualLazyloadRepo = false;
         $propertyInitialized = ReflectionClass::isPropertyInitialized($entity, $propertyName);
         $propertyValue = $propertyInitialized ? $entity->$propertyName : null;
-        $propertyValueIsValueObject = DefaultObject::isValueObject($propertyValue);
+        // by the value being an object: a string that names a ValueObject class (a stored class name) is a string
+        $propertyValueIsValueObject = is_object($propertyValue) && DefaultObject::isValueObject($propertyValue);
 
         if (
             $propertyValueIsValueObject && ($lazyloadAttributes = $entityReflectionProperty->getAttributes(

@@ -20,6 +20,7 @@ use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\IssuesLogService;
 use DDD\Infrastructure\Services\Service;
+use Psr\Log\LogLevel;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\WrappedExceptionsInterface;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
@@ -44,7 +45,8 @@ use Throwable;
  * process starts is written with its start, so a long job is visible while it runs.
  *
  * Off unless `Common.Workers` `enabled` is set (the tables must exist). Fail-soft: a failed write never touches a
- * job; the monitoring of the process pauses for {@see self::FAILURE_BACKOFF_SECONDS} and says so once in the log.
+ * job; the monitoring of the process pauses ({@see self::getFailureBackoffSeconds()}), says so in the log and once per
+ * process in the issues log. A process that beats again after it was closed as lost is running again.
  *
  * Called by {@see \DDD\Symfony\Messenger\Middleware\WorkerMonitoringMiddleware},
  * {@see \DDD\Symfony\EventListeners\WorkerMonitoringSubscriber} and
@@ -102,6 +104,7 @@ class WorkerMonitoringService extends Service
     protected float $lastCurrentMessageWriteAt = 0.0;
     protected float $lastPruneAt = 0.0;
     protected float $pausedUntil = 0.0;
+    protected bool $failureWasReportedToIssuesLog = false;
 
     public function getSettings(): WorkersSettings
     {
@@ -697,21 +700,56 @@ class WorkerMonitoringService extends Service
         }
     }
 
-    /** A write failed: the monitoring of this process pauses, and says so once per pause */
+    /**
+     * A write failed: the monitoring of this process pauses and says so — in the log at every pause, in the issues
+     * log once per process.
+     */
     protected function pauseAfterFailure(Throwable $throwable): void
     {
-        $this->pausedUntil = $this->getCurrentTime() + self::FAILURE_BACKOFF_SECONDS;
+        $failureBackoffSeconds = $this->getFailureBackoffSeconds();
+        $this->pausedUntil = $this->getCurrentTime() + $failureBackoffSeconds;
         $this->pendingWorkerStatBuckets = null;
         $this->pendingWorkerMessageRuns = null;
         $this->currentWorkerMessageRun = null;
         try {
             DDDService::instance()->getLogger()->warning(sprintf(
                 'Worker monitoring paused for %d s after a failed write: %s',
-                self::FAILURE_BACKOFF_SECONDS,
+                $failureBackoffSeconds,
                 $throwable->getMessage()
             ));
         } catch (Throwable) {
             error_log('Worker monitoring paused after a failed write: ' . $throwable->getMessage());
+        }
+        if (!$this->failureWasReportedToIssuesLog) {
+            $this->failureWasReportedToIssuesLog = true;
+            $this->reportFailureToIssuesLog($throwable);
+        }
+    }
+
+    /**
+     * How long the monitoring pauses after a failed write: {@see self::FAILURE_BACKOFF_SECONDS}, and never as long
+     * as it takes an idle process without a heartbeat to count as lost — a pause must not close a live process.
+     */
+    protected function getFailureBackoffSeconds(): int
+    {
+        $secondsUntilLost = $this->getSettings()->heartbeatSeconds * self::CLOSE_LOST_AFTER_HEARTBEATS;
+        return max(1, min(self::FAILURE_BACKOFF_SECONDS, intdiv($secondsUntilLost, 2)));
+    }
+
+    protected function reportFailureToIssuesLog(Throwable $throwable): void
+    {
+        try {
+            /** @var IssuesLogService $issuesLogService */
+            $issuesLogService = DDDService::instance()->getService(IssuesLogService::class);
+            $issuesLogService->logThrowable(
+                $throwable,
+                LogLevel::WARNING,
+                ['workerMonitoring' => 'failed write, monitoring paused', 'processKey' => (string)$this->processKey],
+                false,
+                IssuesLogService::LOG_MESSAGE_SECTION_MESSENGER
+            );
+        } catch (Throwable) {
+            // fail-soft: the log line above already says it
         }
     }
 

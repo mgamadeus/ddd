@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Common\Services;
 
-use DDD\Domain\Base\Services\EntitiesService;
+use DDD\Domain\Common\Entities\Workers\WorkerTransportHistories;
+use DDD\Domain\Common\Entities\Workers\WorkerTransportHistory;
 use DDD\Domain\Common\Entities\Workers\WorkerTransportSample;
 use DDD\Domain\Common\Entities\Workers\WorkerTransportSamples;
 use DDD\Domain\Common\Repo\DB\Workers\DBWorkerTransportSample;
@@ -17,7 +18,7 @@ use DDD\Infrastructure\Base\DateTime\DateTime;
  * @method DBWorkerTransportSample getEntityRepoClassInstance()
  * @method DBWorkerTransportSamples getEntitySetRepoClassInstance()
  */
-class WorkerTransportSamplesService extends EntitiesService
+class WorkerTransportSamplesService extends WorkerMonitoringEntitiesService
 {
     public const string DEFAULT_ENTITY_CLASS = WorkerTransportSample::class;
 
@@ -75,5 +76,38 @@ class WorkerTransportSamplesService extends EntitiesService
             ->select("MAX({$alias}.lastSampledByCommandAt)")
             ->getQuery()->getSingleScalarResult();
         return $lastSampledByCommandAt ? DateTime::fromString((string)$lastSampledByCommandAt) : null;
+    }
+
+    /**
+     * The queue and worker state of a window as sequences per transport: waiting, inFlight, processes — the highest
+     * sample of each step. A transport without a sample in the window is not in the result.
+     *
+     * @param string|null $transport Only this transport
+     */
+    public function findSampleSequencesByTransport(DateTime $from, DateTime $to, int $stepSeconds, ?string $transport = null): WorkerTransportHistories
+    {
+        $sequenceNamesByProperty = [
+            'waitingMax' => WorkerTransportHistory::SEQUENCE_WAITING,
+            'inFlightMax' => WorkerTransportHistory::SEQUENCE_IN_FLIGHT,
+            'processCountMax' => WorkerTransportHistory::SEQUENCE_PROCESSES,
+        ];
+        $maximaByTransport = [];
+        foreach ($this->streamRowsInWindow('bucketStart', ['transport', 'bucketStart', ...array_keys($sequenceNamesByProperty)], $from, $to, $transport) as $row) {
+            $stepStart = $this->getStepStart($row['bucketStart'], $stepSeconds);
+            foreach ($sequenceNamesByProperty as $property => $sequenceName) {
+                $maximaByTransport[(string)$row['transport']][$sequenceName][$stepStart] = max(
+                    $maximaByTransport[(string)$row['transport']][$sequenceName][$stepStart] ?? 0,
+                    (int)($row[$property] ?? 0)
+                );
+            }
+        }
+        $workerTransportHistories = new WorkerTransportHistories();
+        foreach ($maximaByTransport as $transportName => $maximaBySequenceName) {
+            $workerTransportHistory = $workerTransportHistories->getOrCreateByTransport((string)$transportName);
+            foreach ($maximaBySequenceName as $sequenceName => $valuesByStepStart) {
+                $workerTransportHistory->addSequence($sequenceName, $from, $to, $stepSeconds, $valuesByStepStart);
+            }
+        }
+        return $workerTransportHistories;
     }
 }
