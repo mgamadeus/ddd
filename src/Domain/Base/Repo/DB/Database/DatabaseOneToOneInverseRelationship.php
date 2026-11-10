@@ -17,8 +17,12 @@ class DatabaseOneToOneInverseRelationship extends ValueObject
     public string $targetModelName;       // short class name of the owning ORM model carrying the FK
     public string $mappedByPropertyName;  // owning property on the target whose {name}Id is the FK (Doctrine mappedBy)
 
-    public function __construct(string $propertyName, string $targetModelName, string $mappedByPropertyName)
+    /** @var string The target model as the generated code writes it: its short name, or its fully qualified name when the short name is taken */
+    public string $targetModelReferenceName;
+
+    public function __construct(string $propertyName, string $targetModelName, string $mappedByPropertyName, ?string $targetModelReferenceName = null)
     {
+        $this->targetModelReferenceName = $targetModelReferenceName ?? $targetModelName;
         $this->propertyName = $propertyName;
         $this->targetModelName = $targetModelName;
         $this->mappedByPropertyName = $mappedByPropertyName;

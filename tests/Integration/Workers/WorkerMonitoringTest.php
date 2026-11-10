@@ -650,6 +650,7 @@ class WorkerMonitoringTest extends IntegrationTestCase
         self::assertSame(WorkerProcess::STATE_STOPPED, $rowsByProcessId[4194000]['state']);
         self::assertSame(WorkerProcess::STOP_REASON_LOST, $rowsByProcessId[4194000]['stopReason']);
         self::assertNull($rowsByProcessId[4194000]['currentMessageClass']);
+        self::assertNull($rowsByProcessId[4194000]['currentMessageSince']);
         self::assertSame(WorkerProcess::STATE_RUNNING, $rowsByProcessId[(int)getmypid()]['state'], 'a busy process that exists stays');
     }
 

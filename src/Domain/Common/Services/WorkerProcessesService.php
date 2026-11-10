@@ -137,6 +137,7 @@ class WorkerProcessesService extends WorkerMonitoringEntitiesService
             ->set("{$alias}.stopReason", ':lost')->setParameter('lost', WorkerProcess::STOP_REASON_LOST)
             ->set("{$alias}.stoppedAt", ':now')->setParameter('now', $now)
             ->set("{$alias}.currentMessageClass", 'NULL')
+            ->set("{$alias}.currentMessageSince", 'NULL')
             ->where("{$alias}.state <> :stopped")
             ->andWhere("{$alias}.id IN (:processIds)")->setParameter('processIds', $processIds)
             ->getQuery()->execute();
@@ -158,6 +159,7 @@ class WorkerProcessesService extends WorkerMonitoringEntitiesService
             ->set("{$alias}.stopReason", ':lost')->setParameter('lost', WorkerProcess::STOP_REASON_LOST)
             ->set("{$alias}.stoppedAt", ':now')->setParameter('now', $now)
             ->set("{$alias}.currentMessageClass", 'NULL')
+            ->set("{$alias}.currentMessageSince", 'NULL')
             ->where("{$alias}.state <> :stopped")
             ->andWhere(
                 "({$alias}.currentMessageClass IS NULL AND {$alias}.lastSeenAt < :idleLastSeenBefore)"

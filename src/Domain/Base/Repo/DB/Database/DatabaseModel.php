@@ -920,13 +920,13 @@ class DatabaseModel extends ValueObject
         }
         // one to many relationships
         foreach ($this->getOneToManyRelationsShips()->getElements() as $oneToManyRelationship) {
-            $modelClassContent .= "\t#[ORM\OneToMany(targetEntity: $oneToManyRelationship->targetModelName::class, mappedBy: '$oneToManyRelationship->mappedByPropertyName')]\n";
+            $modelClassContent .= "\t#[ORM\OneToMany(targetEntity: $oneToManyRelationship->targetModelReferenceName::class, mappedBy: '$oneToManyRelationship->mappedByPropertyName')]\n";
             $modelClassContent .= "\tpublic PersistentCollection $" . $oneToManyRelationship->propertyName . ";\n\n";
         }
         // one to one inverse relationships (the single reference back on the parent; FK lives on the target)
         foreach ($this->getOneToOneInverseRelationships()->getElements() as $oneToOneInverseRelationship) {
-            $modelClassContent .= "\t#[ORM\OneToOne(targetEntity: $oneToOneInverseRelationship->targetModelName::class, mappedBy: '$oneToOneInverseRelationship->mappedByPropertyName')]\n";
-            $modelClassContent .= "\tpublic ?$oneToOneInverseRelationship->targetModelName $" . $oneToOneInverseRelationship->propertyName . ";\n\n";
+            $modelClassContent .= "\t#[ORM\OneToOne(targetEntity: $oneToOneInverseRelationship->targetModelReferenceName::class, mappedBy: '$oneToOneInverseRelationship->mappedByPropertyName')]\n";
+            $modelClassContent .= "\tpublic ?$oneToOneInverseRelationship->targetModelReferenceName $" . $oneToOneInverseRelationship->propertyName . ";\n\n";
         }
         // imports need to be generated after getOneToManyRelationShips, as within the generation of oneToManyRelationShips
         // additional imports of Models from foreign namespaces can be added
@@ -964,21 +964,51 @@ class DatabaseModel extends ValueObject
             if (!$foreignKeyInTargetClass) {
                 continue;
             }
-            // if current namespace differs from foreign class, we need to add it as import
-            if (
-                $this->modelClassWithNamespace->namespace != $targetModel->getModelClassNameWithNameSpace()->namespace
-            ) {
-                $modelImport = new DatabaseModelImport(
-                    $targetModel->getModelClassNameWithNameSpace(), $this->modelClassWithNamespace->namespace
-                );
-                $this->modelImports->add($modelImport);
-            }
             $databaseOneToManyRelationShip = new DatabaseOneToManyRelationship(
-                $reflectionProperty->getName(), $targetModel->getModelClassNameWithNameSpace()->name, $foreignKeyInTargetClass->internalColumn
+                $reflectionProperty->getName(),
+                $targetModel->getModelClassNameWithNameSpace()->name,
+                $foreignKeyInTargetClass->internalColumn,
+                $this->importRelationTargetModelAndGetReferenceName($targetModel->getModelClassNameWithNameSpace())
             );
             $this->oneToManyRelationships->add($databaseOneToManyRelationShip);
         }
         return $this->oneToManyRelationships;
+    }
+
+    /**
+     * Makes the target model of an inverse relation usable in the generated class and returns how the code writes it.
+     * A target of another namespace is imported and written by its short name. When that short name already means
+     * another class in the generated file — an import of the same name (a module's model and an application's model
+     * of the same path), or the generated class itself — the target is written fully qualified and not imported: two
+     * imports of one short name are a fatal error, and an import would silently take the name from a class of the
+     * model's own namespace.
+     *
+     * @param ClassWithNamespace $targetModelClassWithNamespace
+     * @return string The short name, or the fully qualified name with a leading backslash
+     */
+    protected function importRelationTargetModelAndGetReferenceName(ClassWithNamespace $targetModelClassWithNamespace): string
+    {
+        $targetModelClassName = $targetModelClassWithNamespace->getNameWithNamespace();
+        $modelClassWithNamespace = $this->getModelClassNameWithNameSpace();
+        $shortNameIsTaken = $targetModelClassWithNamespace->name === $modelClassWithNamespace->name
+            && $targetModelClassName !== $modelClassWithNamespace->getNameWithNamespace();
+        foreach ($this->modelImports->getElements() as $modelImport) {
+            if (
+                $modelImport->importClassWithNamespace->name === $targetModelClassWithNamespace->name
+                && $modelImport->importClassWithNamespace->getNameWithNamespace() !== $targetModelClassName
+            ) {
+                $shortNameIsTaken = true;
+                break;
+            }
+        }
+        if ($shortNameIsTaken) {
+            return '\\' . ltrim($targetModelClassName, '\\');
+        }
+        if ($modelClassWithNamespace->namespace != $targetModelClassWithNamespace->namespace) {
+            $modelImport = new DatabaseModelImport($targetModelClassWithNamespace, $modelClassWithNamespace->namespace);
+            $this->modelImports->add($modelImport);
+        }
+        return $targetModelClassWithNamespace->name;
     }
 
     public function getOneToOneInverseRelationships(): DatabaseOneToOneInverseRelationships
@@ -1010,19 +1040,11 @@ class DatabaseModel extends ValueObject
             if ($owningPropertyName === null) {
                 continue;
             }
-            // if current namespace differs from target class, we need to add it as import
-            if (
-                $this->modelClassWithNamespace->namespace != $targetModel->getModelClassNameWithNameSpace()->namespace
-            ) {
-                $modelImport = new DatabaseModelImport(
-                    $targetModel->getModelClassNameWithNameSpace(), $this->modelClassWithNamespace->namespace
-                );
-                $this->modelImports->add($modelImport);
-            }
             $databaseOneToOneInverseRelationship = new DatabaseOneToOneInverseRelationship(
                 $reflectionProperty->getName(),
                 $targetModel->getModelClassNameWithNameSpace()->name,
-                $owningPropertyName
+                $owningPropertyName,
+                $this->importRelationTargetModelAndGetReferenceName($targetModel->getModelClassNameWithNameSpace())
             );
             $this->oneToOneInverseRelationships->add($databaseOneToOneInverseRelationship);
         }
