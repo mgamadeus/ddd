@@ -13,6 +13,7 @@ use DDD\Domain\Common\Services\DatabaseSchemaDiffService;
 use DDD\Domain\Common\Services\DatabaseSchemaIntrospectionService;
 use DDD\Domain\Common\Services\PostgresSchemaIntrospectionService;
 use DDD\Tests\Integration\Fixtures\Entities\CounterRows\CounterRow;
+use DDD\Tests\Integration\Fixtures\Entities\GeographyRows\GeographyRow;
 use DDD\Tests\Integration\Fixtures\Entities\SpatialRows\SpatialRow;
 use DDD\Tests\Integration\Fixtures\Entities\StoredBaseRows\StoredBaseChild;
 use DDD\Tests\Integration\Fixtures\Entities\StoredBaseRows\StoredBaseParent;
@@ -37,6 +38,7 @@ class SchemaDiffTest extends IntegrationTestCase
         TriggerRow::class,
         StoredBaseParent::class,
         StoredBaseChild::class,
+        GeographyRow::class,
     ];
 
     /** Every table the diff is compared on (managed + the shared fixtures, which are only read) */
@@ -50,6 +52,7 @@ class SchemaDiffTest extends IntegrationTestCase
         TriggerRow::class,
         StoredBaseParent::class,
         StoredBaseChild::class,
+        GeographyRow::class,
     ];
 
     protected function setUp(): void

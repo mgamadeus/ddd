@@ -218,6 +218,12 @@ class DatabaseColumn extends ValueObject
         self::SQL_TYPE_VECTOR => DatabaseIndex::TYPE_VECTOR,
     ];
 
+    /** No spatial reference system: plain Cartesian coordinates (the default of every geometry column) */
+    public const int SRID_NONE = 0;
+
+    /** WGS 84 longitude / latitude */
+    public const int SRID_WGS84 = 4326;
+
     public const array SPATIAL_SQL_TYPES = [
         'point' => true,
         'linestring' => true,
@@ -263,6 +269,13 @@ class DatabaseColumn extends ValueObject
 
     /** @var int If type is Vector, this is used for it's dimension */
     public ?int $vectorDimensions = 1024;
+
+    /**
+     * @var int Spatial reference system of a geometry column (POINT, LINESTRING, POLYGON) on PostgreSQL: the column is
+     * `geometry(<kind>,<srid>)` and values are written with this SRID, e.g. 4326 for longitude/latitude (x = lng,
+     * y = lat). 0 (default) = no reference system, as before. MariaDB columns and writes are unchanged.
+     */
+    public int $srid = self::SRID_NONE;
 
     /** @var bool It true, the column will be encrypted in the Database using an encryption password from the Encrypt class */
     public bool $encrypted = false;
@@ -314,6 +327,7 @@ class DatabaseColumn extends ValueObject
         bool $ignoreProperty = false,
         bool $isMergableJSONColumn = false,
         ?string $collation = null,
+        ?int $srid = null,
     ) {
         $this->sqlType = $sqlType;
         $this->allowsNull = $allowsNull;
@@ -327,6 +341,9 @@ class DatabaseColumn extends ValueObject
         $this->ignoreProperty = $ignoreProperty;
         $this->isMergableJSONColumn = $isMergableJSONColumn;
         $this->collation = $collation;
+        if ($srid !== null) {
+            $this->srid = $srid;
+        }
         parent::__construct();
     }
 
@@ -538,6 +555,7 @@ class DatabaseColumn extends ValueObject
             if (isset($columnAttributeInstance->collation) && $columnAttributeInstance->collation !== null) {
                 $databaseColum->collation = $columnAttributeInstance->collation;
             }
+            $databaseColum->srid = $columnAttributeInstance->srid;
         }
         if ($reflectionProperty->hasAttribute(NotNull::class)) {
             $databaseColum->allowsNull = false;

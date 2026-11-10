@@ -109,8 +109,31 @@ class CopyValueCodec
             $column->sqlType === DatabaseColumn::SQL_TYPE_DOUBLE => sprintf('%.17g', (float)$value),
             self::isBlobType($column->sqlType) => '\\x' . bin2hex((string)$value),
             $column->sqlType === DatabaseColumn::SQL_TYPE_VECTOR => self::vectorBytesToText((string)$value),
+            self::isSpatialType($column->sqlType) && $column->srid !== DatabaseColumn::SRID_NONE
+                => self::wkbHexToEwkbHex((string)$value, $column->srid),
             default => (string)$value,
         };
+    }
+
+    /**
+     * Plain WKB (hex) into EWKB (hex) carrying $srid: a `geometry(<kind>,<srid>)` column refuses a value without its
+     * SRID ("Geometry SRID (0) does not match column SRID"), and MariaDB's `ST_AsWKB()` writes none. EWKB is the WKB
+     * with the SRID flag (0x20000000) in the type word and the SRID right after it, both in the value's byte order.
+     */
+    protected static function wkbHexToEwkbHex(string $wkbHex, int $srid): string
+    {
+        $wkb = hex2bin($wkbHex);
+        if ($wkb === false || strlen($wkb) < 5) {
+            return $wkbHex;
+        }
+        $isLittleEndian = ord($wkb[0]) === 1;
+        $uint32Format = $isLittleEndian ? 'V' : 'N';
+        $geometryType = unpack($uint32Format, substr($wkb, 1, 4))[1];
+        $ewkb = $wkb[0]
+            . pack($uint32Format, $geometryType | 0x20000000)
+            . pack($uint32Format, $srid)
+            . substr($wkb, 5);
+        return strtoupper(bin2hex($ewkb));
     }
 
     /**

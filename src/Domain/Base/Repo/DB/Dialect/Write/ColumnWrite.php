@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Repo\DB\Dialect\Write;
 
 use DDD\Domain\Base\Entities\ValueObject;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
 
 /**
  * One column's write (dual-dialect architecture plan §4.2 `Write/`): the value to bind, its DBAL type, the bind
@@ -25,6 +26,7 @@ class ColumnWrite extends ValueObject
         public readonly UpdatePolicy $updatePolicy = UpdatePolicy::REPLACE,
         public readonly ?string $rawOnUpdateAction = null,
         public readonly bool $isIdentifier = false,
+        public readonly int $srid = DatabaseColumn::SRID_NONE,
     ) {
         parent::__construct();
     }

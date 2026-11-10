@@ -21,7 +21,7 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
  * `agentic-plans/backend/2026-10-24-ddd-dual-dialect-architecture.md` §4.10/§6 row 4a). Covers exactly what step 4a
  * scopes: columns + types (Mig §3.1), identities, the primary key, unique/plain indexes (incl. `nullsNotDistinct`,
  * G-R3-2), foreign keys, `STORED` generated columns (the one case portable before `VirtualExpr`, step 7), trigram
- * and `to_tsvector` expression GIN indexes (D14, Mig §3.5), bool defaults, geometry (PostGIS, SRID 0, D5/Mig §3.8)
+ * and `to_tsvector` expression GIN indexes (D14, Mig §3.5), bool defaults, geometry (PostGIS, SRID 0 unless a column declares one, D5/Mig §3.8)
  * and vector (pgvector/pgvectorscale, D6) columns and indexes. Step 7's trigger slice adds `DatabaseTrigger` per
  * dialect (Arch §4.10): the entity's `….pgsql.sql` source file, split by {@see SqlScriptLexer} into one
  * `DdlStatement` per top-level statement (typically `CREATE OR REPLACE FUNCTION` + `CREATE TRIGGER`), on the last
@@ -298,7 +298,8 @@ class PostgresDdlRenderer implements DdlRenderer
             ),
         ];
 
-        foreach ($databaseModel->indexes->getElements() as $index) {
+        $postgresOnlyIndexes = isset($databaseModel->postgresOnlyIndexes) ? $databaseModel->postgresOnlyIndexes->getElements() : [];
+        foreach ([...$databaseModel->indexes->getElements(), ...$postgresOnlyIndexes] as $index) {
             if ($index->indexType === DatabaseIndex::TYPE_NONE) {
                 continue;
             }
@@ -474,9 +475,10 @@ class PostgresDdlRenderer implements DdlRenderer
             DatabaseColumn::SQL_TYPE_TEXT, DatabaseColumn::SQL_TYPE_MEDIUMTEXT, DatabaseColumn::SQL_TYPE_LONGTEXT => 'text',
             DatabaseColumn::SQL_TYPE_BLOB, DatabaseColumn::SQL_TYPE_MEDIUMBLOB, DatabaseColumn::SQL_TYPE_LONGBLOB => 'bytea',
             DatabaseColumn::SQL_TYPE_JSON => 'json', // D4: json (text), never jsonb, at the switch
-            DatabaseColumn::SQL_TYPE_POINT => 'geometry(Point,0)', // D5/Mig §3.8: SRID 0 on every geometry column
-            DatabaseColumn::SQL_TYPE_LINESTRING => 'geometry(LineString,0)',
-            DatabaseColumn::SQL_TYPE_POLYGON => 'geometry(Polygon,0)',
+            // D5/Mig §3.8: SRID 0 on every geometry column unless the property declares #[DatabaseColumn(srid: …)]
+            DatabaseColumn::SQL_TYPE_POINT => "geometry(Point,$column->srid)",
+            DatabaseColumn::SQL_TYPE_LINESTRING => "geometry(LineString,$column->srid)",
+            DatabaseColumn::SQL_TYPE_POLYGON => "geometry(Polygon,$column->srid)",
             DatabaseColumn::SQL_TYPE_VECTOR => "vector($column->vectorDimensions)",
             default => throw new InternalErrorException(
                 "PostgresDdlRenderer: no PostgreSQL column type mapping for MariaDB SQL type \"$column->sqlType\"."

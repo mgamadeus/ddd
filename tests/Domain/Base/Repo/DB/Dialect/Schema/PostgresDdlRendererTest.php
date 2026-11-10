@@ -109,6 +109,40 @@ class PostgresDdlRendererTest extends TestCase
         $this->assertStringContainsString('"anchor" geometry(Point,0)', $createTable->sql);
     }
 
+    public function testAGeometryColumnWithAnSridRendersIt(): void
+    {
+        $route = $this->column('route', DatabaseColumn::SQL_TYPE_LINESTRING);
+        $route->srid = DatabaseColumn::SRID_WGS84;
+        $position = $this->column('position', DatabaseColumn::SQL_TYPE_POINT);
+        $position->srid = DatabaseColumn::SRID_WGS84;
+        $area = $this->column('area', DatabaseColumn::SQL_TYPE_POLYGON);
+
+        $columns = new DatabaseColumns();
+        $columns->add($route);
+        $columns->add($position);
+        $columns->add($area);
+        $model = $this->model('Trips', $columns);
+
+        $createTable = $this->findStatement($this->renderer->renderCreate($model), DdlStatement::PHASE_CREATE_TABLE);
+        $this->assertStringContainsString('"route" geometry(LineString,4326)', $createTable->sql);
+        $this->assertStringContainsString('"position" geometry(Point,4326)', $createTable->sql);
+        $this->assertStringContainsString('"area" geometry(Polygon,0)', $createTable->sql);
+    }
+
+    public function testAPostgresOnlySpatialIndexIsRenderedAsGist(): void
+    {
+        $columns = new DatabaseColumns();
+        $position = $this->column('position', DatabaseColumn::SQL_TYPE_POINT);
+        $columns->add($position);
+        $model = $this->model('Trips', $columns);
+        $model->postgresOnlyIndexes = new DatabaseIndexes();
+        $spatialIndex = new DatabaseIndex(DatabaseIndex::TYPE_SPATIAL, ['position']);
+        $model->postgresOnlyIndexes->add($spatialIndex);
+
+        $createIndex = $this->findStatement($this->renderer->renderCreate($model), DdlStatement::PHASE_CREATE_INDEX);
+        $this->assertSame('CREATE INDEX "Trips_spx_position" ON "Trips" USING gist ("position")', $createIndex->sql);
+    }
+
     public function testBoolDefaultsRenderAsTrueFalseLiterals(): void
     {
         $activeColumn = $this->column('isActive', DatabaseColumn::SQL_TYPE_BOOL);

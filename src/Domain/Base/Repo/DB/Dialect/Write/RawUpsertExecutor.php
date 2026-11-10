@@ -231,7 +231,7 @@ class RawUpsertExecutor
     protected static function bindExpressionPostgres(ColumnWrite $columnWrite): string
     {
         return match ($columnWrite->kind) {
-            BindExpressionKind::GEOMETRY => 'ST_GeomFromText(?, 0)',
+            BindExpressionKind::GEOMETRY => "ST_GeomFromText(?, $columnWrite->srid)",
             BindExpressionKind::VECTOR, BindExpressionKind::PLAIN => '?',
         };
     }

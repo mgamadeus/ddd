@@ -90,6 +90,13 @@ class DatabaseModel extends ValueObject
     /** @var DatabaseIndexes|null Database indexes */
     public ?DatabaseIndexes $indexes;
 
+    /**
+     * @var DatabaseIndexes|null Indexes only PostgreSQL can create: an explicit #[DatabaseIndex(TYPE_SPATIAL)] on a
+     * nullable geometry column (MariaDB refuses it, error 1252; PostGIS GiST allows it). Rendered by the PostgreSQL
+     * DDL renderer only.
+     */
+    public ?DatabaseIndexes $postgresOnlyIndexes;
+
     /** @var DatabaseIndexes|null Database indexes */
     public ?DatabaseForeignKeys $foreignKeys;
 
@@ -182,6 +189,7 @@ class DatabaseModel extends ValueObject
         $databaseModel->columns = new DatabaseColumns();
         $databaseModel->virtualColumns = new DatabaseVirtualColumns();
         $databaseModel->indexes = new DatabaseIndexes();
+        $databaseModel->postgresOnlyIndexes = new DatabaseIndexes();
         $databaseModel->foreignKeys = new DatabaseForeignKeys();
         $databaseModel->triggers = new DatabaseTriggers();
         $databaseModel->modelImports = new DatabaseModelImports();
@@ -396,12 +404,13 @@ class DatabaseModel extends ValueObject
                         if ($translatableAttributeInstance?->fullTextIndex && $indexAttributeInstance->indexType === DatabaseIndex::TYPE_FULLTEXT) {
                             continue;
                         }
-                        // MySQL/MariaDB reject SPATIAL indexes on nullable columns (error 1252).
-                        // Silently drop the index on nullable spatial properties so the schema
-                        // generator produces a valid CREATE TABLE — caller can either add
-                        // #[NotNull] to opt back into the index, or accept that the column has
-                        // no index. Matches the FULLTEXT-on-JSON suppression above.
+                        // MySQL/MariaDB reject SPATIAL indexes on nullable columns (error 1252): the index is
+                        // left out of the indexes both engines create, so MariaDB gets a valid CREATE TABLE —
+                        // add #[NotNull] to get it there. PostGIS GiST indexes a nullable column, so PostgreSQL
+                        // creates the explicitly declared index (postgresOnlyIndexes).
                         if ($indexAttributeInstance->indexType === DatabaseIndex::TYPE_SPATIAL && $databaseColumn->allowsNull) {
+                            $indexAttributeInstance->indexColumns = [$reflectionProperty->getName()];
+                            $databaseModel->postgresOnlyIndexes->add($indexAttributeInstance);
                             continue;
                         }
                         if ($indexAttributeInstance->indexType != DatabaseIndex::TYPE_NONE) {

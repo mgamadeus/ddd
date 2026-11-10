@@ -638,8 +638,10 @@ class PostgresUpsertBuilder implements UpsertBuilder
         $vectorDimensions = null;
         $dbalType = $type;
 
+        $srid = DatabaseColumn::SRID_NONE;
         if (isset(DatabaseColumn::SPATIAL_SQL_TYPES[$type])) {
             $kind = BindExpressionKind::GEOMETRY;
+            $srid = $this->getGeometryColumnSrid($doctrineModel, $fieldName);
             $dbalType = 'string';
             if ($value !== null) {
                 $value = (string)$value;
@@ -673,7 +675,40 @@ class PostgresUpsertBuilder implements UpsertBuilder
             $rawOnUpdateAction = $databaseColumnAttributeInstance->onUpdateAction;
         }
 
-        return new ColumnWrite($columnName, $value, $dbalType, $kind, $vectorDimensions, $updatePolicy, $rawOnUpdateAction);
+        return new ColumnWrite(
+            $columnName,
+            $value,
+            $dbalType,
+            $kind,
+            $vectorDimensions,
+            $updatePolicy,
+            $rawOnUpdateAction,
+            srid: $srid
+        );
+    }
+
+    /**
+     * The SRID the entity property behind a geometry field declares (`#[DatabaseColumn(srid: …)]`, the column is
+     * `geometry(<kind>,<srid>)`), else 0. Read from the entity like {@see self::isBlobColumn()}; cached per model class
+     * and field.
+     */
+    protected function getGeometryColumnSrid(DoctrineModel $doctrineModel, string $fieldName): int
+    {
+        static $sridCache = [];
+        $cacheKey = $doctrineModel::class . '::' . $fieldName;
+        if (isset($sridCache[$cacheKey])) {
+            return $sridCache[$cacheKey];
+        }
+        $srid = DatabaseColumn::SRID_NONE;
+        $entityClass = $doctrineModel::ENTITY_CLASS;
+        if ($entityClass !== '' && class_exists($entityClass) && property_exists($entityClass, $fieldName)) {
+            /** @var DatabaseColumn|null $databaseColumnAttributeInstance */
+            $databaseColumnAttributeInstance = (new ReflectionClass($entityClass))->getProperty($fieldName)
+                ->getAttributeInstance(DatabaseColumn::class);
+            $srid = $databaseColumnAttributeInstance?->srid ?? DatabaseColumn::SRID_NONE;
+        }
+
+        return $sridCache[$cacheKey] = $srid;
     }
 
     /**
@@ -803,7 +838,7 @@ class PostgresUpsertBuilder implements UpsertBuilder
     {
         if ($columnWrite->kind === BindExpressionKind::GEOMETRY) {
             return $columnWrite->value !== null
-                ? new BindValueExpression('ST_GeomFromText(?, 0)', $columnWrite->value, true)
+                ? new BindValueExpression("ST_GeomFromText(?, $columnWrite->srid)", $columnWrite->value, true)
                 : new BindValueExpression('?', null, true);
         }
         if ($columnWrite->kind === BindExpressionKind::VECTOR) {

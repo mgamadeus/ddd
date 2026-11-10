@@ -1,6 +1,6 @@
 ---
 name: ddd-geometry-and-vector-specialist
-description: Pick, declare, query, and migrate geometry and vector value objects in the mgamadeus/ddd framework — GeoPoint, GeoBounds, Vector, and the Cartesian family (Point2D, Polyline, Polygon, BoundingBox2D). Covers the type-selection matrix, Doctrine type registration, field declaration (vectorDimensions on DatabaseColumn), SPATIAL index rules (POINT auto-indexed, LINESTRING/POLYGON opt-in, requires NotNull), the DQL function catalog (ST_GeomFromText, ST_Within, ST_Distance_Sphere, VEC_FROM_TEXT, COSINE_DISTANCE, ~50 more), worked examples (point-in-polygon, nearest-N geo, top-K vector ANN), WKT/WKB wire format, schema-diff impact, a failure-mode triage table (zero rows from SRID mismatch, Bad geometry text, non-converging Vector diffs), index-usage notes, and a new-geometry-type recipe. Use when adding a point, polygon, bounding-box, or embedding column, choosing between geometry types, writing spatial or vector/ANN queries, debugging zero-row spatial queries or non-converging diffs, or wiring a new geometry type.
+description: Pick, declare, query and migrate geometry and vector value objects in mgamadeus/ddd — GeoPoint, GeoBounds, Vector, and the Cartesian family (Point2D, Polyline, Polygon, BoundingBox2D). Covers the type-selection matrix, Doctrine type registration, field declaration (vectorDimensions on DatabaseColumn), SPATIAL index rules (POINT auto-indexed, LINESTRING/POLYGON opt-in, NotNull on MariaDB, GiST on nullable on PostgreSQL), SRID 4326 columns on PostGIS (DatabaseColumn srid), the DQL function catalog (ST_GeomFromText, ST_Within, ST_Distance_Sphere, VEC_FROM_TEXT, COSINE_DISTANCE, ~50 more), worked examples, WKT/WKB wire format, schema-diff impact, a failure-mode triage table (zero rows from SRID mismatch, Bad geometry text, non-converging Vector diffs), and a new-geometry-type recipe. Use when adding a point, polygon, bounding-box, or embedding column, choosing between geometry types, writing spatial or vector/ANN queries, debugging zero-row spatial queries or non-converging diffs, or wiring a new geometry type.
 metadata:
   author: mgamadeus
   version: "1.0.0"
@@ -161,13 +161,43 @@ use Symfony\Component\Validator\Constraints\NotNull;
 public Polygon $zone;
 ```
 
+### SRID on PostgreSQL: `#[DatabaseColumn(srid: …)]`
+
+Every geometry column is SRID 0 by default on both engines — also a `GeoPoint` (the "4326" in the matrix above is
+what the coordinates MEAN, not what the column stores). For real longitude/latitude data on PostgreSQL/PostGIS, declare
+the reference system on the property:
+
+```php
+use DDD\Domain\Base\Repo\DB\Database\DatabaseColumn;
+use DDD\Domain\Base\Repo\DB\Database\DatabaseIndex;
+
+#[DatabaseColumn(srid: DatabaseColumn::SRID_WGS84)]       // geometry(LineString,4326); x = lng, y = lat
+public ?Polyline $route;
+
+#[DatabaseColumn(srid: DatabaseColumn::SRID_WGS84)]
+#[DatabaseIndex(indexType: DatabaseIndex::TYPE_SPATIAL)]  // GiST on PostgreSQL even though the column is nullable
+public ?GeoPoint $position;                               // geometry(Point,4326)
+```
+
+- **PostgreSQL:** the column is `geometry(<kind>,<srid>)`; every write path (upsert, batch, partial update, the
+  MariaDB → PostgreSQL copy) stores the value with that SRID. Reads are unchanged (`ST_AsBinary`, plain WKB). The
+  schema diff compares PostGIS's own `format_type()` (`geometry(Point,4326)`), so a declared SRID diffs clean and a
+  changed one shows as a type change.
+- **MariaDB:** unchanged — plain `POINT` / `LINESTRING`, values written with SRID 0.
+- **Queries on PostgreSQL** must use the same SRID on both sides: `ST_GeomFromText(:wkt, 4326)` against a 4326 column
+  (PostGIS refuses mixed SRIDs). For metres use `ST_Distance_Sphere` or cast to `geography`.
+- Changing the SRID of an existing PostgreSQL column is a type change: the column's values must be converted
+  (`ALTER COLUMN … TYPE geometry(Point,4326) USING ST_SetSRID(col, 4326)`), which the schema diff does not write for you.
+
 ### Hard MySQL constraint: SPATIAL requires NOT NULL
 
 MySQL/MariaDB reject `CREATE SPATIAL INDEX` on a column that allows `NULL` (error `1252: All parts of a SPATIAL index must be NOT NULL`).
 
 The framework handles this defensively in two places:
 - **Auto-allocated SPATIAL on nullable POINT**: the index is silently downgraded to no index. The column itself works fine. Add `#[NotNull]` to opt back into the index.
-- **Explicit `#[DatabaseIndex(TYPE_SPATIAL)]` on a nullable column**: same behaviour — silently dropped. Same pattern as `TYPE_FULLTEXT` on JSON columns.
+- **Explicit `#[DatabaseIndex(TYPE_SPATIAL)]` on a nullable column**: left out on MariaDB (same pattern as
+  `TYPE_FULLTEXT` on JSON columns), but created as a GiST index on PostgreSQL, which allows it
+  (`DatabaseModel::$postgresOnlyIndexes`). The auto-allocated index of a nullable POINT stays off on both engines.
 
 **To get a SPATIAL index, the property MUST also be `#[NotNull]`** — see the example above.
 
