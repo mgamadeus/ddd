@@ -31,6 +31,7 @@ class EntitySet extends ObjectSet
      * returns the class of the corresponding Entity if existent
      * uses configured number if present in static::$entityClass otherwise it uses inflector to singularize
      * @return string
+     * @throws InternalErrorException When no class of the singular name exists
      */
     public static function getEntityClass(): string
     {
@@ -43,9 +44,12 @@ class EntitySet extends ObjectSet
         $inflector = InflectorFactory::create()->build();
         $singularClassName = $inflector->singularize($classWithNamesapce->name);
         $classWithNamesapceSingular = new ClassWithNamespace($singularClassName, $classWithNamesapce->namespace);
-        if (class_exists($classWithNamesapceSingular->getNameWithNamespace())) {
-            StaticRegistry::$entityClasses[$currentClassName] = $classWithNamesapceSingular->getNameWithNamespace();
+        if (!class_exists($classWithNamesapceSingular->getNameWithNamespace())) {
+            throw new InternalErrorException(
+                "No entity class for the set $currentClassName: {$classWithNamesapceSingular->getNameWithNamespace()} does not exist"
+            );
         }
+        StaticRegistry::$entityClasses[$currentClassName] = $classWithNamesapceSingular->getNameWithNamespace();
         return StaticRegistry::$entityClasses[$currentClassName];
     }
 

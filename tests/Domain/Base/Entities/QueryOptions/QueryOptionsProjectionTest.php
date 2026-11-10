@@ -189,7 +189,17 @@ class QueryOptionsProjectionTest extends TestCase
 
     public function testASetWithoutADerivableEntityClassHasNoProjection(): void
     {
-        self::assertNull(QueryOptionsProjection::getProjectionForClass(UnpairedLegacyRows::class));
+        $raisedWarnings = [];
+        set_error_handler(static function (int $severity, string $message) use (&$raisedWarnings): bool {
+            $raisedWarnings[] = $message;
+            return true;
+        });
+        try {
+            self::assertNull(QueryOptionsProjection::getProjectionForClass(UnpairedLegacyRows::class));
+        } finally {
+            restore_error_handler();
+        }
+        self::assertSame([], $raisedWarnings, 'no warning on the way');
         self::assertNull(QueryOptionsProjection::getProjectionForClass('No\\Such\\Class'));
     }
 }
