@@ -440,3 +440,7 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.19.1 — OpenAPI: a `Parameter::FILES` property is documented as `type: array, items: { type: string, format:
+  binary }` in the `multipart/form-data` content of its operation; the upload class (`UploadedFile`) no longer becomes
+  a schema component. No change to request handling. SDK generators that typed the files from that component change
+  their output (`@mgamadeus/ddd-web` 0.4.0 reads both forms).

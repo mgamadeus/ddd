@@ -277,6 +277,12 @@ class SchemaProperty
                     $this->type = $this->typeNameAllocation[$type->getName()];
                 }
 
+                if ($this->type == 'array' && $scope == Parameter::FILES) {
+                    // a file part is binary on the wire, whatever class the request DTO receives it as: the upload
+                    // class (UploadedFile, object) is no schema of the API and gets no component
+                    $this->items = ['type' => 'string', 'format' => 'binary'];
+                    continue;
+                }
                 if ($this->type == 'array' && in_array($scope, [Parameter::BODY, Parameter::FILES, Parameter::RESPONSE])) {
                     $arrayTypes = [];
                     /** @var ReflectionArrayType $type */

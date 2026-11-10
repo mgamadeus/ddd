@@ -377,6 +377,13 @@ public function export(ResourcesService $resourcesService): ExcelResponseDto
 
 For file uploads in request DTOs, use `FileSetsDtoTrait` with `#[Parameter(in: Parameter::FILES)]`.
 
+A request DTO with a `Parameter::FILES` property accepts `multipart/form-data` on the same route as its JSON body: the
+client sends the JSON envelope in the form field `body` and the files as parts; every `FILES` property receives the
+flat list of all uploaded files (`UploadedFile[]`), whatever the parts are named. The OpenAPI document describes each
+`FILES` property as `type: array, items: { type: string, format: binary }` in the operation's `multipart/form-data`
+content — the upload class itself is no schema of the API. The `@mgamadeus/ddd-web` generator turns it into a
+`multipartFiles` argument of the endpoint.
+
 ---
 
 ## How DTOs & Entities Become the API Schema (Autodocumentation)
