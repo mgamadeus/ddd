@@ -3,7 +3,7 @@ name: ddd-database-schema-diff-specialist
 description: "Operate the DDD live-vs-target schema diff: diff the entity-derived against the live schema on MariaDB and PostgreSQL, apply drift fixes per table or in bulk, build the admin screen, set up a new PostgreSQL database (app:db:postgres:install-extensions-collation-functions, pre-deploy hook), and leave a module's tables out of an app or name them (Base.Repo.database.excludedTables, tableNames). Covers the diff value objects, the 13-phase SQL assembler, false-positive normalisation, VECTOR resets, severity, which side is wrong, the large-table production guard (bypass CLI/messenger only), the diff-signature gate and apply lock, the admin-screen guide, pt-online-schema-change FK renames, and troubleshooting (openApi 500, DIFF_SIGNATURE_MISMATCH, DIFF_APPLY_LOCK_BUSY, stale caches). Use when excluding or renaming a module's tables, setting up a PostgreSQL database, computing or applying schema diffs, debugging false-positive MODIFYs, deciding entity-vs-DB, wiring the admin screen, or reasoning about pt-osc."
 metadata:
   author: mgamadeus
-  version: "2.1.0"
+  version: "2.1.1"
 ---
 
 # DDD Database Schema Diff Specialist
@@ -204,7 +204,9 @@ return [
 - The name is taken verbatim (no `DATABASE_TABLE_PREFIX`) and wins over a `#[DatabaseTableName]` on the entity.
 - It is the table everywhere: the generated Doctrine model, `getTableName()`, the schema diff, the SQL create, foreign
   keys of other entities pointing to it, and `excludedTables`.
-- An entry covers the listed class and a subclass sharing its EntitySet class; a subclass with its own entry uses that.
+- List the class the package defines. The entry covers it, a subclass sharing its EntitySet class and the application's
+  own class of the same name (`App\…\UsageLog extends \Vendor\…\UsageLog`, with its own EntitySet); a subclass with
+  an entry of its own uses that.
 - A key that is no entity class is logged and ignored; a name that is not letters, digits and underscores (at most 63
   characters) throws `InternalErrorException`.
 - After changing an entry: regenerate the models (`app:generate-doctrine-models-for-entities`) and clear the cache.

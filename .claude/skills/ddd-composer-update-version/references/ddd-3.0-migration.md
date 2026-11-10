@@ -440,6 +440,9 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.24.1 — `tableNames`: the entry of a package entity also covers the application's class of the same name that
+  extends it and has an EntitySet class of its own (3.24.0 covered only subclasses sharing the EntitySet class, so
+  such an application had to list both classes).
 - 3.24.0 — `tableNames`: an application maps an entity class to a table name in its committed
   `config/app/Base/Repo/database.php` (`'tableNames' => [Entity::class => 'TableName']`). The name is verbatim, wins
   over `#[DatabaseTableName]` and is used by the generated model, the schema diff, the SQL create, foreign keys

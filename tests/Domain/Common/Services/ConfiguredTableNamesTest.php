@@ -69,6 +69,18 @@ class ConfiguredTableNamesTest extends TestCase
         self::assertSame('CounterRows', DatabaseModel::getSqlTableNameOfEntityClass(CounterRow::class));
     }
 
+    public function testTheEntryOfAPackageEntityCoversTheApplicationsClassOfTheSameName(): void
+    {
+        // the application's classes live outside the test autoload namespace
+        require_once __DIR__ . '/Fixtures/ApplicationOverride/ChangeHistoryRows.php';
+        require_once __DIR__ . '/Fixtures/ApplicationOverride/ChangeHistoryRow.php';
+        $applicationEntityClass = \App\Tests\Fixtures\ChangeHistoryRows\ChangeHistoryRow::class;
+        $this->configureDatabase(['tableNames' => [ChangeHistoryRow::class => 'LegacyHistoryRows']]);
+
+        self::assertSame(\App\Tests\Fixtures\ChangeHistoryRows\ChangeHistoryRows::class, $applicationEntityClass::getEntitySetClass());
+        self::assertSame('LegacyHistoryRows', DatabaseModel::getSqlTableNameOfEntityClass($applicationEntityClass));
+    }
+
     public function testAnExclusionFollowsTheConfiguredName(): void
     {
         $this->configureDatabase([

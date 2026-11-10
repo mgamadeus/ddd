@@ -332,9 +332,9 @@ class EntityModelGeneratorService
     /**
      * The table name this application gives an entity class in its config `config/app/Base/Repo/database.php` →
      * `tableNames` (`[Entity::class => 'TableName']`), or null when it names none. The name is taken verbatim (no
-     * `DATABASE_TABLE_PREFIX`) and wins over a `#[DatabaseTableName]` on the entity. An entry covers the listed class
-     * and a subclass that shares its EntitySet class (the same table); the entry of the class itself wins over the
-     * entry of a parent. A key that is no entity class is reported as a warning and ignored.
+     * `DATABASE_TABLE_PREFIX`) and wins over a `#[DatabaseTableName]` on the entity. An entry covers the listed class,
+     * a subclass that shares its EntitySet class and the application's subclass of the same short name (all the same
+     * table); the entry of the class itself wins over the entry of a parent. A key that is no entity class is reported as a warning and ignored.
      *
      * @throws InternalErrorException When a configured name is no valid table name
      */
@@ -349,14 +349,15 @@ class EntityModelGeneratorService
             return $configuredSqlTableNamesByEntityClass[$entityClassName];
         }
         $entitySetClass = $entityClassName::getEntitySetClass();
-        if (!$entitySetClass) {
-            return null;
-        }
+        $shortClassName = substr((string)strrchr('\\' . $entityClassName, '\\'), 1);
         foreach (class_parents($entityClassName) ?: [] as $parentClassName) {
-            if (
-                isset($configuredSqlTableNamesByEntityClass[$parentClassName])
-                && $parentClassName::getEntitySetClass() === $entitySetClass
-            ) {
+            if (!isset($configuredSqlTableNamesByEntityClass[$parentClassName])) {
+                continue;
+            }
+            // the same table: the subclass shares the EntitySet class, or it is the application's class of the same
+            // name (App\…\Account extends DDD\…\Account), which has an EntitySet class of its own
+            $sharesEntitySetClass = $entitySetClass && $parentClassName::getEntitySetClass() === $entitySetClass;
+            if ($sharesEntitySetClass || str_ends_with($parentClassName, '\\' . $shortClassName)) {
                 return $configuredSqlTableNamesByEntityClass[$parentClassName];
             }
         }
