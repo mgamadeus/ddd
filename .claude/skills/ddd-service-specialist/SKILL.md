@@ -825,6 +825,11 @@ $downloadUrl = $exportsObjectStorage->createTemporaryUrl("reports/{$report->id}.
   `{key, size, lastModified}`, `getKeys()`), `createTemporaryUrl($key, $expiresInSeconds = 3600)`. Keys are
   `/`-separated without a leading slash; the store's prefix is applied by the adapter. A backend failure throws
   `InternalErrorException` naming store, operation and key.
+- **Retries:** the s3 adapter does not retry itself — async-aws does: 3 retries with 1 s / 2 s / 4 s backoff on
+  transport errors, 429, 5xx and `SlowDown` / `Throttling` answers, for every method. `ObjectStorageService` passes the
+  application logger, so each retry is logged at level **info** (`Try #n after …ms`). An `InternalErrorException`
+  therefore means the backend kept failing for ~7 s: reduce the parallelism (fewer concurrent loads, presigned URLs
+  for the browser) instead of adding a retry loop on top.
 - **`ObjectStorageService`:** `getObjectStorage($name): ?ObjectStorage` (null without a driver; throws only for an
   incomplete store or a missing driver package), `isObjectStorageConfigured($name)`, `setObjectStorage($name, $store)`
   for tests.

@@ -10,12 +10,16 @@ use AsyncAws\S3\S3Client;
 use DateTimeImmutable;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
+use Psr\Log\LoggerInterface;
 use Throwable;
 
 /**
  * An object store in any S3-compatible service — AWS S3, Hetzner Object Storage, MinIO, Cloudflare R2; only the
  * settings differ (endpoint, region, path style). Built on `async-aws/s3`, which the application requires
  * (`composer require async-aws/s3`): Core only suggests it.
+ *
+ * async-aws retries a throttled or failed request itself (3 retries, 1 s / 2 s / 4 s: transport errors, 429, 5xx, and
+ * SlowDown / Throttling answers); with a logger each retry is logged at level info ("Try #n after …ms").
  */
 class S3CompatibleObjectStorage implements ObjectStorage
 {
@@ -23,8 +27,10 @@ class S3CompatibleObjectStorage implements ObjectStorage
 
     protected ?S3Client $s3Client = null;
 
-    public function __construct(protected ObjectStorageSettings $objectStorageSettings)
-    {
+    public function __construct(
+        protected ObjectStorageSettings $objectStorageSettings,
+        protected ?LoggerInterface $logger = null
+    ) {
         if (!class_exists(S3Client::class)) {
             throw new InternalErrorException(sprintf(
                 'Object storage "%s" uses the s3 driver, which needs the package %s: composer require %s',
@@ -140,7 +146,7 @@ class S3CompatibleObjectStorage implements ObjectStorage
             'accessKeyId' => $this->objectStorageSettings->accessKey,
             'accessKeySecret' => $this->objectStorageSettings->secretKey,
             'pathStyleEndpoint' => $this->objectStorageSettings->pathStyle ? 'true' : 'false',
-        ], static fn(mixed $value): bool => $value !== null));
+        ], static fn(mixed $value): bool => $value !== null), logger: $this->logger);
     }
 
     /** The key inside the bucket: the store's prefix plus the caller's key */

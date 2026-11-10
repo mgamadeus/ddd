@@ -9,6 +9,8 @@ use DDD\Infrastructure\ObjectStorage\FilesystemObjectStorage;
 use DDD\Infrastructure\ObjectStorage\ObjectStorage;
 use DDD\Infrastructure\ObjectStorage\ObjectStorageSettings;
 use DDD\Infrastructure\ObjectStorage\S3CompatibleObjectStorage;
+use Psr\Log\LoggerInterface;
+use Throwable;
 
 /**
  * The named object stores of the application ({@see ObjectStorageSettings}): a consumer asks for its store by name —
@@ -61,9 +63,22 @@ class ObjectStorageService extends Service
     protected function createObjectStorage(ObjectStorageSettings $objectStorageSettings): ObjectStorage
     {
         return match ($objectStorageSettings->driver) {
-            ObjectStorageSettings::DRIVER_S3 => new S3CompatibleObjectStorage($objectStorageSettings),
+            ObjectStorageSettings::DRIVER_S3 => new S3CompatibleObjectStorage($objectStorageSettings, $this->getObjectStorageLogger()),
             ObjectStorageSettings::DRIVER_FILESYSTEM => FilesystemObjectStorage::fromSettings($objectStorageSettings),
             default => throw new InternalErrorException(sprintf('Object storage "%s": unknown driver', $objectStorageSettings->name)),
         };
+    }
+
+    /**
+     * @return LoggerInterface|null the application logger for the stores (async-aws logs its retries there); null
+     *                              without a container, e.g. in a unit test
+     */
+    protected function getObjectStorageLogger(): ?LoggerInterface
+    {
+        try {
+            return DDDService::instance()->getLogger();
+        } catch (Throwable) {
+            return null;
+        }
     }
 }
