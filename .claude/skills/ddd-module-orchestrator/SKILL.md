@@ -31,6 +31,7 @@ Centralized control for studying, updating, releasing, and propagating changes a
 | `mgamadeus/ddd-ai` | AI model management, prompts, Argus AI traits |
 | `mgamadeus/ddd-common-geo` | Addresses, geocoding, GeoRegion hierarchy |
 | `mgamadeus/ddd-common-translations` | Text translation, app UI translations, embeddings |
+| `mgamadeus/ddd-design-studio` | Design review studio: HTML design boards of a checkout on a canvas, comments, statuses, decisions, thumbnails; npm counterpart `@mgamadeus/ddd-design-studio` in `web/` |
 
 ### Dependency Graph (Determines Release & Update Order)
 
@@ -45,6 +46,7 @@ Level 1 (depends only on ddd):
 Level 2 (depends on ddd + Level 1):
   mgamadeus/ddd-common-political   -> ddd, ddd-argus
   mgamadeus/ddd-ai                 -> ddd, ddd-argus, ddd-common-money
+  mgamadeus/ddd-design-studio      -> ddd, ddd-argus
 
 Level 3 (depends on ddd + Level 1/2):
   mgamadeus/ddd-common-geo         -> ddd, ddd-common-political
@@ -55,18 +57,21 @@ Level 3 (depends on ddd + Level 1/2):
 
 | If you release a fix in... | These children must bump their floor + re-release: |
 |------------------|-------------------------------|
-| **ddd** (Core) | Money, Argus, Political, AI, Geo, Translations (ALL) |
+| **ddd** (Core) | Money, Argus, Political, AI, Geo, Translations, Design Studio (ALL) |
 | **ddd-common-money** | AI, Translations |
-| **ddd-argus** | Political, AI |
+| **ddd-argus** | Political, AI, Design Studio |
 | **ddd-common-political** | Geo, Translations |
 | **ddd-ai** | Translations |
 | **ddd-common-geo** | (none -- leaf module) |
 | **ddd-common-translations** | (none -- leaf module) |
+| **ddd-design-studio** | (none -- leaf module) |
 
+> **The repositories live in the GitHub organisation `ddd-framework`; the package names stay `mgamadeus/*`.**
 > **GitHub repo names ≠ package names for the four `ddd-common-*` packages** — the repo drops the `common-` segment:
-> `ddd-common-money` → repo `mgamadeus/ddd-money`, `ddd-common-political` → `mgamadeus/ddd-political`,
-> `ddd-common-geo` → `mgamadeus/ddd-geo`, `ddd-common-translations` → `mgamadeus/ddd-translations`.
-> (`ddd`, `ddd-ai`, `ddd-argus` match their repo names.) When pushing, resolve the real repo with
+> `ddd-common-money` → repo `ddd-framework/ddd-money`, `ddd-common-political` → `ddd-framework/ddd-political`,
+> `ddd-common-geo` → `ddd-framework/ddd-geo`, `ddd-common-translations` → `ddd-framework/ddd-translations`.
+> (`ddd`, `ddd-ai`, `ddd-argus`, `ddd-design-studio` match their repo names.) Never create a repository of the same
+> name under `mgamadeus` — it would break GitHub's redirect from the old URLs. When pushing, resolve the real repo with
 > `git remote get-url origin` (or the Packagist `source.url`) — do not assume the repo matches the package name.
 
 ### Dependency-Floor Cascade (propagating a fix DOWNSTREAM, not just locally)
@@ -113,12 +118,19 @@ refresh, token utilities, and TS types of the DDD wire format. No UI components,
 |---|---|
 | Package | `@mgamadeus/ddd-web` on npm (public) — `pnpm add @mgamadeus/ddd-web` |
 | Repo | `github.com/ddd-framework/ddd-web` |
-| Release | not Packagist: tag `vX.Y.Z` → GitHub Actions `release.yml` (npm trusted publisher, staged publish); never part of a Core release |
+| Release | not Packagist: tag `vX.Y.Z` → GitHub Actions `release.yml` (npm trusted publishing with provenance); never part of a Core release |
 | Contract | the OpenAPI document Core emits (`src/Presentation/Base/OpenApi/`); planned `x-ddd-*` extensions (`x-ddd-contract`, `x-ddd-query`, `x-ddd-side-effects`, `x-ddd-entity`) and a golden spec test in Core. A change to the OpenAPI output is a contract change: it must show up in the golden spec test, be listed as a contract change in the CHANGELOG and be checked against ddd-web (github.com/ddd-framework/ddd-web) before release |
 | Skills | in the package, `node_modules/@mgamadeus/ddd-web/.claude/skills`, linked into an app's `.claude/skills` like the vendor skills — consumer use and maintaining the package are documented there, not here |
 
 Not part of the Composer dependency graph: a Core release needs no ddd-web release unless the OpenAPI contract
 changed.
+
+### A module with an npm counterpart: `ddd-design-studio`
+
+The repository carries the Composer package at its root and the npm package `@mgamadeus/ddd-design-studio` in
+`web/`, versions in lockstep (`composer.json` = `web/package.json`). One tag `vX.Y.Z` releases both: Packagist reads
+it, and `release.yml` publishes `web/` through npm trusted publishing with provenance (it skips a version already on
+npm). The release workflow checks that the tag, `composer.json` and `web/package.json` agree.
 
 ### Consuming Applications
 
@@ -236,7 +248,7 @@ When releasing a new DDD Core version, ALL modules need updating.
 ```
 1. Core           -> release, wait 10s
 2. Money, Argus   -> composer update (--no-scripts ok), make changes if needed, release, wait 10s
-3. Political, AI  -> composer update (--no-scripts ok), make changes if needed, release, wait 10s
+3. Political, AI, Design Studio -> composer update (--no-scripts ok), make changes if needed, release, wait 10s
 4. Geo, Translations -> composer update (--no-scripts ok), make changes if needed, release, wait 10s
 5. Consuming apps -> composer update (NEVER --no-scripts — see "Consuming Applications")
 ```
