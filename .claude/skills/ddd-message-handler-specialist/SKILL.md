@@ -1,515 +1,71 @@
 ---
 name: ddd-message-handler-specialist
-description: Create Symfony Messenger message + handler pairs for async background processing in the mgamadeus/ddd framework. Covers AppMessage message classes, ultra-slim AppMessageHandler handlers, the service-side bool async dispatch-or-run-inline pattern, auth context propagation, the workspace-origin guard (a message another checkout dispatched is REFUSED, never rerouted; one broker vhost per workspace), the per-process APP_CACHE_DIR / APP_LOG_DIR overrides for worker pools sharing a checkout with FPM, logging conventions, admin privilege escalation, messenger.yaml transport/routing, supervisor consumer blocks, worker recycling, and the --no-debug stale-compiled-container trap. Use when adding an async background job, wiring a transport plus supervisor consumer, sizing worker limits, debugging workers that crash-loop, fail to consume or run stale config, chasing state leaking between messages (a lookup that throws only after another job), or when a job runs against the wrong checkout's database.
+description: "Symfony Messenger in mgamadeus/ddd, from an async job to watching its workers. Covers AppMessage and slim AppMessageHandler pairs, the service-side bool async pattern, auth context, fresh worker state per message, the workspace-origin guard, messenger.yaml transports and routing, supervisor consumers, worker recycling limits, the worker list (config/system/workers.yaml) and the worker monitoring with app:workers:* console commands (check, list, overview, transport, history, processes, runs, queues, stats, sample, restart; --format=json for agents), WorkersOverviewService and the workers admin endpoints and screen guide. Use when adding an async background job, wiring a transport or consumer, messages wait and nothing consumes them, workers crash-loop or run stale config, state leaks between messages, a message refused for another workspace, which message fails or is slow, messages per minute or per worker, restarting workers, a process shows LOST, SILENT or stays BUSY, or building a workers admin screen."
 metadata:
   author: mgamadeus
-  version: "1.4.1"
+  version: "2.0.0"
   framework: mgamadeus/ddd
 ---
 
 # DDD Message Handler Specialist
 
-Async background processing via Symfony Messenger within the DDD Core framework (`mgamadeus/ddd`).
+Symfony Messenger in `mgamadeus/ddd`: the message and its handler, the transport and its consumer, the worker list,
+and the worker monitoring. This file holds the rules and the map; read the reference file of your task before you
+write or run anything.
 
-## When to Use
+## Rules that always hold
 
-- Adding a new async background task processed by Symfony Messenger
-- Adding a `bool $async` option to a service method and implementing dispatching
-- Ensuring background work executes under the same account permissions as the triggering request
-- Running worker pools from a checkout FPM also serves: `APP_CACHE_DIR` / `APP_LOG_DIR` give the workers their own compiled container (`DDDKernel::getCacheDir()`), so a sync that makes FPM rebuild never deletes a running worker's container
-- Implementing heavy jobs with time/memory limits and consistent logging
-- Sizing supervisor consumers (`numprocs`, `--limit`, `--time-limit`, `--memory-limit`) or diagnosing static-state leaks between messages in long-running workers (see Step 5.1)
-- Debugging supervisor workers that crash-loop, silently fail to consume, or still use the old transport DSN after a config change — the `--no-debug` stale-container trap (see Step 5.2)
+- **The handler is a thin dispatcher** (about 20–30 lines): set the auth context, load by id, call ONE service method
+  with `async: false`, catch and log. No business logic, no helper methods with logic.
+- **The logic lives in a service method with `bool $async`**: `true` dispatches the message and returns, `false` does
+  the work. The caller decides.
+- **Payload = ids and primitives.** The handler reloads the entity.
+- **`$this->setAuthAccountFromMessage($message)` first**, in every handler.
+- **Never reset state in a handler.** The framework gives every consumed message fresh process state (database
+  session, unit of work, entity registries, `throwErrors`). State of your own: a `WorkerStateResetterInterface`
+  service. A checked lookup uses `enableThrowErrors()` / `restoreThrowErrors()` in `finally`.
+- **No workspace logic in a handler.** Each checkout has its own broker vhost; a message another workspace dispatched
+  is refused, never rerouted.
+- **`#[AsMessageHandler(fromTransport: …)]` names a transport that exists** and that the message is routed to; a
+  wrong name disconnects the handler without an error.
+- **The worker list (`config/system/workers.yaml`) is the source of truth** for which transport gets workers. A new
+  transport gets a consumer entry; `app:workers:check` in CI finds a transport without one.
+- **After a code or transport change: `cache:clear` before the workers restart.** A `--no-debug` worker does not
+  rebuild its container.
+- **The framework observes workers and asks for a restart.** It never starts, stops or scales a process.
+- **The monitoring is off by default** (`Common.Workers` `enabled` / `WORKERS_ENABLED`) and needs its four tables and
+  the sampler every minute.
+- Never `private`; services from the container, never cached in a property.
 
-## Framework Base Classes
+## Task or symptom → reference
 
-| Class | Location | Purpose |
-|-------|----------|---------|
-| `AppMessage` | `src/Domain/Base/Entities/MessageHandlers/AppMessage.php` | Base message class (extends `ValueObject`, implements `SerializerInterface`) |
-| `AppMessageHandler` | `src/Domain/Base/Entities/MessageHandlers/AppMessageHandler.php` | Abstract base handler with auth, logging, error handling |
-
-**AppMessage provides:**
-- `dispatch()` -- dispatches to Symfony Messenger bus, auto-captures `accountId` and `dispatchedFromWorkspaceDir`
-- `encodeForCommandline()` / `decodeFromCommandline()` -- CLI transport (gzip + base64)
-- `persistToTempDir()` / `loadFromTempDir()` -- temp file transport
-- `dispatchedFromWorkspaceDir` / `dispatchedFromEnvironment` -- where a message came from (stamped by `dispatch()`; read by the workspace-origin guard)
-- `dispatchOrigin` (`AppMessageDispatchOrigin`: `dispatchedAt`, `route`, `command`) -- when and from which request or command it was dispatched (stamped by `dispatch()`); a failing job's issues event shows it as `messenger.origin.*` and `messenger.age_seconds`. Do not declare `dispatchOrigin` on a message class
-
-**AppMessageHandler provides:**
-- `getLogger()` -- returns injected `messengerLogger` or falls back to `DDDService::instance()->getLogger()`
-- `setAuthAccountFromMessage(AppMessage)` -- restores auth context from message's `accountId`
-- `logShortException(LoggerInterface, string, Throwable)` -- structured error log with top 3 stack trace frames
-- `logIssue(Throwable, AppMessage, ?string)` -- comprehensive exception logging with message payload
-- `extractMessagePayload(AppMessage)` -- extracts scalar properties for JSON logging
-- `RESET_WORKER_STATE_BEFORE_JOB` (const, default `true`) -- a consumed job starts on fresh process state; override with `false` on a handler that deliberately keeps warm state across messages
-- `resetWorkerStateForNewJob()` (static) -- the ONE fresh-state implementation: Doctrine unit of work cleared, every DB connection without an active transaction closed (lazy reconnect = fresh session/snapshot), `DoctrineEntityRegistry::clear()` + `VirtualEntityRegistry::clear()`; run by the core `FreshWorkerStateMiddleware` before every message with a `ReceivedStamp`
-- `renewDatabaseConnection()` (static) -- the connection part alone (`EntityManagerFactory::renewAllConnections()`), fail-soft; agent loops call it before every tool call
-
----
-
-## Conventions
-
-### 0. Every consumed job starts FRESH — never clear caches per handler
-
-A long-lived worker otherwise serves job N+1 from job N's leftovers: a DB session whose REPEATABLE READ snapshot predates
-the previous job's writes, the Doctrine unit of work, the process-static entity registries. The framework therefore
-prepends `DDD\Symfony\Messenger\Middleware\FreshWorkerStateMiddleware` to EVERY bus (`FreshWorkerStateMiddlewarePass`,
-registered by `DDDKernel::build()` ahead of Symfony's MessengerPass) — no app config, no handler code. It runs
-`AppMessageHandler::resetWorkerStateForNewJob()` for messages the Worker consumed (`ConsumedByWorkerStamp`;
-`app:process-cli-message` stamps it too). Synchronous dispatches keep the request's state and transaction — including
-a `sync://` transport, which stamps `ReceivedStamp` but runs inside the dispatching request.
-
-After every consumed job — returned or thrown, opt-out or not — the middleware rolls back a transaction the handler
-left open on any existing connection scope and logs "rolled back a transaction left open by <handler>", so it cannot
-swallow the next message's writes. A transaction that was already open before the handler is never touched.
-
-- Do NOT add cache clearing, connection resets or registry wipes to a handler — it is already done, once, for all.
-- Opt out per handler: `public const bool RESET_WORKER_STATE_BEFORE_JOB = false;` (a batch handler that accumulates
-  across messages). The middleware skips the reset when ANY handler of the message says so.
-- Opt out per app: parameter `ddd.messenger.fresh_worker_state: false` (the pass then registers nothing).
-- **State of your own** (a static flag, a process memo, an open stack of a shared service): implement
-  `DDD\Symfony\Messenger\WorkerStateResetterInterface` on a service — `resetWorkerStateForNewJob()` then runs before
-  every consumed job, after the handler reset, whatever base class the handler extends. Collected by interface
-  autoconfiguration (tag `ddd.worker_state_resetter`, also for module services); a resetter that throws stops
-  neither the others nor the job; a handler that opts out skips the resetters too.
-- A stale baseline read in a worker is a SESSION problem, never a reason for a per-write transaction: a transaction
-  joins the already open one and keeps its snapshot. Renew the connection instead (`renewDatabaseConnection()`).
-- Do not rely on registry-cached entities across messages; reload by id at the start of the job.
-
-**A handler leaves no service state behind.** Container services are shared across messages. The framework resets
-between two consumed messages — independent of the opt-outs above — `throwErrors` of every instantiated DDD service to
-its declared default (`ServicesThrowErrorsResetter`, before each message; Symfony's `services_resetter` after it unless
-`--no-reset`). It does NOT reset any other property a handler or service set on a shared service, static caches of the
-application, or state inside one long job: a flag a handler switches early in a job still changes every later lookup
-of that job. So a checked lookup in a handler or its service uses `enableThrowErrors()` / `restoreThrowErrors()` in
-`finally` (`ddd-service-specialist`), never a bare `$service->throwErrors = true;`.
-
-### 1. Prefer IDs in Message Payload
-
-Store only IDs and primitive values in the message. Re-fetch the entity in the handler.
-
-**Why:** Reduces message size, avoids serialization issues, handler always loads the latest DB state.
-
-**Exception:** When the object is not yet stored (no ID) or serialization is explicitly desired.
-
-### 2. Handler is Ultra-Slim — ALL Logic Lives in the Service
-
-**The handler is a thin dispatcher. It MUST NOT contain business logic.** Its only job is:
-1. Set auth context
-2. Check workspace routing
-3. Load entity by ID
-4. Call a single service method with `async: false`
-5. Catch and log errors
-
-**NEVER** put moderation logic, translation calls, notification dispatch, rate limiting, DB queries, or any other business logic directly in the handler. All of that belongs in the service method. The handler should be ~20-30 lines max.
-
-**Anti-pattern (WRONG):**
-```php
-// WRONG — handler doing business logic
-class FooBarHandler extends AppMessageHandler {
-    public function __invoke(FooBarMessage $message): void {
-        // ...auth, workspace...
-        $entity = FooBar::byId($message->id);
-        // ❌ Business logic in handler:
-        $this->doStep1($entity);
-        $this->doStep2($entity);
-        $this->doStep3($entity);
-    }
-    protected function doStep1(...) { /* 50 lines */ }
-    protected function doStep2(...) { /* 80 lines */ }
-}
-```
-
-**Correct pattern (RIGHT):**
-```php
-// Handler — thin
-class FooBarHandler extends AppMessageHandler {
-    public function __invoke(FooBarMessage $message): void {
-        // ...auth, workspace...
-        $service = FooBars::getService();
-        $entity = $service->find($message->id);
-        $service->processFooBar($entity, async: false); // ✅ One call
-    }
-}
-
-// Service — all logic here
-class FooBarsService extends EntitiesService {
-    public function processFooBar(FooBar $entity, bool $async = true): void {
-        if ($async) { (new FooBarMessage($entity->id))->dispatch(); return; }
-        $this->doStep1($entity);
-        $this->doStep2($entity);
-        $this->doStep3($entity);
-    }
-}
-```
-
-### 3. Service Method Pattern: `bool $async = false`
-
-Business logic lives in a service method that accepts `$async`. The caller decides whether to run immediately or enqueue:
-
-```php
-public function doSomething(int $entityId, bool $async = false): void
-{
-    if ($async) {
-        (new DoSomethingMessage($entityId))->dispatch();
-        return;
-    }
-    // synchronous execution
-    // ...actual work...
-}
-```
-
-**Handler side:** always calls the service method with `async: false` to avoid re-dispatch loops.
-
-### 4. Always Propagate Auth Context
-
-In every handler, call:
-
-```php
-$this->setAuthAccountFromMessage($message);
-```
-
-This ensures the message is processed with the rights of the account that dispatched it.
-
-### 5. Workspace Origin — refused, never rerouted
-
-> **Framework services must survive being auto-registered.** Applications register the framework's own sources
-> (`resource: '%kernel.project_dir%/vendor/mgamadeus/ddd/src/*'` with `autowire: true`), and such a definition
-> REPLACES one the bundle registered explicitly. A framework service whose constructor takes a scalar therefore needs
-> `#[Autowire]` attributes on those arguments, or the consuming app's container stops compiling entirely —
-> "Cannot autowire service …: argument $projectDir is type-hinted string". That is what happened to
-> `WorkspaceVhostEnvVarProcessor` in v2.66.0 and why v2.66.1 exists. When you add a framework service with scalar
-> constructor arguments, annotate them; do not rely on the bundle's definition winning.
-
-Handlers carry NO workspace logic. Several checkouts of one app (dev workspaces, test builds) share a machine, a
-database and a message broker; each checkout has its OWN broker vhost (the app derives it from its code path, e.g.
-`%env(workspace_vhost:…)%` in messenger.yaml), so a worker only ever consumes what its own checkout dispatched.
-
-**A missing workspace vhost falls back to the `.env` vhost.** Inside a workspace the processor probes the broker once
-per process (Symfony's own `Connection::fromDsn(…, ['connect_timeout' => 2])`, nothing declared). Only "530
-NOT_ALLOWED - vhost <name> not found" falls back, to the DSN from `.env` unchanged, and writes one `error_log` line per
-process ("broker vhost "<name>" does not exist, using the vhost of … instead"); a refused access to an existing vhost,
-a broker that is down, bad credentials or an invalid DSN keep the workspace DSN, so the real error surfaces. Outside a
-workspace nothing is probed. The fallback keeps a checkout alive, but it then shares the default vhost's queues with
-every other consumer of it: messages without a workspace stamp may run on this checkout's code, and the checkout's own
-stamped messages are refused by the other consumers (guard below). Create the vhost when the workspace is provisioned —
-that stays the real fix. In FPM the probe runs once per request that builds a transport (statics do not survive
-requests).
-
-`dispatch()` stamps `dispatchedFromWorkspaceDir` and `dispatchedFromEnvironment` (the workspace NAME from
-`DDDService::getWorkspaceName()`, null outside a workspace). The framework's `WorkspaceOriginGuardMiddleware`
-(registered on every bus by `FreshWorkerStateMiddlewarePass`, right behind the fresh-state middleware) compares the
-stamp with the consuming process's own name on every RECEIVED envelope and throws
-`UnrecoverableMessageHandlingException` on a mismatch: no retry, the message lands in the failure transport, the log
-names both workspaces. A message without the stamp passes.
-
-| Situation | Outcome |
+| Task or symptom | Read |
 |---|---|
-| stamp equals the consumer's workspace name | processed |
-| no stamp (built outside `dispatch()`, or from a release before the stamp) | processed |
-| stamp names another workspace, or the consumer is production/local and the stamp names a workspace | REFUSED — the two share a queue they should not share; fix the vhost, replay with `messenger:failed:retry` |
-| `ddd.messenger.workspace_origin_guard: false` | the guard is not registered (an installation with one checkout per machine) |
+| Write a message, a handler, the service method; checklist | [references/writing-messages-and-handlers.md](references/writing-messages-and-handlers.md) |
+| State leaks between messages, stale reads in a worker, own state to reset, a message refused for another workspace, a missing workspace vhost, `app:process-cli-message` | [references/worker-state-and-workspace-origin.md](references/worker-state-and-workspace-origin.md) |
+| Add a transport and routing, a supervisor consumer, the stale-container trap, own cache dir for a worker pool | [references/transports-routing-and-consumers.md](references/transports-routing-and-consumers.md) |
+| `workers.yaml` keys, `app:workers:check` codes, `--limit` / `--time-limit` / `--memory-limit`, `busySilentSeconds` | [references/worker-list-and-limits.md](references/worker-list-and-limits.md) |
+| Switch the monitoring on, its settings, what is stored, transport and process states, `WorkersOverviewService`, the admin controller | [references/monitoring-and-settings.md](references/monitoring-and-settings.md) |
+| Ask what the workers do or did: failing or slow messages, throughput, processes, queue counts; JSON shapes | [references/console-for-agents.md](references/console-for-agents.md) |
+| Build a workers admin screen | [references/admin-screen-guide.md](references/admin-screen-guide.md) |
+| Nothing consumes, crash loops, LOST / SILENT / BUSY after a kill, nothing is written, gaps in a chart | [references/troubleshooting.md](references/troubleshooting.md) |
 
-Why refuse instead of re-executing in the right workspace (what `processOnWorkspaceIfNecessary()` did up to v2.65.x):
-the reroute ran the whole job in a synchronous child console process, held the consuming worker for the job's
-duration, died with every restart of that worker, and ran the child with `--no-debug` on a possibly stale container.
-With a vhost per workspace a mismatch is a configuration error, and an error must be visible, not routed around.
+## Commands
 
-`app:process-cli-message` stays: it replays a serialized message by hand (`persistToTempDir()` / `loadFromTempDir()`,
-`encodeForCommandline()` / `decodeFromCommandline()` are its transports) through the bus with a `ReceivedStamp` whose
-transport name is derived from the handler's `#[AsMessageHandler(fromTransport:)]`; hydration never runs the message
-constructor (`newInstanceWithoutConstructor()`). A replay in the wrong workspace is refused by the same guard.
+`php bin/console app:workers:<name>` — reads take `--format=json` (the payload of the matching admin endpoint):
 
-### 6. Logging Pattern
-
-- Use `$this->getLogger()` for all logging -- **never** `DDDService::instance()->getLogger()` directly in handlers
-- Log an `info` line before work starts with identifying IDs
-- Wrap the body in `try/catch (Throwable $t)`
-- In the catch block, use `$this->logShortException()` for structured error logging
-
-```php
-$this->getLogger()->info("Processing FooBar for {$message->fooBarId}");
-try {
-    // ...work...
-} catch (Throwable $t) {
-    $this->logShortException(
-        $this->getLogger(),
-        "Processing FooBar for {$message->fooBarId}",
-        $t
-    );
-}
-```
-
-### 7. Time/Memory Limits for Heavy Jobs
-
-```php
-set_time_limit(120);           // 120s for standard tasks, 500s for heavy imports
-ini_set('memory_limit', '1024M');
-```
-
-### 8. Admin Privilege Escalation (When Required)
-
-Some async operations must run with admin privileges (e.g., cross-tenant data access):
-
-```php
-$defaultAccount = DDDService::instance()->getDefaultAccountForCliOperations();
-AuthService::instance()->setAccount($defaultAccount);
-```
-
-Use only when necessary. Still call `setAuthAccountFromMessage()` first for attribution.
-
----
-
-## Implementation Steps
-
-### Step 1: Choose Domain + Naming
-
-**Location:** `src/Domain/{Domain}/MessageHandlers/`
-
-**Naming:**
-- `FooBarMessage` -- the message class
-- `FooBarHandler` -- the handler class
-- Transport name in `snake_case`: `process_foo_bar`
-
-### Step 2: Create the Message Class
-
-```php
-<?php
-declare(strict_types=1);
-
-namespace {Namespace}\Domain\{Domain}\MessageHandlers;
-
-use DDD\Domain\Base\Entities\MessageHandlers\AppMessage;
-
-class FooBarMessage extends AppMessage
-{
-    public static string $messageHandler = FooBarHandler::class;
-
-    public ?int $fooBarId = null;
-    public bool $regenerate = false;
-
-    public function __construct(?int $fooBarId = null, bool $regenerate = false)
-    {
-        parent::__construct();
-        $this->fooBarId = $fooBarId;
-        $this->regenerate = $regenerate;
-    }
-}
-```
-
-**Rules:**
-- Extend `AppMessage`
-- Define `public static string $messageHandler = FooBarHandler::class;`
-- Use primitive payload (IDs, bools, strings) -- not entity objects
-- Call `parent::__construct()` in constructor
-
-### Step 3: Create the Handler Class
-
-Application-level handlers should extend a project-specific `CustomAppMessageHandler` (which extends `AppMessageHandler`) or `AppMessageHandler` directly:
-
-```php
-<?php
-declare(strict_types=1);
-
-namespace {Namespace}\Domain\{Domain}\MessageHandlers;
-
-use DDD\Domain\Base\Entities\MessageHandlers\AppMessageHandler;
-use DDD\Infrastructure\Services\DDDService;
-use Symfony\Component\Messenger\Attribute\AsMessageHandler;
-use Throwable;
-
-#[AsMessageHandler(fromTransport: 'process_foo_bar')]
-class FooBarHandler extends AppMessageHandler
-{
-    public function __invoke(FooBarMessage $message): void
-    {
-        set_time_limit(120);
-        ini_set('memory_limit', '1024M');
-
-        $this->setAuthAccountFromMessage($message);
-
-        $this->getLogger()->info("Processing FooBar for {$message->fooBarId}");
-
-        try {
-            // 1. Load entity by ID
-            $fooBar = FooBar::byId($message->fooBarId);
-            if (!$fooBar) {
-                return;
-            }
-
-            // 2. Call service method with async: false
-            /** @var FooBarsService $fooBarsService */
-            $fooBarsService = FooBars::getService();
-            $fooBarsService->doSomething($fooBar->id, async: false);
-        } catch (Throwable $t) {
-            $this->logShortException(
-                $this->getLogger(),
-                "Processing FooBar for {$message->fooBarId}",
-                $t
-            );
-        }
-    }
-}
-```
-
-**Rules:**
-- Extend `AppMessageHandler` (or project-specific subclass)
-- Add `#[AsMessageHandler(fromTransport: 'transport_name')]`
-- Set auth context first
-- Load entity by ID inside the handler (not from message payload)
-- Call service method with `async: false`
-- Wrap in try/catch with `logShortException()`
-
-### Step 4: Wire Messenger Transport + Routing
-
-Update `<app>/config/symfony/default/packages/messenger.yaml` (this is the consuming **app's** config, relative to the app root — not a vendor path):
-
-```yaml
-framework:
-  messenger:
-    transports:
-      # Add transport (RabbitMQ queue)
-      process_foo_bar: '%env(MESSENGER_TRANSPORT_DSN_RABBITMQ)%/process_foo_bar'
-
-    routing:
-      # Route message to transport
-      '{Namespace}\Domain\{Domain}\MessageHandlers\FooBarMessage': process_foo_bar
-```
-
-**Debug tip:** For local troubleshooting, temporarily switch the transport to `sync://`.
-
-### Step 5: Add Supervisor Consumer
-
-**IMPORTANT:** Search the project for an existing supervisor config file. Common locations:
-
-```
-config/system/supervisorWorkers.conf
-config/supervisor/*.conf
-docker/supervisor/*.conf
-```
-
-Use `Glob` with patterns like `**/*supervisor*` or `**/*Workers.conf` to find it.
-
-Once found:
-1. **Read the existing file** to learn the project's conventions — the `command=` path, `user=`, `numprocs` patterns, etc. Every project is different.
-2. **Copy an existing `[program:]` block** as a template for the new entry.
-3. **Replace only** the transport name (in `[program:]` and `messenger:consume` argument) with the new transport name from Step 4.
-4. **Append** the new block to the end of the file.
-
-**General structure of a supervisor consumer block:**
-
-```ini
-[program:{transport_name}]
-command=php {path_from_existing_entries}/bin/console messenger:consume {transport_name} --no-debug --limit={N} --time-limit=3600 --memory-limit={M}
-process_name=%(program_name)s_%(process_num)02d
-numprocs={see below}
-autostart=true
-autorestart=true
-startsecs=0
-startretries=10
-user={copy from existing entries}
-redirect_stderr=true
-```
-
-**Rules:**
-- **Never hardcode paths** — always copy the `command=` path prefix from an existing entry in the same file
-- **Never guess `user=`** — copy from existing entries
-- Transport name in `[program:]` and `messenger:consume` must match the transport name in `messenger.yaml`
-- Set `numprocs` based on job cost:
-  - IO-bound / short tasks: more workers (e.g., push notifications: 5-10)
-  - Heavy CPU/memory: fewer workers (e.g., imports: 1)
-  - Standard async processing: 1-2
-
-### Step 5.1: Worker recycling — `--limit`, `--time-limit`, `--memory-limit`
-
-Long-running PHP workers accumulate static state across messages: Translatable's static `currentLanguageCode` / `translationSettingsSnapshot`, the entity registry / `EntityCache`, AuthService's account, opaque caches inside Firebase / external SDKs, etc. **Symfony Messenger handlers DO NOT reset between messages** — only between worker processes. State leaks from message N into message N+1 in the same worker, causing non-deterministic alternating bugs that are hard to reproduce.
-
-The defence is to recycle worker processes regularly. Symfony Messenger ships three command-line limits that exit the worker after a threshold; supervisor's `autorestart=true` then immediately spawns a fresh process with clean static state.
-
-| Flag | Effect | Recommended baseline |
-|---|---|---|
-| `--limit=N` | Exit after N successfully-processed messages | per-transport, see below |
-| `--time-limit=3600` | Exit after N seconds (defence against slow leaks) | `3600` for every transport |
-| `--memory-limit=256M` | Exit if memory exceeds threshold | match the transport's real workload |
-
-**Sizing `--limit`:**
-
-| Transport profile | Suggested `--limit` |
+| | |
 |---|---|
-| State-sensitive, high-volume (push notifications, chat post-process) | `100` |
-| State-sensitive, lower-volume (translations, embeddings, support post-process) | `50` |
-| Long-running single jobs (Strava import, AI resolution, summary generation) | `20` |
-| Heavy single jobs that pin a worker for minutes (track migration) | `10` |
-| State-light high-volume (track geohashes) | `200` |
+| `check`, `list` | the worker list against the Messenger configuration (exit 1 on an error) / as the framework reads it |
+| `overview`, `transport T`, `history` | now and the last hour / one transport over time / all transports over time |
+| `processes`, `runs` | which processes ran and why they stopped / which messages failed, with which error |
+| `queues`, `stats` | waiting messages at the broker right now (works with the monitoring off) / totals per message class |
+| `sample`, `restart [T]` | one sample plus prune (every minute) / ask the live processes to stop after their message |
 
-Lower `--limit` = more frequent state hygiene at the cost of more PHP cold-start overhead. Cold start is ~1s; for a transport handling 10 msg/s, `--limit=100` means a 1s pause every 10s of work — negligible.
-
-**Sizing `--memory-limit`:** match the transport's real footprint. Push notifications: `256M`. AI / translations / embeddings: `512M`. Strava imports: `1024M`. Track migration: `2048M`. Don't set it lower than the actual job needs — otherwise you'll see workers killed mid-message and the message redelivered.
-
-**Why `startsecs=0` + `startretries=10`:** with `--limit=100` and 100 fast messages, a worker can complete in <1 s. Supervisor's default `startsecs=1` would treat that as a crash-loop and give up after `startretries=3`. Setting `startsecs=0` accepts sub-second completions as legitimate; `startretries=10` keeps the safety net for real failures.
-
-**Reload after editing:** the user runs
-
-```bash
-sudo supervisorctl reread
-sudo supervisorctl update
-```
-
-— this picks up the new config without bouncing all unaffected workers.
-
-### Step 5.2: Rebuild the container BEFORE (re)starting workers — `--no-debug` does NOT auto-rebuild
-
-**Symptom pattern:** you change a transport (e.g. flip `sync://` ↔ AMQP, add a new transport), `supervisorctl start`/`restart` the workers, and they're either absent, crash-looping, or behave as if the old config were still active — the queue is never declared, messages aren't consumed, or a publish runs inline instead of being queued.
-
-**Cause:** supervisor consumer commands run with `--no-debug` (`messenger:consume <transport> --no-debug …`). `--no-debug` disables the debug kernel, which is the thing that **rebuilds the compiled container on a config-file change**. So a `--no-debug` worker reads the *stale* compiled container — it keeps seeing the OLD transport DSN (e.g. still `sync://`), so `messenger:consume <transport>` on a now-sync transport crashes immediately, or consumes the wrong transport. FPM and any `messenger:consume` run *without* `--no-debug` self-heal (they rebuild on change), which is why a foreground `messenger:consume <transport> -vv` "works" while the supervisor-managed `--no-debug` workers silently don't.
-
-**Rule: rebuild the container + reset the cache BEFORE every supervisor `start`/`stop`/`restart` that follows a code or transport change.** Either:
-- `bin/console cache:clear` (the kernel the workers run under), or
-- start the worker once **without** `--no-debug` (`messenger:consume <transport> -vv`) — the debug kernel rebuilds the shared container, then Ctrl-C and let supervisor take over.
-
-FPM and the workers share the same `var/cache/<env>` dir, so one rebuild fixes both the consume side (workers) and the publish side (the dispatching request). **Diagnose a silently-failing worker by running it in the foreground without `--no-debug`** — that prints the real exception (transport-not-found / does-not-support-receiving / AMQP error) instead of swallowing it into a supervisor logfile.
-
-### Step 6: Use From Service
-
-```php
-public function doSomething(int $fooBarId, bool $async = false): void
-{
-    if ($async) {
-        (new FooBarMessage($fooBarId))->dispatch();
-        return;
-    }
-
-    // Synchronous execution
-    $fooBar = FooBar::byId($fooBarId);
-    // ...actual work...
-}
-```
-
----
-
-## Checklist
-
-- [ ] Message extends `AppMessage`
-- [ ] Message has `public static string $messageHandler = FooBarHandler::class;`
-- [ ] Message payload uses IDs/primitives (not entity objects)
-- [ ] Message constructor calls `parent::__construct()`
-- [ ] Handler extends `AppMessageHandler` (or project-specific subclass)
-- [ ] Handler has `#[AsMessageHandler(fromTransport: '...')]` naming a transport that EXISTS and that the message is routed to — on Symfony 7.4 a wrong name silently disconnects the handler (the blanket `messenger.message_handler` tag from `services.yaml` is dropped), so check `debug:messenger` shows `(when from_transport=…)`
-- [ ] Handler calls `$this->setAuthAccountFromMessage($message)` first
-- [ ] Handler uses `$this->getLogger()` (never `DDDService::instance()->getLogger()`)
-- [ ] Handler uses `$this->logShortException()` in catch blocks
-- [ ] No service state left behind: a checked lookup restores `throwErrors` in `finally`
-- [ ] Handler calls service method with `async: false`
-- [ ] `messenger.yaml` has transport + routing entries
-- [ ] Supervisor config has a consumer for the transport
-- [ ] Service method has `bool $async = false` signature
-- [ ] Never use `private` -- always `protected`
-
----
+`app:process-cli-message` replays one serialized message by hand.
 
 ## Cross-Reference
 
-- **The service the handler delegates to** — all business logic and the `bool $async = false` method live in the service; see `ddd-service-specialist`.
-- **Loading the entity by ID in the handler** — `FooBar::byId(...)` and the repository/lazy-load mechanics are owned by `ddd-entity-specialist`.
-- **Which transports get workers, what the workers did, restarting them** — the worker list (`app:workers:check`: a transport without a consumer entry), the worker monitoring (a middleware on every bus measures each consumed message, no handler change; opt-out parameter `ddd.messenger.worker_monitoring: false`) and `app:workers:restart`; see `ddd-workers-specialist`.
-- **Triggering a message from a console command** — see `ddd-cli-command-specialist` for the dispatch-from-CLI entry point.
+- The service behind a handler, `enableThrowErrors()`: `ddd-service-specialist` · loading by id: `ddd-entity-specialist`
+- Console commands, Crons (the sampler): `ddd-cli-command-specialist`
+- The monitoring's tables: `ddd-database-schema-diff-specialist` · errors of a message run: `ddd-issues-log-specialist`

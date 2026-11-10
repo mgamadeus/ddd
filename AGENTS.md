@@ -663,7 +663,7 @@ worker processes, queue samples and message runs in `Domain/Common/Entities/Work
 `WorkersOverviewService`, the commands `app:workers:list` / `check` / `sample` (every minute) / `restart`, the
 reading commands `app:workers:overview` / `transport` / `history` / `processes` / `runs` / `queues` / `stats`
 (`--format=json`: the payload of the matching admin endpoint) and the admin endpoints of `WorkersControllerTrait` (`Presentation/Api/Admin/Common/Workers/`). The framework observes
-and asks for a restart; it never starts or scales a process. Details: `ddd-workers-specialist`.
+and asks for a restart; it never starts or scales a process. Details: `ddd-message-handler-specialist`.
 
 ### Object Storage
 
@@ -842,9 +842,8 @@ conventions; a class placed from memory or from a brief breaks every consuming a
 | Entity, EntitySet, ValueObject, ObjectSet, repository | `ddd-entity-specialist` |
 | Controller, DTO, route | `ddd-endpoint-specialist` |
 | Console command | `ddd-cli-command-specialist` |
-| Message + handler | `ddd-message-handler-specialist` |
+| Message + handler, transport, consumer, worker list, worker monitoring, workers admin endpoints | `ddd-message-handler-specialist` |
 | Issues logging, registry, client errors | `ddd-issues-log-specialist` |
-| Worker list, worker monitoring, workers admin endpoints | `ddd-workers-specialist` |
 
 - **Anything fetched with `getService()` lives in a public `…\Services\` namespace** of `services.yaml` and ends in
   `Service`. Elsewhere it is private in an application's compiled container: removed or inlined, and the fetch fails at
