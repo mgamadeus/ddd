@@ -75,6 +75,19 @@ class ReflectionArrayType extends \ReflectionNamedType
         return $finalTypes[0];
     }
 
+    /**
+     * @return bool true when the doc comment declares null as an element of the array: `(float|null)[]`
+     */
+    public function allowsNullElements(): bool
+    {
+        $reflectionClass = $this->reflectionProperty->getReflectionClass();
+        $propertyName = $this->reflectionProperty->getName();
+        if ($reflectionClass->getDocCommentInstance()->getPropertyTypes($propertyName)) {
+            return $reflectionClass->getDocCommentInstance()->allowsNullArrayElements($propertyName);
+        }
+        return $this->reflectionProperty->getDocCommentInstance()->allowsNullArrayElements();
+    }
+
     public function getName(): string
     {
         return $this->reflectionNamedType->getName();

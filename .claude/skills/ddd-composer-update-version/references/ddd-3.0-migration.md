@@ -410,3 +410,9 @@ Unchanged:
   Skill: `ddd-workers-specialist`. Fix for every app: an entity string property whose value is the name of a
   ValueObject class (e.g. a stored message class) failed to persist with "Call to a member function
   mapToRepository() on string" — the mapper now decides by the value being an object.
+- 3.18.1 — A list declared with nullable elements (`@var (float|null)[]`) keeps a null entry at its position on
+  output, on input and in persistence, and OpenAPI documents `items: {…, nullable: true}`; every other list behaves
+  as before (null entries dropped on output, refused on input). Schema: a foreign key column no longer gets a plain
+  index next to a declared unique (or plain) index over exactly that column, and a class-level single-column
+  `UNIQUE` replaces the column's default plain index. An app that declared such a unique index sees one `DROP INDEX
+  idx_<column>` per affected table in its next schema diff; an index over several columns changes nothing.

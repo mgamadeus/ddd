@@ -146,6 +146,19 @@ The exposed value IS the object on every surface:
 - **Schema:** OpenAPI documents the exposed property's schema in place of the class (`type: array, items: number`
   for `/** @var float[] */ public array $values`), also as an array element — no `$ref` to an object component.
 
+### Lists with null entries -- `(float|null)[]`
+
+A list drops null entries on output and refuses them on input (400), unless the docblock declares null as an ELEMENT
+with the parenthesised form:
+
+```php
+/** @var (float|null)[] Samples, null where none was measured */
+public array $values = [];      // [12.5, null, 12.9] stays that, in both directions and in persistence
+```
+
+OpenAPI then documents `items: {type: number, nullable: true}`. `float[]|null` is something else: a nullable
+property. Only lists keep null entries (a keyed map still drops them).
+
 ### `#[DontPersistProperty]` -- Visible in API, not in DB
 ```php
 #[DontPersistProperty]

@@ -14,6 +14,7 @@ use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\Arr;
 use DDD\Infrastructure\Libs\Datafilter;
+use DDD\Infrastructure\Reflection\ReflectionArrayType;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
 use DDD\Infrastructure\Services\DDDService;
@@ -662,6 +663,11 @@ trait SerializerTrait
                     continue;
                 }
                 $propertyValue = $this->$propertyName;
+                $keepNullEntriesOfList = false;
+                if (is_array($propertyValue) && in_array(null, $propertyValue, true)) {
+                    $propertyType = $property->getType();
+                    $keepNullEntriesOfList = $propertyType instanceof ReflectionArrayType && $propertyType->allowsNullElements();
+                }
                 $serializedValue = $this->serializeProperty(
                     $propertyValue,
                     $cached,
@@ -670,7 +676,8 @@ trait SerializerTrait
                     $ignoreHideAttributes,
                     $ignoreNullValues,
                     $forPersistence,
-                    $flags
+                    $flags,
+                    $keepNullEntriesOfList
                 );
 
                 if (
@@ -771,7 +778,8 @@ trait SerializerTrait
         bool $ignoreHideAttributes = false,
         bool $ignoreNullValues = true,
         bool $forPersistence = true,
-        int $flags = 0
+        int $flags = 0,
+        bool $keepNullEntriesOfList = false
     ): mixed
     {
         $propertyValueIsArray = is_array($propertyValue);
@@ -833,8 +841,15 @@ trait SerializerTrait
             }
             $returnArray = [];
             $elementCount = 0;
+            // a list declared with nullable elements (`(float|null)[]`, e.g. a missing sample of a series) keeps a
+            // null entry at its position. Dropping it would turn the list into a map with gaps in its keys
+            $keepNullEntries = $keepNullEntriesOfList && $propertyValueIsArray && array_is_list($propertyValue);
             foreach ($propertyValue as $tKey => $tValue) {
                 $elementCount++;
+                if ($tValue === null && $keepNullEntries) {
+                    $returnArray[$tKey] = null;
+                    continue;
+                }
                 $serializedArrayValue = $this->serializeProperty(
                     $tValue,
                     $cached,
@@ -1388,6 +1403,15 @@ trait SerializerTrait
             $this->$propertyName = [];
             // we iterate through the array elements
             foreach ($value as $index => $arrayItem) {
+                // a list declared with nullable elements (`(float|null)[]`) keeps a null entry at its position
+                if ($arrayItem === null && $allowedTypes->allowsNullElements) {
+                    if (is_int($index)) {
+                        $this->$propertyName[] = null;
+                    } else {
+                        $this->$propertyName[$index] = null;
+                    }
+                    continue;
+                }
                 $valueType = gettype($arrayItem);
                 //get_type returns e.g. integer, we map this to int
                 $valueTypeAllocated = ReflectionClass::GET_TYPE_ALLOCATIONS[$valueType] ?? 'object';

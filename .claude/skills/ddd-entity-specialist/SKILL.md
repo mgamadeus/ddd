@@ -740,6 +740,9 @@ public string $rarelyFiltered;   // column is created, but gets NO index
   public string $name;            // single-column UNIQUE
   ```
 - **Class-level** is the ONLY place `indexColumns` is honored — use it for composite / multi-column indexes (see below). Repeatable on both property and class.
+- **One index per column.** A foreign key column gets a plain index unless a plain or unique index over exactly
+  that column is declared, on the property or on the class; a class-level single-column `UNIQUE` also replaces the
+  column's default plain index. An index over several columns never replaces it, even when it starts with the column.
 - A **single-column `UNIQUE` index on a `{name}Id` FK can make the relation `OneToOne` instead of `ManyToOne`** — UNIQUE is NECESSARY but NOT sufficient: the *target* entity must ALSO declare a single-Entity `#[LazyLoad]` back-reference to this one with no own `{name}Id` (`DatabaseModel.php:977-995`, `:922-967`). This is how you declare a 1:1 owning side:
   ```php
   #[DatabaseIndex(indexType: DatabaseIndex::TYPE_UNIQUE)]

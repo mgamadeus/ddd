@@ -541,23 +541,59 @@ class ReflectionDocComment
         if ($propertyName) {
             $lines = explode("\n", $doccomment);
             foreach ($lines as $line) {
-                $pattern = '/\@property\s+(?P<PropertyType>[0-9a-zA-Z|_\{\}\\\\\[\]]+)+\s+\$' . $propertyName . '[\s;]*$/';
+                $pattern = '/\@property\s+(?P<PropertyType>[0-9a-zA-Z|_\{\}\\\\\[\]()]+)+\s+\$' . $propertyName . '[\s;]*$/';
                 preg_match($pattern, $line, $matches);
                 if (isset($matches['PropertyType'])) {
-                    //replace [] e.g. Cat[]|Dog[] => Cat|Dog
-                    $propertyType = preg_replace('/\[\s*\]/', '', $matches['PropertyType']);
-                    return explode('|', $propertyType);
+                    return $this->getTypeNamesOfTypeDeclaration($matches['PropertyType']);
                 }
             }
             return null;
         } else {
-            preg_match('/\@var\s+(?P<PropertyType>[0-9a-zA-Z|_\{\}\\\\\[\]]+)/', $doccomment, $matches);
+            preg_match('/\@var\s+(?P<PropertyType>[0-9a-zA-Z|_\{\}\\\\\[\]()]+)/', $doccomment, $matches);
             if (isset($matches['PropertyType'])) {
-                //replace [] e.g. Cat[]|Dog[] => Cat|Dog
-                $propertyType = preg_replace('/\[\s*\]/', '', $matches['PropertyType']);
-                return explode('|', $propertyType);
+                return $this->getTypeNamesOfTypeDeclaration($matches['PropertyType']);
             }
             return null;
         }
+    }
+
+    /**
+     * Whether the declared array type allows null as an ELEMENT: the parenthesised form `(float|null)[]`.
+     * `float[]|null` declares a nullable property, not nullable elements.
+     *
+     * @param string|null $propertyName Set to read an (at)property declaration of a class doc comment
+     * @return bool
+     */
+    public function allowsNullArrayElements(?string $propertyName = null): bool
+    {
+        if (!$this->docComment) {
+            return false;
+        }
+        $doccomment = $this->resolveInheritDoc($this->docComment);
+        $pattern = $propertyName
+            ? '/\@property\s+(?P<PropertyType>[0-9a-zA-Z|_\{\}\\\\\[\]()]+)\s+\$' . preg_quote($propertyName, '/') . '[\s;]*$/m'
+            : '/\@var\s+(?P<PropertyType>[0-9a-zA-Z|_\{\}\\\\\[\]()]+)/';
+        if (!preg_match($pattern, $doccomment, $matches)) {
+            return false;
+        }
+        if (!preg_match_all('/\((?P<ElementTypes>[^()]*)\)\[\s*\]/', $matches['PropertyType'], $elementTypeMatches)) {
+            return false;
+        }
+        foreach ($elementTypeMatches['ElementTypes'] as $elementTypes) {
+            if (in_array('null', explode('|', strtolower($elementTypes)), true)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param string $typeDeclaration e.g. `Cat[]|Dog[]` or `(float|null)[]`
+     * @return string[] The type names without array brackets and parentheses, e.g. Cat, Dog
+     */
+    protected function getTypeNamesOfTypeDeclaration(string $typeDeclaration): array
+    {
+        //replace [] and (), e.g. Cat[]|Dog[] => Cat|Dog, (float|null)[] => float|null
+        return explode('|', preg_replace('/\[\s*\]|[()]/', '', $typeDeclaration));
     }
 }

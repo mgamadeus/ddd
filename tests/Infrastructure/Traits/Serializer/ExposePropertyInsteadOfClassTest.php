@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace DDD\Tests\Infrastructure\Traits\Serializer;
 
+use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
 use DDD\Presentation\Base\OpenApi\Attributes\Parameter;
 use DDD\Presentation\Base\OpenApi\Components\Schema;
+use DDD\Tests\Infrastructure\Traits\Serializer\Fixtures\ExposedGappedNumberSeries;
 use DDD\Tests\Infrastructure\Traits\Serializer\Fixtures\ExposedNumberSeries;
 use DDD\Tests\Infrastructure\Traits\Serializer\Fixtures\ExposedNumberSeriesHolder;
 use PHPUnit\Framework\TestCase;
@@ -44,6 +46,40 @@ class ExposePropertyInsteadOfClassTest extends TestCase
 
         $this->assertSame([1.5, 2.5], $holder->samples->values);
         $this->assertSame([], $holder->optionalSamples->values);
+    }
+
+    public function testANullEntryOfAListWithNullableElementsKeepsItsPositionInBothDirections(): void
+    {
+        $holder = new ExposedNumberSeriesHolder();
+        $holder->gappedSamples = new ExposedGappedNumberSeries();
+        $holder->gappedSamples->values = [12.5, null, 12.9];
+        $this->assertSame([12.5, null, 12.9], $holder->toObject(false, forPersistence: false)['gappedSamples']);
+        $this->assertSame([12.5, null, 12.9], $holder->toObject(false, forPersistence: true)['gappedSamples']);
+
+        $payload = json_decode('{"gappedSamples":[12.5,null,12.9]}');
+        $readHolder = new ExposedNumberSeriesHolder();
+        $readHolder->setPropertiesFromObject($payload);
+        $this->assertSame([12.5, null, 12.9], $readHolder->gappedSamples->values);
+    }
+
+    public function testAListWithoutNullableElementsRefusesANullEntry(): void
+    {
+        $payload = json_decode('{"samples":[12.5,null,12.9]}');
+        $readHolder = new ExposedNumberSeriesHolder();
+        $this->expectException(BadRequestException::class);
+        $readHolder->setPropertiesFromObject($payload);
+    }
+
+    public function testTheSchemaOfAListWithNullableElementsMarksItsItemsNullable(): void
+    {
+        $classWithNamespace = new ClassWithNamespace(ExposedNumberSeriesHolder::class);
+        $schema = new Schema($classWithNamespace, Parameter::RESPONSE);
+        $schema->buildSchema();
+
+        $gappedSamples = $schema->properties['gappedSamples'];
+        $this->assertSame('array', $gappedSamples->type);
+        $this->assertSame(['type' => 'number', 'nullable' => true], $gappedSamples->items);
+        $this->assertSame(['type' => 'number'], $schema->properties['samples']->items);
     }
 
     public function testTheSchemaIsTheExposedPropertys(): void

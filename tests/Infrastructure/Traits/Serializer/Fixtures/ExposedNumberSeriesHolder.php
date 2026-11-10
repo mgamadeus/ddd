@@ -15,6 +15,9 @@ class ExposedNumberSeriesHolder extends ValueObject
     /** @var ExposedNumberSeries|null Optional samples */
     public ?ExposedNumberSeries $optionalSamples = null;
 
+    /** @var ExposedGappedNumberSeries|null Samples with gaps */
+    public ?ExposedGappedNumberSeries $gappedSamples = null;
+
     /** @var ExposedNumberSeries[] Several series */
     public array $seriesList = [];
 }

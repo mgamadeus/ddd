@@ -16,6 +16,8 @@ class ReflectionAllowedTypes
     public ?string $enumType = null;
     public bool $isArrayType = false;
     public bool $allowsNull = false;
+    /** @var bool An array property whose elements may be null: `(float|null)[]` */
+    public bool $allowsNullElements = false;
     public int $allowedTypesCount = 0;
 
     protected string $propertyName = '';
@@ -33,6 +35,7 @@ class ReflectionAllowedTypes
         $this->allowsNull = $propertyType->allowsNull();
         if ($propertyType instanceof ReflectionArrayType) {
             $this->isArrayType = true;
+            $this->allowsNullElements = $propertyType->allowsNullElements();
             $propertyType = $propertyType->getArrayType();
         }
 

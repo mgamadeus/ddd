@@ -313,6 +313,9 @@ class SchemaProperty
                                     $this->items['format'] = 'binary';
                                 } else {
                                     $this->items['type'] = $this->typeNameAllocation[$arrayType];
+                                    if ($type->allowsNullElements()) {
+                                        $this->items['nullable'] = true;
+                                    }
                                 }
                             } // we have a complex type
                             else {

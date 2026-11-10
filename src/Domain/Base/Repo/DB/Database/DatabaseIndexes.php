@@ -15,8 +15,41 @@ use DDD\Domain\Base\Entities\ObjectSet;
  */
 class DatabaseIndexes extends ObjectSet
 {
-    public function getIndexForSingleColumnName(string $columnName):?DatabaseIndex{
-        return $this->getByUniqueKey(DatabaseIndex::uniqueKeyStatic($columnName));
+    /**
+     * @param string $columnName
+     * @return DatabaseIndex|null The plain or unique index over exactly this one column, the unique one first. An
+     * index over several columns is not returned, even when it starts with the column
+     */
+    public function getIndexForSingleColumnName(string $columnName): ?DatabaseIndex
+    {
+        $indexForSingleColumn = null;
+        foreach ($this->getElements() as $databaseIndex) {
+            if ($databaseIndex->indexColumns !== [$columnName]) {
+                continue;
+            }
+            if ($databaseIndex->indexType === DatabaseIndex::TYPE_UNIQUE) {
+                return $databaseIndex;
+            }
+            if ($databaseIndex->indexType === DatabaseIndex::TYPE_INDEX) {
+                $indexForSingleColumn ??= $databaseIndex;
+            }
+        }
+        return $indexForSingleColumn;
+    }
+
+    /**
+     * Removes the plain index over exactly this one column: a unique index over the same column serves every read
+     * the plain one would.
+     *
+     * @param string $columnName
+     */
+    public function removePlainIndexOfSingleColumn(string $columnName): void
+    {
+        foreach ($this->getElements() as $databaseIndex) {
+            if ($databaseIndex->indexType === DatabaseIndex::TYPE_INDEX && $databaseIndex->indexColumns === [$columnName]) {
+                $this->remove($databaseIndex);
+            }
+        }
     }
 
     /**

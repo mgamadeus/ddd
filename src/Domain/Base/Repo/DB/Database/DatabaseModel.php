@@ -590,21 +590,26 @@ class DatabaseModel extends ValueObject
             }
         }
 
+        // handle indexes declared on the class (over one or several columns)
+        foreach ($entityReflectionClass->getAttributes(DatabaseIndex::class, ReflectionAttribute::IS_INSTANCEOF) as $indexAttribute) {
+            /** @var DatabaseIndex $indexAttributeInstance */
+            $indexAttributeInstance = $indexAttribute->newInstance();
+            $databaseModel->indexes->add($indexAttributeInstance);
+            // a unique index over one column replaces the plain index the column got by default
+            if ($indexAttributeInstance->indexType === DatabaseIndex::TYPE_UNIQUE && count($indexAttributeInstance->indexColumns) === 1) {
+                $databaseModel->indexes->removePlainIndexOfSingleColumn($indexAttributeInstance->indexColumns[0]);
+            }
+        }
+
         foreach ($databaseModel->foreignKeys->getElements() as $foreignKey) {
-            // assure we create indexes for all foreign keys
+            // every foreign key column gets an index, unless a plain or unique index over exactly this column is
+            // declared (on the property or on the class): a second one would only cost writes
             if (!$databaseModel->indexes->getIndexForSingleColumnName($foreignKey->internalIdColumn)) {
                 $databaseIndex = new DatabaseIndex(indexColumns: [$foreignKey->internalIdColumn]);
                 $databaseModel->indexes->add($databaseIndex);
             }
             // assure all foreign key columns are unsigned
             $databaseModel->columns->getColumnByName($foreignKey->internalIdColumn)->isUnsigned = true;
-        }
-
-        // handle indexes over multiple columns
-        foreach ($entityReflectionClass->getAttributes(DatabaseIndex::class, ReflectionAttribute::IS_INSTANCEOF) as $indexAttribute) {
-            /** @var DatabaseIndex $indexAttributeInstance */
-            $indexAttributeInstance = $indexAttribute->newInstance();
-            $databaseModel->indexes->add($indexAttributeInstance);
         }
 
         // handle triggers
@@ -1029,9 +1034,7 @@ class DatabaseModel extends ValueObject
     }
 
     /**
-     * Whether $columnName has a single-column UNIQUE index in $indexes. Scans columns + type directly because
-     * {@see DatabaseIndexes::getIndexForSingleColumnName()} looks up by a key WITHOUT the index-type suffix while
-     * {@see DatabaseIndex::uniqueKey()} bakes the type into the key, so that helper never matches a typed index.
+     * Whether $columnName has a single-column UNIQUE index in $indexes.
      */
     protected static function columnHasUniqueIndex(DatabaseIndexes $indexes, string $columnName): bool
     {
