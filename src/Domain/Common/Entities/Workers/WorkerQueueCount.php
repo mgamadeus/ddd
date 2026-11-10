@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Domain\Common\Entities\Workers;
 
 use DDD\Domain\Base\Entities\ValueObject;
+use DDD\Infrastructure\Validation\Constraints\Choice;
 
 /**
  * The messages waiting in one transport's queue: ready, not yet delivered to a worker. Messages in work are not in
@@ -21,6 +22,7 @@ class WorkerQueueCount extends ValueObject
 
     public function __construct(
         public string $transport = '',
+        #[Choice(choices: [self::STATE_COUNTED, self::STATE_UNKNOWN, self::STATE_QUEUE_NOT_SET_UP])]
         public string $state = self::STATE_UNKNOWN,
         /** @var int|null Waiting messages; null unless the state is COUNTED */
         public ?int $waiting = null,

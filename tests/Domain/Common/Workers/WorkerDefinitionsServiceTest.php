@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DDD\Tests\Domain\Common\Workers;
 
+use DDD\Domain\Common\Entities\Workers\WorkerProcess;
 use DDD\Domain\Common\Entities\Workers\WorkersCheckFinding;
 use DDD\Domain\Common\Entities\Workers\WorkersCheckFindings;
 use DDD\Domain\Common\Entities\Workers\WorkersSettings;
@@ -178,5 +179,31 @@ class WorkerDefinitionsServiceTest extends TestCase
         $this->assertSame(WorkersSettings::MESSAGE_LOG_OFF, $workerDefinitionsService->getMessageLogModeForTransport('send_mail'));
         $this->assertSame(WorkersSettings::MESSAGE_LOG_FAILURES, $workerDefinitionsService->getMessageLogModeForTransport('import_files'));
         $this->assertSame(WorkersSettings::MESSAGE_LOG_FAILURES, $workerDefinitionsService->getMessageLogModeForTransport('unknown'));
+    }
+
+    public function testAConsumerSetsHowLongItsMessagesMayRun(): void
+    {
+        $workerDefinitionsService = $this->createService(<<<YAML
+            consumers:
+              - {transport: send_mail, busySilentSeconds: 120}
+              - {transport: import_files, busySilentSeconds: 7200}
+              - {transport: thumbnails}
+              - {transport: broken, busySilentSeconds: 0}
+            YAML);
+        $consumers = $workerDefinitionsService->getWorkerDefinitions()->consumers;
+        $processOf = static function (string $transport): WorkerProcess {
+            $workerProcess = new WorkerProcess();
+            $workerProcess->transport = $transport;
+            return $workerProcess;
+        };
+
+        $this->assertSame(120, $consumers->getByTransport('send_mail')->busySilentSeconds);
+        $this->assertNull($consumers->getByTransport('broken')->busySilentSeconds);
+        $this->assertNull($consumers->getByTransport('send_mail')->additionalSettings->getByUniqueKey('busySilentSeconds'));
+        $this->assertSame(120, $workerDefinitionsService->getBusySilentSecondsForWorkerProcess($processOf('send_mail')));
+        $this->assertSame(3600, $workerDefinitionsService->getBusySilentSecondsForWorkerProcess($processOf('thumbnails')), 'the setting');
+        $this->assertSame(3600, $workerDefinitionsService->getBusySilentSecondsForWorkerProcess($processOf('not_listed')));
+        $this->assertSame(7200, $workerDefinitionsService->getBusySilentSecondsForWorkerProcess($processOf('send_mail,import_files')), 'the longest');
+        $this->assertSame(3600, $workerDefinitionsService->getBusySilentSecondsForWorkerProcess($processOf('send_mail,thumbnails')));
     }
 }

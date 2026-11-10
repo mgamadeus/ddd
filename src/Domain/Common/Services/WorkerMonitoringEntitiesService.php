@@ -47,4 +47,40 @@ abstract class WorkerMonitoringEntitiesService extends EntitiesService
             : (int)strtotime((string)$storedTime . ' UTC');
         return DateTimeValueSequence::alignToStep($timestamp, $stepSeconds);
     }
+
+    /**
+     * Sums of the given properties per transport and window, each window reaching back from $now and holding the
+     * whole minute buckets that start in it. One aggregate statement over the longest window.
+     *
+     * @param string[] $properties The properties to add up
+     * @param int[] $windowSeconds
+     * @return iterable<int, array<string, mixed>> One row per transport, keyed `transport` and `<property>_<seconds>`
+     *     (an internal helper: aggregated by the caller)
+     */
+    protected function sumRowsPerTransportAndWindow(string $timeProperty, array $properties, DateTime $now, array $windowSeconds): iterable
+    {
+        if ($windowSeconds === [] || $properties === []) {
+            return [];
+        }
+        $repoClass = $this->getEntityRepoClassInstance();
+        $alias = $repoClass::getBaseModelAlias();
+        $queryBuilder = $repoClass::createQueryBuilder(true)->select("{$alias}.transport AS transport");
+        foreach ($windowSeconds as $seconds) {
+            $seconds = (int)$seconds;
+            $windowStart = DateTime::fromTimestamp(DateTimeValueSequence::alignToStep($now->getTimestamp() - $seconds, 60));
+            $queryBuilder->setParameter('from' . $seconds, $windowStart);
+            foreach ($properties as $property) {
+                $queryBuilder->addSelect(
+                    "SUM(CASE WHEN {$alias}.{$timeProperty} >= :from{$seconds} THEN {$alias}.{$property} ELSE 0 END) AS {$property}_{$seconds}"
+                );
+            }
+        }
+        $longestWindowStart = DateTime::fromTimestamp(DateTimeValueSequence::alignToStep($now->getTimestamp() - max($windowSeconds), 60));
+        $queryBuilder
+            ->andWhere("{$alias}.{$timeProperty} >= :from")->setParameter('from', $longestWindowStart)
+            ->andWhere("{$alias}.{$timeProperty} <= :to")->setParameter('to', $now)
+            ->groupBy("{$alias}.transport");
+        $repoClass::applyReadRightsQuery($queryBuilder);
+        return $queryBuilder->getQuery()->getScalarResult();
+    }
 }

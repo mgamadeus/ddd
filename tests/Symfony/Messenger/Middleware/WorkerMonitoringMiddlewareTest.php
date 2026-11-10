@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace DDD\Tests\Symfony\Messenger\Middleware;
 
+use DDD\Domain\Base\Entities\MessageHandlers\AppMessage;
+use DDD\Domain\Base\Entities\MessageHandlers\AppMessageDispatchOrigin;
 use DDD\Symfony\Messenger\Middleware\WorkerMonitoringMiddleware;
+use DDD\Tests\Symfony\Messenger\Middleware\Fixtures\DispatchOriginProbeMessage;
 use DDD\Tests\Symfony\Messenger\Middleware\Fixtures\RecordingWorkerMonitoringService;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -68,5 +71,52 @@ class WorkerMonitoringMiddlewareTest extends TestCase
 
         self::assertSame($envelope->getMessage(), $handledEnvelope->getMessage());
         self::assertSame(['start', 'finish'], $recordingWorkerMonitoringService->calls);
+    }
+
+    public function testAMessageDispatchedByAHandlerCarriesTheOriginOfTheHandledMessage(): void
+    {
+        $handledMessage = new DispatchOriginProbeMessage();
+        $handledMessage->dispatchOrigin = new AppMessageDispatchOrigin();
+        $handledMessage->dispatchOrigin->route = 'orders_create';
+        $handledMessage->dispatchOrigin->command = null;
+        $dispatchedByHandler = new DispatchOriginProbeMessage();
+        $handler = $this->createMock(MiddlewareInterface::class);
+        $handler->method('handle')->willReturnCallback(static function (Envelope $envelope) use ($dispatchedByHandler): Envelope {
+            $dispatchedByHandler->setDispatchOrigin();
+            return $envelope;
+        });
+        $workerMonitoringMiddleware = new WorkerMonitoringMiddleware(null);
+
+        $workerMonitoringMiddleware->handle(
+            new Envelope($handledMessage, [new ConsumedByWorkerStamp()]),
+            new StackMiddleware([$workerMonitoringMiddleware, $handler])
+        );
+        $dispatchedOutsideAHandler = new DispatchOriginProbeMessage();
+        $dispatchedOutsideAHandler->setDispatchOrigin();
+
+        self::assertSame('orders_create', $dispatchedByHandler->dispatchOrigin->route);
+        self::assertNull($dispatchedByHandler->dispatchOrigin->command, 'not the consume command of the worker');
+        self::assertNotNull($dispatchedByHandler->dispatchOrigin->dispatchedAt);
+        self::assertNull(AppMessage::getDispatchOriginOfHandledMessage(), 'put back after the handler');
+        self::assertNull($dispatchedOutsideAHandler->dispatchOrigin->route);
+        self::assertSame(($_SERVER['argv'] ?? [])[1] ?? null, $dispatchedOutsideAHandler->dispatchOrigin->command, 'outside a handler: the console run itself');
+    }
+
+    public function testTheHandledOriginIsPutBackWhenTheHandlerThrows(): void
+    {
+        $handledMessage = new DispatchOriginProbeMessage();
+        $handledMessage->dispatchOrigin = new AppMessageDispatchOrigin();
+        $workerMonitoringMiddleware = new WorkerMonitoringMiddleware(new RecordingWorkerMonitoringService());
+
+        try {
+            $workerMonitoringMiddleware->handle(
+                new Envelope($handledMessage, [new ConsumedByWorkerStamp()]),
+                new StackMiddleware([$workerMonitoringMiddleware, $this->nextThatThrows('handler failed')])
+            );
+            self::fail('the handler exception must pass');
+        } catch (RuntimeException) {
+        }
+
+        self::assertNull(AppMessage::getDispatchOriginOfHandledMessage());
     }
 }

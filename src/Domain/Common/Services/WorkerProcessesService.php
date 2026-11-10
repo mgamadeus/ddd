@@ -11,6 +11,7 @@ use DDD\Domain\Common\Entities\Workers\WorkerTransportHistory;
 use DDD\Domain\Common\Repo\DB\Workers\DBWorkerProcess;
 use DDD\Domain\Common\Repo\DB\Workers\DBWorkerProcesses;
 use DDD\Infrastructure\Base\DateTime\DateTime;
+use DDD\Infrastructure\Services\DDDService;
 
 /**
  * @method WorkerProcess find(int|string|null $entityId, bool $useEntityRegistrCache = true)
@@ -51,6 +52,7 @@ class WorkerProcessesService extends WorkerMonitoringEntitiesService
     /**
      * The processes that are alive now: not stopped, with a recent heartbeat or a message in work.
      *
+     * @param int $busySilentSeconds No longer read: {@see self::getBusySilentSeconds()} decides per process
      * @param string|null $transport Only processes that consume this transport
      */
     public function findLiveWorkerProcesses(DateTime $now, int $lostAfterSeconds, int $busySilentSeconds, ?string $transport = null): WorkerProcesses
@@ -60,7 +62,7 @@ class WorkerProcessesService extends WorkerMonitoringEntitiesService
             if ($transport !== null && !$workerProcess->consumesTransport($transport)) {
                 continue;
             }
-            if ($workerProcess->isLive($now, $lostAfterSeconds, $busySilentSeconds)) {
+            if ($workerProcess->isLive($now, $lostAfterSeconds, $this->getBusySilentSeconds($workerProcess))) {
                 $liveWorkerProcesses->add($workerProcess);
             }
         }
@@ -92,6 +94,52 @@ class WorkerProcessesService extends WorkerMonitoringEntitiesService
             $workerProcess->restartRequestedAt = $now;
         }
         return $liveWorkerProcesses;
+    }
+
+    /**
+     * Sets every process' display state as it is at $now ({@see WorkerProcess::getDisplayState()}).
+     */
+    public function setDisplayStates(WorkerProcesses $workerProcesses, DateTime $now, int $lostAfterSeconds): void
+    {
+        foreach ($workerProcesses->getElements() as $workerProcess) {
+            $workerProcess->displayState = $workerProcess->getDisplayState($now, $lostAfterSeconds, $this->getBusySilentSeconds($workerProcess));
+        }
+    }
+
+    /**
+     * How long a message of this process may run before the process is shown as silent: its consumer entry's
+     * `busySilentSeconds`, else the setting.
+     */
+    public function getBusySilentSeconds(WorkerProcess $workerProcess): int
+    {
+        /** @var WorkerDefinitionsService $workerDefinitionsService */
+        $workerDefinitionsService = DDDService::instance()->getService(WorkerDefinitionsService::class);
+        return $workerDefinitionsService->getBusySilentSecondsForWorkerProcess($workerProcess);
+    }
+
+    /**
+     * Closes the given processes as vanished without a stop: STOPPED with stop reason LOST. One that reports again
+     * is running again.
+     *
+     * @return int Closed processes
+     */
+    public function closeWorkerProcessesAsLost(WorkerProcesses $workerProcesses, DateTime $now): int
+    {
+        $processIds = $workerProcesses->getEntityIds();
+        if ($processIds === []) {
+            return 0;
+        }
+        $repoClass = $this->getEntityRepoClassInstance();
+        $alias = $repoClass::getBaseModelAlias();
+        return (int)$repoClass::createQueryBuilder()
+            ->update($repoClass::BASE_ORM_MODEL, $alias)
+            ->set("{$alias}.state", ':stopped')->setParameter('stopped', WorkerProcess::STATE_STOPPED)
+            ->set("{$alias}.stopReason", ':lost')->setParameter('lost', WorkerProcess::STOP_REASON_LOST)
+            ->set("{$alias}.stoppedAt", ':now')->setParameter('now', $now)
+            ->set("{$alias}.currentMessageClass", 'NULL')
+            ->where("{$alias}.state <> :stopped")
+            ->andWhere("{$alias}.id IN (:processIds)")->setParameter('processIds', $processIds)
+            ->getQuery()->execute();
     }
 
     /**

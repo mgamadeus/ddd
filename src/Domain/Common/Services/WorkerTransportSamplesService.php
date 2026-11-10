@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Common\Services;
 
+use DDD\Domain\Common\Entities\Workers\WorkerTransportThroughputs;
+use DDD\Domain\Common\Entities\Workers\WorkerThroughputWindows;
 use DDD\Domain\Common\Entities\Workers\WorkerTransportHistories;
 use DDD\Domain\Common\Entities\Workers\WorkerTransportHistory;
 use DDD\Domain\Common\Entities\Workers\WorkerTransportSample;
@@ -80,7 +82,8 @@ class WorkerTransportSamplesService extends WorkerMonitoringEntitiesService
 
     /**
      * The queue and worker state of a window as sequences per transport: waiting, inFlight, processes — the highest
-     * sample of each step. A transport without a sample in the window is not in the result.
+     * sample of each step; a step without a sample (for waiting: without a count) has no value (null). A transport
+     * without a sample in the window is not in the result.
      *
      * @param string|null $transport Only this transport
      */
@@ -95,9 +98,14 @@ class WorkerTransportSamplesService extends WorkerMonitoringEntitiesService
         foreach ($this->streamRowsInWindow('bucketStart', ['transport', 'bucketStart', ...array_keys($sequenceNamesByProperty)], $from, $to, $transport) as $row) {
             $stepStart = $this->getStepStart($row['bucketStart'], $stepSeconds);
             foreach ($sequenceNamesByProperty as $property => $sequenceName) {
+                $maximaByTransport[(string)$row['transport']][$sequenceName] ??= [];
+                if ($row[$property] === null) {
+                    // the queue could not be counted in this minute
+                    continue;
+                }
                 $maximaByTransport[(string)$row['transport']][$sequenceName][$stepStart] = max(
                     $maximaByTransport[(string)$row['transport']][$sequenceName][$stepStart] ?? 0,
-                    (int)($row[$property] ?? 0)
+                    (int)$row[$property]
                 );
             }
         }
@@ -109,5 +117,59 @@ class WorkerTransportSamplesService extends WorkerMonitoringEntitiesService
             }
         }
         return $workerTransportHistories;
+    }
+
+    /**
+     * The queue and worker state of all transports together in a window: waiting, inFlight, processes. The samples
+     * of a minute are added up over the transports, a step shows its highest minute — what was true at one moment,
+     * not the sum of maxima that were reached at different times. A step without a sample has no value (null).
+     *
+     * @return WorkerTransportHistory The sequences, under an empty transport name
+     */
+    public function findTotalSampleSequences(DateTime $from, DateTime $to, int $stepSeconds): WorkerTransportHistory
+    {
+        $sequenceNamesByProperty = [
+            'waitingMax' => WorkerTransportHistory::SEQUENCE_WAITING,
+            'inFlightMax' => WorkerTransportHistory::SEQUENCE_IN_FLIGHT,
+            'processCountMax' => WorkerTransportHistory::SEQUENCE_PROCESSES,
+        ];
+        $sumsByMinute = array_fill_keys(array_values($sequenceNamesByProperty), []);
+        foreach ($this->streamRowsInWindow('bucketStart', ['bucketStart', ...array_keys($sequenceNamesByProperty)], $from, $to) as $row) {
+            $minuteStart = $this->getStepStart($row['bucketStart'], 60);
+            foreach ($sequenceNamesByProperty as $property => $sequenceName) {
+                if ($row[$property] !== null) {
+                    $sumsByMinute[$sequenceName][$minuteStart] = ($sumsByMinute[$sequenceName][$minuteStart] ?? 0) + (int)$row[$property];
+                }
+            }
+        }
+        $workerTransportHistory = new WorkerTransportHistory();
+        foreach ($sumsByMinute as $sequenceName => $sumByMinute) {
+            $maximaByStepStart = [];
+            foreach ($sumByMinute as $minuteStart => $sum) {
+                $stepStart = intdiv($minuteStart, $stepSeconds) * $stepSeconds;
+                $maximaByStepStart[$stepStart] = max($maximaByStepStart[$stepStart] ?? 0, $sum);
+            }
+            $workerTransportHistory->addSequence($sequenceName, $from, $to, $stepSeconds, $maximaByStepStart);
+        }
+        return $workerTransportHistory;
+    }
+
+    /**
+     * Adds the worker seconds of fixed windows back from $now to the throughputs: per sampled minute the highest
+     * number of live processes × 60. A transport that was sampled and has no throughput yet gets one.
+     *
+     * @param int[] $windowSeconds
+     */
+    public function addWorkerSecondsToThroughputs(
+        WorkerTransportThroughputs $workerTransportThroughputs,
+        DateTime $now,
+        array $windowSeconds = WorkerThroughputWindows::WINDOW_SECONDS
+    ): void {
+        foreach ($this->sumRowsPerTransportAndWindow('bucketStart', ['processCountMax'], $now, $windowSeconds) as $row) {
+            $workerThroughputWindows = $workerTransportThroughputs->getOrCreateByTransport((string)$row['transport'], $windowSeconds)->throughputWindows;
+            foreach ($workerThroughputWindows->getElements() as $workerThroughputWindow) {
+                $workerThroughputWindow->workerSeconds = (int)$row['processCountMax_' . $workerThroughputWindow->windowSeconds] * 60;
+            }
+        }
     }
 }

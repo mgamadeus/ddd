@@ -10,7 +10,8 @@ use DDD\Infrastructure\Base\DateTime\DateTime;
 /**
  * A named time series of {@see DateTimeValue}s — sub-day or day buckets (a chart's line). For a bucketed series
  * {@see self::$stepSeconds} is the bucket size (a chart labels its axis with it) and {@see self::$interval} the window;
- * {@see self::fromValuesByTimestamp()} builds it step-aligned (UTC) and gap-free (empty buckets 0).
+ * {@see self::fromValuesByTimestamp()} builds it step-aligned (UTC) with one point per bucket: an empty bucket is 0,
+ * or null (a gap) for a measure that has no value without a reading.
  * {@see DateValueSequence} stays the day-only series.
  *
  * @property DateTimeValue[] $elements;
@@ -48,13 +49,15 @@ class DateTimeValueSequence extends ObjectSet
      * result and is wrapped here).
      *
      * @param array<int, int|float> $valuesByTimestamp Unix timestamp → value
+     * @param bool $emptyBucketsAreGaps A bucket without a value is null (nothing was measured) instead of 0
      */
     public static function fromValuesByTimestamp(
         string $name,
         DateTime $from,
         DateTime $to,
         int $stepSeconds,
-        array $valuesByTimestamp
+        array $valuesByTimestamp,
+        bool $emptyBucketsAreGaps = false
     ): static {
         $dateTimeValueSequence = new static($name, $stepSeconds);
         $dateTimeValueSequence->interval = new TimeInterval($from, $to);
@@ -65,14 +68,15 @@ class DateTimeValueSequence extends ObjectSet
         }
         $lastBucketStart = self::alignToStep($to->getTimestamp(), $stepSeconds);
         for ($bucketStart = self::alignToStep($from->getTimestamp(), $stepSeconds); $bucketStart <= $lastBucketStart; $bucketStart += $stepSeconds) {
-            $dateTimeValue = new DateTimeValue(DateTime::fromTimestamp($bucketStart), (float)($valuesByBucketStart[$bucketStart] ?? 0));
+            $value = $valuesByBucketStart[$bucketStart] ?? ($emptyBucketsAreGaps ? null : 0);
+            $dateTimeValue = new DateTimeValue(DateTime::fromTimestamp($bucketStart), $value === null ? null : (float)$value);
             $dateTimeValueSequence->add($dateTimeValue);
         }
         return $dateTimeValueSequence;
     }
 
     /**
-     * The values per timestamp (to cache a series or to add series up).
+     * The values per timestamp (to cache a series or to add series up); a gap (null) is left out.
      *
      * @return array<int, float>
      */
@@ -80,7 +84,9 @@ class DateTimeValueSequence extends ObjectSet
     {
         $valuesByTimestamp = [];
         foreach ($this->getElements() as $dateTimeValue) {
-            $valuesByTimestamp[$dateTimeValue->x->getTimestamp()] = (float)$dateTimeValue->y;
+            if ($dateTimeValue->y !== null) {
+                $valuesByTimestamp[$dateTimeValue->x->getTimestamp()] = (float)$dateTimeValue->y;
+            }
         }
         return $valuesByTimestamp;
     }

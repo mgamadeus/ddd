@@ -23,12 +23,22 @@ class WorkersTotals extends ValueObject
 
     public int $handledCountLastHour = 0;
 
-    /** @var DateTimeValueSequences The last hour in minutes: waiting, inFlight, processes, failed, handled */
+    /**
+     * @var DateTimeValueSequences The last hour in minutes: waiting, inFlight, processes (the transports' samples of
+     * the minute added up; null in a minute without a sample), failed, handled
+     */
     public DateTimeValueSequences $sequences;
+
+    /**
+     * @var WorkerThroughputWindows All transports together in the last 5 minutes, 15 minutes, hour and day. A process
+     * that consumes several transports counts its worker seconds for each of them
+     */
+    public WorkerThroughputWindows $throughputWindows;
 
     public function __construct()
     {
         $this->sequences = new DateTimeValueSequences();
+        $this->throughputWindows = WorkerThroughputWindows::fromWindowSeconds();
         parent::__construct();
     }
 }

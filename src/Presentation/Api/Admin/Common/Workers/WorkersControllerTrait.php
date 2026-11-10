@@ -45,7 +45,8 @@ use DDD\Presentation\Base\Router\Routes\Post;
 trait WorkersControllerTrait
 {
     /**
-     * Every transport with its definition, queue, processes, state and the last hour; the totals; the loops.
+     * Every transport with its definition, queue, processes, state and the last hour; the totals; the live processes;
+     * the loops.
      */
     #[Get('/overview')]
     #[Summary('Workers Overview')]
@@ -57,7 +58,7 @@ trait WorkersControllerTrait
     }
 
     /**
-     * The processes, process starts, queue and throughput of every transport in a window.
+     * The processes, process starts, queue and throughput of every transport in a window, and of all together.
      *
      * @throws BadRequestException When the window or the step is not valid
      */
@@ -164,9 +165,7 @@ trait WorkersControllerTrait
         $now = DateTime::fromTimestamp(time());
         $responseDto = new WorkerProcessesGetResponseDto();
         $responseDto->workerProcesses = $workerProcessesService->findWorkerProcessesOfTransport($requestDto->transport);
-        foreach ($responseDto->workerProcesses->getElements() as $workerProcess) {
-            $workerProcess->displayState = $workerProcess->getDisplayState($now, $workersSettings->getLostAfterSeconds(), $workersSettings->busySilentSeconds);
-        }
+        $workerProcessesService->setDisplayStates($responseDto->workerProcesses, $now, $workersSettings->getLostAfterSeconds());
         return $responseDto;
     }
 }

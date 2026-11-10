@@ -15,6 +15,7 @@ class WorkerConsumerDefinition extends ValueObject
     /** Keys of a consumer entry the framework reads; every other key goes to {@see self::$additionalSettings} */
     public const array KNOWN_KEYS = [
         'transport', 'replicas', 'min', 'max', 'scaleDownAfter', 'limit', 'memoryLimit', 'devOnly', 'messageLog',
+        'busySilentSeconds',
     ];
 
     /** @var string The Messenger transport */
@@ -43,6 +44,9 @@ class WorkerConsumerDefinition extends ValueObject
 
     /** @var string|null all, failures or off ({@see WorkersSettings}); null = the application's default */
     public ?string $messageLog = null;
+
+    /** @var int|null Seconds a message of this transport may run before its process is shown as silent; null = the `busySilentSeconds` setting */
+    public ?int $busySilentSeconds = null;
 
     /** @var WorkerDefinitionSettings Keys of the entry the framework does not interpret */
     public WorkerDefinitionSettings $additionalSettings;

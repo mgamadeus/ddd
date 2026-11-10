@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DDD\Domain\Common\Services;
 
+use DDD\Domain\Common\Entities\Workers\WorkerTransportThroughputs;
+use DDD\Domain\Common\Entities\Workers\WorkerThroughputWindows;
 use DDD\Domain\Common\Entities\Workers\WorkerStatBucket;
 use DDD\Domain\Common\Entities\Workers\WorkerMessageClassStat;
 use DDD\Domain\Common\Entities\Workers\WorkerMessageClassStats;
@@ -72,7 +74,8 @@ class WorkerStatBucketsService extends WorkerMonitoringEntitiesService
     /**
      * What the workers did in a window as sequences per transport (all message classes together): handled, thrown,
      * caught, failed, redelivered, durationAverageMs, durationMaxMs, waitAverageMs, waitMaxMs. A transport without a
-     * bucket in the window is not in the result.
+     * bucket in the window is not in the result. The duration sequences have no value (null) in a step without a
+     * handled message, the wait sequences none in a step without a message that carried its dispatch time.
      *
      * @param string|null $transport Only this transport
      */
@@ -95,11 +98,19 @@ class WorkerStatBucketsService extends WorkerMonitoringEntitiesService
         foreach ($sumsByTransport as $transportName => $sums) {
             $failed = [];
             $durationAverage = [];
+            $durationMaximum = [];
             $waitAverage = [];
+            $waitMaximum = [];
             foreach ($sums['handledCount'] as $stepStart => $handledCount) {
                 $failed[$stepStart] = $sums['thrownCount'][$stepStart] + $sums['caughtCount'][$stepStart];
-                $durationAverage[$stepStart] = $handledCount > 0 ? intdiv($sums['durationTotalMs'][$stepStart], $handledCount) : 0;
-                $waitAverage[$stepStart] = $sums['waitCount'][$stepStart] > 0 ? intdiv($sums['waitTotalMs'][$stepStart], $sums['waitCount'][$stepStart]) : 0;
+                if ($handledCount > 0) {
+                    $durationAverage[$stepStart] = intdiv($sums['durationTotalMs'][$stepStart], $handledCount);
+                    $durationMaximum[$stepStart] = $sums['durationMaxMs'][$stepStart];
+                }
+                if ($sums['waitCount'][$stepStart] > 0) {
+                    $waitAverage[$stepStart] = intdiv($sums['waitTotalMs'][$stepStart], $sums['waitCount'][$stepStart]);
+                    $waitMaximum[$stepStart] = $sums['waitMaxMs'][$stepStart];
+                }
             }
             $workerTransportHistory = $workerTransportHistories->getOrCreateByTransport((string)$transportName);
             foreach ([
@@ -109,9 +120,9 @@ class WorkerStatBucketsService extends WorkerMonitoringEntitiesService
                 WorkerTransportHistory::SEQUENCE_FAILED => $failed,
                 WorkerTransportHistory::SEQUENCE_REDELIVERED => $sums['redeliveredCount'],
                 WorkerTransportHistory::SEQUENCE_DURATION_AVERAGE_MS => $durationAverage,
-                WorkerTransportHistory::SEQUENCE_DURATION_MAX_MS => $sums['durationMaxMs'],
+                WorkerTransportHistory::SEQUENCE_DURATION_MAX_MS => $durationMaximum,
                 WorkerTransportHistory::SEQUENCE_WAIT_AVERAGE_MS => $waitAverage,
-                WorkerTransportHistory::SEQUENCE_WAIT_MAX_MS => $sums['waitMaxMs'],
+                WorkerTransportHistory::SEQUENCE_WAIT_MAX_MS => $waitMaximum,
             ] as $sequenceName => $valuesByStepStart) {
                 $workerTransportHistory->addSequence($sequenceName, $from, $to, $stepSeconds, $valuesByStepStart);
             }
@@ -162,5 +173,25 @@ class WorkerStatBucketsService extends WorkerMonitoringEntitiesService
             $workerMessageClassStats->add($workerMessageClassStat);
         }
         return $workerMessageClassStats;
+    }
+
+    /**
+     * What was finished and failed per transport in fixed windows back from $now (handledCount, failedCount). A
+     * transport without a bucket in the longest window is not in the result.
+     *
+     * @param int[] $windowSeconds
+     */
+    public function findThroughputsByTransport(DateTime $now, array $windowSeconds = WorkerThroughputWindows::WINDOW_SECONDS): WorkerTransportThroughputs
+    {
+        $workerTransportThroughputs = new WorkerTransportThroughputs();
+        foreach ($this->sumRowsPerTransportAndWindow('bucketStart', ['handledCount', 'thrownCount', 'caughtCount'], $now, $windowSeconds) as $row) {
+            $workerThroughputWindows = $workerTransportThroughputs->getOrCreateByTransport((string)$row['transport'], $windowSeconds)->throughputWindows;
+            foreach ($workerThroughputWindows->getElements() as $workerThroughputWindow) {
+                $seconds = $workerThroughputWindow->windowSeconds;
+                $workerThroughputWindow->handledCount = (int)$row['handledCount_' . $seconds];
+                $workerThroughputWindow->failedCount = (int)$row['thrownCount_' . $seconds] + (int)$row['caughtCount_' . $seconds];
+            }
+        }
+        return $workerTransportThroughputs;
     }
 }

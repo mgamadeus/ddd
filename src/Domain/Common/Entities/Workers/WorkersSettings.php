@@ -54,6 +54,11 @@ class WorkersSettings extends ValueObject
         public readonly int $busySilentSeconds = 3600,
         /** @var int A stored queue count younger than this is used instead of asking the broker */
         public readonly int $sampleMaxAgeSeconds = 90,
+        /**
+         * @var bool A process with a message in work whose operating-system process no longer exists on the host that
+         * prunes is closed as lost at once. Switch off where processes share a host name without sharing process ids
+         */
+        public readonly bool $closeGoneProcessesOnOwnHost = true,
     ) {
         parent::__construct();
     }
@@ -74,6 +79,7 @@ class WorkersSettings extends ValueObject
             stuckAfterSeconds: max(1, static::intSetting('stuckAfterSeconds', 180)),
             busySilentSeconds: max(1, static::intSetting('busySilentSeconds', 3600)),
             sampleMaxAgeSeconds: max(1, static::intSetting('sampleMaxAgeSeconds', 90)),
+            closeGoneProcessesOnOwnHost: static::boolSetting('closeGoneProcessesOnOwnHost', true),
         );
     }
 

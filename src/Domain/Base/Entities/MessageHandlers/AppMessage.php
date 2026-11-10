@@ -47,6 +47,8 @@ class AppMessage extends ValueObject implements SerializerInterface
     /** @var AppMessageDispatchOrigin|null When and from which route or command the message was dispatched */
     public ?AppMessageDispatchOrigin $dispatchOrigin = null;
 
+    protected static ?AppMessageDispatchOrigin $dispatchOriginOfHandledMessage = null;
+
     /** The properties that describe WHERE a message came from, not WHAT it is about (not message keys) */
     public const array DISPATCH_ORIGIN_PROPERTIES = [
         'accountId', 'tempDirFileName', 'dispatchedFromWorkspaceDir', 'dispatchedFromEnvironment', 'dispatchOrigin',
@@ -141,11 +143,34 @@ class AppMessage extends ValueObject implements SerializerInterface
         return false;
     }
 
-    /** Stamps when and from which route or command the message is dispatched; fail-soft */
+    /**
+     * The dispatch origin of the message a worker handles right now; null outside a handler. A message dispatched by
+     * a handler carries the route or command of the message that led to it instead of the worker's consume command.
+     */
+    public static function getDispatchOriginOfHandledMessage(): ?AppMessageDispatchOrigin
+    {
+        return static::$dispatchOriginOfHandledMessage;
+    }
+
+    public static function setDispatchOriginOfHandledMessage(?AppMessageDispatchOrigin $dispatchOriginOfHandledMessage): void
+    {
+        static::$dispatchOriginOfHandledMessage = $dispatchOriginOfHandledMessage;
+    }
+
+    /**
+     * Stamps when and from which route or command the message is dispatched; inside a handler the route and command
+     * of the handled message ({@see self::getDispatchOriginOfHandledMessage()}). Fail-soft.
+     */
     public function setDispatchOrigin(): void
     {
         $appMessageDispatchOrigin = new AppMessageDispatchOrigin();
         $appMessageDispatchOrigin->dispatchedAt = DateTime::fromTimestamp(time());
+        if (static::$dispatchOriginOfHandledMessage !== null) {
+            $appMessageDispatchOrigin->route = static::$dispatchOriginOfHandledMessage->route;
+            $appMessageDispatchOrigin->command = static::$dispatchOriginOfHandledMessage->command;
+            $this->dispatchOrigin = $appMessageDispatchOrigin;
+            return;
+        }
         try {
             // the container's public id: DDDService::getService() resolves ids through the service class map, and the
             // class alias it maps request_stack to is removed from a compiled container

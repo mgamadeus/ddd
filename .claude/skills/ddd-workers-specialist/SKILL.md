@@ -1,9 +1,9 @@
 ---
 name: ddd-workers-specialist
-description: "Define, monitor and restart the Messenger workers of a mgamadeus/ddd app. Covers the worker list (config/system/workers.yaml, consumers per transport, loops) and its check against the Messenger configuration (app:workers:check, app:workers:list), the worker monitoring (statistics, worker processes with heartbeat and stop reason, queue samples, message runs; Common.Workers settings, WORKERS_ENABLED), app:workers:sample, app:workers:stats, app:workers:restart, WorkersOverviewService (overview, transport detail, history as chart sequences, states IDLE/WORKING/BACKLOG/STUCK) and the admin endpoints via WorkersControllerTrait with a screen guide. Use when messages wait and nothing consumes them, a transport has no worker, how many workers ran when, which message class fails or is slow, restarting workers after a deploy, a process shows LOST or SILENT, the monitoring writes nothing, or building a workers / queues admin screen with charts. NOT for writing a message or handler (use ddd-message-handler-specialist)."
+description: "Define, monitor, read and restart the Messenger workers of a mgamadeus/ddd app. Covers the worker list (config/system/workers.yaml; app:workers:check, app:workers:list), the worker monitoring (statistics, processes, queue samples, message runs; Common.Workers settings) and its console commands with --format=json for agents: app:workers:overview (states, throughput), app:workers:transport, app:workers:history, app:workers:processes, app:workers:runs (failed messages), app:workers:queues (live broker counts), app:workers:stats, app:workers:sample, app:workers:restart; WorkersOverviewService and the admin endpoints with a screen guide. Use when messages wait and nothing consumes them, which message fails or is slow, how many workers ran when, messages per minute or per worker, restarting workers after a deploy, a process shows LOST, SILENT or stays BUSY after a kill, the monitoring writes nothing, or building a workers admin screen. NOT for writing a message or handler (use ddd-message-handler-specialist)."
 metadata:
   author: mgamadeus
-  version: 1.0.0
+  version: 1.1.0
   framework: mgamadeus/ddd
 ---
 
@@ -15,7 +15,7 @@ workers do (monitoring), and a restart request. Writing messages and handlers: `
 ## When to Use
 
 - A transport has no worker, or the worker list and `messenger.yaml` drifted apart
-- Switching the worker monitoring on, reading it from the CLI, or exposing it in an admin API
+- Switching the worker monitoring on, reading it from the console (agents: section 4), or exposing it in an admin API
 - Building a workers / queues admin screen ([references/admin-screen-guide.md](references/admin-screen-guide.md))
 - Restarting workers without access to whatever runs them
 - Reading a process state (LOST, SILENT, stop reason) or a transport state (STUCK, BACKLOG)
@@ -54,6 +54,7 @@ loops:
 | `limit` / `memoryLimit` | the consume command's `--limit` / `--memory-limit` |
 | `devOnly` | not run in production |
 | `messageLog` | `all`, `failures` or `off` for this transport (default: the `messageLog` setting) |
+| `busySilentSeconds` | how long a message of this transport may run before its process is SILENT (default: the setting) |
 
 Loop keys: `name`, `args`, `sleepSeconds`, `prodOnly`. Unknown keys are kept as additional settings for the release
 tooling.
@@ -100,6 +101,7 @@ Opt out for a whole app (nothing is registered): container parameter `ddd.messen
 | `stuckAfterSeconds` (180) | waiting messages without a live process for this long: STUCK |
 | `busySilentSeconds` (3600) | a current message running longer: the process is SILENT |
 | `sampleMaxAgeSeconds` (90) | a stored queue count younger than this is used instead of asking the broker |
+| `closeGoneProcessesOnOwnHost` (true) | a busy process whose operating-system process is gone on the pruning host is closed as LOST at once; switch off where processes share a host name without sharing process ids |
 
 A high-volume transport: set `messageLog: failures` on its consumer; the statistics stay complete.
 
@@ -113,7 +115,12 @@ A high-volume transport: set `messageLog: failures` on its consumer; the statist
 | `WorkerMessageRun` | consumed message (by `messageLog`) | class, transport, process, start, duration, wait, outcome, error, issue group hash |
 
 - **thrown**: an exception left the handler. **caught**: the handler logged an exception through
-  `AppMessageHandler::logThrowableToIssues()` and returned normally. **failed**: thrown and not retried again.
+  `AppMessageHandler::logThrowableToIssues()` and returned normally. **failed**: thrown or caught.
+- **redelivered**: an attempt after the first — and a delivery Messenger refuses because the broker sent the message
+  a second time (`RejectRedeliveredMessageException`): no handler ran, so it counts as redelivered only, not as
+  handled or thrown, and has no message run.
+- A message dispatched by a handler carries the route or command of the message that led to it
+  (`dispatchedFromRoute` / `dispatchedFromCommand`), not the worker's consume command.
 - A queue count has a state: `COUNTED`, `QUEUE_NOT_SET_UP` (the queue does not exist yet) or `UNKNOWN` (the
   transport cannot be counted, or the broker did not answer). The count uses the transport's own connection and
   never creates a queue.
@@ -122,13 +129,38 @@ A high-volume transport: set `messageLog: failures` on its consumer; the statist
   process. A process closed as lost that reports again is running again.
 - The tables are readable and writable by admin accounts; the framework's own writes switch rights off.
 
-## 4. CLI
+## 4. From the console (agents)
+
+Everything the admin endpoints return is readable from the console. `--format=json` prints the payload of the
+matching endpoint as one object (`{"workersOverview": {...}}`); the default is a table. Reading needs no account.
+
+| Question | Command | JSON property (endpoint) |
+|---|---|---|
+| What is going on now? | `app:workers:overview [--transport=T] [--onlyActive]` | `workersOverview` (`/overview`) |
+| One transport over time | `app:workers:transport T [--since=60 \| --from= --to=] [--stepSeconds=] [--sequences]` | `workerTransportDetail` (`/transports/{transport}`) |
+| All transports over time | `app:workers:history [--since= \| --from= --to=] [--stepSeconds=] [--transport=T]… [--sequence=S]…` | `workersHistory` (`/history`) |
+| Which processes ran, why did they stop? | `app:workers:processes [T] [--live] [--state=] [--stopReason=] [--since=] [--limit=50]` | `workerProcesses` (`/transports/{transport}/processes`) |
+| Which messages failed, with which error? | `app:workers:runs [T] [--outcome=FAILED] [--messageClass='*Import*'] [--processKey=] [--since=] [--limit=50]` | `workerMessageRuns` (`/transports/{transport}/messageRuns`) |
+| How many messages wait at the broker right now? | `app:workers:queues [T…]` | `workerQueueCounts` (no endpoint) |
+| Totals per transport and message class | `app:workers:stats --since=60 [--transport=T]` | a set of summed stat buckets |
 
 ```bash
-php bin/console app:workers:stats --since=60 [--transport=send_mail] [--format=json]   # per transport and class
-php bin/console app:workers:restart [transport] [--dryRun]     # asks the live processes to stop after their message
-php bin/console app:workers:sample                             # one sample of every consumed transport + prune
+php bin/console app:workers:overview --onlyActive                      # states, queue, throughput windows
+php bin/console app:workers:runs import_files --outcome=FAILED --since=120 --format=json
+php bin/console app:workers:processes --stopReason=LOST --since=1440   # who vanished in the last day
+php bin/console app:workers:transport send_mail --since=360 --sequences
+php bin/console app:workers:restart [transport] [--dryRun]             # asks the live processes to stop after their message
+php bin/console app:workers:sample                                     # one sample of every consumed transport + prune
 ```
+
+- `--since` is minutes back from now; `--from` / `--to` are UTC date-times. `--limit` is at most 1000.
+- `processes` and `runs` work with and without a transport; `--state` filters the stored state (`RUNNING`,
+  `STOPPING`, `STOPPED`), `--live` uses the display state (the other filters are then not applied).
+- `--outcome`: `HANDLED`, `CAUGHT`, `THROWN` or `FAILED` (caught or thrown). `--messageClass` takes `*` as wildcard.
+- `overview` and `stats` print the throughput windows per transport: finished messages, per minute, per worker
+  minute, failed — for the last 5 minutes, 15 minutes, hour and day.
+- `queues` asks the broker and writes nothing; it works with the monitoring off. Every other read shows a note on the
+  error output when the monitoring is off. The exit code is 1 only for an invalid argument or an unknown transport.
 
 After a deploy that changes code the workers run: `app:workers:restart` (needs the monitoring: the processes must be
 known). A process answers at its next tick — after its current message.
@@ -138,7 +170,7 @@ known). A process answers at its next tick — after its current message.
 ```php
 /** @var WorkersOverviewService $workersOverviewService */
 $workersOverviewService = DDDService::instance()->getService(WorkersOverviewService::class);
-$workersOverview = $workersOverviewService->getWorkersOverview();                 // every transport now + last hour
+$workersOverview = $workersOverviewService->getWorkersOverview();                 // every transport now + last hour + live processes
 $workerTransportDetail = $workersOverviewService->getWorkerTransportDetail('send_mail', $from, $to, 300);
 $workersHistory = $workersOverviewService->getWorkersHistory($from, $to, null);   // null: step chosen by the window
 ```
@@ -146,7 +178,15 @@ $workersHistory = $workersOverviewService->getWorkersHistory($from, $to, null); 
 - Steps: 60, 300, 900 or 3600 seconds; at most 1500 points per sequence, else `BadRequestException`.
 - Sequences are `DateTimeValueSequence` chart objects, named by `WorkerTransportHistory::SEQUENCE_*`: `handled`,
   `thrown`, `caught`, `failed`, `redelivered`, `durationAverageMs`, `durationMaxMs`, `waitAverageMs`, `waitMaxMs`,
-  `waiting`, `inFlight`, `processes`, `processStarts`.
+  `waiting`, `inFlight`, `processes`, `processStarts`. One point per step. A count without an event is 0; a measure
+  without a reading is null (`WorkerTransportHistory::GAP_SEQUENCES`: `waiting`, `inFlight`, `processes` in a step
+  without a sample, the duration sequences without a handled message, the wait sequences without a dispatch time).
+- The overview names its windows: `sequenceWindowSeconds` (3600), `stepSeconds` (60), `recentWindowSeconds` (900, the
+  counts and averages of a transport). `throughputWindows` (per transport and in `totals`): `windowSeconds` 300, 900,
+  3600, 86400 with `handledCount`, `failedCount`, `workerSeconds` — rate = count ÷ minutes, rate per worker = count ÷
+  worker minutes (`WorkerThroughputWindow::getHandledPerMinute()`, `getHandledPerWorkerMinute()`).
+- Totals of all transports (`workersHistory.totals`, the overview's total sequences): counts are sums; `waiting`,
+  `inFlight` and `processes` add up the transports' samples of one minute and show the highest minute of a step.
 - Transport state (`WorkerTransportOverview::STATE_*`), the first that applies:
 
 | State | Condition |
@@ -158,7 +198,8 @@ $workersHistory = $workersOverviewService->getWorkersHistory($from, $to, null); 
 | `WORKING` | messages in work, none waiting |
 | `IDLE` | nothing to do |
 
-- Process display state (`WorkerProcess::getDisplayState()`): `RUNNING`, `BUSY`, `SILENT`, `STOPPED`, `LOST`.
+- Process display state (`WorkerProcess::getDisplayState()`): `RUNNING`, `STOPPING`, `BUSY`, `SILENT`, `STOPPED`,
+  `LOST`. `WorkerProcessesService::setDisplayStates()` sets it on a set with each process' own `busySilentSeconds`.
 - Lists of runs and processes of a transport: `WorkerMessageRunsService::findWorkerMessageRunsOfTransport()`,
   `WorkerProcessesService::findWorkerProcessesOfTransport()` — the set's default QueryOptions apply on top and cannot
   leave the transport.
@@ -186,6 +227,9 @@ Routes, payloads and the screen: [references/admin-screen-guide.md](references/a
 | Log: "Worker monitoring paused … after a failed write" | the message names the cause (missing table or column, database down); the issues log has it once per process |
 | Process LOST while its container runs | no heartbeat and no current message: the process hangs outside a handler, or its writes fail (see above) |
 | Process stays RUNNING after it was killed | it is closed as LOST by the next prune (sampler command or another worker's flush) after 12 heartbeat intervals |
+| Process stays BUSY after it was killed | a prune on the same host closes it at once; from another host only after twice its `busySilentSeconds` — set the consumer's `busySilentSeconds` to what its longest job needs |
+| A running BUSY process is closed as LOST | containers share a host name without sharing process ids: `closeGoneProcessesOnOwnHost: false` |
+| A chart shows no line for minutes | a gap (null): no sample or no handled message in those steps — not a zero |
 | Transport STUCK with processes in the list of the orchestrator | the processes did not register: they crash before the worker starts — run the consume command in the foreground |
 | Queue count state `QUEUE_NOT_SET_UP` | nothing dispatched or consumed yet on this broker; the count never declares a queue |
 | No wait times | the message carries no dispatch time (dispatched by an older release, or not through the bus) |

@@ -146,6 +146,9 @@ class WorkerProcess extends Entity
     public ?DateTime $restartRequestedAt;
 
     /** @var string|null Not stored: {@see self::getDisplayState()} at the time the row was read */
+    #[Choice(choices: [
+        self::STATE_RUNNING, self::STATE_STOPPING, self::DISPLAY_STATE_BUSY, self::DISPLAY_STATE_SILENT, self::STATE_STOPPED, self::DISPLAY_STATE_LOST,
+    ])]
     #[DatabaseColumn(ignoreProperty: true)]
     public ?string $displayState = null;
 

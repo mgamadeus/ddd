@@ -6,7 +6,7 @@ namespace DDD\Domain\Common\Entities\Workers;
 
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Domain\Common\Entities\Charts\DateTimeValueSequences;
-use DDD\Domain\Common\Entities\Charts\TimeInterval;
+use DDD\Domain\Common\Entities\Charts\UtcTimeInterval;
 
 /**
  * One transport in a window: its overview row, every sequence ({@see WorkerTransportHistory} names), what its workers
@@ -16,7 +16,7 @@ class WorkerTransportDetail extends ValueObject
 {
     public WorkerTransportOverview $transport;
 
-    public TimeInterval $interval;
+    public UtcTimeInterval $interval;
 
     /** @var int Bucket size of every sequence in seconds */
     public int $stepSeconds = 60;
@@ -31,7 +31,7 @@ class WorkerTransportDetail extends ValueObject
     public function __construct()
     {
         $this->transport = new WorkerTransportOverview();
-        $this->interval = new TimeInterval();
+        $this->interval = new UtcTimeInterval();
         $this->sequences = new DateTimeValueSequences();
         $this->messageClasses = new WorkerMessageClassStats();
         $this->processes = new WorkerProcesses();

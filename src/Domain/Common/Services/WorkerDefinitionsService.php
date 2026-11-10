@@ -9,6 +9,7 @@ use DDD\Domain\Common\Entities\Workers\WorkerDefinitions;
 use DDD\Domain\Common\Entities\Workers\WorkerDefinitionSetting;
 use DDD\Domain\Common\Entities\Workers\WorkerDefinitionSettings;
 use DDD\Domain\Common\Entities\Workers\WorkerLoopDefinition;
+use DDD\Domain\Common\Entities\Workers\WorkerProcess;
 use DDD\Domain\Common\Entities\Workers\WorkersCheckFinding;
 use DDD\Domain\Common\Entities\Workers\WorkersCheckFindings;
 use DDD\Domain\Common\Entities\Workers\WorkersSettings;
@@ -103,6 +104,8 @@ class WorkerDefinitionsService extends Service
             $workerConsumerDefinition->memoryLimit = isset($consumerEntry['memoryLimit']) ? (string)$consumerEntry['memoryLimit'] : null;
             $workerConsumerDefinition->devOnly = (bool)($consumerEntry['devOnly'] ?? false);
             $workerConsumerDefinition->messageLog = isset($consumerEntry['messageLog']) ? strtolower((string)$consumerEntry['messageLog']) : null;
+            $busySilentSeconds = $this->getIntOrNull($consumerEntry, 'busySilentSeconds');
+            $workerConsumerDefinition->busySilentSeconds = $busySilentSeconds !== null && $busySilentSeconds > 0 ? $busySilentSeconds : null;
             $workerConsumerDefinition->additionalSettings = $this->createAdditionalSettings($consumerEntry, WorkerConsumerDefinition::KNOWN_KEYS);
             if ($workerDefinitions->consumers->getByTransport($workerConsumerDefinition->transport) !== null) {
                 $workerDefinitions->duplicateTransports[] = $workerConsumerDefinition->transport;
@@ -135,6 +138,30 @@ class WorkerDefinitionsService extends Service
             // an unreadable worker list must not stop a worker: the default applies
         }
         return in_array($messageLog, WorkersSettings::MESSAGE_LOG_MODES, true) ? $messageLog : $this->getSettings()->messageLog;
+    }
+
+    /**
+     * How long a message of this process may run before the process is shown as silent: the `busySilentSeconds` of
+     * its transport's consumer entry, else the setting. A process that consumes several transports gets the longest.
+     */
+    public function getBusySilentSecondsForWorkerProcess(WorkerProcess $workerProcess): int
+    {
+        $defaultBusySilentSeconds = $this->getSettings()->busySilentSeconds;
+        $transportNames = $workerProcess->getTransportNames();
+        if ($transportNames === []) {
+            return $defaultBusySilentSeconds;
+        }
+        try {
+            $consumers = $this->getWorkerDefinitions()->consumers;
+        } catch (Throwable) {
+            // an unreadable worker list must not stop a worker: the default applies
+            return $defaultBusySilentSeconds;
+        }
+        $busySilentSeconds = 0;
+        foreach ($transportNames as $transportName) {
+            $busySilentSeconds = max($busySilentSeconds, $consumers->getByTransport($transportName)?->busySilentSeconds ?? $defaultBusySilentSeconds);
+        }
+        return $busySilentSeconds;
     }
 
     /**

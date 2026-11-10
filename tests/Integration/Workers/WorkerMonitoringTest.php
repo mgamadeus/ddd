@@ -29,6 +29,8 @@ use DDD\Tests\Integration\Workers\Fixtures\FixtureWorkerAppMessage;
 use DDD\Tests\Integration\Workers\Fixtures\FixtureWorkerMonitoringService;
 use DDD\Tests\Integration\Workers\Fixtures\FixtureWorkerQueuesService;
 use DDD\Tests\Integration\Workers\Fixtures\FixtureWorkersOverviewService;
+use DDD\Symfony\Commands\Common\Workers\WorkersProcesses;
+use DDD\Symfony\Commands\Common\Workers\WorkersRuns;
 use DDD\Symfony\EventListeners\WorkerMonitoringSubscriber;
 use DDD\Symfony\Messenger\Middleware\WorkerMonitoringMiddleware;
 use RuntimeException;
@@ -36,7 +38,9 @@ use stdClass;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\EventListener\StopWorkerOnMessageLimitListener;
+use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\Messenger\Exception\HandlerFailedException;
+use Symfony\Component\Messenger\Exception\RejectRedeliveredMessageException;
 use Symfony\Component\Messenger\Handler\HandlersLocator;
 use Symfony\Component\Messenger\MessageBus;
 use Symfony\Component\Messenger\Middleware\HandleMessageMiddleware;
@@ -499,6 +503,32 @@ class WorkerMonitoringTest extends IntegrationTestCase
         self::assertSame(5, $workersOverview->totals->failedCountLastHour);
         self::assertSame(1, $workersOverview->totals->liveProcessCount);
         self::assertCount(5, $workersOverview->totals->sequences->getElements());
+        self::assertSame(900, $workersOverview->recentWindowSeconds);
+        self::assertSame(3600, $workersOverview->sequenceWindowSeconds);
+        self::assertSame([$workerMonitoringService->getProcessKey()], array_map(static fn(WorkerProcess $workerProcess): string => $workerProcess->processKey, $workersOverview->processes->getElements()));
+        self::assertSame(WorkerProcess::STATE_RUNNING, $workersOverview->processes->getElements()[0]->displayState);
+        // a minute without a sample is a gap, a count without an event is 0
+        $waitingValues = array_map(static fn($dateTimeValue) => $dateTimeValue->y, $sendMail->sequences->getByUniqueKey(DateTimeValueSequence::uniqueKeyStatic(WorkerTransportHistory::SEQUENCE_WAITING))->getElements());
+        self::assertSame([2.0, 2.0, 2.0, 2.0, 2.0], array_slice($waitingValues, -5));
+        self::assertSame([null], array_values(array_unique(array_slice($waitingValues, 0, -5))));
+        self::assertNotNull($sendMail->sequences->getByUniqueKey(DateTimeValueSequence::uniqueKeyStatic(WorkerTransportHistory::SEQUENCE_PROCESSES)));
+        self::assertSame(0.0, $handledSequence->getElements()[0]->y);
+        $totalWaitingValues = array_map(static fn($dateTimeValue) => $dateTimeValue->y, $workersOverview->totals->sequences->getByUniqueKey(DateTimeValueSequence::uniqueKeyStatic(WorkerTransportHistory::SEQUENCE_WAITING))->getElements());
+        self::assertSame([11.0, 11.0, 11.0, 11.0, 11.0], array_slice($totalWaitingValues, -5), 'the transports of one minute added up');
+        self::assertNull($totalWaitingValues[0]);
+        // throughput windows: all ten messages lie in the last five minutes; one process was sampled in five minutes
+        self::assertSame([300, 900, 3600, 86400], array_map(static fn($workerThroughputWindow): int => $workerThroughputWindow->windowSeconds, $sendMail->throughputWindows->getElements()));
+        foreach ([$sendMail->throughputWindows, $workersOverview->totals->throughputWindows] as $workerThroughputWindows) {
+            foreach ($workerThroughputWindows->getElements() as $workerThroughputWindow) {
+                self::assertSame(10, $workerThroughputWindow->handledCount, (string)$workerThroughputWindow->windowSeconds);
+                self::assertSame(5, $workerThroughputWindow->failedCount);
+                self::assertSame(300, $workerThroughputWindow->workerSeconds);
+                self::assertSame(2.0, $workerThroughputWindow->getHandledPerWorkerMinute());
+            }
+        }
+        self::assertSame(2.0, $sendMail->throughputWindows->getByWindowSeconds(300)->getHandledPerMinute());
+        self::assertSame(0, $importFiles->throughputWindows->getByWindowSeconds(86400)->handledCount);
+        self::assertNull($importFiles->throughputWindows->getByWindowSeconds(86400)->getHandledPerWorkerMinute());
 
         $workerTransportDetail = $this->withoutRights(static fn() => $workersOverviewService->getWorkerTransportDetail(self::TRANSPORT));
         self::assertSame(60, $workerTransportDetail->stepSeconds);
@@ -512,6 +542,10 @@ class WorkerMonitoringTest extends IntegrationTestCase
         self::assertSame(5.0, $sequenceTotals[WorkerTransportHistory::SEQUENCE_FAILED]);
         self::assertSame(1.0, $sequenceTotals[WorkerTransportHistory::SEQUENCE_PROCESS_STARTS]);
         self::assertSame(5 * 300.0, $sequenceTotals[WorkerTransportHistory::SEQUENCE_DURATION_AVERAGE_MS]);
+        $durationValues = array_map(static fn($dateTimeValue) => $dateTimeValue->y, $workerTransportDetail->sequences->getByUniqueKey(DateTimeValueSequence::uniqueKeyStatic(WorkerTransportHistory::SEQUENCE_DURATION_AVERAGE_MS))->getElements());
+        self::assertNull($durationValues[0], 'no message was handled in that minute: no duration, not 0 ms');
+        $serializedDetail = json_decode((string)json_encode($workerTransportDetail->toObject(cached: false, forPersistence: false)), true);
+        self::assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $serializedDetail['interval']['startDate']);
         self::assertSame(5 * 2.0, $sequenceTotals[WorkerTransportHistory::SEQUENCE_WAITING]);
         self::assertSame(5 * 1.0, $sequenceTotals[WorkerTransportHistory::SEQUENCE_PROCESSES]);
         self::assertCount(1, $workerTransportDetail->messageClasses->getElements());
@@ -531,6 +565,12 @@ class WorkerMonitoringTest extends IntegrationTestCase
         self::assertSame(0.0, $importHistory->getSequence(WorkerTransportHistory::SEQUENCE_PROCESSES)->getTotal());
         self::assertSame(10.0, $workersHistory->transports->getByTransport(self::TRANSPORT)->getSequence(WorkerTransportHistory::SEQUENCE_HANDLED)->getTotal());
         self::assertSame(1.0, $workersHistory->transports->getByTransport(self::TRANSPORT)->getSequence(WorkerTransportHistory::SEQUENCE_PROCESS_STARTS)->getTotal());
+        self::assertCount(6, $workersHistory->totals->sequences->getElements());
+        self::assertSame(11.0, max($workersHistory->totals->getSequence(WorkerTransportHistory::SEQUENCE_WAITING)->getValuesByTimestamp()), 'send_mail 2 + import_files 9 in the same minute');
+        self::assertSame(1.0, max($workersHistory->totals->getSequence(WorkerTransportHistory::SEQUENCE_PROCESSES)->getValuesByTimestamp()));
+        self::assertSame(10.0, $workersHistory->totals->getSequence(WorkerTransportHistory::SEQUENCE_HANDLED)->getTotal());
+        self::assertSame(5.0, $workersHistory->totals->getSequence(WorkerTransportHistory::SEQUENCE_FAILED)->getTotal());
+        self::assertNull($workersHistory->totals->getSequence(WorkerTransportHistory::SEQUENCE_WAITING)->getElements()[0]->y);
 
         $this->expectException(BadRequestException::class);
         $workersOverviewService->getWorkersHistory(DateTime::fromTimestamp((int)$workerMonitoringService->currentTime - 14 * 86400), null, 60);
@@ -562,5 +602,89 @@ class WorkerMonitoringTest extends IntegrationTestCase
             WorkerMessageRuns::restoreDefaultQueryOptionsSnapshot();
         }
         self::assertSame([self::TRANSPORT], array_map(static fn(WorkerMessageRun $workerMessageRun): string => $workerMessageRun->transport, $runs->getElements()));
+    }
+
+    public function testAMessageMessengerRefusesAsRedeliveredCountsAsRedeliveredOnly(): void
+    {
+        $workerMonitoringService = $this->createMonitoring(1);
+        $workerMonitoringService->registerWorker([self::TRANSPORT]);
+        $this->runMessage($workerMonitoringService, 0.1);
+        $this->runMessage($workerMonitoringService, 0.0, thrown: new RejectRedeliveredMessageException('Redelivered message from AMQP detected that will be rejected and trigger the retry logic.'));
+        $workerMonitoringService->flush();
+        $workerMonitoringService->tickHeartbeat();
+        self::assertNull($workerMonitoringService->lastFailure, (string)$workerMonitoringService->lastFailure?->getMessage());
+
+        $bucket = $this->rows(WorkerStatBucket::class)[0];
+        self::assertSame(1, (int)$bucket['handledCount'], 'no handler ran for the refused delivery');
+        self::assertSame(0, (int)$bucket['thrownCount']);
+        self::assertSame(1, (int)$bucket['redeliveredCount']);
+        self::assertSame([WorkerMessageRun::OUTCOME_HANDLED], array_column($this->rows(WorkerMessageRun::class), 'outcome'));
+        $process = $this->rows(WorkerProcess::class)[0];
+        self::assertSame(1, (int)$process['handledCount']);
+        self::assertSame(0, (int)$process['failedCount']);
+    }
+
+    public function testABusyProcessWhoseOperatingSystemProcessIsGoneOnThisHostIsClosedAtOnce(): void
+    {
+        // no operating system has a process with this id; the running test process is the one that exists
+        $killedProcess = $this->createMonitoring(4194000);
+        $killedProcess->registerWorker([self::TRANSPORT]);
+        $killedProcess->startMessage(new Envelope(new stdClass(), [new ReceivedStamp(self::TRANSPORT)]));
+        $busyProcess = $this->createMonitoring((int)getmypid());
+        $busyProcess->registerWorker([self::TRANSPORT]);
+        $busyProcess->startMessage(new Envelope(new stdClass(), [new ReceivedStamp(self::TRANSPORT)]));
+        self::assertNull($killedProcess->lastFailure, (string)$killedProcess->lastFailure?->getMessage());
+        $statesByProcessId = fn(): array => array_column($this->rows(WorkerProcess::class), 'state', 'processId');
+        self::assertSame([WorkerProcess::STATE_RUNNING, WorkerProcess::STATE_RUNNING], array_values($statesByProcessId()));
+
+        $samplerOnAnotherSetting = $this->createMonitoring(7, new WorkersSettings(enabled: true, closeGoneProcessesOnOwnHost: false));
+        $samplerOnAnotherSetting->currentTime += 60;
+        $this->withoutRights(static fn() => $samplerOnAnotherSetting->prune());
+        self::assertSame(WorkerProcess::STATE_RUNNING, $statesByProcessId()[4194000], 'switched off: a busy process is not asked about');
+
+        $sampler = $this->createMonitoring(7);
+        $sampler->currentTime += 60;
+        $this->withoutRights(static fn() => $sampler->prune());
+
+        $rowsByProcessId = array_column($this->rows(WorkerProcess::class), null, 'processId');
+        self::assertSame(WorkerProcess::STATE_STOPPED, $rowsByProcessId[4194000]['state']);
+        self::assertSame(WorkerProcess::STOP_REASON_LOST, $rowsByProcessId[4194000]['stopReason']);
+        self::assertNull($rowsByProcessId[4194000]['currentMessageClass']);
+        self::assertSame(WorkerProcess::STATE_RUNNING, $rowsByProcessId[(int)getmypid()]['state'], 'a busy process that exists stays');
+    }
+
+    public function testTheConsoleListsRunsAndProcessesAsTheEndpointsDo(): void
+    {
+        $workerMonitoringService = $this->createMonitoring(1);
+        $workerMonitoringService->registerWorker([self::TRANSPORT]);
+        $this->runMessage($workerMonitoringService, 0.1);
+        $this->runMessage($workerMonitoringService, 0.2, caught: new RuntimeException("it's broken"));
+        $workerMonitoringService->startMessage(new Envelope(new stdClass(), [new ReceivedStamp('other_transport')]));
+        $workerMonitoringService->finishMessage(new RuntimeException('thrown'));
+        $workerMonitoringService->flush();
+        $workerMonitoringService->tickHeartbeat();
+        self::assertNull($workerMonitoringService->lastFailure, (string)$workerMonitoringService->lastFailure?->getMessage());
+
+        $runsCommand = new CommandTester(new WorkersRuns());
+        $runsCommand->execute(['--format' => 'json']);
+        $allRuns = json_decode($runsCommand->getDisplay(), true)['workerMessageRuns']['elements'];
+        self::assertCount(3, $allRuns);
+        $runsCommand->execute(['transport' => self::TRANSPORT, '--outcome' => 'failed', '--messageClass' => 'std*', '--format' => 'json']);
+        $failedRuns = json_decode($runsCommand->getDisplay(), true)['workerMessageRuns']['elements'];
+        self::assertSame([WorkerMessageRun::OUTCOME_CAUGHT], array_column($failedRuns, 'outcome'));
+        self::assertSame("it's broken", $failedRuns[0]['errorMessage']);
+        $runsCommand->execute(['--limit' => '1']);
+        self::assertStringContainsString('1 run(s)', $runsCommand->getDisplay());
+        self::assertSame(0, $runsCommand->getStatusCode());
+
+        $processesCommand = new CommandTester(new WorkersProcesses());
+        $processesCommand->execute(['transport' => self::TRANSPORT, '--state' => 'running', '--format' => 'json']);
+        $processes = json_decode($processesCommand->getDisplay(), true)['workerProcesses']['elements'];
+        self::assertSame([$workerMonitoringService->getProcessKey()], array_column($processes, 'processKey'));
+        self::assertSame(WorkerProcess::STATE_RUNNING, $processes[0]['displayState'], 'each process carries its display state');
+        $processesCommand->execute(['--stopReason' => 'LOST']);
+        self::assertStringContainsString('0 process(es)', $processesCommand->getDisplay());
+        $processesCommand->execute(['transport' => 'not_consumed']);
+        self::assertStringContainsString('0 process(es)', $processesCommand->getDisplay());
     }
 }

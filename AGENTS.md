@@ -660,8 +660,9 @@ Entities `Cron` and `CronExecution` in `Domain/Common/Entities/Crons/` provide s
 The Messenger workers of an application: the worker list (`config/system/workers.yaml`, checked against the Messenger
 configuration by `app:workers:check`) and the opt-in worker monitoring (`Common.Workers` `enabled`): statistics,
 worker processes, queue samples and message runs in `Domain/Common/Entities/Workers/`, read through
-`WorkersOverviewService`, the commands `app:workers:list` / `check` / `sample` (every minute) / `stats` / `restart`
-and the admin endpoints of `WorkersControllerTrait` (`Presentation/Api/Admin/Common/Workers/`). The framework observes
+`WorkersOverviewService`, the commands `app:workers:list` / `check` / `sample` (every minute) / `restart`, the
+reading commands `app:workers:overview` / `transport` / `history` / `processes` / `runs` / `queues` / `stats`
+(`--format=json`: the payload of the matching admin endpoint) and the admin endpoints of `WorkersControllerTrait` (`Presentation/Api/Admin/Common/Workers/`). The framework observes
 and asks for a restart; it never starts or scales a process. Details: `ddd-workers-specialist`.
 
 ### Object Storage

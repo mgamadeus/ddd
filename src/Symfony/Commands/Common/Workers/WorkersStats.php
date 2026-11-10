@@ -6,6 +6,9 @@ namespace DDD\Symfony\Commands\Common\Workers;
 
 use DDD\Domain\Common\Entities\Workers\WorkerStatBucket;
 use DDD\Domain\Common\Entities\Workers\WorkerStatBuckets;
+use DDD\Domain\Common\Entities\Workers\WorkerTransportSamples;
+use DDD\Domain\Common\Entities\Workers\WorkerTransportThroughput;
+use DDD\Domain\Common\Entities\Workers\WorkerTransportThroughputs;
 use DDD\Infrastructure\Base\DateTime\DateTime;
 use DDD\Infrastructure\Services\DDDService;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -17,9 +20,9 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
     name: 'app:workers:stats',
-    description: 'Shows what the workers handled per transport and message class in a time window (worker monitoring): counts, failures, duration, wait'
+    description: 'Shows what the workers handled per transport and message class in a time window (worker monitoring): counts, failures, duration, wait; plus the throughput per transport in the last 5 minutes, 15 minutes, hour and day'
 )]
-class WorkersStats extends Command
+class WorkersStats extends WorkersReport
 {
     protected function configure(): void
     {
@@ -35,6 +38,7 @@ class WorkersStats extends Command
         $transport = $input->getOption('transport');
         $transport = is_string($transport) && $transport !== '' ? $transport : null;
         $now = time();
+        $workerTransportThroughputs = new WorkerTransportThroughputs();
         DDDService::instance()->deactivateEntityRightsRestrictions();
         try {
             $workerStatBuckets = WorkerStatBuckets::getService()->findWorkerStatBucketsInWindow(
@@ -42,6 +46,9 @@ class WorkersStats extends Command
                 DateTime::fromTimestamp($now),
                 $transport
             );
+            if ($input->getOption('format') !== self::FORMAT_JSON) {
+                $workerTransportThroughputs = $this->findThroughputs(DateTime::fromTimestamp($now), $transport);
+            }
         } finally {
             DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
         }
@@ -95,6 +102,27 @@ class WorkersStats extends Command
                 $totals->getElements()
             )
         );
+        $this->renderThroughputTable($symfonyStyle, $workerTransportThroughputs);
         return Command::SUCCESS;
+    }
+
+    /** The throughput windows per transport and, without a transport filter, of all together */
+    protected function findThroughputs(DateTime $now, ?string $transport): WorkerTransportThroughputs
+    {
+        $allWorkerTransportThroughputs = WorkerStatBuckets::getService()->findThroughputsByTransport($now);
+        WorkerTransportSamples::getService()->addWorkerSecondsToThroughputs($allWorkerTransportThroughputs, $now);
+        $workerTransportThroughputs = new WorkerTransportThroughputs();
+        $total = new WorkerTransportThroughput(self::ALL_TRANSPORTS_LABEL);
+        foreach ($allWorkerTransportThroughputs->getElements() as $workerTransportThroughput) {
+            if ($transport !== null && $workerTransportThroughput->transport !== $transport) {
+                continue;
+            }
+            $workerTransportThroughputs->add($workerTransportThroughput);
+            $total->throughputWindows->addCountsOf($workerTransportThroughput->throughputWindows);
+        }
+        if ($transport === null) {
+            $workerTransportThroughputs->add($total);
+        }
+        return $workerTransportThroughputs;
     }
 }

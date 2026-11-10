@@ -22,6 +22,7 @@ use DDD\Infrastructure\Services\IssuesLogService;
 use DDD\Infrastructure\Services\Service;
 use Psr\Log\LogLevel;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Exception\RejectRedeliveredMessageException;
 use Symfony\Component\Messenger\Exception\WrappedExceptionsInterface;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
@@ -67,6 +68,8 @@ class WorkerMonitoringService extends Service
     public const int MAX_PENDING_MESSAGE_RUNS = 2000;
     /** An idle process without a heartbeat is closed as lost after this many heartbeat intervals */
     public const int CLOSE_LOST_AFTER_HEARTBEATS = 12;
+    /** ESRCH: the operating system has no process with the asked id */
+    public const int POSIX_ERROR_NO_SUCH_PROCESS = 3;
 
     protected ?WorkersSettings $workersSettings = null;
 
@@ -211,6 +214,13 @@ class WorkerMonitoringService extends Service
             $now = $this->getCurrentTime();
             $workerMessageRun->durationMs = max(0, (int)round(($now - $this->currentMessageStartedAt) * 1000));
             $errorThrowable = $thrownThrowable !== null ? $this->unwrapThrowable($thrownThrowable) : $this->currentCaughtThrowable;
+            if ($thrownThrowable !== null && $errorThrowable instanceof RejectRedeliveredMessageException) {
+                // the broker delivered the message a second time and Messenger refused it before a handler ran:
+                // nothing was handled and nothing failed
+                $this->currentCaughtThrowable = null;
+                $this->getPendingWorkerStatBucket($workerMessageRun, $now)->redeliveredCount++;
+                return;
+            }
             $workerMessageRun->outcome = match (true) {
                 $thrownThrowable !== null => WorkerMessageRun::OUTCOME_THROWN,
                 $errorThrowable !== null => WorkerMessageRun::OUTCOME_CAUGHT,
@@ -252,16 +262,7 @@ class WorkerMonitoringService extends Service
 
     protected function addToPendingWorkerStatBucket(WorkerMessageRun $workerMessageRun, float $now): void
     {
-        $this->pendingWorkerStatBuckets ??= new WorkerStatBuckets();
-        $candidate = new WorkerStatBucket();
-        $candidate->transport = $workerMessageRun->transport;
-        $candidate->messageClass = $workerMessageRun->messageClass;
-        $candidate->bucketStart = $this->getMinuteStart($now);
-        $workerStatBucket = $this->pendingWorkerStatBuckets->getByUniqueKey($candidate->uniqueKey());
-        if ($workerStatBucket === null) {
-            $workerStatBucket = $candidate;
-            $this->pendingWorkerStatBuckets->add($workerStatBucket);
-        }
+        $workerStatBucket = $this->getPendingWorkerStatBucket($workerMessageRun, $now);
         $workerStatBucket->handledCount++;
         $workerStatBucket->durationTotalMs += $workerMessageRun->durationMs;
         $workerStatBucket->durationMaxMs = max($workerStatBucket->durationMaxMs, $workerMessageRun->durationMs);
@@ -519,6 +520,22 @@ class WorkerMonitoringService extends Service
      * flush every {@see self::PRUNE_INTERVAL_SECONDS} and with the sampler command, so every run deletes little.
      * The caller switches rights restrictions off.
      */
+    /** The not yet written bucket of the run's transport, message class and minute */
+    protected function getPendingWorkerStatBucket(WorkerMessageRun $workerMessageRun, float $now): WorkerStatBucket
+    {
+        $this->pendingWorkerStatBuckets ??= new WorkerStatBuckets();
+        $candidate = new WorkerStatBucket();
+        $candidate->transport = $workerMessageRun->transport;
+        $candidate->messageClass = $workerMessageRun->messageClass;
+        $candidate->bucketStart = $this->getMinuteStart($now);
+        $workerStatBucket = $this->pendingWorkerStatBuckets->getByUniqueKey($candidate->uniqueKey());
+        if ($workerStatBucket === null) {
+            $workerStatBucket = $candidate;
+            $this->pendingWorkerStatBuckets->add($workerStatBucket);
+        }
+        return $workerStatBucket;
+    }
+
     public function prune(): void
     {
         $settings = $this->getSettings();
@@ -531,12 +548,53 @@ class WorkerMonitoringService extends Service
             $daysAgo($settings->failedRunRetentionDays)
         );
         $workerProcessesService = $this->getWorkerProcessesService();
-        $workerProcessesService->closeLostWorkerProcesses(
-            DateTime::fromTimestamp($now),
-            DateTime::fromTimestamp($now - $settings->heartbeatSeconds * self::CLOSE_LOST_AFTER_HEARTBEATS),
-            DateTime::fromTimestamp($now - 2 * $settings->busySilentSeconds)
+        $workerProcessesService->closeWorkerProcessesAsLost(
+            $this->findVanishedWorkerProcesses($workerProcessesService->findWorkerProcessesNotStopped(), $now),
+            DateTime::fromTimestamp($now)
         );
         $workerProcessesService->deleteStoppedWorkerProcessesOlderThan($daysAgo($settings->processRetentionDays));
+    }
+
+    /**
+     * The processes that vanished without a stop: idle ones without a heartbeat for
+     * {@see self::CLOSE_LOST_AFTER_HEARTBEATS} intervals; ones with a message in work that runs longer than twice
+     * their `busySilentSeconds`, or whose operating-system process no longer exists on this host.
+     */
+    protected function findVanishedWorkerProcesses(WorkerProcesses $workerProcessesNotStopped, int $now): WorkerProcesses
+    {
+        $settings = $this->getSettings();
+        $workerProcessesService = $this->getWorkerProcessesService();
+        $idleLastSeenBefore = $now - $settings->heartbeatSeconds * self::CLOSE_LOST_AFTER_HEARTBEATS;
+        $vanishedWorkerProcesses = new WorkerProcesses();
+        foreach ($workerProcessesNotStopped->getElements() as $workerProcess) {
+            if (($workerProcess->currentMessageClass ?? null) === null) {
+                $isVanished = (isset($workerProcess->lastSeenAt) ? $workerProcess->lastSeenAt->getTimestamp() : 0) < $idleLastSeenBefore;
+            } else {
+                $busySince = isset($workerProcess->currentMessageSince) ? $workerProcess->currentMessageSince->getTimestamp() : $now;
+                $isVanished = $busySince < $now - 2 * $workerProcessesService->getBusySilentSeconds($workerProcess)
+                    || ($settings->closeGoneProcessesOnOwnHost && $this->isGoneOnOwnHost($workerProcess));
+            }
+            if ($isVanished) {
+                $vanishedWorkerProcesses->add($workerProcess);
+            }
+        }
+        return $vanishedWorkerProcesses;
+    }
+
+    /**
+     * @return bool The process registered on this host and the operating system has no process with its id any more.
+     * False when that cannot be told (another host, no posix extension, a process of another user that exists)
+     */
+    protected function isGoneOnOwnHost(WorkerProcess $workerProcess): bool
+    {
+        $processId = (int)($workerProcess->processId ?? 0);
+        if ($processId <= 0 || ($workerProcess->hostName ?? null) !== $this->getHostName() || !function_exists('posix_kill')) {
+            return false;
+        }
+        if (@posix_kill($processId, 0)) {
+            return false;
+        }
+        return posix_get_last_error() === self::POSIX_ERROR_NO_SUCH_PROCESS;
     }
 
     // ----------------------------------------------------------------------------------------------------- samples
