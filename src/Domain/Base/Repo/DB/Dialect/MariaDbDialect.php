@@ -8,10 +8,14 @@ namespace DDD\Domain\Base\Repo\DB\Dialect;
 
 // Brick\Geo Doctrine Type imports (vendor) — aliased so the identically-named DDD types below keep their short names.
 use Brick\Geo\Doctrine\Types\GeometryType;
+use DDD\Infrastructure\Exceptions\InternalErrorException;
 use Brick\Geo\Doctrine\Types\LineStringType as BrickLineStringType;
 use Brick\Geo\Doctrine\Types\MultiLineStringType;
 use Brick\Geo\Doctrine\Types\MultiPointType;
 use Brick\Geo\Doctrine\Types\MultiPolygonType;
+use DDD\Domain\Base\Repo\DB\Dialect\Json\JsonDocumentUpdate;
+use DDD\Domain\Base\Repo\DB\Dialect\Json\JsonPath;
+use DDD\Domain\Base\Repo\DB\Dialect\Json\MariaDbJsonDocumentUpdate;
 use Brick\Geo\Doctrine\Types\PointType as BrickPointType;
 
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Query\CosineDistance;
@@ -211,6 +215,17 @@ class MariaDbDialect implements SqlDialect
         return "GROUP_CONCAT($exprSql ORDER BY $orderBySql SEPARATOR $quotedSeparator)";
     }
 
+    public function stringAggDistinct(string $exprSql, string $separator): string
+    {
+        $quotedSeparator = "'" . str_replace("'", "''", $separator) . "'";
+        return "GROUP_CONCAT(DISTINCT $exprSql ORDER BY $exprSql SEPARATOR $quotedSeparator)";
+    }
+
+    public function forShare(): string
+    {
+        return 'LOCK IN SHARE MODE';
+    }
+
     public function currentDatabase(): string
     {
         return 'DATABASE()';
@@ -241,6 +256,46 @@ class MariaDbDialect implements SqlDialect
         return "JSON_UNQUOTE(JSON_EXTRACT($columnSql, '$.\"$key\"'))";
     }
 
+    public function jsonText(string $columnSql, JsonPath $path): string
+    {
+        $valueSql = "JSON_EXTRACT($columnSql, {$path->toMariaDbPathSql()})";
+        // JSON_UNQUOTE() alone answers the text 'null' for JSON null; JSON_VALUE() answers 1 for true
+        return "IF(JSON_TYPE($valueSql) = 'NULL', NULL, JSON_UNQUOTE($valueSql))";
+    }
+
+    public function jsonInt(string $columnSql, JsonPath $path): string
+    {
+        return 'CAST(' . $this->jsonText($columnSql, $path) . ' AS SIGNED)';
+    }
+
+    public function jsonDecimal(string $columnSql, JsonPath $path, int $precision, int $scale): string
+    {
+        return 'CAST(' . $this->jsonText($columnSql, $path) . " AS DECIMAL($precision, $scale))";
+    }
+
+    public function jsonBool(string $columnSql, JsonPath $path): string
+    {
+        return '(' . $this->jsonText($columnSql, $path) . " = 'true')";
+    }
+
+    public function jsonType(string $columnSql, JsonPath $path): string
+    {
+        return "CASE JSON_TYPE(JSON_EXTRACT($columnSql, {$path->toMariaDbPathSql()}))"
+            . " WHEN 'OBJECT' THEN 'object' WHEN 'ARRAY' THEN 'array' WHEN 'STRING' THEN 'string'"
+            . " WHEN 'BOOLEAN' THEN 'boolean' WHEN 'NULL' THEN 'null'"
+            . " WHEN 'INTEGER' THEN 'number' WHEN 'DOUBLE' THEN 'number' WHEN 'DECIMAL' THEN 'number' END";
+    }
+
+    public function jsonLength(string $columnSql, JsonPath $path): string
+    {
+        return "JSON_LENGTH(JSON_EXTRACT($columnSql, {$path->toMariaDbPathSql()}))";
+    }
+
+    public function jsonUpdate(string $columnSql): JsonDocumentUpdate
+    {
+        return new MariaDbJsonDocumentUpdate($columnSql);
+    }
+
     public function bytesEqual(string $leftSql, string $rightSql): string
     {
         return "$leftSql <=> $rightSql";
@@ -259,5 +314,48 @@ class MariaDbDialect implements SqlDialect
     public function insertOrNull(Connection $connection, UpsertSpec $spec): ?int
     {
         return RawUpsertExecutor::insertOrNullMariaDb($connection, $spec);
+    }
+
+    public function insertSkippingExistingRows(string $insertSql, string $tableName, string $columnName): string
+    {
+        // Qualified with the table: an INSERT … SELECT from a table with the same column name is ambiguous otherwise
+        $quotedColumn = $this->quote($tableName) . '.' . $this->quote($columnName);
+        return rtrim($insertSql, " \t\n\r;") . " ON DUPLICATE KEY UPDATE $quotedColumn = $quotedColumn";
+    }
+
+    public function acquireTransactionLock(Connection $connection, string $name, int $timeoutSeconds): bool
+    {
+        $this->requireOpenTransaction($connection, 'acquireTransactionLock');
+        return (int)$connection->fetchOne('SELECT GET_LOCK(?, ?)', [$name, max(0, $timeoutSeconds)]) === 1;
+    }
+
+    public function releaseTransactionLock(Connection $connection, string $name): void
+    {
+        $connection->fetchOne('SELECT RELEASE_LOCK(?)', [$name]);
+    }
+
+    public function setTransactionTimeouts(Connection $connection, ?int $lockWaitTimeoutSeconds, ?int $statementTimeoutSeconds): void
+    {
+        $this->requireOpenTransaction($connection, 'setTransactionTimeouts');
+        if ($lockWaitTimeoutSeconds !== null) {
+            $connection->executeStatement('SET SESSION innodb_lock_wait_timeout = ' . max(1, $lockWaitTimeoutSeconds));
+        }
+        if ($statementTimeoutSeconds !== null) {
+            $connection->executeStatement('SET SESSION max_statement_time = ' . max(1, $statementTimeoutSeconds));
+        }
+    }
+
+    public function clearTransactionTimeouts(Connection $connection): void
+    {
+        $connection->executeStatement('SET SESSION innodb_lock_wait_timeout = DEFAULT');
+        $connection->executeStatement('SET SESSION max_statement_time = DEFAULT');
+    }
+
+    /** @throws InternalErrorException When $connection has no open transaction */
+    protected function requireOpenTransaction(Connection $connection, string $methodName): void
+    {
+        if (!$connection->isTransactionActive()) {
+            throw new InternalErrorException("SqlDialect::$methodName() needs an open transaction on the connection.");
+        }
     }
 }

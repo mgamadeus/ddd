@@ -1,9 +1,9 @@
 ---
 name: ddd-service-specialist
-description: "DDD services, business logic, QueryBuilder and rights in mgamadeus/ddd — vector/semantic search, Translatable fulltext, concurrency-safe atomic writes, updatePartialIgnoringRights, strict insert() throwing on a duplicate key. Covers instantiation (container, never new or cache), caller-side vs in-service find(), the null-getService() fix (ReuseParentEntitySet), createQueryBuilder(true), conventions (entity owns non-repo logic, objects not IDs), PHPDoc @throws, update/delete overrides, junctions, async, shared-service throwErrors (enableThrowErrors/restoreThrowErrors), utilities (Config, Cache counters/locks, Encrypt, IssuesLogService, ObjectStorage (S3, Hetzner, MinIO, R2, presigned URLs)). Use when creating services, writing custom queries, implementing rights, vector or fulltext search, storing files in object storage, concurrency-safe, partial or collision-checked writes, making a lookup throw instead of return null, or debugging a null getService(), No-alias-was-set or a lookup throwing only sometimes."
+description: "DDD services, business logic, QueryBuilder and rights in mgamadeus/ddd — vector/semantic search, Translatable fulltext, concurrency-safe atomic writes, updatePartialIgnoringRights, strict insert(), raw SQL for MariaDB and PostgreSQL (SqlDialect: JSON read and atomic JSON update, transaction lock, timeouts, insert skipping existing rows). Covers instantiation (container, never new or cache), find() caller-side vs in-service, the null-getService() fix, createQueryBuilder(true), PHPDoc @throws, update/delete overrides, junctions, async, throwErrors (enableThrowErrors/restoreThrowErrors), utilities (Config, Cache counters/locks, Encrypt, IssuesLogService, ObjectStorage (S3, MinIO, R2, presigned URLs)). Use when creating services, writing custom queries or raw SQL that must run on both databases, changing a JSON column atomically, implementing rights, vector or fulltext search, storing files, concurrency-safe or partial writes, or debugging a null getService(), No-alias-was-set or a lookup throwing only sometimes."
 metadata:
   author: mgamadeus
-  version: "1.1.0"
+  version: "1.2.0"
   framework: mgamadeus/ddd
 ---
 
@@ -359,6 +359,14 @@ $tableName = SomeDoctrineModel::getTableName();        // inside a service (refe
 ```
 
 (`getTableName()` is the static accessor on `DoctrineModel`; prefer it over reading the `TABLE_NAME` const directly.)
+
+### Raw SQL on MariaDB and PostgreSQL
+
+The raw examples above are MariaDB-shaped. Code that must run on both databases quotes every identifier with
+backticks and takes the engine-specific parts from `EntityManagerFactory::getDialect()`: JSON readers and the atomic
+JSON document update (`jsonText()`, `jsonUpdate()` with `JsonPath`), `insertSkippingExistingRows()`,
+`acquireTransactionLock()`, `setTransactionTimeouts()`, `stringAgg()`, `forShare()`, date fragments. Rules, the
+method table and examples: [references/raw-sql-on-mariadb-and-postgresql.md](references/raw-sql-on-mariadb-and-postgresql.md).
 
 ### Multi-writer guarantees (when a single CAS isn't enough)
 

@@ -97,4 +97,17 @@ class PostgresDialectTest extends TestCase
         $freshProcessDialect = new PostgresDialect();
         $this->assertNotSame($firstDefault, $freshProcessDialect->locks($connection));
     }
+
+    public function testTransactionFragmentsRenderThePostgresForms(): void
+    {
+        $this->assertSame(
+            "string_agg(DISTINCT ddd_text(\"label\"), ', ' ORDER BY ddd_text(\"label\"))",
+            $this->dialect->stringAggDistinct('"label"', ', ')
+        );
+        $this->assertSame('FOR SHARE', $this->dialect->forShare());
+        $this->assertSame(
+            'INSERT INTO "Rows" ("code") VALUES (?) ON CONFLICT DO NOTHING',
+            $this->dialect->insertSkippingExistingRows("INSERT INTO \"Rows\" (\"code\") VALUES (?);\n", 'Rows', 'code')
+        );
+    }
 }

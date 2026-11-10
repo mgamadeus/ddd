@@ -173,13 +173,18 @@ class PostgresDdlRenderer implements DdlRenderer
         // the plan's "like JSON_MERGE_PATCH" wording). Non-object values, as MariaDB's JSON_MERGE_PATCH treats them:
         // a patch that is not an object (`[]`, a scalar) IS the result; a target that is not an object (`[]` from an
         // empty translation store, MariaDB-era rows) is merged as `{}` — json_each() would raise "cannot deconstruct
-        // an array as an object" on either.
+        // an array as an object" on either. An object in the patch is merged into the target's value of that key
+        // recursively (RFC 7396, as MariaDB does): a null inside it removes the nested key, and an object that only
+        // the patch has arrives without its null members. The function calls itself, so it is plpgsql: a SQL
+        // function's body is checked when it is created, before the function it calls exists. Its one `;` stands
+        // inside a line (`END); END`): the generated script is cut at a `;` that ends a line.
         $jsonMergePatchFunction = <<<'SQL'
             CREATE OR REPLACE FUNCTION ddd_json_merge_patch(target json, patch json) RETURNS json
-                LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+                LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE STRICT
                 SET search_path = public, pg_catalog
                 AS $ddd$
-                    SELECT CASE
+                BEGIN
+                    RETURN (SELECT CASE
                         WHEN json_typeof(patch) <> 'object' THEN patch
                         ELSE (
                             WITH t AS (
@@ -191,12 +196,23 @@ class PostgresDdlRenderer implements DdlRenderer
                                 SELECT key, value, ord FROM json_each(patch) WITH ORDINALITY AS x(key, value, ord)
                             ),
                             kept_or_patched AS (
-                                SELECT t.key, COALESCE(p.value, t.value) AS value, t.ord
+                                SELECT t.key,
+                                    CASE
+                                        WHEN p.key IS NULL THEN t.value
+                                        WHEN json_typeof(p.value) = 'object' THEN ddd_json_merge_patch(t.value, p.value)
+                                        ELSE p.value
+                                    END AS value,
+                                    t.ord
                                 FROM t LEFT JOIN p ON p.key = t.key
                                 WHERE p.key IS NULL OR p.value::text IS DISTINCT FROM 'null'
                             ),
                             appended AS (
-                                SELECT p.key, p.value, 1000000 + p.ord AS ord
+                                SELECT p.key,
+                                    CASE
+                                        WHEN json_typeof(p.value) = 'object' THEN ddd_json_merge_patch('{}'::json, p.value)
+                                        ELSE p.value
+                                    END AS value,
+                                    1000000 + p.ord AS ord
                                 FROM p
                                 WHERE NOT EXISTS (SELECT 1 FROM t WHERE t.key = p.key)
                                   AND p.value::text IS DISTINCT FROM 'null'
@@ -209,7 +225,7 @@ class PostgresDdlRenderer implements DdlRenderer
                                 '{}'::json
                             )
                         )
-                    END
+                    END); END
                 $ddd$
             SQL;
 

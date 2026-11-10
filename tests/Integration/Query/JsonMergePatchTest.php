@@ -26,6 +26,10 @@ class JsonMergePatchTest extends IntegrationTestCase
             'array patch is the result' => ['{"de": "Hallo"}', '[]', []],
             'scalar target' => ['"text"', '{"de": "Hallo"}', ['de' => 'Hallo']],
             'array onto array' => ['[1]', '[2]', [2]],
+            'nested objects merge' => ['{"a": {"b": 1, "c": 2}, "z": 1}', '{"a": {"b": null, "d": 4}}', ['a' => ['c' => 2, 'd' => 4], 'z' => 1]],
+            'a patch-only object arrives without its nulls' => ['{"z": 1}', '{"n": {"x": null, "y": 1}}', ['z' => 1, 'n' => ['y' => 1]]],
+            'an object replaces a non-object value' => ['{"a": [1]}', '{"a": {"k": null, "m": 2}}', ['a' => ['m' => 2]]],
+            'three levels' => ['{"a": {"b": {"c": 1, "d": 2}}}', '{"a": {"b": {"c": null}}}', ['a' => ['b' => ['d' => 2]]]],
         ];
     }
 

@@ -16,7 +16,10 @@ use DDD\Domain\Base\Entities\ValueObject;
  *
  * Covers exactly the shapes in use: `IFNULL(col, 0)` / `IFNULL(col, 'literal')`
  * (intent `coalesce`), `CASE WHEN col IN ('A', 'B') THEN col ELSE NULL END` (intent `whenInSet`), and the three `JSON_UNQUOTE(JSON_EXTRACT(col, '$.key'))` forms — plain, `CAST(… AS SIGNED)`,
- * `CAST(… AS DECIMAL(p,s))` (intents `jsonText` / `jsonInt` / `jsonDecimal`). Anything else is not recognised —
+ * `CAST(… AS DECIMAL(p,s))` (intents `jsonText` / `jsonInt` / `jsonDecimal`), `CHAR_LENGTH(…)` around the plain form or around a bare
+ * `JSON_EXTRACT(col, '$.key')` (intents `jsonTextCharLength` / `jsonValueCharLength`) and `DATE(col)` (intent `date`).
+ * The two lengths are not byte-equal across the engines: a JSON null counts 4 on MariaDB and is NULL on PostgreSQL
+ * for `jsonTextCharLength`, and `jsonValueCharLength` counts the value as each engine writes it. Anything else is not recognised —
  * {@see fromMariaDbExpression()} returns null and the caller ({@see PostgresDdlRenderer}) refuses with a message
  * naming the entity, property and expression, rather than guessing.
  */
@@ -32,6 +35,15 @@ class VirtualExpr extends ValueObject
 
     /** The column's own value while it is one of a fixed set of strings, else NULL (a unique key that holds for those rows only) */
     public const string INTENT_WHEN_IN_SET = 'whenInSet';
+
+    /** Number of characters of a JSON string value: `CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(col, '$.key')))` */
+    public const string INTENT_JSON_TEXT_CHAR_LENGTH = 'jsonTextCharLength';
+
+    /** Number of characters of a JSON value as the document writes it: `CHAR_LENGTH(JSON_EXTRACT(col, '$.key'))` */
+    public const string INTENT_JSON_VALUE_CHAR_LENGTH = 'jsonValueCharLength';
+
+    /** The calendar day of a date-time column: `DATE(col)` */
+    public const string INTENT_DATE = 'date';
 
     protected function __construct(
         public readonly string $intent,
@@ -97,6 +109,21 @@ class VirtualExpr extends ValueObject
         return new self(self::INTENT_WHEN_IN_SET, $mariaDbExpression, $column, setLiterals: $setLiterals);
     }
 
+    public static function jsonTextCharLength(string $mariaDbExpression, string $column, string $jsonKey): self
+    {
+        return new self(self::INTENT_JSON_TEXT_CHAR_LENGTH, $mariaDbExpression, $column, jsonKey: $jsonKey);
+    }
+
+    public static function jsonValueCharLength(string $mariaDbExpression, string $column, string $jsonKey): self
+    {
+        return new self(self::INTENT_JSON_VALUE_CHAR_LENGTH, $mariaDbExpression, $column, jsonKey: $jsonKey);
+    }
+
+    public static function date(string $mariaDbExpression, string $column): self
+    {
+        return new self(self::INTENT_DATE, $mariaDbExpression, $column);
+    }
+
     /**
      * Strict, whitespace-tolerant recogniser for today's five raw-expression shapes (Mig §3.7). Keyword casing
      * (`IFNULL`, `JSON_UNQUOTE`, `JSON_EXTRACT`, `CAST`, `AS`, `SIGNED`, `DECIMAL`) matches exactly what every
@@ -151,6 +178,23 @@ class VirtualExpr extends ValueObject
             return self::jsonDecimal($as, $m[1], $m[2], (int)$m[3], (int)$m[4]);
         }
 
+        // (CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(col, '$.key'))))
+        if (preg_match("/^\({$ws}CHAR_LENGTH\({$ws}{$jsonExtract}{$ws}\){$ws}\)\$/", $as, $m)) {
+            return self::jsonTextCharLength($as, $m[1], $m[2]);
+        }
+        // (CHAR_LENGTH(JSON_EXTRACT(col, '$.key')))
+        if (preg_match(
+            "/^\({$ws}CHAR_LENGTH\({$ws}JSON_EXTRACT\({$ws}`?($identifier)`?{$ws},{$ws}'\\\$\.($identifier(?:\.$identifier)*)'{$ws}\){$ws}\){$ws}\)\$/",
+            $as,
+            $m
+        )) {
+            return self::jsonValueCharLength($as, $m[1], $m[2]);
+        }
+        // (DATE(col))
+        if (preg_match("/^\({$ws}DATE\({$ws}`?($identifier)`?{$ws}\){$ws}\)\$/", $as, $m)) {
+            return self::date($as, $m[1]);
+        }
+
         return null;
     }
 
@@ -178,6 +222,9 @@ class VirtualExpr extends ValueObject
             self::INTENT_JSON_TEXT => '(' . $column . '::json ' . $this->jsonPathOperator() . ')',
             self::INTENT_JSON_INT => '((' . $column . '::json ' . $this->jsonPathOperator() . '))::bigint',
             self::INTENT_JSON_DECIMAL => '((' . $column . '::json ' . $this->jsonPathOperator() . "))::numeric($this->precision,$this->scale)",
+            self::INTENT_JSON_TEXT_CHAR_LENGTH => 'char_length(' . $column . '::json ' . $this->jsonPathOperator() . ')',
+            self::INTENT_JSON_VALUE_CHAR_LENGTH => 'char_length((' . $column . '::json ' . $this->jsonValueOperator() . ')::text)',
+            self::INTENT_DATE => 'CAST(' . $column . ' AS date)',
         };
     }
 
@@ -193,6 +240,8 @@ class VirtualExpr extends ValueObject
             self::INTENT_JSON_TEXT => 'text',
             self::INTENT_JSON_INT => 'bigint',
             self::INTENT_JSON_DECIMAL => "numeric($this->precision,$this->scale)",
+            self::INTENT_JSON_TEXT_CHAR_LENGTH, self::INTENT_JSON_VALUE_CHAR_LENGTH => 'integer',
+            self::INTENT_DATE => 'date',
             self::INTENT_COALESCE, self::INTENT_WHEN_IN_SET => throw new \LogicException(
                 'VirtualExpr::postgresColumnType() does not cover intent "' . $this->intent . '" — use the referenced column\'s own mapped type.'
             ),
@@ -218,6 +267,16 @@ class VirtualExpr extends ValueObject
             return '->> ' . $this->quotedKey();
         }
         return "#>> '{" . implode(',', $segments) . "}'";
+    }
+
+    /** `-> 'key'` for a single key, `#> '{a,b}'` for a nested path: the value as JSON, not as text. */
+    protected function jsonValueOperator(): string
+    {
+        $segments = explode('.', (string)$this->jsonKey);
+        if (count($segments) === 1) {
+            return '-> ' . $this->quotedKey();
+        }
+        return "#> '{" . implode(',', $segments) . "}'";
     }
 
     protected function quotedKey(): string

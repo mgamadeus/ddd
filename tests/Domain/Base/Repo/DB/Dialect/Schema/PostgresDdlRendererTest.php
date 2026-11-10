@@ -704,6 +704,70 @@ class PostgresDdlRendererTest extends TestCase
         );
     }
 
+    /** `CHAR_LENGTH(…)` of a JSON string, of a JSON value as written, and `DATE(col)`: integer / integer / date columns. */
+    public function testCharLengthAndDateVirtualColumnsRenderWithIntentDerivedTypes(): void
+    {
+        $toolCallColumn = $this->column('toolCall', DatabaseColumn::SQL_TYPE_JSON);
+        $createdColumn = $this->column('created', DatabaseColumn::SQL_TYPE_DATETIME);
+        $columns = new DatabaseColumns();
+        $columns->add($toolCallColumn);
+        $columns->add($createdColumn);
+        $model = $this->model('ToolMessages', $columns);
+
+        $textLengthVirtual = new DatabaseVirtualColumn(
+            as: "(CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(toolCall, '\$.result'))))",
+            stored: true,
+            createIndex: false
+        );
+        $textLengthVirtual->referenceColumn = $this->column('toolResultChars', DatabaseColumn::SQL_TYPE_INT);
+        $model->virtualColumns->add($textLengthVirtual);
+
+        $valueLengthVirtual = new DatabaseVirtualColumn(
+            as: "(CHAR_LENGTH(JSON_EXTRACT(`toolCall`, '\$.request.arguments')))",
+            stored: true,
+            createIndex: false
+        );
+        $valueLengthVirtual->referenceColumn = $this->column('toolArgumentsChars', DatabaseColumn::SQL_TYPE_INT);
+        $model->virtualColumns->add($valueLengthVirtual);
+
+        $dateVirtual = new DatabaseVirtualColumn(as: '(DATE(created))', stored: true, createIndex: false);
+        $dateVirtual->referenceColumn = $this->column('createdDate', DatabaseColumn::SQL_TYPE_DATE);
+        $model->virtualColumns->add($dateVirtual);
+
+        $createTable = $this->findStatement($this->renderer->renderCreate($model), DdlStatement::PHASE_CREATE_TABLE);
+        $this->assertStringContainsString(
+            '"virtualToolResultChars" integer GENERATED ALWAYS AS (char_length("toolCall"::json ->> \'result\')) STORED',
+            $createTable->sql
+        );
+        $this->assertStringContainsString(
+            '"virtualToolArgumentsChars" integer GENERATED ALWAYS AS (char_length(("toolCall"::json #> \'{request,arguments}\')::text)) STORED',
+            $createTable->sql
+        );
+        $this->assertStringContainsString(
+            '"virtualCreatedDate" date GENERATED ALWAYS AS (CAST("created" AS date)) STORED',
+            $createTable->sql
+        );
+    }
+
+    /** Only the exact shapes are translated: a second argument, another function or an expression inside is not. */
+    public function testCharLengthAndDateAreRecognisedStrictly(): void
+    {
+        $this->assertSame(
+            VirtualExpr::INTENT_JSON_TEXT_CHAR_LENGTH,
+            VirtualExpr::fromMariaDbExpression("(CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(toolCall, '\$.result'))))")?->intent
+        );
+        $this->assertSame(
+            VirtualExpr::INTENT_JSON_VALUE_CHAR_LENGTH,
+            VirtualExpr::fromMariaDbExpression("(CHAR_LENGTH(JSON_EXTRACT(toolCall, '\$.arguments')))")?->intent
+        );
+        $this->assertSame(VirtualExpr::INTENT_DATE, VirtualExpr::fromMariaDbExpression('(DATE(`created`))')?->intent);
+
+        $this->assertNull(VirtualExpr::fromMariaDbExpression("(LENGTH(JSON_EXTRACT(toolCall, '\$.arguments')))"));
+        $this->assertNull(VirtualExpr::fromMariaDbExpression('(CHAR_LENGTH(toolCall))'));
+        $this->assertNull(VirtualExpr::fromMariaDbExpression('(DATE(created, 1))'));
+        $this->assertNull(VirtualExpr::fromMariaDbExpression('(DATE(created + INTERVAL 1 DAY))'));
+    }
+
     /** Arch §4.10 escape hatch: `asPostgres:` is used verbatim, MariaDB's `as:` untouched. */
     public function testAsPostgresEscapeHatchIsUsedVerbatim(): void
     {

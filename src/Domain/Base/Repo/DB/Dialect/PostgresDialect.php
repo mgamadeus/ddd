@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace DDD\Domain\Base\Repo\DB\Dialect;
 
 use DDD\Domain\Base\Repo\DB\Dialect\Identifiers\AlwaysQuoteStrategy;
+use DDD\Infrastructure\Exceptions\InternalErrorException;
+use DDD\Domain\Base\Repo\DB\Dialect\Locks\LockKey;
 use DDD\Domain\Base\Repo\DB\Dialect\Identifiers\IdentifierPolicy;
 use DDD\Domain\Base\Repo\DB\Dialect\Query\DateBucket;
 use DDD\Domain\Base\Repo\DB\Dialect\Query\DefaultOrderTreeWalker;
@@ -48,6 +50,9 @@ use DDD\Domain\Base\Repo\DB\Dialect\Write\PostgresUpsertBuilder;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\RawUpsertExecutor;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertResult;
+use DDD\Domain\Base\Repo\DB\Dialect\Json\JsonDocumentUpdate;
+use DDD\Domain\Base\Repo\DB\Dialect\Json\JsonPath;
+use DDD\Domain\Base\Repo\DB\Dialect\Json\PostgresJsonDocumentUpdate;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertSpec;
 
 // Brick\Geo Doctrine Type imports (vendor) — same aliasing as MariaDbDialect, so the identically-named DDD types
@@ -374,6 +379,17 @@ class PostgresDialect implements SqlDialect
         return "string_agg(ddd_text($exprSql), $quotedSeparator ORDER BY $orderBySql)";
     }
 
+    public function stringAggDistinct(string $exprSql, string $separator): string
+    {
+        $quotedSeparator = "'" . str_replace("'", "''", $separator) . "'";
+        return "string_agg(DISTINCT ddd_text($exprSql), $quotedSeparator ORDER BY ddd_text($exprSql))";
+    }
+
+    public function forShare(): string
+    {
+        return 'FOR SHARE';
+    }
+
     public function currentDatabase(): string
     {
         return 'current_database()';
@@ -411,6 +427,44 @@ class PostgresDialect implements SqlDialect
         return "$columnSql->>$quotedKey";
     }
 
+    public function jsonText(string $columnSql, JsonPath $path): string
+    {
+        return "($columnSql #>> {$path->toPostgresPathSql()})";
+    }
+
+    public function jsonInt(string $columnSql, JsonPath $path): string
+    {
+        return 'CAST(' . $this->jsonText($columnSql, $path) . ' AS bigint)';
+    }
+
+    public function jsonDecimal(string $columnSql, JsonPath $path, int $precision, int $scale): string
+    {
+        return 'CAST(' . $this->jsonText($columnSql, $path) . " AS numeric($precision, $scale))";
+    }
+
+    public function jsonBool(string $columnSql, JsonPath $path): string
+    {
+        return '(' . $this->jsonText($columnSql, $path) . " = 'true')";
+    }
+
+    public function jsonType(string $columnSql, JsonPath $path): string
+    {
+        return "json_typeof($columnSql #> {$path->toPostgresPathSql()})";
+    }
+
+    public function jsonLength(string $columnSql, JsonPath $path): string
+    {
+        $valueSql = "($columnSql #> {$path->toPostgresPathSql()})";
+        return "CASE json_typeof($valueSql) WHEN 'array' THEN json_array_length($valueSql)"
+            . " WHEN 'object' THEN (SELECT CAST(count(*) AS integer) FROM json_object_keys($valueSql))"
+            . " ELSE CASE WHEN $valueSql IS NULL THEN NULL ELSE 1 END END";
+    }
+
+    public function jsonUpdate(string $columnSql): JsonDocumentUpdate
+    {
+        return new PostgresJsonDocumentUpdate($columnSql);
+    }
+
     public function bytesEqual(string $leftSql, string $rightSql): string
     {
         return "$leftSql IS NOT DISTINCT FROM $rightSql";
@@ -429,5 +483,58 @@ class PostgresDialect implements SqlDialect
     public function insertOrNull(Connection $connection, UpsertSpec $spec): ?int
     {
         return RawUpsertExecutor::insertOrNullPostgres($connection, $spec);
+    }
+
+    public function insertSkippingExistingRows(string $insertSql, string $tableName, string $columnName): string
+    {
+        return rtrim($insertSql, " \t\n\r;") . ' ON CONFLICT DO NOTHING';
+    }
+
+    public function acquireTransactionLock(Connection $connection, string $name, int $timeoutSeconds): bool
+    {
+        $this->requireOpenTransaction($connection, 'acquireTransactionLock');
+        $key = LockKey::applicationKey($name);
+        $deadline = microtime(true) + $timeoutSeconds;
+        $delayMilliseconds = 50;
+
+        while (true) {
+            if ((bool)$connection->fetchOne('SELECT pg_try_advisory_xact_lock(?)', [$key])) {
+                return true;
+            }
+            if (microtime(true) >= $deadline) {
+                return false;
+            }
+            usleep($delayMilliseconds * 1000);
+            $delayMilliseconds = min($delayMilliseconds + 50, 250);
+        }
+    }
+
+    public function releaseTransactionLock(Connection $connection, string $name): void
+    {
+        // The end of the transaction released it.
+    }
+
+    public function setTransactionTimeouts(Connection $connection, ?int $lockWaitTimeoutSeconds, ?int $statementTimeoutSeconds): void
+    {
+        $this->requireOpenTransaction($connection, 'setTransactionTimeouts');
+        if ($lockWaitTimeoutSeconds !== null) {
+            $connection->executeStatement('SET LOCAL lock_timeout = ' . max(1, $lockWaitTimeoutSeconds) * 1000);
+        }
+        if ($statementTimeoutSeconds !== null) {
+            $connection->executeStatement('SET LOCAL statement_timeout = ' . max(1, $statementTimeoutSeconds) * 1000);
+        }
+    }
+
+    public function clearTransactionTimeouts(Connection $connection): void
+    {
+        // SET LOCAL ends with the transaction.
+    }
+
+    /** @throws InternalErrorException When $connection has no open transaction */
+    protected function requireOpenTransaction(Connection $connection, string $methodName): void
+    {
+        if (!$connection->isTransactionActive()) {
+            throw new InternalErrorException("SqlDialect::$methodName() needs an open transaction on the connection.");
+        }
     }
 }

@@ -43,4 +43,17 @@ class MariaDbDialectTest extends TestCase
         $this->assertNotNull($configuration->getCustomStringFunction('MATCH'));
         $this->assertNotNull($configuration->getCustomNumericFunction('COSINE_DISTANCE'));
     }
+
+    public function testTransactionFragmentsRenderTheMariaDbForms(): void
+    {
+        $this->assertSame(
+            "GROUP_CONCAT(DISTINCT `label` ORDER BY `label` SEPARATOR ', ')",
+            $this->dialect->stringAggDistinct('`label`', ', ')
+        );
+        $this->assertSame('LOCK IN SHARE MODE', $this->dialect->forShare());
+        $this->assertSame(
+            'INSERT INTO `Rows` (`code`) VALUES (?) ON DUPLICATE KEY UPDATE `Rows`.`code` = `Rows`.`code`',
+            $this->dialect->insertSkippingExistingRows("INSERT INTO `Rows` (`code`) VALUES (?);\n", 'Rows', 'code')
+        );
+    }
 }

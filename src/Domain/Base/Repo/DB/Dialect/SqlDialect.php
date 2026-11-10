@@ -10,7 +10,10 @@ use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertResult;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertSpec;
+use DDD\Infrastructure\Exceptions\InternalErrorException;
 use Doctrine\DBAL\Connection;
+use DDD\Domain\Base\Repo\DB\Dialect\Json\JsonDocumentUpdate;
+use DDD\Domain\Base\Repo\DB\Dialect\Json\JsonPath;
 use Doctrine\ORM\Configuration;
 
 /**
@@ -98,6 +101,19 @@ interface SqlDialect
     /** `GROUP_CONCAT($exprSql ORDER BY $orderBySql SEPARATOR '…')` | `string_agg($exprSql, '…' ORDER BY $orderBySql)`. */
     public function stringAgg(string $exprSql, string $separator, string $orderBySql): string;
 
+    /**
+     * {@see stringAgg()} over the distinct values, in their own order:
+     * `GROUP_CONCAT(DISTINCT $exprSql ORDER BY $exprSql SEPARATOR '…')` | `string_agg(DISTINCT ddd_text($exprSql), '…' ORDER BY ddd_text($exprSql))`.
+     * PostgreSQL orders a DISTINCT aggregate by its own argument only, so there is no separate order expression.
+     */
+    public function stringAggDistinct(string $exprSql, string $separator): string;
+
+    /**
+     * The row lock clause of a SELECT that lets other transactions read and share-lock the rows, not change them:
+     * `LOCK IN SHARE MODE` | `FOR SHARE`. Appended at the end of the statement.
+     */
+    public function forShare(): string;
+
     /** `DATABASE()` | `current_database()`. */
     public function currentDatabase(): string;
 
@@ -109,6 +125,37 @@ interface SqlDialect
 
     /** `JSON_UNQUOTE(JSON_EXTRACT($columnSql, '$.$key'))` | `$columnSql->>'$key'`. */
     public function jsonFieldText(string $columnSql, string $key): string;
+
+    /**
+     * The scalar at a path of a JSON column as text: a string without its quotes, a number or boolean in its JSON
+     * form (`true` / `false`), SQL NULL for a missing path and for JSON null. For an object or array the engines
+     * differ in spacing — read those in PHP.
+     */
+    public function jsonText(string $columnSql, JsonPath $path): string;
+
+    /** {@see jsonText()} as a whole number (`CAST(… AS SIGNED)` | `CAST(… AS bigint)`); NULL when missing. */
+    public function jsonInt(string $columnSql, JsonPath $path): string;
+
+    /** {@see jsonText()} as a fixed-point number of the given precision and scale; NULL when missing. */
+    public function jsonDecimal(string $columnSql, JsonPath $path, int $precision, int $scale): string;
+
+    /** Whether the value at a path is JSON true; false for any other value, NULL for a missing path or JSON null. */
+    public function jsonBool(string $columnSql, JsonPath $path): string;
+
+    /**
+     * The type of the value at a path, the same words on both engines: `object`, `array`, `string`, `number`,
+     * `boolean`, `null` (JSON null); SQL NULL for a missing path — `jsonType(…) IS NULL` is "the path does not exist".
+     */
+    public function jsonType(string $columnSql, JsonPath $path): string;
+
+    /** Elements of the array or keys of the object at a path, 1 for a scalar, NULL for a missing path. */
+    public function jsonLength(string $columnSql, JsonPath $path): string;
+
+    /**
+     * Starts the expression that rewrites a JSON column in one statement (set, remove, merge):
+     * `UPDATE … SET column = <jsonUpdate(column)->…->toSql()>`.
+     */
+    public function jsonUpdate(string $columnSql): JsonDocumentUpdate;
 
     /** NULL-safe byte equality for a BLOB/`ddd_bytes` column pair: `<=>` | `IS NOT DISTINCT FROM` (4.13's NULL-safe-comparison sweep, extended to bytes). */
     public function bytesEqual(string $leftSql, string $rightSql): string;
@@ -134,4 +181,56 @@ interface SqlDialect
      * @throws \Doctrine\DBAL\Exception
      */
     public function insertOrNull(Connection $connection, UpsertSpec $spec): ?int;
+
+    /**
+     * An INSERT that leaves out the rows whose unique key already exists and reports the number of rows it wrote:
+     * `$insertSql ON DUPLICATE KEY UPDATE t.col = t.col` | `$insertSql ON CONFLICT DO NOTHING`. `$insertSql` is a
+     * complete `INSERT INTO … VALUES (…), (…)` or `INSERT INTO … SELECT …`; `$tableName` is its target table and
+     * `$columnName` any column of it (both unquoted) — MariaDB assigns that column to itself, which changes nothing
+     * and counts 0 for the row.
+     * Unlike `INSERT IGNORE` every other error (a value too long, a missing NOT NULL value) still fails.
+     */
+    public function insertSkippingExistingRows(string $insertSql, string $tableName, string $columnName): string;
+
+    /**
+     * A named lock inside the open transaction of `$connection`, in the same name space as {@see locks()}. It runs
+     * on the transaction's own connection, so it also works behind a pooler in transaction mode. PostgreSQL holds it
+     * until the transaction ends (`pg_try_advisory_xact_lock`, polled until the timeout); MariaDB holds it until
+     * {@see releaseTransactionLock()} (`GET_LOCK`). Call {@see releaseTransactionLock()} after the commit or the
+     * rollback, in a `finally`.
+     *
+     * @return bool false when the lock was not free within `$timeoutSeconds`
+     * @throws InternalErrorException When `$connection` has no open transaction
+     * @throws \Doctrine\DBAL\Exception
+     */
+    public function acquireTransactionLock(Connection $connection, string $name, int $timeoutSeconds): bool;
+
+    /**
+     * Ends a lock of {@see acquireTransactionLock()}: `RELEASE_LOCK` on MariaDB, nothing on PostgreSQL (the end of
+     * the transaction released it).
+     *
+     * @throws \Doctrine\DBAL\Exception
+     */
+    public function releaseTransactionLock(Connection $connection, string $name): void;
+
+    /**
+     * Limits for the open transaction of `$connection`; null leaves a limit as it is. `$lockWaitTimeoutSeconds`:
+     * how long a statement waits for a row lock. `$statementTimeoutSeconds`: how long one statement may run.
+     * PostgreSQL sets both for the transaction only (`SET LOCAL lock_timeout` / `statement_timeout`); MariaDB sets
+     * them on the session (`innodb_lock_wait_timeout` / `max_statement_time`) until {@see clearTransactionTimeouts()}.
+     * A statement over a limit fails with a driver exception: SQLSTATE 55P03 / 57014 on PostgreSQL (the transaction
+     * is aborted), error 1205 / 1969 on MariaDB (the statement is rolled back, the transaction stays open).
+     *
+     * @throws InternalErrorException When `$connection` has no open transaction
+     * @throws \Doctrine\DBAL\Exception
+     */
+    public function setTransactionTimeouts(Connection $connection, ?int $lockWaitTimeoutSeconds, ?int $statementTimeoutSeconds): void;
+
+    /**
+     * Puts the limits of {@see setTransactionTimeouts()} back to the server defaults on MariaDB; nothing on
+     * PostgreSQL (the end of the transaction did). Call it after the commit or the rollback, in a `finally`.
+     *
+     * @throws \Doctrine\DBAL\Exception
+     */
+    public function clearTransactionTimeouts(Connection $connection): void;
 }

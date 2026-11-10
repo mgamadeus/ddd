@@ -3,7 +3,7 @@ name: ddd-entity-specialist
 description: Create and design DDD entities, entity sets, value objects, DB repositories, lazy loading, relationships and attributes in mgamadeus/ddd. Covers folder layout, naming, critical rules (never redeclare id, NotNull → NOT NULL, @var T[] feeds the API schema, framework Date/DateTime only, protected), getService()->find(), the isset lazy-load trap, Translatable properties, ChangeHistory, junction entities, indexes, virtual columns, SubclassIndicator, DatabaseTrigger, ReuseParentEntitySet, displayOrder, PreserveOnOmission, validation (Choice, UniqueProperty), chart types (DateTimeValueSequence, TimeInterval, KeyValue), and update() (upsert) vs strict insert() (a duplicate key throws). Use when creating or modifying entities and their persistence, returning chart or time-series data, placing entity files, adding translations or auditing, defining indexes or triggers, fixing a null getService(), a lazy relation that never loads, a partial update overwriting a stored value, or a write that must fail on a duplicate key.
 metadata:
   author: mgamadeus
-  version: "1.1.1"
+  version: "1.1.2"
   framework: mgamadeus/ddd
 ---
 
@@ -832,7 +832,9 @@ class ImportedRecord extends Entity {
 
 The PostgreSQL form of an `as:` expression is derived for these shapes: `(IFNULL(col, 0))`, `(IFNULL(col, 'text'))`,
 `(COALESCE(col, STR_TO_DATE('Y-m-d', '%Y-%m-%d')))`, `(CASE WHEN col IN ('A', 'B') THEN col ELSE NULL END)` and the
-`JSON_UNQUOTE(JSON_EXTRACT(col, '$.key'))` forms (plain, `CAST … AS SIGNED`, `CAST … AS DECIMAL(p,s)`). Any other
+`JSON_UNQUOTE(JSON_EXTRACT(col, '$.key'))` forms (plain, `CAST … AS SIGNED`, `CAST … AS DECIMAL(p,s)`,
+`CHAR_LENGTH(…)`), `(CHAR_LENGTH(JSON_EXTRACT(col, '$.key')))` and `(DATE(col))`. The two character counts are close,
+not equal, across the engines (a JSON null counts 4 on MariaDB and is NULL on PostgreSQL). Any other
 expression needs `asPostgres:` with the PostgreSQL expression, or `app:entity:show-sql` refuses it on PostgreSQL.
 
 **Rules:**

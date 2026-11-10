@@ -440,6 +440,17 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.23.0 — Raw SQL that runs on MariaDB and PostgreSQL, new on `SqlDialect`: JSON readers over a `JsonPath` with
+  literal and bound segments (`jsonText()`, `jsonInt()`, `jsonDecimal()`, `jsonBool()`, `jsonType()`, `jsonLength()`),
+  the atomic JSON document update `jsonUpdate()` (`set()`, `setObjectUnlessPresent()`, `remove()`, `mergePatch()`),
+  `insertSkippingExistingRows()`, `acquireTransactionLock()` / `releaseTransactionLock()`,
+  `setTransactionTimeouts()` / `clearTransactionTimeouts()`, `stringAggDistinct()`, `forShare()`. Virtual columns:
+  `CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(col, '$.key')))`, `CHAR_LENGTH(JSON_EXTRACT(col, '$.key'))` and `DATE(col)`
+  have a PostgreSQL form. **PostgreSQL behaviour change:** `ddd_json_merge_patch` now merges nested objects (RFC 7396,
+  as MariaDB's `JSON_MERGE_PATCH`); before, an object in the patch replaced the stored object of that key. It affects
+  mergable JSON columns written with a nested patch. Run `app:db:postgres:install-extensions-collation-functions` on
+  deploy (the function is replaced). A class that implements `SqlDialect` itself needs the new methods. Guide:
+  `ddd-service-specialist`, `references/raw-sql-on-mariadb-and-postgresql.md`.
 - 3.22.0 — **Behaviour change: a relation is mapped onto a loaded entity only when the query of that load fetch-joined it** (an expand, or a join with `addSelect()` in a service's own query). Before, a to-one relation was also set whenever an earlier query of the request had left its target in Doctrine's unit of work — e.g. every row referencing the signed-in account answered the whole account object, without expand and without the target's read rights being applied to that load; a collection an earlier list had expanded appeared the same way. Such a relation now stays unset and lazy-loads on access. **Check in an app:** routes whose clients read a relation the request never expands (the response loses that key — add the expand to the request or call `$entity->expand()` / read the property in the controller), and golden files that contain such a relation. To keep the old mapping while routes are adjusted, set `mapRelationsLoadedByEarlierQueries => true` under `database` in `config/app/Base/Repo.php` (`Base.Repo.database.mapRelationsLoadedByEarlierQueries`). A model passed to a repository's `find()` outside of any load is mapped as before. New: `DoctrineQueryBuilder::getFetchJoinedRelationPaths()`, `getSelectedModelAliases()`.
 - 3.21.3 — A virtual column `(CASE WHEN col IN ('A', 'B') THEN col ELSE NULL END)` has a PostgreSQL form without `asPostgres:` (a unique key that holds for some rows only, on both databases — see `ddd-entity-specialist`, virtual columns).
 - 3.21.2 — Workers admin screen: UX examples (`references/admin-screen-examples.md` of `ddd-message-handler-specialist`: the questions the screen answers, wireframes, component sketches, wording); the screen guide's layout names the live row per transport and the throughput table. Documentation only.
