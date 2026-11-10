@@ -382,3 +382,11 @@ Unchanged:
 - 3.15.3 — Fix: `ModuleCompilerPass` no longer registers abstract classes of a module as services, as Symfony's
   resource loading does. Since 3.14.3 an abstract base of a module's console commands got the `console.command` tag and
   every `bin/console` run tried to instantiate it (fatal error).
+- 3.16.0 — `#[QueryOptionsProjection(targetClass: …, propertyMap: ['old' => 'new'])]`: a class without a table (e.g.
+  the old shape of a renamed entity) accepts filters / orderBy / select in its own names, validated against the target
+  class (also in an expand clause on a load-method property); `AppliedQueryOptions::createProjectedQueryOptions()`
+  translates them for the target's repository. PostgreSQL geometry: `#[DatabaseColumn(srid: 4326)]` makes the column
+  `geometry(<kind>,4326)` and every write path (upsert, batch, partial update, copy) stores that SRID; default 0 and
+  MariaDB unchanged. An explicit `#[DatabaseIndex(TYPE_SPATIAL)]` on a nullable geometry column is now created as a
+  GiST index on PostgreSQL (still left out on MariaDB) — such an existing declaration gets its index on the next
+  PostgreSQL diff. Object storage: the application logger goes to async-aws, so its retries are logged (info).
