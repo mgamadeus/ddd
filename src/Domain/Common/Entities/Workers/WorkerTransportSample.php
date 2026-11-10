@@ -37,6 +37,7 @@ class WorkerTransportSample extends Entity
     /** @var string|null The Messenger transport */
     #[NotNull]
     #[Length(max: 64)]
+    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
     public ?string $transport;
 
     /** @var DateTime|null Start of the minute (UTC) */

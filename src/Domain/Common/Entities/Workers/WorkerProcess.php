@@ -30,6 +30,7 @@ use Symfony\Component\Validator\Constraints\NotNull;
  */
 #[LazyLoadRepo(LazyLoadRepo::DB, DBWorkerProcess::class)]
 #[QueryOptions]
+#[DatabaseIndex(DatabaseIndex::TYPE_INDEX, ['state', 'lastSeenAt'])]
 class WorkerProcess extends Entity
 {
     use QueryOptionsTrait;
@@ -74,6 +75,7 @@ class WorkerProcess extends Entity
     /** @var string|null The consumed transport; several names joined by "," when the process consumes more than one */
     #[NotNull]
     #[Length(max: 255)]
+    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
     public ?string $transport;
 
     /** @var DateTime|null Start of the worker */
@@ -87,12 +89,14 @@ class WorkerProcess extends Entity
 
     /** @var DateTime|null Last heartbeat */
     #[NotNull]
+    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
     public ?DateTime $lastSeenAt;
 
     /** @var string|null RUNNING, STOPPING (a stop was requested, the current message finishes) or STOPPED */
     #[NotNull]
     #[Choice(choices: [self::STATE_RUNNING, self::STATE_STOPPING, self::STATE_STOPPED])]
     #[Length(max: 16)]
+    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
     public ?string $state;
 
     /** @var DateTime|null End of the process (for a lost one: when it was noticed) */
@@ -105,6 +109,7 @@ class WorkerProcess extends Entity
         self::STOP_REASON_OTHER, self::STOP_REASON_LOST,
     ])]
     #[Length(max: 32)]
+    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
     public ?string $stopReason;
 
     /** @var int Messages the process finished */

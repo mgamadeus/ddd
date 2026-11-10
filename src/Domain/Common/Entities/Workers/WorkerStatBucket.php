@@ -30,6 +30,7 @@ use Symfony\Component\Validator\Constraints\NotNull;
 #[LazyLoadRepo(LazyLoadRepo::DB, DBWorkerStatBucket::class)]
 #[QueryOptions]
 #[DatabaseIndex(DatabaseIndex::TYPE_UNIQUE, ['transport', 'messageClass', 'bucketStart'])]
+#[DatabaseIndex(DatabaseIndex::TYPE_INDEX, ['transport', 'bucketStart'])]
 class WorkerStatBucket extends Entity
 {
     use QueryOptionsTrait;
@@ -37,6 +38,7 @@ class WorkerStatBucket extends Entity
     /** @var string|null The Messenger transport the messages were consumed from */
     #[NotNull]
     #[Length(max: 64)]
+    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
     public ?string $transport;
 
     /** @var string|null Class of the message */

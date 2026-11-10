@@ -7,6 +7,7 @@ namespace DDD\Domain\Base\Entities\MessageHandlers;
 use DDD\Domain\Base\Repo\DB\Doctrine\DoctrineEntityRegistry;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
 use DDD\Domain\Base\Repo\Virtual\VirtualEntityRegistry;
+use DDD\Domain\Common\Services\WorkerMonitoringService;
 use DDD\Infrastructure\Logging\IssuesMessengerContextBuilder;
 use DDD\Infrastructure\Services\AuthService;
 use DDD\Infrastructure\Services\DDDService;
@@ -174,6 +175,12 @@ abstract class AppMessageHandler
      */
     protected function logThrowableToIssues(Throwable $throwable, array $additionalContext): void
     {
+        try {
+            // the worker monitoring counts the message as failed (kind "caught") although the handler returns
+            DDDService::instance()->getService(WorkerMonitoringService::class)?->reportCaughtThrowable($throwable);
+        } catch (Throwable) {
+            // the job's own error handling goes on
+        }
         try {
             $issuesLogService = $this->issuesLogService ?? DDDService::instance()->getService(IssuesLogService::class);
             $issuesLogService->logThrowable(

@@ -12,6 +12,7 @@ use DDD\Domain\Common\Entities\Workers\WorkerLoopDefinition;
 use DDD\Domain\Common\Entities\Workers\WorkersCheckFinding;
 use DDD\Domain\Common\Entities\Workers\WorkersCheckFindings;
 use DDD\Domain\Common\Entities\Workers\WorkersSettings;
+use DDD\Domain\Common\Entities\Workers\WorkerTransportSamples;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Services\Service;
@@ -38,6 +39,8 @@ class WorkerDefinitionsService extends Service
     public const string KEY_LOOPS = 'loops';
     /** Routing key of Messenger that matches every message */
     public const string ROUTING_WILDCARD = '*';
+    /** The sampler command counts as not running after this silence */
+    public const int SAMPLER_MAX_SILENCE_SECONDS = 300;
 
     protected ?WorkerDefinitions $workerDefinitions = null;
 
@@ -260,7 +263,44 @@ class WorkerDefinitionsService extends Service
                 );
             }
         }
+        $this->addMonitoringFindings($workersCheckFindings);
         return $workersCheckFindings;
+    }
+
+    /**
+     * With the monitoring switched on: its tables must be readable, and the sampler command must have written within
+     * the last {@see self::SAMPLER_MAX_SILENCE_SECONDS} — without it a transport without a worker has no queue history
+     * and a stuck transport is not noticed.
+     */
+    protected function addMonitoringFindings(WorkersCheckFindings $workersCheckFindings): void
+    {
+        if (!$this->getSettings()->enabled) {
+            return;
+        }
+        DDDService::instance()->deactivateEntityRightsRestrictions();
+        try {
+            $lastSampledByCommandAt = WorkerTransportSamples::getService()->getLastSampledByCommandAt();
+        } catch (Throwable $throwable) {
+            $workersCheckFindings->addFinding(
+                WorkersCheckFinding::SEVERITY_WARNING,
+                WorkersCheckFinding::CODE_MONITORING_TABLES_MISSING,
+                'The worker monitoring is switched on, but its tables cannot be read: ' . $throwable->getMessage()
+            );
+            return;
+        } finally {
+            DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
+        }
+        if ($lastSampledByCommandAt === null || time() - $lastSampledByCommandAt->getTimestamp() > self::SAMPLER_MAX_SILENCE_SECONDS) {
+            $workersCheckFindings->addFinding(
+                WorkersCheckFinding::SEVERITY_WARNING,
+                WorkersCheckFinding::CODE_SAMPLER_NOT_RUNNING,
+                sprintf(
+                    'The worker monitoring is switched on, but app:workers:sample has not run in the last %d minutes (last run: %s). Register it as a Cron for every minute',
+                    intdiv(self::SAMPLER_MAX_SILENCE_SECONDS, 60),
+                    $lastSampledByCommandAt !== null ? (string)$lastSampledByCommandAt : 'never'
+                )
+            );
+        }
     }
 
     protected function getWorkerTransportsService(): WorkerTransportsService

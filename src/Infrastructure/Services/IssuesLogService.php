@@ -860,6 +860,18 @@ class IssuesLogService
         static::$settings = $settings;
     }
 
+    /**
+     * The group hash the issues log files the throwable under (`error.group_hash`); null when it cannot be built.
+     */
+    public function getGroupHashForThrowable(Throwable $throwable): ?string
+    {
+        try {
+            return $this->getFingerprintBuilder()->buildGroupHash($throwable);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
     protected function getFingerprintBuilder(): IssuesFingerprintBuilder
     {
         try {

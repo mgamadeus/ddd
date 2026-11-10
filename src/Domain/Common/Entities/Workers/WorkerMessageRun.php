@@ -28,6 +28,7 @@ use Symfony\Component\Validator\Constraints\NotNull;
 #[LazyLoadRepo(LazyLoadRepo::DB, DBWorkerMessageRun::class)]
 #[QueryOptions]
 #[DatabaseIndex(DatabaseIndex::TYPE_INDEX, ['transport', 'startedAt'])]
+#[DatabaseIndex(DatabaseIndex::TYPE_INDEX, ['outcome', 'startedAt'])]
 class WorkerMessageRun extends Entity
 {
     use QueryOptionsTrait;
@@ -49,10 +50,12 @@ class WorkerMessageRun extends Entity
     /** @var string|null Class of the message */
     #[NotNull]
     #[Length(max: 255)]
+    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
     public ?string $messageClass;
 
     /** @var string|null {@see WorkerProcess::$processKey} of the consuming process; null for a message run from the command line */
     #[Length(max: 191)]
+    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
     public ?string $processKey;
 
     /** @var DateTime|null When the message was dispatched; null when it carries no dispatch origin */
@@ -71,6 +74,7 @@ class WorkerMessageRun extends Entity
 
     /** @var DateTime|null Start of the handling */
     #[NotNull]
+    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
     public ?DateTime $startedAt;
 
     /** @var int Handling duration in milliseconds */
@@ -87,6 +91,7 @@ class WorkerMessageRun extends Entity
     #[NotNull]
     #[Choice(choices: [self::OUTCOME_HANDLED, self::OUTCOME_CAUGHT, self::OUTCOME_THROWN])]
     #[Length(max: 16)]
+    #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
     public ?string $outcome;
 
     /** @var int Delivery attempt: 1 = first delivery */

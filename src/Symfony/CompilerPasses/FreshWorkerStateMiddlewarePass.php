@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace DDD\Symfony\CompilerPasses;
 
+use DDD\Domain\Common\Services\WorkerMonitoringService;
 use DDD\Infrastructure\Services\ServicesThrowErrorsResetter;
 use DDD\Symfony\Messenger\Middleware\FreshWorkerStateMiddleware;
+use DDD\Symfony\Messenger\Middleware\WorkerMonitoringMiddleware;
 use DDD\Symfony\Messenger\Middleware\WorkspaceOriginGuardMiddleware;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -28,6 +30,10 @@ use Symfony\Component\DependencyInjection\Reference;
  *
  * The same pass registers the {@see WorkspaceOriginGuardMiddleware} right behind it (a consumed message dispatched by
  * ANOTHER workspace is refused, never run on the wrong code); its own opt-out is `ddd.messenger.workspace_origin_guard: false`.
+ *
+ * Between the two it registers the {@see WorkerMonitoringMiddleware} (every consumed message is measured for the worker
+ * monitoring; a message the guard refuses counts as thrown); its own opt-out is `ddd.messenger.worker_monitoring: false`.
+ * The resulting order is fresh state, monitoring, origin guard, then the app's own middleware.
  */
 class FreshWorkerStateMiddlewarePass implements CompilerPassInterface
 {
@@ -35,12 +41,15 @@ class FreshWorkerStateMiddlewarePass implements CompilerPassInterface
     public const string MIDDLEWARE_ID_SUFFIX = '.middleware.ddd_fresh_worker_state';
     public const string ORIGIN_GUARD_ENABLED_PARAMETER = 'ddd.messenger.workspace_origin_guard';
     public const string ORIGIN_GUARD_MIDDLEWARE_ID_SUFFIX = '.middleware.ddd_workspace_origin_guard';
+    public const string WORKER_MONITORING_ENABLED_PARAMETER = 'ddd.messenger.worker_monitoring';
+    public const string WORKER_MONITORING_MIDDLEWARE_ID_SUFFIX = '.middleware.ddd_worker_monitoring';
 
     public function process(ContainerBuilder $container): void
     {
         $freshStateEnabled = !($container->hasParameter(self::ENABLED_PARAMETER) && !$container->getParameter(self::ENABLED_PARAMETER));
         $originGuardEnabled = !($container->hasParameter(self::ORIGIN_GUARD_ENABLED_PARAMETER) && !$container->getParameter(self::ORIGIN_GUARD_ENABLED_PARAMETER));
-        if (!$freshStateEnabled && !$originGuardEnabled) {
+        $workerMonitoringEnabled = !($container->hasParameter(self::WORKER_MONITORING_ENABLED_PARAMETER) && !$container->getParameter(self::WORKER_MONITORING_ENABLED_PARAMETER));
+        if (!$freshStateEnabled && !$originGuardEnabled && !$workerMonitoringEnabled) {
             return;
         }
         foreach (array_keys($container->findTaggedServiceIds('messenger.bus')) as $busId) {
@@ -50,11 +59,21 @@ class FreshWorkerStateMiddlewarePass implements CompilerPassInterface
             }
             /** @var array<int, array{id: string, arguments?: array<int, mixed>}> $middleware */
             $middleware = $container->getParameter($middlewareParameter);
-            // Prepend in reverse order so the list starts with fresh state, then the origin guard, then the app's own.
+            // Prepend in reverse order so the list starts with fresh state, then the monitoring, then the origin guard,
+            // then the app's own.
             if ($originGuardEnabled && !$this->busAlreadyListsTheMiddleware($middleware, $busId, self::ORIGIN_GUARD_MIDDLEWARE_ID_SUFFIX, WorkspaceOriginGuardMiddleware::class)) {
                 $originGuardId = $busId . self::ORIGIN_GUARD_MIDDLEWARE_ID_SUFFIX;
                 $container->setDefinition($originGuardId, new Definition(WorkspaceOriginGuardMiddleware::class));
                 array_unshift($middleware, ['id' => $originGuardId]);
+            }
+            if ($workerMonitoringEnabled && !$this->busAlreadyListsTheMiddleware($middleware, $busId, self::WORKER_MONITORING_MIDDLEWARE_ID_SUFFIX, WorkerMonitoringMiddleware::class)) {
+                $workerMonitoringId = $busId . self::WORKER_MONITORING_MIDDLEWARE_ID_SUFFIX;
+                $container->setDefinition(
+                    $workerMonitoringId,
+                    (new Definition(WorkerMonitoringMiddleware::class))
+                        ->setArgument(0, new Reference(WorkerMonitoringService::class, ContainerInterface::NULL_ON_INVALID_REFERENCE))
+                );
+                array_unshift($middleware, ['id' => $workerMonitoringId]);
             }
             if ($freshStateEnabled && !$this->busAlreadyListsTheMiddleware($middleware, $busId, self::MIDDLEWARE_ID_SUFFIX, FreshWorkerStateMiddleware::class)) {
                 $middlewareId = $busId . self::MIDDLEWARE_ID_SUFFIX;
