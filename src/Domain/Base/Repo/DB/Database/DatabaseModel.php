@@ -122,19 +122,14 @@ class DatabaseModel extends ValueObject
     public $potentialOneToOneInverseRelationships = [];
 
     /**
-     * Resolves the SQL table name for an Entity class. A {@see DatabaseTableName} attribute on the Entity
-     * (preferred) or its EntitySet overrides the default `DATABASE_TABLE_PREFIX` + EntitySet-name convention
-     * with a verbatim name. Used for both the entity's own table and foreign-key references pointing to it.
-     *
-     * @param string $entityClassName
-     * @return string
-     * @throws ReflectionException
-     */
-    /**
-     * The SQL table an entity class maps to: its `#[DatabaseTableName]` (on the entity or its set), else
-     * `DATABASE_TABLE_PREFIX` + the entity set's short name. Subclasses on the same table resolve to the same name.
+     * The SQL table an entity class maps to: the name the application configures for it
+     * (`Base.Repo.database.tableNames`, {@see EntityModelGeneratorService::findConfiguredSqlTableNameOfEntityClass()}),
+     * else its `#[DatabaseTableName]` (on the entity or its set), else `DATABASE_TABLE_PREFIX` + the entity set's
+     * short name. Subclasses on the same table resolve to the same name. Used for the entity's own table and for
+     * foreign keys pointing to it.
      *
      * @throws ReflectionException
+     * @throws InternalErrorException
      */
     public static function getSqlTableNameOfEntityClass(string $entityClassName): string
     {
@@ -147,6 +142,11 @@ class DatabaseModel extends ValueObject
         /** @var Entity $entityClassName */
         $entitySetClass = $entityClassName::getEntitySetClass();
         $entitySetReflectionClass = $entitySetClass ? ReflectionClass::instance($entitySetClass) : null;
+
+        $configuredSqlTableName = EntityModelGeneratorService::findConfiguredSqlTableNameOfEntityClass((string)$entityClassName);
+        if ($configuredSqlTableName !== null) {
+            return $configuredSqlTableName;
+        }
 
         /** @var DatabaseTableName|null $tableNameOverride */
         $tableNameOverride = $entityReflectionClass->getAttributeInstance(DatabaseTableName::class)

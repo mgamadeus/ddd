@@ -1,9 +1,9 @@
 ---
 name: ddd-database-schema-diff-specialist
-description: "Operate the DDD live-vs-target schema diff: compute diffs between the entity-derived and the live schema on MariaDB and PostgreSQL, apply drift fixes per table or in bulk, build the admin interface in a consuming app, set up a new PostgreSQL database (app:db:postgres:install-extensions-collation-functions, pre-deploy hook), and leave a module's tables out of an app (Base.Repo.database.excludedTables). Covers the diff value objects, the 13-phase SQL assembler, false-positive normalisation, VECTOR resets, severity, the which-side-is-wrong checklist, the large-table production guard (bypass CLI/messenger only), the diff-signature gate and apply lock, the admin-screen guide, pt-online-schema-change FK renames, and troubleshooting (openApi 500, DIFF_SIGNATURE_MISMATCH, DIFF_APPLY_LOCK_BUSY, stale caches). Use when excluding tables, setting up a PostgreSQL database, computing or applying schema diffs, debugging false-positive MODIFYs, deciding entity-vs-DB, wiring the diff admin screen, or reasoning about pt-osc."
+description: "Operate the DDD live-vs-target schema diff: diff the entity-derived against the live schema on MariaDB and PostgreSQL, apply drift fixes per table or in bulk, build the admin screen, set up a new PostgreSQL database (app:db:postgres:install-extensions-collation-functions, pre-deploy hook), and leave a module's tables out of an app or name them (Base.Repo.database.excludedTables, tableNames). Covers the diff value objects, the 13-phase SQL assembler, false-positive normalisation, VECTOR resets, severity, which side is wrong, the large-table production guard (bypass CLI/messenger only), the diff-signature gate and apply lock, the admin-screen guide, pt-online-schema-change FK renames, and troubleshooting (openApi 500, DIFF_SIGNATURE_MISMATCH, DIFF_APPLY_LOCK_BUSY, stale caches). Use when excluding or renaming a module's tables, setting up a PostgreSQL database, computing or applying schema diffs, debugging false-positive MODIFYs, deciding entity-vs-DB, wiring the admin screen, or reasoning about pt-osc."
 metadata:
   author: mgamadeus
-  version: "2.0.0"
+  version: "2.1.0"
 ---
 
 # DDD Database Schema Diff Specialist
@@ -187,6 +187,30 @@ return [
 - **Opting in later:** remove the line and create the table (the DDL from `app:entity:show-sql <Entity>` or the diff).
 - Neither the framework nor a module ships a `Base/Repo/database.php`: the configuration is read per file, a shipped
   file would shadow the application's or be shadowed by it.
+
+## Naming the Table of a Module's Entity (`tableNames`)
+
+An application whose table for a module's entity has another name than the module's default (an existing table that
+keeps its name) maps the entity class to the name in the same file:
+
+```php
+return [
+    'tableNames' => [
+        \Vendor\Module\Domain\Usage\Entities\UsageLog::class => 'LegacyUsageLogs',
+    ],
+];
+```
+
+- The name is taken verbatim (no `DATABASE_TABLE_PREFIX`) and wins over a `#[DatabaseTableName]` on the entity.
+- It is the table everywhere: the generated Doctrine model, `getTableName()`, the schema diff, the SQL create, foreign
+  keys of other entities pointing to it, and `excludedTables`.
+- An entry covers the listed class and a subclass sharing its EntitySet class; a subclass with its own entry uses that.
+- A key that is no entity class is logged and ignored; a name that is not letters, digits and underscores (at most 63
+  characters) throws `InternalErrorException`.
+- After changing an entry: regenerate the models (`app:generate-doctrine-models-for-entities`) and clear the cache.
+  Renaming the live table is not part of it: the diff shows the new name as a table to create.
+- A package therefore ships no application's table name: `#[DatabaseTableName]` stays for a name that belongs to the
+  entity itself.
 
 ## Phase-Ordered SQL Assembly
 

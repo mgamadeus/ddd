@@ -12,6 +12,7 @@ use DDD\Domain\Base\Repo\DB\Database\SubclassIndicator;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatements;
 use DDD\Domain\Base\Repo\DB\Dialect\SqlDialect;
 use DDD\Domain\Base\Repo\DB\Doctrine\EntityManagerFactory;
+use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Libs\ClassFinder;
 use DDD\Infrastructure\Libs\Config;
 use DDD\DDDBundle;
@@ -43,8 +44,16 @@ class EntityModelGeneratorService
     /** @var string The application config key listing entity classes whose tables this application leaves out */
     public const string EXCLUDED_TABLES_CONFIG_KEY = 'Base.Repo.database.excludedTables';
 
+    public const string TABLE_NAMES_CONFIG_KEY = 'Base.Repo.database.tableNames';
+
+    /** A table name both databases take: letters, digits, underscore, at most 63 characters */
+    public const string TABLE_NAME_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]{0,62}$/';
+
     /** @var string[]|null The SQL tables of {@see EXCLUDED_TABLES_CONFIG_KEY}, resolved once per process */
     protected static ?array $excludedSqlTableNames = null;
+
+    /** @var string[]|null Table names keyed by entity class (`tableNames` of the application config) */
+    protected static ?array $configuredSqlTableNamesByEntityClass = null;
 
     /**
      * The SQL that creates or updates the tables of the given entity classes (null = every entity of the project), in
@@ -317,6 +326,78 @@ class EntityModelGeneratorService
     {
         self::$databaseModelsByFilterMode = [];
         self::$excludedSqlTableNames = null;
+        self::$configuredSqlTableNamesByEntityClass = null;
+    }
+
+    /**
+     * The table name this application gives an entity class in its config `config/app/Base/Repo/database.php` →
+     * `tableNames` (`[Entity::class => 'TableName']`), or null when it names none. The name is taken verbatim (no
+     * `DATABASE_TABLE_PREFIX`) and wins over a `#[DatabaseTableName]` on the entity. An entry covers the listed class
+     * and a subclass that shares its EntitySet class (the same table); the entry of the class itself wins over the
+     * entry of a parent. A key that is no entity class is reported as a warning and ignored.
+     *
+     * @throws InternalErrorException When a configured name is no valid table name
+     */
+    public static function findConfiguredSqlTableNameOfEntityClass(string $entityClassName): ?string
+    {
+        $configuredSqlTableNamesByEntityClass = self::getConfiguredSqlTableNamesByEntityClass();
+        if ($configuredSqlTableNamesByEntityClass === []) {
+            return null;
+        }
+        $entityClassName = ltrim($entityClassName, '\\');
+        if (isset($configuredSqlTableNamesByEntityClass[$entityClassName])) {
+            return $configuredSqlTableNamesByEntityClass[$entityClassName];
+        }
+        $entitySetClass = $entityClassName::getEntitySetClass();
+        if (!$entitySetClass) {
+            return null;
+        }
+        foreach (class_parents($entityClassName) ?: [] as $parentClassName) {
+            if (
+                isset($configuredSqlTableNamesByEntityClass[$parentClassName])
+                && $parentClassName::getEntitySetClass() === $entitySetClass
+            ) {
+                return $configuredSqlTableNamesByEntityClass[$parentClassName];
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @return string[] Table names keyed by entity class, as the application configures them
+     * @throws InternalErrorException When a configured name is no valid table name
+     */
+    protected static function getConfiguredSqlTableNamesByEntityClass(): array
+    {
+        if (self::$configuredSqlTableNamesByEntityClass !== null) {
+            return self::$configuredSqlTableNamesByEntityClass;
+        }
+        // the file is read as a whole: the framework and its modules ship no Base/Repo/database.php
+        $databaseConfig = Config::get('Base.Repo.database');
+        $listedTableNames = is_array($databaseConfig) ? ($databaseConfig['tableNames'] ?? []) : [];
+        $configuredSqlTableNamesByEntityClass = [];
+        foreach (is_array($listedTableNames) ? $listedTableNames : [] as $listedEntityClass => $sqlTableName) {
+            if (
+                !is_string($listedEntityClass) || !class_exists($listedEntityClass)
+                || !method_exists($listedEntityClass, 'getEntitySetClass')
+            ) {
+                error_log(
+                    'DDD: ' . self::TABLE_NAMES_CONFIG_KEY . ' lists "' . $listedEntityClass
+                    . '", which is no entity class; the entry is ignored'
+                );
+                continue;
+            }
+            if (!is_string($sqlTableName) || !preg_match(self::TABLE_NAME_PATTERN, $sqlTableName)) {
+                throw new InternalErrorException(
+                    self::TABLE_NAMES_CONFIG_KEY . ' gives ' . $listedEntityClass . ' the table name "'
+                    . (is_string($sqlTableName) ? $sqlTableName : gettype($sqlTableName))
+                    . '": a table name has letters, digits and underscores, starts with a letter or an underscore'
+                    . ' and has at most 63 characters'
+                );
+            }
+            $configuredSqlTableNamesByEntityClass[ltrim($listedEntityClass, '\\')] = $sqlTableName;
+        }
+        return self::$configuredSqlTableNamesByEntityClass = $configuredSqlTableNamesByEntityClass;
     }
 
     /**

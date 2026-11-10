@@ -440,6 +440,11 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.24.0 — `tableNames`: an application maps an entity class to a table name in its committed
+  `config/app/Base/Repo/database.php` (`'tableNames' => [Entity::class => 'TableName']`). The name is verbatim, wins
+  over `#[DatabaseTableName]` and is used by the generated model, the schema diff, the SQL create, foreign keys
+  pointing to the table and `excludedTables`. A module can drop a `#[DatabaseTableName]` that only served one
+  application; that application keeps its table with one config line. Nothing changes without the key.
 - 3.23.1 — Worker monitoring: `workerTransportDetail` carries `recentWindowSeconds` (what the counts of its
   `transport` cover), so a transport page labels them without loading the overview. A Cron description longer than
   255 characters is a validation message of `app:crons:upsert` instead of a database error. Guides: registering the
