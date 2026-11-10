@@ -56,7 +56,8 @@ relative to the prefix of the application's controller (e.g. `/api/admin/mainten
 - `loops.elements[]`: the loops of the worker list (`name`, `args`, `sleepSeconds`, `prodOnly`). They are listed, not
   monitored.
 
-**`workerTransportDetail`**: `transport` (the overview object above), `interval`, `stepSeconds`, `sequences`,
+**`workerTransportDetail`**: `transport` (the overview object above), `recentWindowSeconds` (900: what the
+counts of `transport` cover), `interval`, `stepSeconds`, `sequences`,
 `messageClasses`, `processes` (the live ones).
 
 - `messageClasses.elements[]`: `messageClass`, `handledCount`, `thrownCount`, `caughtCount`, `redeliveredCount`,
@@ -95,7 +96,9 @@ carries the route or command of the message that led to it.
 1. **Header**: totals as tiles (waiting, in work, live processes, handled and failed in the last hour, throughput
    per window from `totals.throughputWindows`); two banners:
    monitoring off (`monitoringEnabled` false — only the worker list and live queue counts are shown) and sampler not
-   running (`samplerActive` false — queue history has holes, lost processes are closed late).
+   running (`samplerActive` false — queue history has holes, lost processes are closed late). While the monitoring
+   is off, live processes, handled, failed, durations and throughput arrive as 0 or empty because nothing is
+   measured: hide those tiles and columns or show "not measured", never the number 0.
 2. **Live row per transport**: workers running against the configured range (`liveProcessCount`, `effectiveMin`,
    `effectiveMax`, `isAutoscaled`), messages in work (`inFlight`) and waiting (`waiting`, `waitingState`), each
    number with its unit; below it the live processes of that transport from `workersOverview.processes`.

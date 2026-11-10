@@ -532,6 +532,7 @@ class WorkerMonitoringTest extends IntegrationTestCase
 
         $workerTransportDetail = $this->withoutRights(static fn() => $workersOverviewService->getWorkerTransportDetail(self::TRANSPORT));
         self::assertSame(60, $workerTransportDetail->stepSeconds);
+        self::assertSame($workersOverview->recentWindowSeconds, $workerTransportDetail->recentWindowSeconds);
         self::assertCount(13, $workerTransportDetail->sequences->getElements());
         $sequenceTotals = [];
         foreach ($workerTransportDetail->sequences->getElements() as $dateTimeValueSequence) {

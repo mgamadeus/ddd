@@ -24,6 +24,7 @@ Symptom → check. Run a consume command in the foreground without `--no-debug` 
 | Process stays RUNNING after it was killed | it is closed as LOST by the next prune (sampler command or another worker's flush) after 12 heartbeat intervals |
 | Process stays BUSY after it was killed | a prune on the same host closes it at once; from another host only after twice its `busySilentSeconds` — set the consumer's `busySilentSeconds` to what its longest job needs |
 | A running BUSY process is closed as LOST | containers share a host name without sharing process ids: `closeGoneProcessesOnOwnHost: false` |
+| Banner or `app:workers:check` says the sampler is not running (`SAMPLER_NOT_RUNNING`, `samplerActive` false) | no Cron row for `app:workers:sample` in this environment's database (`app:crons:list`); no cron runner here (`app:crons:execute` every minute); the command is not in the deployed code (`app:crons:executions` shows the failed runs); the monitoring is off or its tables are missing (`app:workers:check`) — setup step 3 in [monitoring-and-settings.md](monitoring-and-settings.md) |
 | A chart shows no line for minutes | a gap (null): no sample or no handled message in those steps — not a zero |
 | Transport STUCK with processes in the list of the orchestrator | the processes did not register: they crash before the worker starts — run the consume command in the foreground |
 | Queue count state `QUEUE_NOT_SET_UP` | nothing dispatched or consumed yet on this broker; the count never declares a queue |

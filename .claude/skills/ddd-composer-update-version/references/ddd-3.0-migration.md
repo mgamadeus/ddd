@@ -440,6 +440,11 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.23.1 — Worker monitoring: `workerTransportDetail` carries `recentWindowSeconds` (what the counts of its
+  `transport` cover), so a transport page labels them without loading the overview. A Cron description longer than
+  255 characters is a validation message of `app:crons:upsert` instead of a database error. Guides: registering the
+  sampler as a Cron, one monitoring per database, the "sampler is not running" row, what a screen shows while the
+  monitoring is off, and where `app:crons:upsert` checks the command.
 - 3.23.0 — Raw SQL that runs on MariaDB and PostgreSQL, new on `SqlDialect`: JSON readers over a `JsonPath` with
   literal and bound segments (`jsonText()`, `jsonInt()`, `jsonDecimal()`, `jsonBool()`, `jsonType()`, `jsonLength()`),
   the atomic JSON document update `jsonUpdate()` (`set()`, `setObjectUnlessPresent()`, `remove()`, `mergePatch()`),

@@ -3,7 +3,7 @@ name: ddd-message-handler-specialist
 description: "Symfony Messenger in mgamadeus/ddd, from an async job to watching its workers. Covers AppMessage and slim AppMessageHandler pairs, the service-side bool async pattern, auth context, fresh worker state per message, the workspace-origin guard, messenger.yaml transports and routing, supervisor consumers, worker recycling limits, the worker list (config/system/workers.yaml) and the worker monitoring with app:workers:* console commands (check, list, overview, transport, history, processes, runs, queues, stats, sample, restart; --format=json for agents), WorkersOverviewService, the admin endpoints, screen guide and UX examples. Use when adding an async background job, wiring a transport or consumer, messages wait and nothing consumes them, workers crash-loop or run stale config, state leaks between messages, a message refused for another workspace, which message fails or is slow, messages per minute or per worker, restarting workers, a process shows LOST, SILENT or stays BUSY, or building a workers admin screen."
 metadata:
   author: mgamadeus
-  version: "2.1.0"
+  version: "2.1.1"
   framework: mgamadeus/ddd
 ---
 

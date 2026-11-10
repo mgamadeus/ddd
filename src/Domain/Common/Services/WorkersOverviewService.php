@@ -243,6 +243,7 @@ class WorkersOverviewService extends Service
         $workerTransportDetail->transport = $workerTransportOverview;
         $workerTransportDetail->interval = $interval;
         $workerTransportDetail->stepSeconds = $stepSeconds;
+        $workerTransportDetail->recentWindowSeconds = self::RECENT_WINDOW_SECONDS;
         $settings = $this->getSettings();
         $workerTransportHistory = new WorkerTransportHistory($transport);
         if ($settings->enabled) {

@@ -16,6 +16,9 @@ class WorkerTransportDetail extends ValueObject
 {
     public WorkerTransportOverview $transport;
 
+    /** @var int Seconds the counts and averages of {@see $transport} cover, as {@see WorkersOverview::$recentWindowSeconds} */
+    public int $recentWindowSeconds = 900;
+
     public UtcTimeInterval $interval;
 
     /** @var int Bucket size of every sequence in seconds */

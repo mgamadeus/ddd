@@ -60,9 +60,9 @@ class Cron extends Entity
     #[DatabaseIndex(indexType: DatabaseIndex::TYPE_UNIQUE)]
     public string $name;
 
-    /** @var string The Cron's descripotion */
+    /** @var string The Cron's description (16 to 255 characters) */
     #[NotBlank]
-    #[Length(min: 16)]
+    #[Length(min: 16, max: 255)]
     public string $description;
 
     /**

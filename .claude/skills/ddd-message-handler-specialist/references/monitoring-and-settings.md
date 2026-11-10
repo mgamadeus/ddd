@@ -32,8 +32,24 @@ Off by default. Console commands: [console-for-agents.md](console-for-agents.md)
    `WORKERS_FLUSH_SECONDS`).
 3. Run the sampler every minute — a Cron of the application (`app:crons:upsert`, see `ddd-cli-command-specialist`)
    or a loop of the worker list: `php bin/console app:workers:sample`. Without it a transport nobody consumes has no
-   queue history, lost processes are closed late and `app:workers:check` warns `SAMPLER_NOT_RUNNING`.
+   queue history, lost processes are closed late and `app:workers:check` warns `SAMPLER_NOT_RUNNING`. As a Cron
+   (`--dryRun` shows the row, without it the row is written):
+
+   ```bash
+   php bin/console app:crons:upsert --name="Sample Worker Monitoring" \
+     --description="Worker monitoring sampler: stores the waiting messages of every consumed transport and closes worker processes that died silently. Must run every minute." \
+     --schedule="* * * * *" --command="app:workers:sample" --active=1 --dryRun
+   ```
+
+   - A Cron row runs only where a cron runner ticks (`app:crons:execute` every minute). An environment without one
+     keeps reporting `SAMPLER_NOT_RUNNING`.
+   - The row lives in the database: every environment needs its own registration.
+   - While the monitoring is off the command returns success without sampling.
 4. Restart the workers (they read the setting at start).
+
+**One monitoring per database.** An environment that shares its database with another one (a test stage on the
+production database) keeps the monitoring off: its workers and samples would mix into the other environment's
+numbers.
 
 No handler changes: a middleware on every bus measures each consumed message, an event subscriber follows the worker.
 Opt out for a whole app (nothing is registered): container parameter `ddd.messenger.worker_monitoring: false`.
