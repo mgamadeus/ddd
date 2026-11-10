@@ -36,13 +36,18 @@ class WorkersQueues extends WorkersReport
         $workerQueuesService = DDDService::instance()->getService(WorkerQueuesService::class);
         /** @var string[] $transportNames */
         $transportNames = array_values(array_filter((array)$input->getArgument('transports'), 'is_string'));
+        $unknownTransportNames = array_values(array_filter(
+            $transportNames,
+            static fn(string $transportName): bool => !$workerTransportsService->hasReceiver($transportName)
+        ));
         if ($transportNames === []) {
             $transportNames = $workerTransportsService->getConsumedTransportNames();
         }
+        $exitCode = $unknownTransportNames === [] ? Command::SUCCESS : Command::FAILURE;
         $workerQueueCounts = $workerQueuesService->countWaitingMessages($transportNames);
         if ($this->isJsonFormat($input)) {
             $this->writeJsonPayload($output, 'workerQueueCounts', $workerQueueCounts);
-            return Command::SUCCESS;
+            return $exitCode;
         }
         $symfonyStyle = new SymfonyStyle($input, $output);
         $symfonyStyle->table(
@@ -57,6 +62,9 @@ class WorkersQueues extends WorkersReport
                 $workerQueueCounts->getElements()
             )
         );
-        return Command::SUCCESS;
+        if ($unknownTransportNames !== []) {
+            $symfonyStyle->getErrorStyle()->error('No such transport in the Messenger configuration: ' . implode(', ', $unknownTransportNames));
+        }
+        return $exitCode;
     }
 }

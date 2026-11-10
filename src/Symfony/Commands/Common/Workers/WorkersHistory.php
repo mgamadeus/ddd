@@ -36,6 +36,7 @@ class WorkersHistory extends WorkersReport
                 InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
                 'Only this sequence (repeatable): ' . implode(', ', WorkersOverviewService::HISTORY_SEQUENCE_NAMES)
             )
+            ->addOption('onlyActive', null, InputOption::VALUE_NONE, 'Only transports with a value above 0 in one of the shown sequences')
             ->addFormatOption();
     }
 
@@ -68,6 +69,15 @@ class WorkersHistory extends WorkersReport
             return Command::FAILURE;
         }
         $this->restrictToTransportsAndSequences($workersHistory, $transportNames, $sequenceNames);
+        if ($input->getOption('onlyActive')) {
+            $activeHistories = new WorkerTransportHistories();
+            foreach ($workersHistory->transports->getElements() as $workerTransportHistory) {
+                if ($this->isActive($workerTransportHistory)) {
+                    $activeHistories->add($workerTransportHistory);
+                }
+            }
+            $workersHistory->transports = $activeHistories;
+        }
         if ($this->isJsonFormat($input)) {
             $this->writeJsonPayload($output, 'workersHistory', $workersHistory);
             return Command::SUCCESS;
@@ -91,6 +101,19 @@ class WorkersHistory extends WorkersReport
         }
         $symfonyStyle->table(['Transport', ...$shownSequenceNames], $rows);
         return Command::SUCCESS;
+    }
+
+    /** @return bool One of the history's sequences has a value above 0 in the window */
+    protected function isActive(WorkerTransportHistory $workerTransportHistory): bool
+    {
+        foreach ($workerTransportHistory->sequences->getElements() as $dateTimeValueSequence) {
+            /** @var DateTimeValueSequence $dateTimeValueSequence */
+            $values = $dateTimeValueSequence->getValuesByTimestamp();
+            if ($values !== [] && max($values) > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

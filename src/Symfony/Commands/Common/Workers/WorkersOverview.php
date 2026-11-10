@@ -28,7 +28,7 @@ class WorkersOverview extends WorkersReport
     {
         $this
             ->addOption('transport', null, InputOption::VALUE_REQUIRED, 'Only this transport')
-            ->addOption('onlyActive', null, InputOption::VALUE_NONE, 'Only transports that are not idle or did something in the last minutes')
+            ->addOption('onlyActive', null, InputOption::VALUE_NONE, 'Only transports with a live process, a waiting or running message, a state other than IDLE, or messages finished in the last minutes')
             ->addFormatOption();
     }
 
@@ -129,6 +129,7 @@ class WorkersOverview extends WorkersReport
     {
         return $workerTransportOverview->state !== WorkerTransportOverview::STATE_IDLE
             || $workerTransportOverview->inFlight > 0
+            || $workerTransportOverview->liveProcessCount > 0
             || ($workerTransportOverview->waiting ?? 0) > 0
             || $workerTransportOverview->handledCount > 0
             || $workerTransportOverview->thrownCount > 0

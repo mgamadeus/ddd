@@ -70,7 +70,12 @@ class WorkerQueuesService extends Service
             }
             $receiver = $receiversByTransport[$transport];
             if ($receiver === null) {
-                $workerQueueCounts->addCount($transport, WorkerQueueCount::STATE_UNKNOWN, null, 'no such transport');
+                $workerQueueCounts->addCount(
+                    $transport,
+                    WorkerQueueCount::STATE_UNKNOWN,
+                    null,
+                    $this->getWorkerTransportsService()->hasReceiver($transport) ? 'the transport could not be created (see its DSN)' : 'no such transport'
+                );
                 continue;
             }
             if (!$receiver instanceof MessageCountAwareInterface) {
