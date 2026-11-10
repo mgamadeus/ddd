@@ -12,12 +12,14 @@ use DDD\Domain\Base\Entities\QueryOptions\FiltersDefinitions;
 use DDD\Domain\Base\Entities\QueryOptions\FiltersOptions;
 use DDD\Domain\Base\Entities\QueryOptions\OrderByOptions;
 use DDD\Domain\Base\Entities\QueryOptions\QueryOptions;
+use DDD\Domain\Base\Entities\QueryOptions\QueryOptionsProjection;
 use DDD\Domain\Base\Entities\QueryOptions\SelectOptions;
 use DDD\Infrastructure\Exceptions\BadRequestException;
 use DDD\Tests\Domain\Base\Entities\QueryOptions\Fixtures\Projection\ProjectedLegacyEntities;
 use DDD\Tests\Domain\Base\Entities\QueryOptions\Fixtures\Projection\ProjectedLegacyEntity;
 use DDD\Tests\Domain\Base\Entities\QueryOptions\Fixtures\Projection\ProjectionHolderEntity;
 use DDD\Tests\Domain\Base\Entities\QueryOptions\Fixtures\Projection\ProjectionTargetEntity;
+use DDD\Tests\Domain\Base\Entities\QueryOptions\Fixtures\Projection\UnpairedLegacyRows;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 
@@ -183,5 +185,11 @@ class QueryOptionsProjectionTest extends TestCase
             $values = array_merge($values, $this->getFilteredValues($childFiltersOptions));
         }
         return $values;
+    }
+
+    public function testASetWithoutADerivableEntityClassHasNoProjection(): void
+    {
+        self::assertNull(QueryOptionsProjection::getProjectionForClass(UnpairedLegacyRows::class));
+        self::assertNull(QueryOptionsProjection::getProjectionForClass('No\\Such\\Class'));
     }
 }

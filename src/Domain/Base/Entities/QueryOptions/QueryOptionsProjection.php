@@ -8,6 +8,7 @@ use Attribute;
 use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
 use DDD\Domain\Base\Entities\EntitySet;
 use DDD\Infrastructure\Reflection\ReflectionClass;
+use Throwable;
 
 /**
  * Lets a class without a table of its own accept QueryOptions in the names of a class that has one. Typical use: an
@@ -24,6 +25,7 @@ use DDD\Infrastructure\Reflection\ReflectionClass;
  *
  * Declared on the entity, it also covers its EntitySet (and vice versa).
  */
+
 #[Attribute(Attribute::TARGET_CLASS)]
 class QueryOptionsProjection
 {
@@ -51,9 +53,15 @@ class QueryOptionsProjection
         if ($projection instanceof QueryOptionsProjection) {
             return $projection;
         }
-        $relatedClassName = is_a($className, EntitySet::class, true)
-            ? $className::getEntityClass()
-            : (method_exists($className, 'getEntitySetClass') ? $className::getEntitySetClass() : null);
+        try {
+            $relatedClassName = is_a($className, EntitySet::class, true)
+                ? $className::getEntityClass()
+                : (method_exists($className, 'getEntitySetClass') ? $className::getEntitySetClass() : null);
+        } catch (Throwable) {
+            // a set whose entity class cannot be derived from its name (or the other way round) has no related
+            // class to carry a projection
+            return null;
+        }
         if (!$relatedClassName || !class_exists($relatedClassName)) {
             return null;
         }
