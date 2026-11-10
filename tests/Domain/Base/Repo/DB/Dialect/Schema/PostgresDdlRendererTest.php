@@ -19,6 +19,7 @@ use DDD\Domain\Base\Repo\DB\Dialect\Identifiers\IdentifierPolicy;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatement;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlStatements;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\PostgresDdlRenderer;
+use DDD\Domain\Base\Repo\DB\Dialect\Schema\VirtualExpr;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use PHPUnit\Framework\TestCase;
 
@@ -595,6 +596,46 @@ class PostgresDdlRendererTest extends TestCase
             '"virtualLocationId" bigint GENERATED ALWAYS AS (COALESCE("locationId", 0)) STORED',
             $createTable->sql
         );
+    }
+
+    /** `CASE WHEN col IN (…) THEN col ELSE NULL END`: the column for the rows of the set, its type and collation carried over. */
+    public function testWhenInSetVirtualColumnRendersWithReferenceColumnTypeAndCollation(): void
+    {
+        $column = $this->column('source', DatabaseColumn::SQL_TYPE_VARCHAR);
+        $columns = new DatabaseColumns();
+        $columns->add($column);
+        $model = $this->model('ImportedRecords', $columns);
+
+        $virtualColumn = new DatabaseVirtualColumn(
+            as: "(CASE WHEN source IN ('FEED','PARTNER', 'ARCHIVE') THEN source ELSE NULL END)",
+            stored: true,
+            createIndex: false
+        );
+        $virtualColumn->referenceColumn = $column;
+        $model->virtualColumns->add($virtualColumn);
+
+        $createTable = $this->findStatement($this->renderer->renderCreate($model), DdlStatement::PHASE_CREATE_TABLE);
+        $this->assertStringContainsString(
+            '"virtualSource" varchar(255) COLLATE "ddd_ci_ai" GENERATED ALWAYS AS '
+            . '(CASE WHEN "source" IN (\'FEED\', \'PARTNER\', \'ARCHIVE\') THEN "source" ELSE NULL END) STORED',
+            $createTable->sql
+        );
+    }
+
+    /** Only the exact shape is translated: another column in THEN, another ELSE, an empty set or a quote inside a value is not. */
+    public function testWhenInSetIsRecognisedStrictly(): void
+    {
+        $recognised = VirtualExpr::fromMariaDbExpression("(CASE WHEN `source` IN ('FEED') THEN `source` ELSE NULL END)");
+        $this->assertNotNull($recognised);
+        $this->assertSame(VirtualExpr::INTENT_WHEN_IN_SET, $recognised->intent);
+        $this->assertSame(['FEED'], $recognised->setLiterals);
+        $this->assertSame("(CASE WHEN `source` IN ('FEED') THEN `source` ELSE NULL END)", $recognised->renderMariaDb());
+
+        $this->assertNull(VirtualExpr::fromMariaDbExpression("(CASE WHEN source IN ('FEED') THEN other ELSE NULL END)"));
+        $this->assertNull(VirtualExpr::fromMariaDbExpression("(CASE WHEN source IN ('FEED') THEN source ELSE 0 END)"));
+        $this->assertNull(VirtualExpr::fromMariaDbExpression('(CASE WHEN source IN () THEN source ELSE NULL END)'));
+        $this->assertNull(VirtualExpr::fromMariaDbExpression("(CASE WHEN source IN ('O''B') THEN source ELSE NULL END)"));
+        $this->assertNull(VirtualExpr::fromMariaDbExpression("(CASE WHEN source IN (1, 2) THEN source ELSE NULL END)"));
     }
 
     /** Mig §3.7: `IFNULL(col, '')` — string coalesce, reference column's own varchar/collation carried over. */

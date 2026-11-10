@@ -815,6 +815,26 @@ class Table extends Entity {
 }
 ```
 
+**A unique key that holds for some rows only** (what a partial index does elsewhere; works on MariaDB and
+PostgreSQL): a UNIQUE index does not constrain a row with NULL in an indexed column, so make the column NULL for the
+rows outside the set and index that —
+
+```php
+#[DatabaseIndex(DatabaseIndex::TYPE_UNIQUE, ['virtualSource', 'externalId'])]
+class ImportedRecord extends Entity {
+    public ?string $externalId = null;
+
+    // unique per (source, externalId) for the listed sources with an externalId; every other row is free
+    #[DatabaseVirtualColumn(as: "(CASE WHEN source IN ('FEED', 'PARTNER') THEN source ELSE NULL END)")]
+    public ?string $source = null;
+}
+```
+
+The PostgreSQL form of an `as:` expression is derived for these shapes: `(IFNULL(col, 0))`, `(IFNULL(col, 'text'))`,
+`(COALESCE(col, STR_TO_DATE('Y-m-d', '%Y-%m-%d')))`, `(CASE WHEN col IN ('A', 'B') THEN col ELSE NULL END)` and the
+`JSON_UNQUOTE(JSON_EXTRACT(col, '$.key'))` forms (plain, `CAST … AS SIGNED`, `CAST … AS DECIMAL(p,s)`). Any other
+expression needs `asPostgres:` with the PostgreSQL expression, or `app:entity:show-sql` refuses it on PostgreSQL.
+
 **Rules:**
 - `#[DatabaseVirtualColumn]` on property `foo` creates DB column `virtualFoo`
 - SQL expression uses original property name: `IFNULL(foo, 0)`

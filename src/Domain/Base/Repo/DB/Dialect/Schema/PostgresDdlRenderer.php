@@ -418,7 +418,7 @@ class PostgresDdlRenderer implements DdlRenderer
             );
         }
 
-        if ($virtualExpr->intent === VirtualExpr::INTENT_COALESCE) {
+        if (in_array($virtualExpr->intent, [VirtualExpr::INTENT_COALESCE, VirtualExpr::INTENT_WHEN_IN_SET], true)) {
             $columnTypeDefinition = $this->columnDefinitionForReferenceColumn($virtualColumn);
             $type = $columnTypeDefinition->type;
             $collation = $columnTypeDefinition->collationClause;

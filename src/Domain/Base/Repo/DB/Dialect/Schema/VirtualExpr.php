@@ -15,7 +15,7 @@ use DDD\Domain\Base\Entities\ValueObject;
  * produces the equivalent PostgreSQL generated-column expression.
  *
  * Covers exactly the shapes in use: `IFNULL(col, 0)` / `IFNULL(col, 'literal')`
- * (intent `coalesce`), and the three `JSON_UNQUOTE(JSON_EXTRACT(col, '$.key'))` forms — plain, `CAST(… AS SIGNED)`,
+ * (intent `coalesce`), `CASE WHEN col IN ('A', 'B') THEN col ELSE NULL END` (intent `whenInSet`), and the three `JSON_UNQUOTE(JSON_EXTRACT(col, '$.key'))` forms — plain, `CAST(… AS SIGNED)`,
  * `CAST(… AS DECIMAL(p,s))` (intents `jsonText` / `jsonInt` / `jsonDecimal`). Anything else is not recognised —
  * {@see fromMariaDbExpression()} returns null and the caller ({@see PostgresDdlRenderer}) refuses with a message
  * naming the entity, property and expression, rather than guessing.
@@ -29,6 +29,9 @@ class VirtualExpr extends ValueObject
     public const string INTENT_JSON_INT = 'jsonInt';
 
     public const string INTENT_JSON_DECIMAL = 'jsonDecimal';
+
+    /** The column's own value while it is one of a fixed set of strings, else NULL (a unique key that holds for those rows only) */
+    public const string INTENT_WHEN_IN_SET = 'whenInSet';
 
     protected function __construct(
         public readonly string $intent,
@@ -45,6 +48,8 @@ class VirtualExpr extends ValueObject
         public readonly ?int $scale = null,
         /** `coalesce` only: `timestamp` when the literal is a date (`dateLiteral` shape), else null. */
         public readonly ?string $literalType = null,
+        /** @var string[] `whenInSet` only: the values the column is kept for. */
+        public readonly array $setLiterals = [],
     ) {
         parent::__construct();
     }
@@ -82,6 +87,17 @@ class VirtualExpr extends ValueObject
     }
 
     /**
+     * `CASE WHEN col IN ('A', 'B') THEN col ELSE NULL END`: the column's value for the rows of the set, NULL for
+     * the others — indexed UNIQUE together with other columns, the key holds for the rows of the set only.
+     *
+     * @param string[] $setLiterals
+     */
+    public static function whenInSet(string $mariaDbExpression, string $column, array $setLiterals): self
+    {
+        return new self(self::INTENT_WHEN_IN_SET, $mariaDbExpression, $column, setLiterals: $setLiterals);
+    }
+
+    /**
      * Strict, whitespace-tolerant recogniser for today's five raw-expression shapes (Mig §3.7). Keyword casing
      * (`IFNULL`, `JSON_UNQUOTE`, `JSON_EXTRACT`, `CAST`, `AS`, `SIGNED`, `DECIMAL`) matches exactly what every
      * existing `#[DatabaseVirtualColumn(as: …)]` call site of the consuming apps and the translations module uses. Any
@@ -105,6 +121,18 @@ class VirtualExpr extends ValueObject
         // (COALESCE(col, STR_TO_DATE('9999-12-31', '%Y-%m-%d'))) — e.g. a nullable `leftAt` date in a unique key
         if (preg_match("/^\({$ws}COALESCE\({$ws}`?($identifier)`?{$ws},{$ws}STR_TO_DATE\({$ws}'(\d{4}-\d{2}-\d{2})'{$ws},{$ws}'%Y-%m-%d'{$ws}\){$ws}\){$ws}\)\$/", $as, $m)) {
             return self::coalesceDate($as, $m[1], $m[2]);
+        }
+
+        // (CASE WHEN col IN ('A', 'B') THEN col ELSE NULL END) — the same column twice, string literals without
+        // quotes or backslashes inside
+        $stringLiteral = "'[^'\\\\]*'";
+        if (preg_match(
+            "/^\({$ws}CASE\s+WHEN\s+`?($identifier)`?\s+IN{$ws}\(({$ws}{$stringLiteral}(?:{$ws},{$ws}{$stringLiteral})*{$ws})\)\s*THEN\s+`?\\1`?\s+ELSE\s+NULL\s+END{$ws}\)\$/",
+            $as,
+            $m
+        )) {
+            preg_match_all("/'([^'\\\\]*)'/", $m[2], $literalMatches);
+            return self::whenInSet($as, $m[1], $literalMatches[1]);
         }
 
         // JSON source column optionally backticked; the path may be nested ('$.accountProfile.id').
@@ -143,6 +171,10 @@ class VirtualExpr extends ValueObject
 
         return match ($this->intent) {
             self::INTENT_COALESCE => 'COALESCE(' . $column . ', ' . $this->literalSql() . ')',
+            self::INTENT_WHEN_IN_SET => 'CASE WHEN ' . $column . ' IN (' . implode(', ', array_map(
+                static fn(string $setLiteral): string => "'" . $setLiteral . "'",
+                $this->setLiterals
+            )) . ') THEN ' . $column . ' ELSE NULL END',
             self::INTENT_JSON_TEXT => '(' . $column . '::json ' . $this->jsonPathOperator() . ')',
             self::INTENT_JSON_INT => '((' . $column . '::json ' . $this->jsonPathOperator() . '))::bigint',
             self::INTENT_JSON_DECIMAL => '((' . $column . '::json ' . $this->jsonPathOperator() . "))::numeric($this->precision,$this->scale)",
@@ -161,8 +193,8 @@ class VirtualExpr extends ValueObject
             self::INTENT_JSON_TEXT => 'text',
             self::INTENT_JSON_INT => 'bigint',
             self::INTENT_JSON_DECIMAL => "numeric($this->precision,$this->scale)",
-            self::INTENT_COALESCE => throw new \LogicException(
-                'VirtualExpr::postgresColumnType() does not cover intent "coalesce" — use the referenced column\'s own mapped type.'
+            self::INTENT_COALESCE, self::INTENT_WHEN_IN_SET => throw new \LogicException(
+                'VirtualExpr::postgresColumnType() does not cover intent "' . $this->intent . '" — use the referenced column\'s own mapped type.'
             ),
         };
     }
