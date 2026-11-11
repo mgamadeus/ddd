@@ -3,7 +3,7 @@ name: ddd-entity-specialist
 description: Create and design DDD entities, entity sets, value objects, DB repositories, lazy loading, relationships and attributes in mgamadeus/ddd. Covers folder layout, naming, critical rules (never redeclare id, NotNull → NOT NULL, @var T[] feeds the API schema, framework Date/DateTime only, protected), getService()->find(), the isset lazy-load trap, Translatable properties, ChangeHistory, junction entities, indexes, virtual columns, SubclassIndicator, DatabaseTrigger, ReuseParentEntitySet, displayOrder, PreserveOnOmission, validation (Choice, UniqueProperty), chart types (DateTimeValueSequence, TimeInterval, KeyValue), and update() (upsert) vs strict insert() (a duplicate key throws). Use when creating or modifying entities and their persistence, returning chart or time-series data, placing entity files, adding translations or auditing, defining indexes or triggers, fixing a null getService(), a lazy relation that never loads, a partial update overwriting a stored value, or a write that must fail on a duplicate key.
 metadata:
   author: mgamadeus
-  version: "1.1.3"
+  version: "1.1.4"
   framework: mgamadeus/ddd
 ---
 
@@ -733,6 +733,12 @@ needless index bloat → suppress them, see below.)
 #[DatabaseIndex(indexType: DatabaseIndex::TYPE_NONE)]
 public string $rarelyFiltered;   // column is created, but gets NO index
 ```
+
+**Long text decides its index on purpose.** A `TEXT` / `MEDIUMTEXT` / `LONGTEXT` column gets a `FULLTEXT` index by
+default; on PostgreSQL that is a GIN trigram index over the folded text (mode `NAME`), maintained on every write of
+the row. Summaries, task texts, logs and serialized histories nobody searches: `TYPE_NONE`. Text searched by words:
+`#[DatabaseIndex(indexType: DatabaseIndex::TYPE_FULLTEXT, fullTextMode: FullTextMode::DOCUMENT)]` (a `tsvector`
+index on PostgreSQL). Keep the default only for short names searched by word prefix.
 
 ### Index types & where they apply
 

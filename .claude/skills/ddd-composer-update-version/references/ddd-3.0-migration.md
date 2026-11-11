@@ -440,6 +440,14 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.27.0 — Raw SQL on both databases. `SqlDialect::byteLength()` and the DQL function `OCTET_LENGTH()` (both
+  engines) count bytes (`LENGTH()` counts characters on PostgreSQL). A lock wait timeout on PostgreSQL (SQLSTATE
+  55P03, also `FOR UPDATE NOWAIT`) throws `LockWaitTimeoutException`, as on MariaDB; code that caught it as a plain
+  `DriverException` still does. On MariaDB `jsonInt()` / `jsonDecimal()` read with `JSON_VALUE` (the document is
+  parsed once; an object or array answers NULL instead of 0), consecutive `jsonUpdate()` `set()` / `remove()` calls
+  render as one `JSON_SET` / `JSON_REMOVE`, and `locks($connection)` returns one lock service per connection, so a
+  lock is released through a later `locks()` call. A class that implements `SqlDialect` itself must add
+  `byteLength()`.
 - 3.26.0 — `OauthHttpClientService::setOauthConfig(…, fallBackToClientCredentialsWhenRefreshFails: false)`: a failed
   refresh reaches the caller as `OauthTokenRefreshRefusedException` (4xx except 408 / 429; `onInvalidCredentials`
   runs only then) or `OauthTokenRefreshFailedException` (5xx, 408, 429, no answer), with the refresh request's

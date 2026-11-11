@@ -109,6 +109,12 @@ interface SqlDialect
     public function stringAggDistinct(string $exprSql, string $separator): string;
 
     /**
+     * The length of `$exprSql` in bytes: `OCTET_LENGTH($exprSql)` on both engines (`LENGTH()` counts bytes on MariaDB,
+     * characters on PostgreSQL; `CHAR_LENGTH()` counts characters on both). DQL: `OCTET_LENGTH(…)`.
+     */
+    public function byteLength(string $exprSql): string;
+
+    /**
      * The row lock clause of a SELECT that lets other transactions read and share-lock the rows, not change them:
      * `LOCK IN SHARE MODE` | `FOR SHARE`. Appended at the end of the statement.
      */
@@ -218,8 +224,9 @@ interface SqlDialect
      * how long a statement waits for a row lock. `$statementTimeoutSeconds`: how long one statement may run.
      * PostgreSQL sets both for the transaction only (`SET LOCAL lock_timeout` / `statement_timeout`); MariaDB sets
      * them on the session (`innodb_lock_wait_timeout` / `max_statement_time`) until {@see clearTransactionTimeouts()}.
-     * A statement over a limit fails with a driver exception: SQLSTATE 55P03 / 57014 on PostgreSQL (the transaction
-     * is aborted), error 1205 / 1969 on MariaDB (the statement is rolled back, the transaction stays open).
+     * A statement over the lock wait limit throws `Doctrine\DBAL\Exception\LockWaitTimeoutException` on both engines
+     * (SQLSTATE 55P03 on PostgreSQL: the transaction is aborted; error 1205 on MariaDB: the statement is rolled back,
+     * the transaction stays open); over the statement limit a driver exception (SQLSTATE 57014 / error 1969).
      *
      * @throws InternalErrorException When `$connection` has no open transaction
      * @throws \Doctrine\DBAL\Exception

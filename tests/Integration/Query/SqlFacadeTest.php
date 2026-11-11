@@ -181,6 +181,21 @@ class SqlFacadeTest extends IntegrationTestCase
         $this->assertSame('red', (string)static::connection()->fetchOne("SELECT $expr"));
     }
 
+    public function testByteLengthCountsBytesInSqlAndDqlOnBothEngines(): void
+    {
+        $dialect = static::dialect();
+        static::connection()->executeStatement('DELETE FROM ' . $dialect->quote('CounterRows'));
+        static::insertRow('CounterRows', ['businessKey' => 'm', 'label' => 'Münster', 'amount' => 1, 'isActive' => 1, 'occurredAt' => '2026-03-04 15:30:00']);
+
+        $this->assertSame(8, (int)static::connection()->fetchOne(
+            'SELECT ' . $dialect->byteLength($dialect->quote('label')) . ' FROM ' . $dialect->quote('CounterRows')
+        ));
+        $alias = DBCounterRowModel::MODEL_ALIAS;
+        $queryBuilder = DBCounterRow::createQueryBuilder(true);
+        $queryBuilder->select("OCTET_LENGTH($alias.label) AS labelBytes");
+        $this->assertSame(8, (int)$queryBuilder->getQuery()->getSingleScalarResult());
+    }
+
     public function testBytesEqualIsNullSafe(): void
     {
         $dialect = static::dialect();

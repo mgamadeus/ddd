@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace DDD\Tests\Domain\Base\Repo\DB\Dialect;
 
+use DDD\Domain\Base\Repo\DB\Dialect\Json\JsonPath;
 use DDD\Domain\Base\Repo\DB\Dialect\MariaDbDialect;
+use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\Configuration;
 use PHPUnit\Framework\TestCase;
 
@@ -55,5 +57,24 @@ class MariaDbDialectTest extends TestCase
             'INSERT INTO `Rows` (`code`) VALUES (?) ON DUPLICATE KEY UPDATE `Rows`.`code` = `Rows`.`code`',
             $this->dialect->insertSkippingExistingRows("INSERT INTO `Rows` (`code`) VALUES (?);\n", 'Rows', 'code')
         );
+    }
+
+    public function testNumberReadersParseTheDocumentOnce(): void
+    {
+        $this->assertSame(
+            "CAST(JSON_VALUE(`document`, '$.\"cost\"') AS DECIMAL(16, 8))",
+            $this->dialect->jsonDecimal('`document`', JsonPath::fromKeys('cost'), 16, 8)
+        );
+        $this->assertSame("CAST(JSON_VALUE(`document`, '$.\"number\"') AS SIGNED)", $this->dialect->jsonInt('`document`', JsonPath::fromKeys('number')));
+        $this->assertSame('OCTET_LENGTH(`label`)', $this->dialect->byteLength('`label`'));
+    }
+
+    public function testLocksOfOneConnectionShareOneInstance(): void
+    {
+        $firstConnection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $secondConnection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+
+        $this->assertSame($this->dialect->locks($firstConnection), $this->dialect->locks($firstConnection));
+        $this->assertNotSame($this->dialect->locks($firstConnection), $this->dialect->locks($secondConnection));
     }
 }

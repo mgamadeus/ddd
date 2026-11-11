@@ -10,6 +10,7 @@ use DDD\Tests\Integration\IntegrationTestCase;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception as DbalException;
+use Doctrine\DBAL\Exception\LockWaitTimeoutException;
 use Doctrine\DBAL\TransactionIsolationLevel;
 
 /**
@@ -279,8 +280,9 @@ class TransactionFacadeTest extends IntegrationTestCase
     public function testLockWaitTimeoutEndsAStatementThatWaitsForARowLock(): void
     {
         $dialect = static::dialect();
-        $holder = static::connection();
-        $contender = $this->secondConnection();
+        // the waiting side is the application's connection: its exception converter is the one the dialect configures
+        $holder = $this->secondConnection();
+        $contender = static::connection();
         $updateSql = 'UPDATE ' . $dialect->quote(static::TABLE) . ' SET ' . $dialect->quote('label') . " = 'x' WHERE "
             . $dialect->quote('id') . ' = 1';
 
@@ -293,7 +295,8 @@ class TransactionFacadeTest extends IntegrationTestCase
         $failed = false;
         try {
             $contender->executeStatement($updateSql);
-        } catch (DbalException) {
+        } catch (LockWaitTimeoutException) {
+            // the same class on both engines: error 1205 on MariaDB, SQLSTATE 55P03 on PostgreSQL
             $failed = true;
         } finally {
             $contender->rollBack();

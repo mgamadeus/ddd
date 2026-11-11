@@ -9,6 +9,7 @@ use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Domain\Base\Repo\DB\Dialect\Locks\LockKey;
 use DDD\Domain\Base\Repo\DB\Dialect\Identifiers\IdentifierPolicy;
 use DDD\Domain\Base\Repo\DB\Dialect\Query\DateBucket;
+use DDD\Domain\Base\Repo\DB\Dialect\Query\OctetLength;
 use DDD\Domain\Base\Repo\DB\Dialect\Query\DefaultOrderTreeWalker;
 use DDD\Domain\Base\Repo\DB\Dialect\Query\FulltextMatch;
 use DDD\Domain\Base\Repo\DB\Dialect\Query\FulltextScore;
@@ -43,6 +44,7 @@ use DDD\Domain\Base\Repo\DB\Dialect\Locks\LockService;
 use DDD\Domain\Base\Repo\DB\Dialect\Locks\PostgresLockService;
 use DDD\Domain\Base\Repo\DB\Dialect\Runtime\AbortedTransactionGuard;
 use DDD\Domain\Base\Repo\DB\Dialect\Runtime\BacktickQuoteMiddleware;
+use DDD\Domain\Base\Repo\DB\Dialect\Runtime\PostgresExceptionConverterMiddleware;
 use DDD\Domain\Base\Repo\DB\Dialect\Runtime\ValueNormalizerMiddleware;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\DdlRenderer;
 use DDD\Domain\Base\Repo\DB\Dialect\Schema\PostgresDdlRenderer;
@@ -130,7 +132,8 @@ class PostgresDialect implements SqlDialect
      * {@see BacktickQuoteMiddleware} runs first, rewriting raw SQL before anything else inspects it;
      * {@see ValueNormalizerMiddleware} wraps the result that comes back; {@see AbortedTransactionGuard} sits
      * innermost, right next to the real driver, so it observes every statement DBAL actually sends and every error
-     * the server actually raises.
+     * the server actually raises. {@see PostgresExceptionConverterMiddleware} only replaces the exception converter
+     * (SQLSTATE 55P03 → `LockWaitTimeoutException`, as MariaDB's 1205).
      *
      * **DQL function registry (§4.8):** `MariaDbDialect::configureOrm()` is left untouched by this step — every
      * name MariaDB already registers (via `DoctrineExtensions\Query\Mysql\*`, Doctrine's built-ins, or the brick/geo
@@ -160,6 +163,7 @@ class PostgresDialect implements SqlDialect
         $configuration->setQuoteStrategy(new AlwaysQuoteStrategy());
         $configuration->setMiddlewares([
             new AbortedTransactionGuard(),
+            new PostgresExceptionConverterMiddleware(),
             new ValueNormalizerMiddleware(),
             new BacktickQuoteMiddleware(),
         ]);
@@ -188,6 +192,7 @@ class PostgresDialect implements SqlDialect
 
         // ─── Numeric functions ───
         $configuration->addCustomNumericFunction('INT_DIV', IntDiv::class);
+        $configuration->addCustomNumericFunction('OCTET_LENGTH', OctetLength::class);
         $configuration->addCustomNumericFunction('RAND', PostgresRand::class);
         $configuration->addCustomNumericFunction('FULLTEXT_SCORE', FulltextScore::class);
         $configuration->addCustomNumericFunction('ST_Distance_Sphere', PostgresStDistanceSphere::class);
@@ -384,6 +389,11 @@ class PostgresDialect implements SqlDialect
     {
         $quotedSeparator = "'" . str_replace("'", "''", $separator) . "'";
         return "string_agg(DISTINCT ddd_text($exprSql), $quotedSeparator ORDER BY ddd_text($exprSql))";
+    }
+
+    public function byteLength(string $exprSql): string
+    {
+        return "OCTET_LENGTH($exprSql)";
     }
 
     public function forShare(): string

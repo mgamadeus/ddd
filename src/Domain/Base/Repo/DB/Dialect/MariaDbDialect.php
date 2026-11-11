@@ -32,6 +32,7 @@ use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\UnescapedJsonType;
 use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\VectorType;
 
 use DDD\Domain\Base\Repo\DB\Dialect\Query\MariaDbDistinctSubqueryPagination;
+use DDD\Domain\Base\Repo\DB\Dialect\Query\OctetLength;
 use DDD\Domain\Base\Repo\DB\Dialect\Query\PaginationStrategy;
 use DDD\Domain\Base\Repo\DB\Dialect\Query\SpatialDqlFunctions;
 use DDD\Domain\Base\Repo\DB\Dialect\Locks\LockService;
@@ -56,6 +57,7 @@ use DoctrineExtensions\Types\PolygonType as BrickPolygonType;
 
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\Configuration;
+use WeakMap;
 
 /**
  * MariaDB dialect: §6 build step 2 is a **pure move** — the DQL function and type registrations that used to sit
@@ -65,6 +67,9 @@ use Doctrine\ORM\Configuration;
  */
 class MariaDbDialect implements SqlDialect
 {
+    /** @var WeakMap<Connection, MariaDbLockService>|null The lock service of each connection, see {@see locks()} */
+    protected ?WeakMap $lockServicesByConnection = null;
+
     public function name(): string
     {
         return self::MARIADB;
@@ -84,6 +89,7 @@ class MariaDbDialect implements SqlDialect
         $configuration->addCustomStringFunction('DATE_ADD', DateAdd::class);
         $configuration->addCustomStringFunction('STR_TO_DATE', StrToDate::class);
         $configuration->addCustomNumericFunction('RAND', Rand::class);
+        $configuration->addCustomNumericFunction('OCTET_LENGTH', OctetLength::class);
 
         // ─── Spatial functions (shared with PostgreSQL; ST_Distance_Sphere is MariaDB's own) ───
         SpatialDqlFunctions::register($configuration);
@@ -172,9 +178,15 @@ class MariaDbDialect implements SqlDialect
         return new MariaDbDistinctSubqueryPagination();
     }
 
+    /**
+     * One {@see MariaDbLockService} per connection: `GET_LOCK` belongs to the session, and the depth map of
+     * {@see \DDD\Domain\Base\Repo\DB\Dialect\Locks\AbstractLockService} only sees re-entrant and released names when every `locks()` call for that
+     * connection gets the same instance. `$scope` is not needed: the connection is the scope's.
+     */
     public function locks(Connection $connection, string $scope = 'DEFAULT'): LockService
     {
-        return new MariaDbLockService($connection);
+        $this->lockServicesByConnection ??= new WeakMap();
+        return $this->lockServicesByConnection[$connection] ??= new MariaDbLockService($connection);
     }
 
     // ─── §4.3 app-facing SQL-fragment helpers — every rendering below is exactly what the app already writes
@@ -222,6 +234,11 @@ class MariaDbDialect implements SqlDialect
         return "GROUP_CONCAT(DISTINCT $exprSql ORDER BY $exprSql SEPARATOR $quotedSeparator)";
     }
 
+    public function byteLength(string $exprSql): string
+    {
+        return "OCTET_LENGTH($exprSql)";
+    }
+
     public function forShare(): string
     {
         return 'LOCK IN SHARE MODE';
@@ -266,12 +283,21 @@ class MariaDbDialect implements SqlDialect
 
     public function jsonInt(string $columnSql, JsonPath $path): string
     {
-        return 'CAST(' . $this->jsonText($columnSql, $path) . ' AS SIGNED)';
+        return 'CAST(' . $this->jsonScalarValue($columnSql, $path) . ' AS SIGNED)';
     }
 
     public function jsonDecimal(string $columnSql, JsonPath $path, int $precision, int $scale): string
     {
-        return 'CAST(' . $this->jsonText($columnSql, $path) . " AS DECIMAL($precision, $scale))";
+        return 'CAST(' . $this->jsonScalarValue($columnSql, $path) . " AS DECIMAL($precision, $scale))";
+    }
+
+    /**
+     * The scalar at a path as text, the document parsed once: `JSON_VALUE` answers NULL for a missing path, for JSON
+     * null and for an object or array. Number reads only — it answers 1 for true, so {@see jsonText()} keeps its form.
+     */
+    protected function jsonScalarValue(string $columnSql, JsonPath $path): string
+    {
+        return "JSON_VALUE($columnSql, {$path->toMariaDbPathSql()})";
     }
 
     public function jsonBool(string $columnSql, JsonPath $path): string

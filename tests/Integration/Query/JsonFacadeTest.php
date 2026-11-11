@@ -113,6 +113,20 @@ class JsonFacadeTest extends IntegrationTestCase
         ));
     }
 
+    public function testTheNumberReadersAnswerNullForJsonNullAndAMissingColumn(): void
+    {
+        $dialect = static::dialect();
+        $document = $dialect->quote('document');
+        $nothingPath = JsonPath::fromKeys('subAgent', 'nothing');
+
+        $this->assertNull($this->selectFromRow($dialect->jsonInt($document, $nothingPath)));
+        $this->assertNull($this->selectFromRow($dialect->jsonDecimal($document, $nothingPath, 16, 8)));
+        $this->assertNull($this->selectFromRow($dialect->jsonInt($document, JsonPath::fromKeys('subAgent', 'number')), [], 2));
+        $this->assertSame('-3', (string)static::connection()->fetchOne(
+            'SELECT ' . $dialect->jsonInt(static::currentDriver() === 'pdo_pgsql' ? "'{\"n\": -3}'::json" : "'{\"n\": -3}'", JsonPath::fromKeys('n'))
+        ));
+    }
+
     /** @return array<string, array{0: string[], 1: ?string, 2: ?int}> path keys, type, length */
     public static function typesAndLengths(): array
     {
@@ -247,6 +261,26 @@ class JsonFacadeTest extends IntegrationTestCase
         $this->assertSame(['status' => 'ended'], $document['subAgent']['runs']['2']);
         $this->assertSame(['k' => 'v'], $document['added']);
         $this->assertTrue($document['merged']);
+    }
+
+    public function testConsecutiveOperationsApplyInTheOrderTheyWereAdded(): void
+    {
+        $dialect = static::dialect();
+        $documentSql = $dialect->jsonUpdate($dialect->quote('document'))
+            ->set(JsonPath::fromKeys('first'), ':one', JsonValueKind::TEXT)
+            ->set(JsonPath::fromKeys('first'), ':two', JsonValueKind::TEXT)
+            ->set(JsonPath::fromKeys('second'), ':one', JsonValueKind::TEXT)
+            ->remove(JsonPath::fromKeys('second'))
+            ->remove(JsonPath::fromKeys('subAgent', 'tags'))
+            ->set(JsonPath::fromKeys('second'), ':two', JsonValueKind::TEXT)
+            ->toSql();
+
+        $document = $this->updateDocumentAndRead($documentSql, ['one' => 'one', 'two' => 'two']);
+
+        $this->assertSame('two', $document['first']);
+        $this->assertSame('two', $document['second']);
+        $this->assertArrayNotHasKey('tags', $document['subAgent']);
+        $this->assertSame(7, $document['subAgent']['number']);
     }
 
     public function testAKeyWithQuotesAndDotsIsOneSegment(): void

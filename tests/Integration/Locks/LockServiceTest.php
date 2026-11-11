@@ -77,9 +77,8 @@ class LockServiceTest extends TestCase
 
     /**
      * The dialect a "contender" (simulated second process) acquires through. On MariaDB, `locks($connection)`
-     * always wraps the GIVEN connection in a fresh `MariaDbLockService` (architecture plan §4.12) — the shared
-     * `EntityManagerFactory::getDialect()` singleton already behaves like a second process once handed a second
-     * connection. On PostgreSQL, `locks()` now caches one `PostgresLockService` per scope ON the dialect instance
+     * keeps one `MariaDbLockService` per connection — the shared `EntityManagerFactory::getDialect()` singleton
+     * already behaves like a second process once handed a second connection. On PostgreSQL, `locks()` now caches one `PostgresLockService` per scope ON the dialect instance
      * (§4.12 fix, this build step) so that NESTED acquires within the SAME process/request — two different call
      * sites each doing `getDialect()->locks($connection)` for a name this same request already holds — share one
      * depth map instead of each opening its own direct connection and blocking on the other's held advisory lock.
@@ -212,6 +211,21 @@ class LockServiceTest extends TestCase
         $contender = $this->contenderDialect()->locks($this->secondConnection());
         $this->assertTrue($contender->acquire($name, 1));
         $this->assertTrue($contender->release($name));
+    }
+
+    /** A lock taken through one `locks()` call is released through another one for the same connection. */
+    public function testALockIsReleasedThroughALaterLocksCall(): void
+    {
+        $dialect = EntityManagerFactory::getDialect();
+        $connection = EntityManagerFactory::getInstance()->getConnection();
+        $name = $this->lockName('later_call');
+
+        $this->assertTrue($dialect->locks($connection)->acquire($name, 1));
+        $this->assertTrue($dialect->locks($connection)->release($name));
+
+        $contender = $this->contenderDialect()->locks($this->secondConnection());
+        $this->assertTrue($contender->acquire($name, 1));
+        $contender->release($name);
     }
 
     public function testSynchronizedThrowsLockTimeoutExceptionAgainstARealBusyLock(): void

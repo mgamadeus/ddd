@@ -59,6 +59,7 @@ Every method returns SQL text; arguments are SQL expressions (a quoted column, a
 | day / week / month of a column | `dateBucket($columnSql, 'day')` |
 | values of a group as one string | `stringAgg($exprSql, ', ', $orderBySql)`, `stringAggDistinct($exprSql, ', ')` |
 | NULL-safe equality | `bytesEqual($leftSql, $rightSql)` |
+| length in bytes | `byteLength($exprSql)` — `OCTET_LENGTH`; `LENGTH()` counts bytes on MariaDB, characters on PostgreSQL (`CHAR_LENGTH()` counts characters on both). DQL: `OCTET_LENGTH(…)` on both engines |
 | update one table from a join | `updateFromJoin(UpdateFromJoinSpec)` |
 | share lock at the end of a SELECT | `forShare()` (`FOR UPDATE` is the same text on both) |
 | upsert / insert-or-lose of one row without an entity | `upsert($connection, UpsertSpec)`, `insertOrNull($connection, UpsertSpec)` |
@@ -78,7 +79,7 @@ $sql = 'SELECT ' . $dialect->jsonText('`toolCall`', $status) . ' AS `runStatus`,
 | Method | Answer |
 |---|---|
 | `jsonText` | a string without quotes, a number or boolean in its JSON form; NULL for a missing path and for JSON null |
-| `jsonInt`, `jsonDecimal($c, $p, 16, 8)` | the number; NULL when missing |
+| `jsonInt`, `jsonDecimal($c, $p, 16, 8)` | the number; NULL for a missing path and for JSON null. MariaDB parses the document once (`JSON_VALUE`) — read numbers with these, not with `CAST(jsonText(…))` |
 | `jsonBool` | true only for JSON true; NULL when missing |
 | `jsonType` | `object`, `array`, `string`, `number`, `boolean`, `null`; SQL NULL = the path does not exist |
 | `jsonLength` | elements of an array, keys of an object |
@@ -115,6 +116,8 @@ $claimed = (int)$connection->executeStatement(
   JSON text or another JSON column). A SQL NULL value writes JSON null (false for `BOOLEAN`).
 - `mergePatch(':patch')` merges an RFC 7396 patch (nested objects merge, a null removes the key).
 - A NULL column counts as `{}`. A placeholder used twice needs a named parameter.
+- Consecutive `set()` / `setObjectUnlessPresent()` calls become one `JSON_SET` on MariaDB, consecutive `remove()`
+  calls one `JSON_REMOVE`: group the operations of one kind, the document is parsed once per group.
 
 ## Insert that skips existing rows
 
@@ -152,7 +155,9 @@ try {
 ```
 
 PostgreSQL releases the lock when the transaction ends; MariaDB holds it until `releaseTransactionLock()`. Without
-an open transaction `acquireTransactionLock()` throws. A lock around work without a transaction: `$dialect->locks()`.
+an open transaction `acquireTransactionLock()` throws. A lock around work without a transaction: `$dialect->locks()`
+— every call for the same connection (MariaDB) or scope (PostgreSQL) returns the same lock service, so a lock
+acquired in one place is released through a later `locks()` call.
 
 ## Timeouts of a transaction
 
@@ -170,8 +175,10 @@ try {
 }
 ```
 
-A statement over a limit throws a DBAL exception. PostgreSQL then aborts the transaction (roll back, start again);
-MariaDB rolls back the statement only. Code that must behave the same rolls back on either.
+A statement over the lock wait limit throws `Doctrine\DBAL\Exception\LockWaitTimeoutException` on both engines
+(PostgreSQL SQLSTATE 55P03 included, also from `FOR UPDATE NOWAIT`); over the statement limit another DBAL exception.
+PostgreSQL then aborts the transaction (roll back, start again); MariaDB rolls back the statement only. Code that must
+behave the same rolls back on either.
 
 ## Isolation level of one transaction
 
