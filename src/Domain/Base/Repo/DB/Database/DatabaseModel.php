@@ -466,6 +466,9 @@ class DatabaseModel extends ValueObject
                 foreach ($lazyLoadAttributes as $lazyLoadAttribute) {
                     /** @var LazyLoad $lazyLoadAttributeInstance */
                     $lazyLoadAttributeInstance = $lazyLoadAttribute->newInstance();
+                    $lazyLoadAttributeInstance->applyDefaultRepoTypeOfTargetClass(
+                        $lazyLoadAttributeInstance->getTargetClassNameForProperty($reflectionProperty)
+                    );
                     // right repo type found, we add property to potential one-to_many properties, to be checked later
                     if ($lazyLoadAttributeInstance->repoType == LazyLoadRepo::DB) {
                         $databaseModel->potentialOneToManyRelationships[] = $reflectionProperty;
@@ -484,6 +487,9 @@ class DatabaseModel extends ValueObject
                 foreach ($propertyLazyLoadAttributes as $propertyLazyLoadAttribute) {
                     /** @var LazyLoad $propertyLazyLoadAttributeInstance */
                     $propertyLazyLoadAttributeInstance = $propertyLazyLoadAttribute->newInstance();
+                    $propertyLazyLoadAttributeInstance->applyDefaultRepoTypeOfTargetClass(
+                        $propertyLazyLoadAttributeInstance->getTargetClassNameForProperty($reflectionProperty)
+                    );
                     $propertyRepresentsParentClass = $propertyRepresentsParentClass || $propertyLazyLoadAttributeInstance->addAsParent;
                     $propertyLazyLoadEntityClassName ??= $propertyLazyLoadAttributeInstance->entityClassName;
                     if ($propertyLazyLoadAttributeInstance->repoType == LazyLoadRepo::DB) {

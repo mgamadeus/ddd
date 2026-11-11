@@ -3,7 +3,7 @@ name: ddd-entity-specialist
 description: Create and design DDD entities, entity sets, value objects, DB repositories, lazy loading, relationships and attributes in mgamadeus/ddd. Covers folder layout, naming, critical rules (never redeclare id, NotNull → NOT NULL, @var T[] feeds the API schema, framework Date/DateTime only, protected), getService()->find(), the isset lazy-load trap, Translatable properties, ChangeHistory, junction entities, indexes, virtual columns, SubclassIndicator, DatabaseTrigger, ReuseParentEntitySet, displayOrder, PreserveOnOmission, validation (Choice, UniqueProperty), chart types (DateTimeValueSequence, TimeInterval, KeyValue), and update() (upsert) vs strict insert() (a duplicate key throws). Use when creating or modifying entities and their persistence, returning chart or time-series data, placing entity files, adding translations or auditing, defining indexes or triggers, fixing a null getService(), a lazy relation that never loads, a partial update overwriting a stored value, or a write that must fail on a duplicate key.
 metadata:
   author: mgamadeus
-  version: "1.1.2"
+  version: "1.1.3"
   framework: mgamadeus/ddd
 ---
 
@@ -526,9 +526,13 @@ class DB{EntityName}s extends DBEntitySet
 
 ```php
 // Lazy loading
-#[LazyLoad]                                          // Load from default repo
+#[LazyLoad]                                          // Load from default repo (see below)
 #[LazyLoad(repoType: LazyLoadRepo::VIRTUAL)]         // Virtual repo
 #[LazyLoad(repoType: LazyLoadRepo::CLASS_METHOD, loadMethod: 'getCustomValue')]
+
+// Without repoType: the application's LAZYLOAD_DEFAULT_REPO_TYPE when the target class has a repo of that type,
+// else the target's own default (its isDefault repo, else its first database repo). A module entity read by an
+// application whose default is LEGACY_DB therefore loads through its DB repo without naming it.
 
 // Database (from DDD\Domain\Base\Repo\DB\Database namespace)
 #[DatabaseColumn(ignoreProperty: true)]              // Not persisted

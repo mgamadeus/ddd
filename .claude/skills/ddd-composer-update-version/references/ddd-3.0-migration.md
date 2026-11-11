@@ -440,6 +440,13 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.24.4 — Two fixes. (1) An expand whose target has read rights with a subquery no longer breaks when a field of
+  another alias starts with the target's base alias (base `site`, `user_site.site_id`): the rights merge renamed the
+  field too, so the subquery named a field that does not exist. (2) `#[LazyLoad]` without `repoType` reads a target
+  that has no repo of the application's default type (`LAZYLOAD_DEFAULT_REPO_TYPE`, e.g. `LEGACY_DB`) through the
+  target's own default repo, at runtime and in the model generator; it used to find no repo and fail. A target that
+  has a repo of the default type, and a declared `repoType`, behave as before. Generated models change only in an
+  application whose default type is not `DB` and that has such a relation (it now gets its relation mapping).
 - 3.24.3 — Fix (PostgreSQL, PHP 8.3): a list with an `ft` / `fb` filter on a fulltext property failed with
   SQLSTATE[HY093] "parameter was not defined" when the fulltext predicate appeared twice in the statement (two
   fulltext filters, or one filter on a list with an expand, which repeats it in the distinct-root subquery). The

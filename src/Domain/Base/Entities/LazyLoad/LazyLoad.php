@@ -7,6 +7,8 @@ namespace DDD\Domain\Base\Entities\LazyLoad;
 use Attribute;
 use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
 use DDD\Infrastructure\Reflection\ReflectionClass;
+use ReflectionNamedType;
+use ReflectionProperty;
 
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE)]
 class LazyLoad
@@ -17,6 +19,13 @@ class LazyLoad
 
     /** @var string|null The repostiroy type used for lazy loading */
     public ?string $repoType;
+
+    /**
+     * @var bool Whether the attribute names its repo type. Without one, the repo type is the application's default
+     * (`LAZYLOAD_DEFAULT_REPO_TYPE`), or the target class' own default repo when the target has no repo of that type
+     * ({@see LazyLoad::applyDefaultRepoTypeOfTargetClass()}).
+     */
+    public bool $isRepoTypeDeclared = false;
 
     /** @var string|null The target entity class name, by default this is defined by the type of the property, but it can be overwritten */
     public ?string $entityClassName;
@@ -74,6 +83,7 @@ class LazyLoad
         ?string $loadThrough = null,
         ?string $entityClassName = null
     ) {
+        $this->isRepoTypeDeclared = $repoType !== null && $repoType !== '';
         $this->repoType = $repoType ? $repoType : LazyLoadRepo::getDafaultRepoType();
         $this->loadMethod = $loadMethod ? $loadMethod : self::DEFAULT_LAZYLOAD_METHOD;
         $this->propertyContainingId = $propertyContainingId;
@@ -101,6 +111,51 @@ class LazyLoad
     {
         $this->propertyNameAttributeIsAttachedTo = $propertyNameAttributeIsAttachedTo;
         $this->propertyName = $propertyNameAttributeIsAttachedTo;
+    }
+
+    /**
+     * The class the lazy load reads: `entityClassName` when set, else the declared type of the property (null for a
+     * union, a builtin or an untyped property).
+     *
+     * @param ReflectionProperty $reflectionProperty the property the attribute is attached to
+     * @return string|null
+     */
+    public function getTargetClassNameForProperty(ReflectionProperty $reflectionProperty): ?string
+    {
+        if ($this->entityClassName) {
+            return $this->entityClassName;
+        }
+        $propertyType = $reflectionProperty->getType();
+        if ($propertyType instanceof ReflectionNamedType && !$propertyType->isBuiltin()) {
+            return $propertyType->getName();
+        }
+        return null;
+    }
+
+    /**
+     * A lazy load without a declared repo type that the target class has no repo for (the application's default is
+     * `LEGACY_DB`, the target of a package has only a `DB` repo) takes the target's own default repo type: its repo
+     * marked as default, else the repo of the application's default type, else its first database repo. A declared
+     * repo type, a class-method load and a target that has a repo of the default type stay as they are.
+     *
+     * @param string|null $targetClassName the class the lazy load reads
+     * @return void
+     */
+    public function applyDefaultRepoTypeOfTargetClass(?string $targetClassName): void
+    {
+        if ($this->isRepoTypeDeclared || $this->repoClass || !$targetClassName || !class_exists($targetClassName)) {
+            return;
+        }
+        if (!method_exists($targetClassName, 'getRepoClass') || !method_exists($targetClassName, 'getDefaultRepoTypeOfClass')) {
+            return;
+        }
+        if ($targetClassName::getRepoClass($this->repoType)) {
+            return;
+        }
+        $targetDefaultRepoType = $targetClassName::getDefaultRepoTypeOfClass();
+        if ($targetDefaultRepoType !== null) {
+            $this->repoType = $targetDefaultRepoType;
+        }
     }
 
     public function getPropertyContainingId():?string {

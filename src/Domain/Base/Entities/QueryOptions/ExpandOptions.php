@@ -498,6 +498,20 @@ MD;
     }
 
     /**
+     * The pattern that finds the base alias of a read-rights query builder in its WHERE, join and condition strings,
+     * for the rename to the alias of the embedded rights subquery. It matches the alias itself (`site.id`) and the
+     * aliases derived from it (`site_project_rights`), never a longer name (`siteGroup`, `AIConversation` inside
+     * `AIConversationMessage`), a name that ends in it (`user_site`) or a field of another alias (`user_site.site_id`).
+     *
+     * @param string $baseAlias the base alias of the rights query builder
+     * @return string
+     */
+    public static function getRightsBaseAliasPattern(string $baseAlias): string
+    {
+        return '/(?<![A-Za-z0-9_.])' . preg_quote($baseAlias, '/') . '(?![A-Za-z0-9])/';
+    }
+
+    /**
      * Shared rights-projection used by both to-one and to-many expand targets.
      * {@see self::applyConditionsFromReadRightsQueryBuilder()} delegates here.
      *
@@ -578,7 +592,9 @@ MD;
         // base `AIConversation` vs `AIConversationMessage`) would corrupt the longer token mid-string. Unreachable
         // today (a rights subquery only references its own base-derived aliases; the sibling model FQN lives in the
         // separately-assembled FROM, never regex'd), but cheap defence for a DDD-core edit that runs for every entity.
-        $aliasFromPattern = '/(?<![A-Za-z0-9_])' . preg_quote($tempBaseAlias, '/') . '(?![A-Za-z0-9])/';
+        // Left-edge guard: a `.` before the base alias makes it a FIELD of another alias (`user_site.site_id` with
+        // base `site`), never the alias itself; renaming it pointed the field at a column that does not exist.
+        $aliasFromPattern = static::getRightsBaseAliasPattern($tempBaseAlias);
 
         // Reindex named parameters from the rights QB onto the main QB as positional
         // placeholders. The subquery references the same placeholders in its own scope —

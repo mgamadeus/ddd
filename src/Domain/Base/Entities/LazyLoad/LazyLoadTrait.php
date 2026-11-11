@@ -106,6 +106,18 @@ trait LazyLoadTrait
     }
 
     /**
+     * The repo type this class loads with when none is named: its repo marked as default, else the repo of the
+     * application's default type, else its first database repo; null when it has none of these.
+     *
+     * @return string|null
+     */
+    public static function getDefaultRepoTypeOfClass(): ?string
+    {
+        static::getRepoClass();
+        return StaticRegistry::$defaultRepoTypesForClasses[static::class] ?? null;
+    }
+
+    /**
      * @return string[] Returns Repo classes refering to database related Repos, if existent
      */
     public static function getDatabaseRelatedRepoClasses(): array
@@ -321,6 +333,9 @@ trait LazyLoadTrait
             foreach ($property->getAttributes(LazyLoad::class, ReflectionAttribute::IS_INSTANCEOF) as $attribute) {
                 /** @var LazyLoad $lazyloadAttributeInstance */
                 $lazyloadAttributeInstance = $attribute->newInstance();
+                $lazyloadAttributeInstance->applyDefaultRepoTypeOfTargetClass(
+                    $lazyloadAttributeInstance->getTargetClassNameForProperty($property)
+                );
                 if (!isset(StaticRegistry::$propertiesToLazyLoadForClasses[static::class][$propertyName])) {
                     StaticRegistry::$propertiesToLazyLoadForClasses[static::class][$propertyName] = [];
                 }
