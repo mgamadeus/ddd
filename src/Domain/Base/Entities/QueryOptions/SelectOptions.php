@@ -120,6 +120,9 @@ MD;
      *                              used directly for property-hiding instead of parsing the alias string.
      *                              This decouples property hiding from alias naming conventions, so
      *                              applyReadRightsQuery() can use any alias without breaking expand+select.
+     * @param ExpandOptions|null $expandOptions The expands requested on the same entity: an expanded property stays
+     *                              in the output even when the select does not name it (an expand is an explicit
+     *                              request of the caller, a select only narrows the columns).
      * @return DoctrineQueryBuilder
      * @throws ReflectionException
      */
@@ -129,6 +132,7 @@ MD;
         ?callable $mappingFunction = null,
         ?string $baseModelAlias = null,
         ?string $joinPath = null,
+        ?ExpandOptions $expandOptions = null,
     ): DoctrineQueryBuilder {
         // if a baseModelAlias is provided, we are usually applying select options within expand options of of the following kind:
         // expand=worldMembers(expand=world(select=id,name))
@@ -201,6 +205,12 @@ MD;
             }
             else {
                 $fieldsToKeepInEntity[] = $propertyName;
+            }
+        }
+        // an expanded property is kept in the output: it adds no column to the partial select
+        foreach ($expandOptions?->getElements() ?? [] as $expandOption) {
+            if (isset($expandOption->propertyName)) {
+                $fieldsToKeepInEntity[] = $expandOption->propertyName;
             }
         }
 

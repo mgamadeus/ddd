@@ -3,7 +3,7 @@ name: ddd-query-options-specialist
 description: OData-style QueryOptions in mgamadeus/ddd — database-level filtering, sorting, pagination, select, expand, fulltext over Translatable properties. Wire syntax filters=/expand=/orderBy=/select=/top=/skip= (no dollar prefix; default top 50). Covers QueryOptionsTrait on Entity AND EntitySet, controller DTOs, the filter grammar (operators, ft/fb, and/or, dot-notation, escaping, createExpression), value validation (400 for a bad value, JSON or plain-Translatable comparisons, ft/fb without an index), nested expand and join read-rights, propertyScore, snapshot/restore, inescapable scope filters (addFiltersConnectedByAnd), Argus shared defaults, HideProperty never filterable, temporal filters (FiltersDefinition::$temporalKind, normalizeMomentLiterals), QueryOptionsProjection. Use when a filter answers 400/500, a query param is ignored, results cap at 50, an inescapable scope filter is needed, Argus defaults have no effect, date-time filters use the wrong zone, or old clients still query a renamed entity.
 metadata:
   author: mgamadeus
-  version: "1.3.2"
+  version: "1.3.3"
   framework: mgamadeus/ddd
 ---
 
@@ -331,6 +331,11 @@ nested expand still works.
 ```
 
 Reduces payload by applying `partial` SELECT in Doctrine and hiding unselected properties from serialization. The `id` field is always included automatically. Supports dot-notation for expanded entity fields.
+
+**An expanded property is never hidden by a select** (since v3.28.0): `?select=id,name&expand=business` returns
+`business` although the select does not name it — also when the select is a narrow default select a service set,
+on a single find, and inside a nested expand (`expand=zones(select=name;expand=tables)` keeps `tables`). A relation
+that is neither selected nor expanded stays hidden. Before 3.28.0 the relation had to be listed in the select too.
 
 ---
 

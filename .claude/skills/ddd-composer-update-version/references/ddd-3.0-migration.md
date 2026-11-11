@@ -440,6 +440,12 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.28.0 — An expanded property is no longer hidden by a select: `select=` (from the request or a service's default
+  select) hid every public property it did not name, including a relation expanded in the same query options, so
+  the relation was loaded and then dropped from the output. Expanded properties are now kept on lists, single finds
+  and nested expands; unselected, unexpanded properties stay hidden. `SelectOptions::applySelectToDoctrineQueryBuilder()`
+  takes an optional `expandOptions` argument. Responses that combine a select with an expand now contain the
+  expanded relation.
 - 3.27.0 — Raw SQL on both databases. `SqlDialect::byteLength()` and the DQL function `OCTET_LENGTH()` (both
   engines) count bytes (`LENGTH()` counts characters on PostgreSQL). A lock wait timeout on PostgreSQL (SQLSTATE
   55P03, also `FOR UPDATE NOWAIT`) throws `LockWaitTimeoutException`, as on MariaDB; code that caught it as a plain

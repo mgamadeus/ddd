@@ -331,6 +331,7 @@ MD;
                     baseModelClass: $targetPropertyModelClass,
                     baseModelAlias: $expandOption->joinAlias,
                     joinPath: $expandOption->getPropertyPathRecursively(),
+                    expandOptions: $expandOption->expandOptions ?? null,
                 );
             } else {
                 // No inline `select=` clause on this expand option. Fall back to the
@@ -366,6 +367,7 @@ MD;
                                 baseModelClass: $targetPropertyModelClass,
                                 baseModelAlias: $expandOption->joinAlias,
                                 joinPath: $expandOption->getPropertyPathRecursively(),
+                                expandOptions: $expandOption->expandOptions ?? null,
                             );
                         }
                     }

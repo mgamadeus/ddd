@@ -88,7 +88,8 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
 
             $select->applySelectToDoctrineQueryBuilder(
                 queryBuilder: $queryBuilder,
-                baseModelClass: self::getBaseModel()
+                baseModelClass: self::getBaseModel(),
+                expandOptions: $defaultQueryOptions->getExpandOptions(),
             );
         }
         return $queryBuilder;

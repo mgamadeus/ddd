@@ -430,7 +430,8 @@ abstract class DatabaseRepoEntity extends RepoEntity
             if ($defaultQueryOptions && $select = $defaultQueryOptions->getSelect()) {
                 $select->applySelectToDoctrineQueryBuilder(
                     queryBuilder: $queryBuilder,
-                    baseModelClass: $this::BASE_ORM_MODEL
+                    baseModelClass: $this::BASE_ORM_MODEL,
+                    expandOptions: $defaultQueryOptions->getExpandOptions(),
                 );
             }
         }
