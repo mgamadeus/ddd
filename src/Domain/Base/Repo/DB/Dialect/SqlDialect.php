@@ -233,4 +233,19 @@ interface SqlDialect
      * @throws \Doctrine\DBAL\Exception
      */
     public function clearTransactionTimeouts(Connection $connection): void;
+
+    /**
+     * Opens a transaction of `$connection` at `$isolationLevel` (a {@see \Doctrine\DBAL\TransactionIsolationLevel}
+     * constant) for this transaction only: `SET TRANSACTION ISOLATION LEVEL …` right before `BEGIN` on MariaDB (it
+     * applies to the next transaction of the session), as the first statement after `BEGIN` on PostgreSQL (it applies
+     * to the current transaction). The session's own level stays, so there is nothing to restore — unlike DBAL's
+     * `setTransactionIsolation()`, which changes the session and can be left behind on a worker's or a pooler's
+     * connection. Commit or roll back as usual.
+     *
+     * @throws InternalErrorException When `$connection` already has an open transaction (a nested transaction is a
+     *                                savepoint of the outer one and cannot have a level of its own), or for an
+     *                                unknown level
+     * @throws \Doctrine\DBAL\Exception
+     */
+    public function beginTransactionAtIsolationLevel(Connection $connection, int $isolationLevel): void;
 }

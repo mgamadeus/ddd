@@ -10,6 +10,7 @@ use DDD\Tests\Symfony\CompilerPasses\Fixtures\ModuleSource\ConcreteModuleCommand
 use DDD\Tests\Symfony\CompilerPasses\Fixtures\ResettingModuleSubscriber;
 use DDD\Tests\Symfony\CompilerPasses\Fixtures\TagApplyingModuleCompilerPass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Config\Resource\DirectoryResource;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\DependencyInjection\AddConsoleCommandPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -44,6 +45,21 @@ class ModuleCompilerPassTest extends TestCase
         (new TagApplyingModuleCompilerPass())->applyTags($container, $definition, ResettingModuleSubscriber::class);
 
         self::assertSame([['method' => 'resetOwnState']], $definition->getTag('kernel.reset'));
+    }
+
+    public function testTheModuleSourceDirectoryIsAResourceOfTheContainer(): void
+    {
+        $container = new ContainerBuilder();
+
+        (new TagApplyingModuleCompilerPass())->registerServicesOfModule($container, CommandsFixtureModule::class);
+
+        $trackedDirectories = [];
+        foreach ($container->getResources() as $resource) {
+            if ($resource instanceof DirectoryResource) {
+                $trackedDirectories[] = $resource->getResource();
+            }
+        }
+        self::assertContains(realpath(CommandsFixtureModule::getSourcePath()), array_map('realpath', $trackedDirectories));
     }
 
     public function testAnAbstractCommandBaseOfAModuleIsNoServiceAndNoCommand(): void

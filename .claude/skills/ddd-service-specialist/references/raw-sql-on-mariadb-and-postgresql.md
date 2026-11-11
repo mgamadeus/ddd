@@ -18,6 +18,7 @@ $dialect = EntityManagerFactory::getDialect();               // SqlDialect of th
 - [Insert that skips existing rows](#insert-that-skips-existing-rows)
 - [Lock inside a transaction](#lock-inside-a-transaction)
 - [Timeouts of a transaction](#timeouts-of-a-transaction)
+- [Isolation level of one transaction](#isolation-level-of-one-transaction)
 - [What has no common form](#what-has-no-common-form)
 - [Virtual columns](#virtual-columns)
 
@@ -171,6 +172,25 @@ try {
 
 A statement over a limit throws a DBAL exception. PostgreSQL then aborts the transaction (roll back, start again);
 MariaDB rolls back the statement only. Code that must behave the same rolls back on either.
+
+## Isolation level of one transaction
+
+```php
+$dialect->beginTransactionAtIsolationLevel($connection, TransactionIsolationLevel::READ_COMMITTED);
+try {
+    // … reads that must see what other transactions committed meanwhile …
+    $connection->commit();
+} catch (Throwable $throwable) {
+    $connection->rollBack();
+    throw $throwable;
+}
+```
+
+The level holds for this transaction only (MariaDB: `SET TRANSACTION …` before `BEGIN`; PostgreSQL: as the first
+statement after it); the session keeps its own level, so there is nothing to restore. Not DBAL's
+`setTransactionIsolation()`: it changes the SESSION, needs a restore to a level DBAL only assumes, and a skipped
+restore stays on a worker's or a pooler's connection. A connection with an open transaction is refused. The session
+defaults differ: MariaDB REPEATABLE READ, PostgreSQL READ COMMITTED; name the level whenever it matters.
 
 ## What has no common form
 

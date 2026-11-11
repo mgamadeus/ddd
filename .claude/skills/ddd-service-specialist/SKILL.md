@@ -1,9 +1,9 @@
 ---
 name: ddd-service-specialist
-description: "DDD services, business logic, QueryBuilder and rights in mgamadeus/ddd — vector/semantic search, Translatable fulltext, concurrency-safe atomic writes, updatePartialIgnoringRights, strict insert(), raw SQL for MariaDB and PostgreSQL (SqlDialect: JSON read and atomic JSON update, transaction lock, timeouts, insert skipping existing rows). Covers instantiation (container, never new or cache), find() caller-side vs in-service, the null-getService() fix, createQueryBuilder(true), PHPDoc @throws, update/delete overrides, junctions, async, throwErrors (enableThrowErrors/restoreThrowErrors), utilities (Config, Cache counters/locks, Encrypt, IssuesLogService, ObjectStorage (S3, MinIO, R2, presigned URLs)). Use when creating services, writing custom queries or raw SQL that must run on both databases, changing a JSON column atomically, implementing rights, vector or fulltext search, storing files, concurrency-safe or partial writes, or debugging a null getService(), No-alias-was-set or a lookup throwing only sometimes."
+description: "DDD services, business logic, QueryBuilder and rights in mgamadeus/ddd — vector/semantic search, Translatable fulltext, concurrency-safe atomic writes, updatePartialIgnoringRights, strict insert(), raw SQL for MariaDB and PostgreSQL (SqlDialect: JSON read and atomic JSON update, transaction lock, timeouts, isolation level, insert skipping existing rows). Covers instantiation (container, never new), find() caller-side vs in-service, the null-getService() fix, createQueryBuilder(true), PHPDoc @throws, update/delete overrides, junctions, async, throwErrors (enableThrowErrors/restoreThrowErrors), utilities (Config, Cache counters/locks, Encrypt, IssuesLogService, ObjectStorage (S3, R2, presigned URLs)). Use when creating services, writing custom queries or raw SQL that must run on both databases, changing a JSON column atomically, implementing rights, vector or fulltext search, storing files, safe or partial writes, or debugging a null getService(), No-alias-was-set or a lookup throwing only sometimes."
 metadata:
   author: mgamadeus
-  version: "1.2.1"
+  version: "1.3.0"
   framework: mgamadeus/ddd
 ---
 

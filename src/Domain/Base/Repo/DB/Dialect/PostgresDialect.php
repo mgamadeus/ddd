@@ -73,6 +73,7 @@ use DDD\Domain\Base\Repo\DB\Doctrine\Custom\Types\VectorType;
 use DoctrineExtensions\Types\PolygonType as BrickPolygonType;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\TransactionIsolationLevel;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\Configuration;
 use Doctrine\ORM\Query;
@@ -528,6 +529,41 @@ class PostgresDialect implements SqlDialect
     public function clearTransactionTimeouts(Connection $connection): void
     {
         // SET LOCAL ends with the transaction.
+    }
+
+    public function beginTransactionAtIsolationLevel(Connection $connection, int $isolationLevel): void
+    {
+        $isolationLevelSql = $this->getIsolationLevelSql($connection, $isolationLevel);
+        $connection->beginTransaction();
+        try {
+            // PostgreSQL: the statement sets the level of the CURRENT transaction; it must come before its first query
+            $connection->executeStatement('SET TRANSACTION ISOLATION LEVEL ' . $isolationLevelSql);
+        } catch (\Throwable $throwable) {
+            $connection->rollBack();
+            throw $throwable;
+        }
+    }
+
+    /**
+     * The SQL name of a {@see \Doctrine\DBAL\TransactionIsolationLevel} constant, for a connection without an open
+     * transaction.
+     *
+     * @throws InternalErrorException When $connection has an open transaction, or for an unknown level
+     */
+    protected function getIsolationLevelSql(Connection $connection, int $isolationLevel): string
+    {
+        if ($connection->isTransactionActive()) {
+            throw new InternalErrorException(
+                'SqlDialect::beginTransactionAtIsolationLevel() needs a connection without an open transaction.'
+            );
+        }
+        return match ($isolationLevel) {
+            TransactionIsolationLevel::READ_UNCOMMITTED => 'READ UNCOMMITTED',
+            TransactionIsolationLevel::READ_COMMITTED => 'READ COMMITTED',
+            TransactionIsolationLevel::REPEATABLE_READ => 'REPEATABLE READ',
+            TransactionIsolationLevel::SERIALIZABLE => 'SERIALIZABLE',
+            default => throw new InternalErrorException("Unknown transaction isolation level $isolationLevel."),
+        };
     }
 
     /** @throws InternalErrorException When $connection has no open transaction */

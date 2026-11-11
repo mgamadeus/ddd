@@ -44,6 +44,7 @@ use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertBuilder;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertResult;
 use DDD\Domain\Base\Repo\DB\Dialect\Write\UpsertSpec;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\TransactionIsolationLevel;
 
 use DoctrineExtensions\Query\Mysql\DateAdd;
 use DoctrineExtensions\Query\Mysql\Field;
@@ -349,6 +350,36 @@ class MariaDbDialect implements SqlDialect
     {
         $connection->executeStatement('SET SESSION innodb_lock_wait_timeout = DEFAULT');
         $connection->executeStatement('SET SESSION max_statement_time = DEFAULT');
+    }
+
+    public function beginTransactionAtIsolationLevel(Connection $connection, int $isolationLevel): void
+    {
+        $isolationLevelSql = $this->getIsolationLevelSql($connection, $isolationLevel);
+        // MariaDB: the statement sets the level of the NEXT transaction of the session only
+        $connection->executeStatement('SET TRANSACTION ISOLATION LEVEL ' . $isolationLevelSql);
+        $connection->beginTransaction();
+    }
+
+    /**
+     * The SQL name of a {@see \Doctrine\DBAL\TransactionIsolationLevel} constant, for a connection without an open
+     * transaction.
+     *
+     * @throws InternalErrorException When $connection has an open transaction, or for an unknown level
+     */
+    protected function getIsolationLevelSql(Connection $connection, int $isolationLevel): string
+    {
+        if ($connection->isTransactionActive()) {
+            throw new InternalErrorException(
+                'SqlDialect::beginTransactionAtIsolationLevel() needs a connection without an open transaction.'
+            );
+        }
+        return match ($isolationLevel) {
+            TransactionIsolationLevel::READ_UNCOMMITTED => 'READ UNCOMMITTED',
+            TransactionIsolationLevel::READ_COMMITTED => 'READ COMMITTED',
+            TransactionIsolationLevel::REPEATABLE_READ => 'REPEATABLE READ',
+            TransactionIsolationLevel::SERIALIZABLE => 'SERIALIZABLE',
+            default => throw new InternalErrorException("Unknown transaction isolation level $isolationLevel."),
+        };
     }
 
     /** @throws InternalErrorException When $connection has no open transaction */

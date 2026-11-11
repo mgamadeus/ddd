@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DDD\Symfony\CompilerPasses;
 
 use DDD\Infrastructure\Modules\DDDModule;
+use Symfony\Component\Config\Resource\DirectoryResource;
 use Symfony\Component\DependencyInjection\Attribute\AsAlias;
 use Symfony\Component\DependencyInjection\Attribute\Exclude;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
@@ -158,6 +159,10 @@ class ModuleCompilerPass implements CompilerPassInterface
         $excludePatterns = $moduleClass::getExcludePatterns();
         $publicNamespaces = $moduleClass::getPublicServiceNamespaces();
         $lazyNamespaces = $moduleClass::getLazyServiceNamespaces();
+
+        // the compiled container depends on the module's class files: a new, removed or changed file makes a debug
+        // container stale, as it does for an application's resource directories
+        $container->addResource(new DirectoryResource($sourcePath, '/\.php$/'));
 
         $finder = new Finder();
         $finder->files()->name('*.php')->in($sourcePath);

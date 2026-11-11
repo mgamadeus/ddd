@@ -10,6 +10,7 @@ use DDD\Tests\Integration\IntegrationTestCase;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception as DbalException;
+use Doctrine\DBAL\TransactionIsolationLevel;
 
 /**
  * The transaction helpers of the dialect facade behave the same on both engines: the insert that skips existing
@@ -217,6 +218,55 @@ class TransactionFacadeTest extends IntegrationTestCase
     {
         $this->expectException(InternalErrorException::class);
         static::dialect()->acquireTransactionLock(static::connection(), $this->lockName('none'), 0);
+    }
+
+    /**
+     * The level holds for the one transaction: a READ COMMITTED transaction sees another connection's commit between
+     * two reads, a REPEATABLE READ one does not. Each engine is tested with the level that is NOT its session default
+     * (MariaDB: REPEATABLE READ, PostgreSQL: READ COMMITTED); the next plain transaction is back at the default and
+     * the session's own setting is unchanged.
+     */
+    public function testATransactionAtAnIsolationLevelKeepsItForThatTransactionOnly(): void
+    {
+        $isPostgres = static::currentDriver() === 'pdo_pgsql';
+        $connection = static::connection();
+        $other = $this->secondConnection();
+        $sessionLevelSql = $isPostgres ? 'SHOW default_transaction_isolation' : 'SELECT @@session.tx_isolation';
+        $sessionLevelBefore = (string)$connection->fetchOne($sessionLevelSql);
+        $levelOtherThanDefault = $isPostgres ? TransactionIsolationLevel::REPEATABLE_READ : TransactionIsolationLevel::READ_COMMITTED;
+        $seesOtherCommitAtThatLevel = !$isPostgres;
+
+        static::dialect()->beginTransactionAtIsolationLevel($connection, $levelOtherThanDefault);
+        $this->assertSame($seesOtherCommitAtThatLevel, $this->secondReadSeesACommitOfTheOtherConnection($connection, $other, 'first'));
+        $connection->commit();
+
+        $connection->beginTransaction();
+        $this->assertSame(!$seesOtherCommitAtThatLevel, $this->secondReadSeesACommitOfTheOtherConnection($connection, $other, 'secnd'));
+        $connection->commit();
+
+        $this->assertSame($sessionLevelBefore, (string)$connection->fetchOne($sessionLevelSql));
+    }
+
+    public function testATransactionAtAnIsolationLevelNeedsAConnectionWithoutAnOpenTransaction(): void
+    {
+        static::connection()->beginTransaction();
+
+        $this->expectException(InternalErrorException::class);
+        static::dialect()->beginTransactionAtIsolationLevel(static::connection(), TransactionIsolationLevel::READ_COMMITTED);
+    }
+
+    /** Reads the label of row 1, lets $other change and commit it, reads again: whether the second read sees it */
+    protected function secondReadSeesACommitOfTheOtherConnection(Connection $connection, Connection $other, string $newLabel): bool
+    {
+        $dialect = static::dialect();
+        $selectSql = 'SELECT ' . $dialect->quote('label') . ' FROM ' . $dialect->quote(static::TABLE) . ' WHERE '
+            . $dialect->quote('id') . ' = 1';
+        $connection->fetchOne($selectSql);
+        $other->executeStatement(
+            'UPDATE ' . $dialect->quote(static::TABLE) . ' SET ' . $dialect->quote('label') . ' = ? WHERE ' . $dialect->quote('id') . ' = 1',
+            [$newLabel]
+        );
+        return $connection->fetchOne($selectSql) === $newLabel;
     }
 
     public function testTransactionTimeoutsNeedAnOpenTransaction(): void

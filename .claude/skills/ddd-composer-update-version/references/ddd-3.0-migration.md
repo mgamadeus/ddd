@@ -440,6 +440,11 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.25.0 — `SqlDialect::beginTransactionAtIsolationLevel($connection, TransactionIsolationLevel::…)` opens a
+  transaction at a level for that transaction only, on both databases (the session's level stays; nothing to
+  restore). A class that implements `SqlDialect` itself must add the method. A module's source directory is now a
+  resource of the compiled container: a new or removed class file in a module makes a debug container stale, as
+  in the application.
 - 3.24.4 — Two fixes. (1) An expand whose target has read rights with a subquery no longer breaks when a field of
   another alias starts with the target's base alias (base `site`, `user_site.site_id`): the rights merge renamed the
   field too, so the subquery named a field that does not exist. (2) `#[LazyLoad]` without `repoType` reads a target
