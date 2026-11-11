@@ -27,6 +27,10 @@ $dialect = EntityManagerFactory::getDialect();               // SqlDialect of th
   connection turns them into the engine's quotes; an unquoted mixed-case name is lower-cased by PostgreSQL and not
   found. Table names come from `Model::getTableName()`.
 - **Bind values**; a boolean literal in the text is `$dialect->boolLiteral(true)`.
+- **No backslash in the SQL text.** PDO before PHP 8.4 reads `\` inside a string literal as an escape when it
+  looks for placeholders: after a literal like `'\'` it loses `?` placeholders (SQLSTATE[HY093] "parameter was not
+  defined"), on PostgreSQL only and often only when the fragment appears twice in one statement. Write `chr(92)` for a
+  backslash and bracket classes (`[[:space:]]`, `[-+*]`) in regular expressions.
 - **No engine function in the text** (`IF()`, `IFNULL()`, `NOW()`, `JSON_*`, `GROUP_CONCAT`, `DATE_ADD`, `GET_LOCK`,
   `INSERT IGNORE`, `ON DUPLICATE KEY`, `LOCK IN SHARE MODE`): standard SQL (`CASE WHEN`, `COALESCE`) or a fragment
   below.

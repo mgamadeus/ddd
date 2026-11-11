@@ -440,6 +440,11 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.24.3 — Fix (PostgreSQL, PHP 8.3): a list with an `ft` / `fb` filter on a fulltext property failed with
+  SQLSTATE[HY093] "parameter was not defined" when the fulltext predicate appeared twice in the statement (two
+  fulltext filters, or one filter on a list with an expand, which repeats it in the distinct-root subquery). The
+  predicate carried a `'\'` literal that PDO before PHP 8.4 misreads while looking for placeholders; its SQL text now
+  has no backslash. Search results are unchanged.
 - 3.24.2 — Fix: an expand with its own `orderBy` (`expand=children(orderBy=position asc)`) no longer sorts the list.
   Its ordering stood before the list's `orderBy` in the ORDER BY, so the list came back in the order of its children
   (elements without children first). Now the list's `orderBy` comes first and the expand's sorts the children within

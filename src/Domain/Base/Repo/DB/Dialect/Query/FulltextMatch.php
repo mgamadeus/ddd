@@ -66,11 +66,16 @@ class FulltextMatch extends FunctionNode
 
     protected function renderNameMode(string $columnSql, string $termSql): string
     {
+        // The SQL text carries no backslash: PDO's placeholder scanner before PHP 8.4 reads `\` inside a string
+        // literal as an escape, so `'\'` never ends and every `?` after it is lost (SQLSTATE[HY093]). The backslash
+        // is written as chr(92), the regular expressions use bracket classes.
+        $backslash = 'chr(92)';
         $foldedColumn = "(ddd_fold($columnSql) COLLATE \"C\")";
-        $strippedTerm = "regexp_replace(ddd_fold($termSql), '[+\\-*\"~]', '', 'g')";
-        $terms = "unnest(regexp_split_to_array(btrim($strippedTerm), '\\s+'))";
+        $strippedTerm = "regexp_replace(ddd_fold($termSql), '[-+*\"~]', '', 'g')";
+        $terms = "unnest(regexp_split_to_array(btrim($strippedTerm), '[[:space:]]+'))";
         // a term is a literal prefix: LIKE's `\`, `%` and `_` in it are escaped (MariaDB's MATCH had no wildcards there)
-        $likeTerm = "replace(replace(replace(ddd_term.t, '\\', '\\\\'), '%', '\\%'), '_', '\\_')";
+        $likeTerm = "replace(replace(replace(ddd_term.t, $backslash, $backslash || $backslash), '%', $backslash || '%'), "
+            . "'_', $backslash || '_')";
 
         return "(NOT EXISTS (SELECT 1 FROM $terms AS ddd_term(t) WHERE ddd_term.t <> '' AND NOT "
             . "($foldedColumn LIKE ($likeTerm || '%') OR $foldedColumn LIKE ('% ' || $likeTerm || '%'))))";
