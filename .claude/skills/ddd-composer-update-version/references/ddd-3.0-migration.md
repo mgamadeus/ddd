@@ -440,6 +440,10 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.26.0 — `OauthHttpClientService::setOauthConfig(…, fallBackToClientCredentialsWhenRefreshFails: false)`: a failed
+  refresh reaches the caller as `OauthTokenRefreshRefusedException` (4xx except 408 / 429; `onInvalidCredentials`
+  runs only then) or `OauthTokenRefreshFailedException` (5xx, 408, 429, no answer), with the refresh request's
+  exception as previous, instead of falling back to client credentials. The default keeps the fallback.
 - 3.25.0 — `SqlDialect::beginTransactionAtIsolationLevel($connection, TransactionIsolationLevel::…)` opens a
   transaction at a level for that transaction only, on both databases (the session's level stays; nothing to
   restore). A class that implements `SqlDialect` itself must add the method. A module's source directory is now a

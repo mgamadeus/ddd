@@ -1,9 +1,9 @@
 ---
 name: ddd-service-specialist
-description: "DDD services, business logic, QueryBuilder and rights in mgamadeus/ddd — vector/semantic search, Translatable fulltext, concurrency-safe atomic writes, updatePartialIgnoringRights, strict insert(), raw SQL for MariaDB and PostgreSQL (SqlDialect: JSON read and atomic JSON update, transaction lock, timeouts, isolation level, insert skipping existing rows). Covers instantiation (container, never new), find() caller-side vs in-service, the null-getService() fix, createQueryBuilder(true), PHPDoc @throws, update/delete overrides, junctions, async, throwErrors (enableThrowErrors/restoreThrowErrors), utilities (Config, Cache counters/locks, Encrypt, IssuesLogService, ObjectStorage (S3, R2, presigned URLs)). Use when creating services, writing custom queries or raw SQL that must run on both databases, changing a JSON column atomically, implementing rights, vector or fulltext search, storing files, safe or partial writes, or debugging a null getService(), No-alias-was-set or a lookup throwing only sometimes."
+description: "DDD services, business logic, QueryBuilder and rights in mgamadeus/ddd — vector/semantic search, Translatable fulltext, concurrency-safe atomic writes, updatePartialIgnoringRights, strict insert(), raw SQL for MariaDB and PostgreSQL (SqlDialect: JSON read and atomic JSON update, transaction lock, timeouts, isolation level, insert skipping existing rows). Covers instantiation (container, never new), find() caller-side vs in-service, the null-getService() fix, createQueryBuilder(true), PHPDoc @throws, update/delete overrides, junctions, async, throwErrors (enableThrowErrors/restoreThrowErrors), utilities (Config, Cache locks, Encrypt, IssuesLogService, ObjectStorage S3/R2, OAuth refresh refused vs failed). Use when creating services, writing custom queries or raw SQL that must run on both databases, changing a JSON column atomically, implementing rights, vector or fulltext search, storing files, safe or partial writes, or debugging a null getService(), No-alias-was-set or a lookup throwing only sometimes."
 metadata:
   author: mgamadeus
-  version: "1.3.0"
+  version: "1.4.0"
   framework: mgamadeus/ddd
 ---
 
@@ -857,6 +857,33 @@ $downloadUrl = $exportsObjectStorage->createTemporaryUrl("reports/{$report->id}.
   uses the harness's SeaweedFS (`DDD_TEST_S3_ENDPOINT=http://127.0.0.1:9212`).
 
 ---
+
+### OAuth API client (`OauthHttpClientService`)
+
+`setOauthConfig()` gives a Guzzle client that signs with the access token and, on a 401, refreshes it with the
+refresh token. By default a failed refresh drops the token and asks for a new one with client credentials; the caller
+then sees only that second request's failure. For a provider that knows only authorization code and refresh token,
+switch the fallback off and tell the two failures apart:
+
+```php
+$oauthHttpClientService->setOauthConfig(
+    $clientId, $clientSecret, $tokenUrl, $accessToken, $refreshToken,
+    onTokenRefresh: fn (CustomToken $token) => $connection->storeTokens($token),
+    fallBackToClientCredentialsWhenRefreshFails: false
+);
+try {
+    $response = $oauthHttpClientService->getClient()->get($url);
+} catch (OauthTokenRefreshRefusedException $refused) {   // 4xx except 408/429: authorize again
+    $connection->markDisconnected();
+} catch (OauthTokenRefreshFailedException $failed) {     // 5xx, 408, 429, no answer: retry later, keep the connection
+    throw $failed;
+}
+```
+
+Both carry `getHttpStatusCode()` (null without an answer) and the refresh request's exception as previous;
+`onInvalidCredentials` runs only for a refused refresh. Two processes that refresh the same token at once: the second
+sends an already rotated refresh token and is refused. Serialize the refresh per connection (`Cache::instance()->acquireLock()`)
+and, on a refusal, re-read the stored token before treating the connection as lost.
 
 ## Rights Protection System
 
