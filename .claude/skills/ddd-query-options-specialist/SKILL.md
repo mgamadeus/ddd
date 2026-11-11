@@ -3,7 +3,7 @@ name: ddd-query-options-specialist
 description: OData-style QueryOptions in mgamadeus/ddd — database-level filtering, sorting, pagination, select, expand, fulltext over Translatable properties. Wire syntax filters=/expand=/orderBy=/select=/top=/skip= (no dollar prefix; default top 50). Covers QueryOptionsTrait on Entity AND EntitySet, controller DTOs, the filter grammar (operators, ft/fb, and/or, dot-notation, escaping, createExpression), value validation (400 for a bad value, JSON or plain-Translatable comparisons, ft/fb without an index), nested expand and join read-rights, propertyScore, snapshot/restore, inescapable scope filters (addFiltersConnectedByAnd), Argus shared defaults, HideProperty never filterable, temporal filters (FiltersDefinition::$temporalKind, normalizeMomentLiterals), QueryOptionsProjection. Use when a filter answers 400/500, a query param is ignored, results cap at 50, an inescapable scope filter is needed, Argus defaults have no effect, date-time filters use the wrong zone, or old clients still query a renamed entity.
 metadata:
   author: mgamadeus
-  version: "1.3.1"
+  version: "1.3.2"
   framework: mgamadeus/ddd
 ---
 
@@ -302,6 +302,10 @@ work (the signed-in account the auth layer loaded, a collection another list exp
 and lazy-loads on access. A response therefore never depends on what ran before it. An application that still relies
 on the earlier mapping sets `Base.Repo.database.mapRelationsLoadedByEarlierQueries` to `true` until its routes send
 the expand.
+
+**The list's `orderBy` sorts the list, an expand's `orderBy` sorts the children within each element.**
+`?orderBy=endsAt desc&expand=chunks(orderBy=chunkIndex asc)` returns the list by `endsAt`, each element's chunks by
+`chunkIndex`, also on a page (`top` / `skip`). A list without `orderBy` keeps its id order.
 
 ### The `expand()` Method on Entities
 

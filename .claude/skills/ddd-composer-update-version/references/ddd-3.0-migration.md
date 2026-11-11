@@ -440,6 +440,10 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.24.2 — Fix: an expand with its own `orderBy` (`expand=children(orderBy=position asc)`) no longer sorts the list.
+  Its ordering stood before the list's `orderBy` in the ORDER BY, so the list came back in the order of its children
+  (elements without children first). Now the list's `orderBy` comes first and the expand's sorts the children within
+  each element; a list without `orderBy` keeps its id order. Also on a page (`top` / `skip`), on both databases.
 - 3.24.1 — `tableNames`: the entry of a package entity also covers the application's class of the same name that
   extends it and has an EntitySet class of its own (3.24.0 covered only subclasses sharing the EntitySet class, so
   such an application had to list both classes).

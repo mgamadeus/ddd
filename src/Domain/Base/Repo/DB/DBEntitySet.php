@@ -67,9 +67,11 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
             $queryBuilder->setFirstResult($defaultQueryOptions->getSkip());
         }
         // for expand options on entities in set (we want to load them with a join implicitly)
+        $orderingCountBeforeExpand = count($queryBuilder->getDQLPart('orderBy'));
         if ($expandOptions = $defaultQueryOptions->getExpandOptions()) {
             $expandOptions->applyExpandOptionsToDoctrineQueryBuilder($queryBuilder);
         }
+        $orderingCountAfterExpand = count($queryBuilder->getDQLPart('orderBy'));
         if ($filters = $defaultQueryOptions->getFilters()) {
             $filters->applyFiltersToDoctrineQueryBuilder(
                 queryBuilder: $queryBuilder,
@@ -81,6 +83,7 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
                 baseModelClass: self::getBaseModel()
             );
         }
+        static::moveExpandOrderingsBehindListOrderings($queryBuilder, $orderingCountBeforeExpand, $orderingCountAfterExpand);
         if ($select = $defaultQueryOptions->getSelect()) {
 
             $select->applySelectToDoctrineQueryBuilder(
@@ -89,6 +92,44 @@ abstract class DBEntitySet extends DatabaseRepoEntitySet
             );
         }
         return $queryBuilder;
+    }
+
+    /**
+     * The orderBy of an expand sorts the expanded children within their parent; the orderBy of the list sorts the
+     * list. The expand is applied first (the list's orderBy may name its joins), so its orderings are moved behind
+     * the list's: the ORDER BY reads caller's orderings, list orderings, expand orderings. A list without any ordering is ordered
+     * by its id before the expand's orderings.
+     *
+     * @param int $orderingCountBeforeExpand Orderings the query builder carried before the expand was applied
+     * @param int $orderingCountAfterExpand Orderings after the expand was applied, before the list's orderBy
+     */
+    protected static function moveExpandOrderingsBehindListOrderings(
+        DoctrineQueryBuilder $queryBuilder,
+        int $orderingCountBeforeExpand,
+        int $orderingCountAfterExpand
+    ): void {
+        $orderings = $queryBuilder->getDQLPart('orderBy');
+        if ($orderingCountAfterExpand === $orderingCountBeforeExpand) {
+            return;
+        }
+        if (count($orderings) === $orderingCountAfterExpand) {
+            if ($orderingCountBeforeExpand > 0) {
+                return;
+            }
+            // no ordering of the list at all: it keeps its default order (by id), the expand sorts within it
+            $queryBuilder->addOrderBy(self::getBaseModelAlias() . '.id', 'ASC');
+            $orderings = $queryBuilder->getDQLPart('orderBy');
+        }
+        $expandOrderingCount = $orderingCountAfterExpand - $orderingCountBeforeExpand;
+        $reorderedOrderings = array_merge(
+            array_slice($orderings, 0, $orderingCountBeforeExpand),
+            array_slice($orderings, $orderingCountAfterExpand),
+            array_slice($orderings, $orderingCountBeforeExpand, $expandOrderingCount)
+        );
+        $queryBuilder->resetDQLPart('orderBy');
+        foreach ($reorderedOrderings as $ordering) {
+            $queryBuilder->add('orderBy', $ordering, true);
+        }
     }
 
     /**
