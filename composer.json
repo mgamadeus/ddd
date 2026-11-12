@@ -8,7 +8,7 @@
         "issues": "https://github.com/ddd-framework/ddd/issues",
         "source": "https://github.com/ddd-framework/ddd"
     },
-    "version": "3.31.1",
+    "version": "3.31.2",
     "authors": [
         {
             "name": "Marius-Eugen Gerdan",
@@ -32,7 +32,7 @@
         "guzzlehttp/guzzle": "^7.5",
         "jms/parser-lib": "^1.0",
         "mockery/mockery": "^1.5",
-        "phpunit/phpunit": "^9.5",
+        "phpunit/phpunit": "^9.5 || ^11.5",
         "predis/predis": "2.0.0",
         "symfony/amqp-messenger": "7.4.*",
         "symfony/console": "7.4.*",

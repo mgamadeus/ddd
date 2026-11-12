@@ -22,7 +22,7 @@ use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionNamedType;
 use DDD\Infrastructure\Reflection\ReflectionProperty;
 use DDD\Infrastructure\Traits\Serializer\Attributes\HideProperty;
-use PHPUnit\TextUI\ReflectionException;
+use ReflectionException;
 use ReflectionAttribute;
 use ReflectionUnionType;
 use DDD\Infrastructure\Validation\Constraints\Choice as DDDChoice;

@@ -440,6 +440,9 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.31.2 — `phpunit/phpunit` `^9.5 || ^11.5`: a module whose tests need PHPUnit 11 installs next to the framework.
+  `DatabaseVirtualColumn::getColumnNameForVirtualColumn()` returns a name without the `virtual` prefix unchanged (a
+  PHPUnit constraint function stood in for `str_starts_with()`, so every name was cut); `src/` no longer uses PHPUnit.
 - 3.31.1 — A set an application derives from a module set in another namespace gets its parent's element type: the
   `@property T[] $elements` of the nearest class up to the one declaring the property counts, and `T` is resolved with
   the use statements and namespace of the class that declares it (before, only the derived class' own comment counted

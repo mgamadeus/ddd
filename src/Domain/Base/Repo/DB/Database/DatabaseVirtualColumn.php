@@ -8,7 +8,6 @@ use Attribute;
 use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
 use DDD\Domain\Base\Entities\ValueObject;
 
-use function PHPUnit\Framework\stringStartsWith;
 
 #[Attribute(Attribute::TARGET_PROPERTY)]
 class DatabaseVirtualColumn extends ValueObject
@@ -91,7 +90,7 @@ class DatabaseVirtualColumn extends ValueObject
     }
 
     public static function getColumnNameForVirtualColumn(string $virtualColumnName): string {
-        if (!stringStartsWith($virtualColumnName, self::VIRTUAL_COLUMN_PREFIX)) {
+        if (!str_starts_with($virtualColumnName, self::VIRTUAL_COLUMN_PREFIX)) {
             return $virtualColumnName;
         }
         $columnName = substr($virtualColumnName, strlen(self::VIRTUAL_COLUMN_PREFIX));
