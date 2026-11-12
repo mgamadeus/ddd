@@ -440,6 +440,10 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.30.1 — Takes back the inherited trait of 3.30.0: `ReflectionClass::hasTrait()` sees the class' own traits again.
+  With 3.30.0 a set that inherits `QueryOptionsTrait` without repeating it got query options and the default `top` of
+  50 — an existing list that returned every row came back cut. An application's subclass of a filterable set repeats
+  `use QueryOptionsTrait;`. The rest of 3.30.0 stays.
 - 3.30.0 — A class an application derives from a framework or module class (same path under `App\`, or a container
   alias) gets what its parent declares: a parent's `QueryOptionsTrait` counts (`ReflectionClass::hasTrait()` sees
   inherited traits); `Foo::getDefaultQueryOptions()`, `setDefaultQueryOptions()` and the snapshot pair of the module

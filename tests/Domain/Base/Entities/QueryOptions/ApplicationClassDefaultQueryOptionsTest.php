@@ -83,8 +83,11 @@ class ApplicationClassDefaultQueryOptionsTest extends TestCase
         self::assertSame($topBefore, ApplicationQueryOptionsProbe::getDefaultQueryOptions()->getTop());
     }
 
-    public function testTheApplicationClassInheritsTheTraitOfItsParent(): void
+    public function testAnInheritedTraitDoesNotCount(): void
     {
-        self::assertTrue(ReflectionClass::instance(ApplicationQueryOptionsProbe::class)->hasTrait(QueryOptionsTrait::class));
+        // a set inheriting QueryOptionsTrait without repeating it is read without query options: existing lists rely
+        // on getting every row, so it does not suddenly get the default top
+        self::assertFalse(ReflectionClass::instance(ApplicationQueryOptionsProbe::class)->hasTrait(QueryOptionsTrait::class));
+        self::assertTrue(ReflectionClass::instance(ApplicationQueryOptionsProbeUsingTraitAgain::class)->hasTrait(QueryOptionsTrait::class));
     }
 }

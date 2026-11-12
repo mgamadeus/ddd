@@ -3,7 +3,7 @@ name: ddd-query-options-specialist
 description: OData-style QueryOptions in mgamadeus/ddd — database-level filtering, sorting, pagination, select, expand, fulltext over Translatable properties. Wire syntax filters=/expand=/orderBy=/select=/top=/skip= (no dollar prefix; default top 50). Covers QueryOptionsTrait on Entity AND EntitySet, controller DTOs, the filter grammar (operators, ft/fb, and/or, dot-notation, escaping, createExpression), value validation (400 for a bad value, JSON or plain-Translatable comparisons, ft/fb without an index), nested expand and join read-rights, propertyScore, snapshot/restore, inescapable scope filters (addFiltersConnectedByAnd), Argus shared defaults, HideProperty never filterable, temporal filters (FiltersDefinition::$temporalKind, normalizeMomentLiterals), QueryOptionsProjection. Use when a filter answers 400/500, a query param is ignored, results cap at 50, an inescapable scope filter is needed, Argus defaults have no effect, date-time filters use the wrong zone, or old clients still query a renamed entity.
 metadata:
   author: mgamadeus
-  version: "1.3.4"
+  version: "1.3.5"
   framework: mgamadeus/ddd
 ---
 
@@ -108,8 +108,10 @@ class Products extends EntitySet
 > request's options on its own class and the application's list is filtered. Likewise:
 > - `#[DtoQueryOptions(baseEntity: Foo::class)]` resolves `baseEntity` to the application's class: a filter on a column
 >   the application's class adds is accepted and documented;
-> - a parent's `QueryOptionsTrait` counts (`ReflectionClass::hasTrait()` sees inherited traits): the subclass is
->   filterable without repeating `use QueryOptionsTrait;`.
+> - only a class that uses `QueryOptionsTrait` ITSELF is read with query options (`ReflectionClass::hasTrait()` sees
+>   the class' own traits): an application's subclass of a filterable set repeats `use QueryOptionsTrait;`, or its
+>   repository returns every row, unfiltered and without `top`. Kept on purpose — existing sets that inherit the trait
+>   rely on getting every row; v3.30.0 counted inherited traits for one release and v3.30.1 took it back.
 >
 > Historical note (fixed in v2.59.2): `setDefaultQueryOptions()` used to key on the raw `static::class`, so a set on
 > an Argus repo class wrote into a slot no reader resolved — a silent no-op. The common idiom only appeared to work
