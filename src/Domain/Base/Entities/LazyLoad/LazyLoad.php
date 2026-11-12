@@ -7,6 +7,7 @@ namespace DDD\Domain\Base\Entities\LazyLoad;
 use Attribute;
 use DDD\Domain\Base\Entities\Attributes\BaseAttributeTrait;
 use DDD\Infrastructure\Reflection\ReflectionClass;
+use DDD\Infrastructure\Services\DDDService;
 use ReflectionNamedType;
 use ReflectionProperty;
 
@@ -115,21 +116,48 @@ class LazyLoad
 
     /**
      * The class the lazy load reads: `entityClassName` when set, else the declared type of the property (null for a
-     * union, a builtin or an untyped property).
+     * union, a builtin or an untyped property) — as the application's class of it (getApplicationClassNameOfTarget()).
      *
      * @param ReflectionProperty $reflectionProperty the property the attribute is attached to
      * @return string|null
      */
     public function getTargetClassNameForProperty(ReflectionProperty $reflectionProperty): ?string
     {
+        $declaredClassName = null;
         if ($this->entityClassName) {
-            return $this->entityClassName;
+            $declaredClassName = $this->entityClassName;
+        } else {
+            $propertyType = $reflectionProperty->getType();
+            if ($propertyType instanceof ReflectionNamedType && !$propertyType->isBuiltin()) {
+                $declaredClassName = $propertyType->getName();
+            }
         }
-        $propertyType = $reflectionProperty->getType();
-        if ($propertyType instanceof ReflectionNamedType && !$propertyType->isBuiltin()) {
-            return $propertyType->getName();
+        return $declaredClassName === null ? null : static::getApplicationClassNameOfTarget($declaredClassName);
+    }
+
+    /**
+     * The class a lazy load of a declared framework or module class reads: the application's class of it (a
+     * container alias or the same path under `App\`) when that class declares repositories of its own, so a module's
+     * `?Account $account` loads the application's account through the application's repository and repo type.
+     * An application class without a LazyLoadRepo attribute (class attributes are not inherited) leaves the declared
+     * class, whose repositories it shares.
+     *
+     * @param string $declaredClassName
+     * @return string
+     */
+    public static function getApplicationClassNameOfTarget(string $declaredClassName): string
+    {
+        $applicationClassName = DDDService::instance()->getContainerServiceClassNameForClass($declaredClassName);
+        if (
+            !$applicationClassName
+            || $applicationClassName === $declaredClassName
+            || !class_exists($applicationClassName)
+            || !is_a($applicationClassName, $declaredClassName, true)
+            || !ReflectionClass::instance($applicationClassName)->getAttributes(LazyLoadRepo::class, \ReflectionAttribute::IS_INSTANCEOF)
+        ) {
+            return $declaredClassName;
         }
-        return null;
+        return $applicationClassName;
     }
 
     /**

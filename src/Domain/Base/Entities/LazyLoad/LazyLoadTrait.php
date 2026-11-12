@@ -382,31 +382,13 @@ trait LazyLoadTrait
             // first check if repoClass is defined on lazyLoadattribute instance
             $repoClass = $lazyloadAttributeInstance->repoClass;
         } elseif ($lazyloadAttributeInstance) {
-            // get property type and try to get repo class from getRepoClass function, if property type has this function
-            if ($targetPropertyEntityClassName = $lazyloadAttributeInstance->entityClassName) {
-                if (
-                    $targetPropertyEntityClassName && method_exists(
-                        $targetPropertyEntityClassName,
-                        'getRepoClass'
-                    )
-                ) {
-                    /** @var LazyLoadTrait $targetPropertyEntityClassName */
-                    $repoClass = $targetPropertyEntityClassName::getRepoClass($repoType);
-                }
-                return $repoClass;
-            }
-            $reflectionClass = ReflectionClass::instance(static::class);
-            $reflectionProperty = $reflectionClass->getProperty($propertyName);
-            $propertyType = $reflectionProperty->getType();
-            if (
-                $propertyType && !$propertyType->isBuiltin() && $propertyType instanceof ReflectionNamedType && method_exists(
-                    $propertyType->getName(),
-                    'getRepoClass'
-                )
-            ) {
-                /** @var LazyLoadTrait $lazyLoadPropertyClass */
-                $lazyLoadPropertyClass = $propertyType->getName();
-                $repoClass = $lazyLoadPropertyClass::getRepoClass($repoType);
+            // the repo of the class the property loads: entityClassName or the declared type, as the application's
+            // class of it when that declares repositories of its own (LazyLoad::getApplicationClassNameOfTarget())
+            $reflectionProperty = ReflectionClass::instance(static::class)->getProperty($propertyName);
+            $targetClassName = $reflectionProperty ? $lazyloadAttributeInstance->getTargetClassNameForProperty($reflectionProperty) : null;
+            if ($targetClassName && method_exists($targetClassName, 'getRepoClass')) {
+                /** @var LazyLoadTrait $targetClassName */
+                $repoClass = $targetClassName::getRepoClass($repoType);
             }
         }
         StaticRegistry::$repoClassesForProperties[static::class][$propertyName][$repoType] = $repoClass;

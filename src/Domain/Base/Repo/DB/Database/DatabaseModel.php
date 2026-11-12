@@ -163,7 +163,9 @@ class DatabaseModel extends ValueObject
     /**
      * The entity class a relation property's foreign key points to: the `entityClassName` of its `#[LazyLoad]` when it
      * names a subclass of the declared type (as lazy loading resolves it, see `LazyLoadTrait::getRepoClass()`), else
-     * the declared type. A subclass that redeclares a relation with the parent's (invariant) type and a more specific
+     * the declared type — each as the application's class of it when that declares repositories of its own
+     * (`LazyLoad::getApplicationClassNameOfTarget()`: a module's `?Account` points to the application's account). A
+     * subclass that redeclares a relation with the parent's (invariant) type and a more specific
      * `entityClassName` therefore keeps the foreign key of the specific class (its repo, its table).
      *
      * @param string $declaredClassName the declared property type
@@ -173,9 +175,9 @@ class DatabaseModel extends ValueObject
     public static function resolveForeignEntityClassName(string $declaredClassName, ?string $lazyLoadEntityClassName): string
     {
         if ($lazyLoadEntityClassName !== null && $lazyLoadEntityClassName !== '' && is_a($lazyLoadEntityClassName, $declaredClassName, true)) {
-            return $lazyLoadEntityClassName;
+            return LazyLoad::getApplicationClassNameOfTarget($lazyLoadEntityClassName);
         }
-        return $declaredClassName;
+        return LazyLoad::getApplicationClassNameOfTarget($declaredClassName);
     }
 
     /**

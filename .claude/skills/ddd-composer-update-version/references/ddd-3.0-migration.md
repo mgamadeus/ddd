@@ -440,6 +440,17 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.32.0 — A lazy-loaded property declared with a framework or module entity class loads the application's class of
+  that entity (container alias or same path under `App\`) when that class declares a `#[LazyLoadRepo]` of its own:
+  a module's `?Account $account` reads the application's account through the application's repository and repo type
+  (before: the declared class' repository, e.g. `DBAccount` on a table the application does not have, while the
+  application's account is read through `LEGACY_DB`). `LazyLoad::getApplicationClassNameOfTarget()`;
+  `LazyLoad::getTargetClassNameForProperty()`, `LazyLoadTrait::getRepoClassForProperty()` and
+  `DatabaseModel::resolveForeignEntityClassName()` use it. An application class without its own `#[LazyLoadRepo]`
+  leaves the declared class. Action: regenerate the Doctrine models — a framework or module model whose relation
+  targets such an entity now points to the application's model (e.g. `use App\…\DBAccountModel` instead of
+  `DDD\…\DBAccountModel`, same table). A workaround that redeclares the property with `entityClassName` or overrides
+  the framework repository in `services.yaml` keeps working and can go.
 - 3.31.2 — `phpunit/phpunit` `^9.5 || ^11.5`: a module whose tests need PHPUnit 11 installs next to the framework.
   `DatabaseVirtualColumn::getColumnNameForVirtualColumn()` returns a name without the `virtual` prefix unchanged (a
   PHPUnit constraint function stood in for `str_starts_with()`, so every name was cut); `src/` no longer uses PHPUnit.

@@ -535,6 +535,10 @@ class DB{EntityName}s extends DBEntitySet
 // Without repoType: the application's LAZYLOAD_DEFAULT_REPO_TYPE when the target class has a repo of that type,
 // else the target's own default (its isDefault repo, else its first database repo). A module entity read by an
 // application whose default is LEGACY_DB therefore loads through its DB repo without naming it.
+// The target class is the application's class of the declared one (container alias or same path under App\) when
+// that class declares a LazyLoadRepo of its own: a module's `?Account $account` loads the application's account
+// through the application's repo and repo type, and its foreign key points to that class' model. An application
+// class without its own LazyLoadRepo (class attributes are not inherited) leaves the declared class.
 
 // Database (from DDD\Domain\Base\Repo\DB\Database namespace)
 #[DatabaseColumn(ignoreProperty: true)]              // Not persisted
