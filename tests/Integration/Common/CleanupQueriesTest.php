@@ -11,6 +11,7 @@ use DDD\Domain\Common\Entities\Accounts\LoginTokens\LoginToken;
 use DDD\Domain\Common\Entities\CacheScopes\Invalidations\CacheScopeInvalidation;
 use DDD\Domain\Common\Entities\Crons\Cron;
 use DDD\Domain\Common\Entities\Crons\CronExecution;
+use DDD\Domain\Common\Entities\Crons\Crons;
 use DDD\Domain\Common\Repo\DB\Accounts\LoginTokens\DBLoginToken;
 use DDD\Domain\Common\Repo\DB\CacheScopes\Invalidations\DBCacheScopeInvalidation;
 use DDD\Domain\Common\Services\CronsService;
@@ -108,15 +109,17 @@ class CleanupQueriesTest extends IntegrationTestCase
 
     public function testCronExecutionCleanupAndDueCrons(): void
     {
-        $this->insertCron(1, true, -60);    // due
+        $this->insertCron(1, true, -60);    // due, its last execution abandoned long ago
         $this->insertCron(2, false, -60);   // due, inactive
-        $this->insertCron(3, true, -60);    // due, but running
+        $this->insertCron(3, true, -60);    // due, but running right now
         $this->insertCron(4, true, 3600);   // not due
+        $this->insertCron(5, true, -60);    // due, its runner was replaced ten minutes ago
         foreach ([
-            [1, 1, CronExecution::STATE_RUNNING, -5 * 3600],   // stuck: deleted
+            [1, 1, CronExecution::STATE_RUNNING, -5 * 3600],   // abandoned: closed as FAILED, kept
             [2, 1, CronExecution::STATE_ENDED, -15 * 86400],   // old: deleted
             [3, 1, CronExecution::STATE_ENDED, -86400],
-            [4, 3, CronExecution::STATE_RUNNING, -600],
+            [4, 3, CronExecution::STATE_RUNNING, -120],        // within the timeout: a live run
+            [5, 5, CronExecution::STATE_RUNNING, -600],        // older than timeout + grace: abandoned
         ] as [$id, $cronId, $state, $startedOffset]) {
             static::insertRow('CronExecutions', ['id' => $id, 'cronId' => $cronId, 'state' => $state, 'executionStartedAt' => $this->secondsFromNow($startedOffset)]);
         }
@@ -124,6 +127,7 @@ class CleanupQueriesTest extends IntegrationTestCase
         $cronsService = DDDService::instance()->getService(CronsService::class);
 
         $cronsService->cleanupCronExecutions();
+        $closedCount = $cronsService->closeAbandonedCronExecutions(Crons::TIMEOUT_PER_CRON_IN_SECONDS);
         // app:crons:execute runs as the CLI admin account; without one the Cron repository returns nothing
         DDDService::instance()->deactivateEntityRightsRestrictions();
         try {
@@ -132,8 +136,25 @@ class CleanupQueriesTest extends IntegrationTestCase
             DDDService::instance()->restoreEntityRightsRestrictionsStateSnapshot();
         }
 
-        self::assertSame([3, 4], $this->ids('CronExecutions'));
-        self::assertSame(['cron-1'], array_map(static fn(Cron $cron): string => $cron->name, $dueCrons->getElements()));
+        self::assertSame(2, $closedCount);
+        self::assertSame([1, 3, 4, 5], $this->ids('CronExecutions'));
+        $rowsById = [];
+        foreach (static::connection()->fetchAllAssociative(
+            'SELECT ' . static::quoteIdentifier('id') . ', ' . static::quoteIdentifier('state') . ', ' . static::quoteIdentifier('executionState')
+            . ', ' . static::quoteIdentifier('executionEndedAt') . ', ' . static::quoteIdentifier('output') . ' FROM ' . static::quoteIdentifier('CronExecutions')
+        ) as $row) {
+            $rowsById[(int)$row['id']] = $row;
+        }
+        foreach ([1, 5] as $abandonedId) {
+            self::assertSame(CronExecution::STATE_ENDED, $rowsById[$abandonedId]['state']);
+            self::assertSame(CronExecution::EXECUTION_STATE_FAILED, $rowsById[$abandonedId]['executionState']);
+            self::assertNotNull($rowsById[$abandonedId]['executionEndedAt']);
+            self::assertStringContainsString('Abandoned', (string)$rowsById[$abandonedId]['output']);
+        }
+        self::assertSame(CronExecution::STATE_RUNNING, $rowsById[4]['state']);
+        $dueCronNames = array_map(static fn(Cron $cron): string => $cron->name, $dueCrons->getElements());
+        sort($dueCronNames);
+        self::assertSame(['cron-1', 'cron-5'], $dueCronNames);
     }
 
     public function testExpiredLoginTokensAndCacheScopeInvalidationsAreDeleted(): void

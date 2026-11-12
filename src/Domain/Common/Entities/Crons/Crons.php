@@ -33,6 +33,9 @@ class Crons extends EntitySet
 {
     use QueryOptionsTrait;
 
+    /** Seconds a runner (app:crons:execute) lets one Cron's command run before it stops it and closes the execution */
+    public const int TIMEOUT_PER_CRON_IN_SECONDS = 360;
+
     /**
      * Executes all Crons and returns CronExecutions
      * @param int $timeoutPerCronInSeconds

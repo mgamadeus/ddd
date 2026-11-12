@@ -60,21 +60,51 @@ class CronsService extends EntitiesService
     }
 
     /**
-     * @return void Deletes CronExecutions older than 14 days and deletes executions that are marked as running after 4 hours
+     * Deletes ENDED CronExecutions older than 14 days. A RUNNING row is never deleted: one whose runner is gone is
+     * closed by {@see self::closeAbandonedCronExecutions()}, so the history shows it.
      */
     public function cleanupCronExecutions(): void
     {
         // DQL, not raw SQL: the identifiers are quoted per engine (PostgreSQL folds unquoted CronExecutions to lower case)
         EntityManagerFactory::getInstance()->createQueryBuilder()
             ->delete(DBCronExecutions::getBaseModel(), 'cronExecution')
-            ->where(
-                '(cronExecution.state = :stateRunning AND cronExecution.executionStartedAt < :nowMinus4Hours)'
-                . ' OR (cronExecution.state = :stateEnded AND cronExecution.executionStartedAt < :nowMinus14Days)'
+            ->where('cronExecution.state = :stateEnded AND cronExecution.executionStartedAt < :nowMinus14Days')
+            ->setParameter('stateEnded', CronExecution::STATE_ENDED)
+            ->setParameter('nowMinus14Days', (new DateTime('now'))->modify('-14 days'), Types::DATETIME_MUTABLE)
+            ->getQuery()
+            ->execute();
+    }
+
+    /**
+     * Closes RUNNING CronExecutions whose runner is gone (killed, its container replaced): a command runs at most
+     * `$timeoutPerCronInSeconds` before the runner stops it and closes the row, so a row still RUNNING after that
+     * timeout plus {@see CronExecution::ABANDONED_GRACE_SECONDS} has no runner any more. It is closed as ENDED / FAILED
+     * with the reason in its output — kept in the history, and its Cron runs again at the next due tick.
+     *
+     * @param int $timeoutPerCronInSeconds the timeout the runners give one command ({@see Crons::TIMEOUT_PER_CRON_IN_SECONDS})
+     * @return int the number of executions closed
+     */
+    public function closeAbandonedCronExecutions(int $timeoutPerCronInSeconds = Crons::TIMEOUT_PER_CRON_IN_SECONDS): int
+    {
+        $abandonedAfterSeconds = $timeoutPerCronInSeconds + CronExecution::ABANDONED_GRACE_SECONDS;
+        $now = new DateTime('now');
+        return (int)EntityManagerFactory::getInstance()->createQueryBuilder()
+            ->update(DBCronExecutions::getBaseModel(), 'cronExecution')
+            ->set('cronExecution.state', ':stateEnded')
+            ->set('cronExecution.executionState', ':executionStateFailed')
+            ->set('cronExecution.executionEndedAt', ':now')
+            ->set('cronExecution.output', ':output')
+            ->where('cronExecution.state = :stateRunning AND cronExecution.executionStartedAt < :abandonedBefore')
+            ->setParameter('stateEnded', CronExecution::STATE_ENDED)
+            ->setParameter('executionStateFailed', CronExecution::EXECUTION_STATE_FAILED)
+            ->setParameter('now', $now, Types::DATETIME_MUTABLE)
+            ->setParameter(
+                'output',
+                '[cron executor] Abandoned: still RUNNING ' . $abandonedAfterSeconds . ' s after its start, longer than a runner lets a'
+                . ' command run (' . $timeoutPerCronInSeconds . ' s); its runner ended before it could close the execution'
             )
             ->setParameter('stateRunning', CronExecution::STATE_RUNNING)
-            ->setParameter('stateEnded', CronExecution::STATE_ENDED)
-            ->setParameter('nowMinus4Hours', (new DateTime('now'))->modify('-4 hours'), Types::DATETIME_MUTABLE)
-            ->setParameter('nowMinus14Days', (new DateTime('now'))->modify('-14 days'), Types::DATETIME_MUTABLE)
+            ->setParameter('abandonedBefore', (clone $now)->modify('-' . $abandonedAfterSeconds . ' seconds'), Types::DATETIME_MUTABLE)
             ->getQuery()
             ->execute();
     }

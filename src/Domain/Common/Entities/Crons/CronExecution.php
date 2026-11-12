@@ -43,6 +43,12 @@ class CronExecution extends Entity
     /** @var string Cron has been executed with errors */
     public const string EXECUTION_STATE_FAILED = 'FAILED';
 
+    /**
+     * Seconds beyond the runner's timeout per command after which a RUNNING execution counts as abandoned (its runner
+     * is gone): room for the bookkeeping writes around the command
+     */
+    public const int ABANDONED_GRACE_SECONDS = 60;
+
     /** @var int The id of the executed Cron */
     public int $cronId;
 

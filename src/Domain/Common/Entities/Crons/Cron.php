@@ -54,6 +54,18 @@ class Cron extends Entity
 
     public const string UNREGISTERED_COMMAND_LOG_CACHE_KEY_PREFIX = 'ddd_cron_unregistered_command_';
 
+    /** Seconds a runner that received a stop signal gives the running command to end before it is killed */
+    public const int STOP_GRACE_SECONDS_ON_RUNNER_STOP = 3;
+
+    /** @var Cron|null The Cron whose command runs in this process right now (one at a time per runner) */
+    protected static ?Cron $cronInProgress = null;
+
+    /** @var CronExecution|null Its RUNNING execution row */
+    protected static ?CronExecution $cronExecutionInProgress = null;
+
+    /** @var Process|null Its command process */
+    protected static ?Process $cronProcessInProgress = null;
+
     use QueryOptionsTrait, ChangeHistoryTrait;
 
     /** @var string The Cron's name */
@@ -127,6 +139,8 @@ class Cron extends Entity
         $cronExecution->executionStartedAt = new DateTime();
         $cronExecution->state = CronExecution::STATE_RUNNING;
         $this->persistCronExecution($cronExecution);
+        static::$cronInProgress = $this;
+        static::$cronExecutionInProgress = $cronExecution;
 
         $process = null;
         $failureMessage = null;
@@ -138,6 +152,7 @@ class Cron extends Entity
             $this->persistCronColumns('lastExecutionStartedAt');
             try {
                 $process = $this->createCronCommandProcess($timeoutPerCronInSeconds);
+                static::$cronProcessInProgress = $process;
                 $process->run();
             } catch (ProcessTimedOutException) {
                 $timedOut = true;
@@ -147,6 +162,9 @@ class Cron extends Entity
             $failureThrowable = $throwable;
             $failureMessage = 'Cron command failed: ' . get_class($throwable) . ': ' . $throwable->getMessage();
         } finally {
+            static::$cronInProgress = null;
+            static::$cronExecutionInProgress = null;
+            static::$cronProcessInProgress = null;
             // every way out after the RUNNING row: closed, and the Cron not left due at a slot that has passed
             $cronExecution->executionEndedAt = new DateTime();
             $cronExecution->executionState = $failureMessage === null && $process?->isSuccessful()
@@ -168,6 +186,50 @@ class Cron extends Entity
             throw $closingFailure;
         }
         $cronExecution->cron = $this;
+        return $cronExecution;
+    }
+
+    /**
+     * Closes the execution that runs in this process right now when the runner is told to stop (SIGTERM on a rollout,
+     * SIGINT, SIGHUP): the command gets {@see self::STOP_GRACE_SECONDS_ON_RUNNER_STOP} seconds to end, the row is
+     * closed as FAILED with the signal in its output, and the Cron moves to its next slot. Without it the row would
+     * stay RUNNING and keep the Cron from running until {@see CronsService::closeAbandonedCronExecutions()} closes it.
+     * Never throws: the runner is on its way out.
+     *
+     * @param int $signal
+     * @return CronExecution|null The closed execution, or null when no command was running
+     */
+    public static function closeCronExecutionInProgressOnRunnerStop(int $signal): ?CronExecution
+    {
+        $cron = static::$cronInProgress;
+        $cronExecution = static::$cronExecutionInProgress;
+        $process = static::$cronProcessInProgress;
+        static::$cronInProgress = null;
+        static::$cronExecutionInProgress = null;
+        static::$cronProcessInProgress = null;
+        if ($cron === null || $cronExecution === null) {
+            return null;
+        }
+        try {
+            if ($process !== null && $process->isRunning()) {
+                $process->stop(self::STOP_GRACE_SECONDS_ON_RUNNER_STOP);
+            }
+        } catch (Throwable) {
+            // the command could not be stopped: the row is closed all the same
+        }
+        $cronExecution->executionEndedAt = new DateTime();
+        $cronExecution->executionState = CronExecution::EXECUTION_STATE_FAILED;
+        $cronExecution->output = $cron->getCombinedProcessOutput(
+            $process,
+            'The runner received signal ' . $signal . ' and stopped; the command was stopped with it'
+        );
+        $cronExecution->state = CronExecution::STATE_ENDED;
+        try {
+            $cron->persistCronExecution($cronExecution);
+        } catch (Throwable $throwable) {
+            $cron->logCronFailure($throwable);
+        }
+        $cron->advanceNextExecution();
         return $cronExecution;
     }
 

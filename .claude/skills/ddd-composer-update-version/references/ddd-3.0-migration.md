@@ -440,6 +440,13 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.31.0 — A cron execution whose runner is gone no longer blocks its Cron for hours. `app:crons:execute` closes a
+  RUNNING execution older than the runner's timeout per command (`Crons::TIMEOUT_PER_CRON_IN_SECONDS`, 360 s) plus
+  `CronExecution::ABANDONED_GRACE_SECONDS` (60 s) as ENDED / FAILED with the reason in its output
+  (`CronsService::closeAbandonedCronExecutions()`); before, such a row kept its Cron from running until the cleanup
+  deleted it after 4 hours. `cleanupCronExecutions()` no longer deletes RUNNING rows. A runner that receives SIGTERM,
+  SIGINT or SIGHUP (pcntl) stops the running command, closes its execution as FAILED naming the signal and advances
+  the Cron's slot (`Cron::closeCronExecutionInProgressOnRunnerStop()`), then exits with 128 + signal.
 - 3.30.1 — Takes back the inherited trait of 3.30.0: `ReflectionClass::hasTrait()` sees the class' own traits again.
   With 3.30.0 a set that inherits `QueryOptionsTrait` without repeating it got query options and the default `top` of
   50 — an existing list that returned every row came back cut. An application's subclass of a filterable set repeats

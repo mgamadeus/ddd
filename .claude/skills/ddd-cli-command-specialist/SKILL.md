@@ -3,7 +3,7 @@ name: ddd-cli-command-specialist
 description: "Create Symfony console commands in the mgamadeus/ddd framework AND use its built-in CLI commands: app:db:read (read-only SQL over stored rows, no raw PDO one-liners), app:entity:show-sql (generated DDL), app:entity:list, app:generate-doctrine-models-for-entities, app:process-cli-message, app:crons:list, app:crons:execute, app:crons:upsert (register or change a cron, --dryRun), app:crons:activate / app:crons:deactivate (switch cron rows by name, --dryRun), app:crons:executions (run history). Covers running bin/console as the PHP-FPM user (never root), command structure, options, admin auth context, service access, SymfonyStyle output, tables, progress bars, batch jobs, limits, signals. Use when writing a console command, inspecting database content or entity DDL from the CLI, regenerating Doctrine models, processing a CLI message, registering, changing, pausing or resuming a cron job, checking why a cron failed, or Could not create proxy directory after a root console run."
 metadata:
   author: mgamadeus
-  version: "1.0.1"
+  version: "1.0.2"
   framework: mgamadeus/ddd
 ---
 
@@ -346,6 +346,10 @@ context `cronName`, `cronId`, `cronCommand`; one issues group per Cron and kind)
   2 000 characters; a throwable is logged as itself;
 - the bookkeeping stamps (`lastExecutionStartedAt`, `nextExecutionScheduledAt`) are partial writes without entity
   validation, and every way out after the RUNNING row closes it and advances the slot.
+- a runner killed mid-run (a rollout replaced its container) leaves no Cron blocked for long: a runner that gets
+  SIGTERM / SIGINT / SIGHUP stops the command and closes its execution as FAILED naming the signal; a row whose runner
+  died without a signal (SIGKILL) is closed as FAILED ("Abandoned") by the next tick once it is older than the timeout
+  per command (360 s) plus 60 s — a command never runs longer, so such a row has no runner any more.
 A command that should fail its Cron exits non-zero (`Command::FAILURE`) and writes the reason to stderr.
 
 ### Import / Migration
