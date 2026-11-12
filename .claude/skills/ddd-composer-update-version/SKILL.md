@@ -186,6 +186,10 @@ After tagging and pushing a new version, the consuming apps need a `composer upd
 cd /path/to/consuming-app && composer update mgamadeus/ddd-... -W
 ```
 
+`-W` also moves every dependency of the package that has a newer allowed version (e.g. `mgamadeus/ddd`,
+`doctrine/doctrine-bundle`, `guzzlehttp/psr7` when only a module was meant). To change just the package in the lock,
+leave `-W` out; add it when the resolver refuses because the new version needs newer dependencies.
+
 ### Why — `config.platform.php` is the mechanism now
 
 Every DDD-consuming app in this ecosystem pins the deployment PHP in its `composer.json`:
