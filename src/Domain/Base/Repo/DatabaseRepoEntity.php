@@ -607,11 +607,34 @@ abstract class DatabaseRepoEntity extends RepoEntity
      * @throws MappingException
      * @throws JsonException
      */
+    /**
+     * An object of a parent class of the repository's entity class (typically a module class whose application
+     * subclass took over the repository) is never written: the write below only maps instances of BASE_ENTITY_CLASS.
+     * That used to be a silent no-op (no row, no error); it is refused loudly instead.
+     *
+     * @param DefaultObject $entity
+     * @return void
+     * @throws InternalErrorException When the entity's class is a parent class of BASE_ENTITY_CLASS
+     */
+    protected static function assertEntityIsNotAParentClassOfTheRepoEntity(DefaultObject $entity): void
+    {
+        $repoEntityClass = (string)static::BASE_ENTITY_CLASS;
+        if ($repoEntityClass === '' || $entity instanceof $repoEntityClass || !is_subclass_of($repoEntityClass, $entity::class)) {
+            return;
+        }
+        throw new InternalErrorException(
+            'Cannot persist an instance of ' . $entity::class . ' through ' . static::class . ', whose entity class is its subclass '
+            . $repoEntityClass . '. Create the object with ' . $entity::class . '::newInstance() (it builds the class the '
+            . 'application registered) instead of new.'
+        );
+    }
+
     protected function persistEntity(DefaultObject &$entity, int $depth, bool $insertOnly): ?DefaultObject
     {
         if (!DefaultObject::isEntity($entity)) {
             return $entity;
         }
+        static::assertEntityIsNotAParentClassOfTheRepoEntity($entity);
         static::assertTableIsWritable();
         /** @var Entity $entity */
         $validationResults = $entity->validate(depth: $depth);

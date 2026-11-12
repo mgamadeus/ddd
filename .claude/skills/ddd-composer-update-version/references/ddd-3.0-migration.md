@@ -440,6 +440,11 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.29.0 — `update()` / `insert()` of an object whose class is a parent class of the repository's entity class (a
+  module object built with `new` while the application registered a subclass with its own repository) throws an
+  `InternalErrorException` naming both classes; before, it wrote no row and threw nothing. Create such objects with
+  `newInstance()`. `BaseObject::uniqueKeyStatic()` treats `0` / `'0'` as an id (`<class>_0`); only null and `''` give
+  the bare class name — before, `'0'` and `''` gave the same key.
 - 3.28.0 — An expanded property is no longer hidden by a select: `select=` (from the request or a service's default
   select) hid every public property it did not name, including a relation expanded in the same query options, so
   the relation was loaded and then dropped from the output. Expanded properties are now kept on lists, single finds

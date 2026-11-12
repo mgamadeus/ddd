@@ -3,7 +3,7 @@ name: ddd-entity-specialist
 description: Create and design DDD entities, entity sets, value objects, DB repositories, lazy loading, relationships and attributes in mgamadeus/ddd. Covers folder layout, naming, critical rules (never redeclare id, NotNull → NOT NULL, @var T[] feeds the API schema, framework Date/DateTime only, protected), getService()->find(), the isset lazy-load trap, Translatable properties, ChangeHistory, junction entities, indexes, virtual columns, SubclassIndicator, DatabaseTrigger, ReuseParentEntitySet, displayOrder, PreserveOnOmission, validation (Choice, UniqueProperty), chart types (DateTimeValueSequence, TimeInterval, KeyValue), and update() (upsert) vs strict insert() (a duplicate key throws). Use when creating or modifying entities and their persistence, returning chart or time-series data, placing entity files, adding translations or auditing, defining indexes or triggers, fixing a null getService(), a lazy relation that never loads, a partial update overwriting a stored value, or a write that must fail on a duplicate key.
 metadata:
   author: mgamadeus
-  version: "1.1.4"
+  version: "1.1.5"
   framework: mgamadeus/ddd
 ---
 
@@ -254,6 +254,8 @@ If you forget `#[NotNull]` on a property that should be NOT NULL, the schema-dif
 - `#[LazyLoadRepo]` is required on **both** Entity and EntitySet classes
 - `isset()` and `empty()` on a `#[LazyLoad]` property NEVER trigger the load — `isset($entity->relation)` is `false` even when a related row exists. `??` and `??=` DO trigger it (`$entity->relation ?? null` loads, then falls back only if the load yields null). Use `isset()` only when you must NOT load; read the property (plain or with `??`) when loading is intended. Full mechanism: "What triggers a lazy load" in the Lazy Loading section below.
 - Override `uniqueKey()` ONLY when the default is not enough — `EntityTrait::uniqueKey()` already returns `static::uniqueKeyStatic($this->id)` (with a `DefaultObjectTrait` fallback), so nothing fails if you omit it; override it when identity is not the id (e.g. a natural composite key). The templates' `$this->id ?? spl_object_id($this)` override is one such case: it gives not-yet-persisted entities (id still null) a distinct key so they don't collide inside an EntitySet.
+- `uniqueKeyStatic($id)` is `<called class>_<id>` (bare class name for null / `''`; `0` is an id). A lookup `getByUniqueKey(Parent::uniqueKeyStatic($id))` misses an element of a class an application derived from `Parent` — its key carries the derived class. For elements an application may subclass, build the key from the declaring class (`self::class . '_' . $id`) in both `uniqueKey()` and the lookup.
+- Create an entity of a module or framework class with `{EntityName}::newInstance()`, not `new`: an application that subclasses the class gets its subclass. A `new` object of the parent class is refused by the application's repository on `update()` / `insert()` (`InternalErrorException`, since v3.29.0; before, no row was written and nothing was thrown).
 - `EntitiesBaseService` does **NOT** exist -- always use `EntitiesService`
 
 ### Entity Properties Feed the API Schema — `@var T[]`, NOT `array<T>`
