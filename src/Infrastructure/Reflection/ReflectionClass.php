@@ -584,8 +584,14 @@ class ReflectionClass extends \ReflectionClass
     {
         if (!isset(self::$traitNamesByClass[$this->getName()])) {
             self::$traitNamesByClass[$this->getName()] = [];
-            foreach (parent::getTraitNames() as $actTraitName) {
-                self::$traitNamesByClass[$this->getName()][$actTraitName] = true;
+            // a trait a parent class uses counts: an application's subclass of a class with QueryOptionsTrait is
+            // filterable like its parent
+            $reflectionClass = $this;
+            while ($reflectionClass) {
+                foreach ($reflectionClass->getTraitNames() as $actTraitName) {
+                    self::$traitNamesByClass[$this->getName()][$actTraitName] = true;
+                }
+                $reflectionClass = $reflectionClass->getParentClass();
             }
         }
         return isset(self::$traitNamesByClass[$this->getName()][$traitName]);

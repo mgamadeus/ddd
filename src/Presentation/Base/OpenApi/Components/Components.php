@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace DDD\Presentation\Base\OpenApi\Components;
 
+use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Infrastructure\Reflection\ClassWithNamespace;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Traits\Serializer\SerializerTrait;
 use DDD\Presentation\Base\OpenApi\Attributes\Parameter;
 use DDD\Presentation\Base\OpenApi\Attributes\Tag;
@@ -37,6 +39,7 @@ class Components
                 $maxRecursiveSchemaDepth = $this->document->getMaxRecursiveSchemaDepth();
             }
         }
+        $classWithNamespace = $this->getDocumentedClassWithNamespace($classWithNamespace);
         $classNamespaceWithDots = $classWithNamespace->getNameWithNamespace('.');
         if (isset($this->schemas[$classNamespaceWithDots])) {
             return;
@@ -63,8 +66,31 @@ class Components
         $schema->buildSchema($maxRecursiveSchemaDepth);
     }
 
+    /**
+     * The class whose schema documents the given one: the class an application registered in place of a domain
+     * object (an entity, value object or set of the framework or a module), as the objects at runtime are built of
+     * it. The schema carries the application's name and the properties its class adds. Any other class (a DTO) is
+     * documented as it is.
+     *
+     * @param ClassWithNamespace $classWithNamespace
+     * @return ClassWithNamespace
+     */
+    public function getDocumentedClassWithNamespace(ClassWithNamespace $classWithNamespace): ClassWithNamespace
+    {
+        $className = $classWithNamespace->getNameWithNamespace();
+        if (!is_subclass_of($className, DefaultObject::class)) {
+            return $classWithNamespace;
+        }
+        $applicationClassName = DDDService::instance()->getContainerServiceClassNameForClass($className);
+        if (!$applicationClassName || $applicationClassName === $className || !is_subclass_of($applicationClassName, $className)) {
+            return $classWithNamespace;
+        }
+        return new ClassWithNamespace($applicationClassName);
+    }
+
     public function getSchemaRefForClass(ClassWithNamespace &$classWithNamespace): string
     {
+        $classWithNamespace = $this->getDocumentedClassWithNamespace($classWithNamespace);
         if ($this->document->useExternalSchemaReferences()) {
             return str_replace(
                 Document::EXTERNAL_SCHEMA_URL_NAME_PLACEHOLER,

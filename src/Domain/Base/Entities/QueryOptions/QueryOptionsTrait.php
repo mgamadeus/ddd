@@ -8,6 +8,7 @@ use DDD\Domain\Base\Entities\DefaultObject;
 use DDD\Domain\Base\Entities\ObjectSet;
 use DDD\Infrastructure\Reflection\ReflectionClass;
 use DDD\Infrastructure\Reflection\ReflectionUnionType;
+use DDD\Infrastructure\Services\DDDService;
 use DDD\Infrastructure\Traits\AfterConstruct\Attributes\AfterConstruct;
 use DDD\Infrastructure\Traits\ReflectorTrait;
 use ReflectionException;
@@ -74,6 +75,9 @@ trait QueryOptionsTrait
      */
     public static function getDefaultQueryOptions(int $depth = 1): AppliedQueryOptions
     {
+        if ($applicationClass = static::getApplicationClassForDefaultQueryOptions()) {
+            return $applicationClass::getDefaultQueryOptions($depth);
+        }
         $className = static::class;
         if (property_exists(static::class, 'isArgusEntity')) {
             $reflectionClass = ReflectionClass::instance(static::class);
@@ -110,6 +114,10 @@ trait QueryOptionsTrait
      */
     public static function setDefaultQueryOptions(AppliedQueryOptions $queryOptions)
     {
+        if ($applicationClass = static::getApplicationClassForDefaultQueryOptions()) {
+            $applicationClass::setDefaultQueryOptions($queryOptions);
+            return;
+        }
         $className = static::resolveDefaultQueryOptionsClassKey();
         self::$defaultQueryOptions[$className] = $queryOptions;
     }
@@ -138,6 +146,10 @@ trait QueryOptionsTrait
      */
     public static function setDefaultQueryOptionsSnapshot(): void
     {
+        if ($applicationClass = static::getApplicationClassForDefaultQueryOptions()) {
+            $applicationClass::setDefaultQueryOptionsSnapshot();
+            return;
+        }
         $className = static::resolveDefaultQueryOptionsClassKey();
         if (!isset(self::$defaultQueryOptionsSnapshotStack[$className])) {
             self::$defaultQueryOptionsSnapshotStack[$className] = [];
@@ -156,6 +168,10 @@ trait QueryOptionsTrait
      */
     public static function restoreDefaultQueryOptionsSnapshot(): void
     {
+        if ($applicationClass = static::getApplicationClassForDefaultQueryOptions()) {
+            $applicationClass::restoreDefaultQueryOptionsSnapshot();
+            return;
+        }
         $className = static::resolveDefaultQueryOptionsClassKey();
         if (empty(self::$defaultQueryOptionsSnapshotStack[$className])) {
             return;
@@ -188,6 +204,23 @@ trait QueryOptionsTrait
      *
      * @throws ReflectionException
      */
+    /**
+     * The class an application registered in place of this one (same path under the application's namespace, or a
+     * container alias), or null when there is none. The default query options of a module class and of the
+     * application's subclass are one: reads, writes and snapshots of the module class go to the application's class,
+     * whose repository reads them. The application's class keeps its own storage even when it uses this trait again.
+     *
+     * @return string|null
+     */
+    protected static function getApplicationClassForDefaultQueryOptions(): ?string
+    {
+        $applicationClass = DDDService::instance()->getContainerServiceClassNameForClass(static::class);
+        if (!$applicationClass || $applicationClass === static::class || !is_subclass_of($applicationClass, static::class)) {
+            return null;
+        }
+        return $applicationClass;
+    }
+
     protected static function resolveDefaultQueryOptionsClassKey(): string
     {
         if (property_exists(static::class, 'isArgusEntity')) {

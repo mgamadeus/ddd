@@ -897,13 +897,18 @@ trait SerializerTrait
         if (isset($this->propertiesToHide[$propertyName])) {
             return false;
         }
-        // handle current class
-        if (isset(StaticRegistry::$propertiesToHideOnSerialization[static::class][$propertyName])) {
-            return false;
+        if (!StaticRegistry::$propertiesToHideOnSerialization) {
+            return true;
         }
-        // handle all inheritants of base class using trait
-        if (isset(StaticRegistry::$propertiesToHideOnSerialization[self::class][$propertyName])) {
-            return false;
+        // a class-wide hide covers the class and its subclasses: an application's subclass of a module class hides
+        // what the module class hides (self::class, the class using this trait, is the last parent of the chain)
+        if (!isset(StaticRegistry::$classAndParentClassNamesByClass[static::class])) {
+            StaticRegistry::$classAndParentClassNamesByClass[static::class] = [static::class, ...array_values(class_parents(static::class))];
+        }
+        foreach (StaticRegistry::$classAndParentClassNamesByClass[static::class] as $className) {
+            if (isset(StaticRegistry::$propertiesToHideOnSerialization[$className][$propertyName])) {
+                return false;
+            }
         }
         return true;
     }

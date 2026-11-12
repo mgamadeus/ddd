@@ -3,7 +3,7 @@ name: ddd-endpoint-specialist
 description: "Create REST API controllers, DTOs, route attributes, error handling, and OpenAPI documentation in the mgamadeus/ddd framework — CRUD templates for the Admin/Client/Public/Batch audiences, request DTOs (path/query/body params, QueryOptions via DtoQueryOptions, file uploads via FileSetsDtoTrait), specialized response DTOs (Excel, PDF, ZIP, image, file download, HTML, redirect), GET caching via the RequestCache attribute with noCache bypass, request logging via LogRequest, multi-DTO merging, and Summary/Tag naming rules. Also explains autodocumentation: how DTOs/entities become the OpenAPI schema, MCP tool schema, and TypeScript SDK, the @var T[] docblock rule (never array<T>), the inert schema attributes (Enum, Length, ClassName), SharedRequestParameter, and fixing INVALID_ARGUMENT / HTTP 500 schema errors. Use when creating or modifying endpoints, DTOs, or controllers, returning file downloads, caching or logging a route, or debugging generated API/MCP/TS schemas."
 metadata:
   author: mgamadeus
-  version: "1.1.0"
+  version: "1.1.1"
   framework: mgamadeus/ddd
 ---
 
@@ -460,6 +460,15 @@ To keep agent/MCP tool schemas small, the endpoint-independent grammar is factor
 - **QueryOptions grammar** (`filters`/`orderBy`/`expand`/`select` syntax) → `QueryOptionsSyntax::getSyntaxDocumentation()` once; each param keeps only its endpoint-specific allowed-property list. See `ddd-query-options-specialist`.
 - **Shared request params** (`outputFormat`/`noCache`/`skip`/`top`/`skiptoken`) → mark with `#[SharedRequestParameter]`; the full doc is emitted once via `SharedRequestParametersSyntax`, the per-param description shrinks to a pointer.
 - **Narrow which QueryOptions families a DTO advertises** with `#[DtoQueryOptions(expose: [DtoQueryOptions::FILTERS, …])]` — documentation-only (properties stay hydrated/validated/writable). ONLY narrow a family the repo genuinely does not apply: realistic for **Argus-backed** reads, **never** a DB-backed read (Doctrine always applies select/expand/orderBy).
+
+### A derived domain class is documented as the application's class
+
+When an application derives a framework or module entity, value object or set at the same path
+(`App\…\Foo extends DDD\…\Foo`) or aliases it in the container, the objects at runtime are built of the
+application's class. Since v3.30.0 the documenter documents that class wherever the module's class is named
+(`Components::getDocumentedClassWithNamespace()`): the schema is called `App.….Foo` and carries the properties the
+application's class adds. A DTO is documented as it is. Consequence for a generated SDK: the models of derived classes
+move from `DDD/…` to `App/…` at the next generation.
 
 ### Schema generation ≠ runtime serialization
 

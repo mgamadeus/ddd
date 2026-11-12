@@ -16,6 +16,7 @@ use DDD\Domain\Base\Entities\QueryOptions\SelectOptions;
 use DDD\Domain\Base\Entities\ValueObject;
 use DDD\Infrastructure\Exceptions\InternalErrorException;
 use DDD\Infrastructure\Reflection\ReflectionClass;
+use DDD\Infrastructure\Services\DDDService;
 use ReflectionException;
 
 #[Attribute]
@@ -56,7 +57,9 @@ class DtoQueryOptions extends ValueObject
                 "Defined Entity class $baseEntity to extract QueryOptions from does not exist."
             );
         }
-        $this->baseEntity = $baseEntity;
+        // the class an application registered in place of the named one: a request filters, sorts and is documented
+        // on the properties the application's class adds
+        $this->baseEntity = DDDService::instance()->getContainerServiceClassNameForClass($baseEntity) ?? $baseEntity;
         $this->expose = $expose;
         parent::__construct();
     }

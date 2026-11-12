@@ -64,6 +64,12 @@ class StaticRegistry
     public static array $propertiesToHideOnSerialization = [];
 
     /**
+     * @var array<string, string[]> <className> => the class and its parent classes, the class first
+     * Read by SerializerTrait::isPropertyVisible(): a class-wide hide of a parent class covers its subclasses.
+     */
+    public static array $classAndParentClassNamesByClass = [];
+
+    /**
      * @var array<string, array<string, string>> <className> => <columnAlias> => <dotPath>
      * Per-class column specification used by SerializerTrait when emitting an array of objects
      * in TOON format. Restricts which properties of the inner objects appear as TOON columns,

@@ -440,6 +440,14 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.30.0 — A class an application derives from a framework or module class (same path under `App\`, or a container
+  alias) gets what its parent declares: a parent's `QueryOptionsTrait` counts (`ReflectionClass::hasTrait()` sees
+  inherited traits); `Foo::getDefaultQueryOptions()`, `setDefaultQueryOptions()` and the snapshot pair of the module
+  class go to the application's class, whose repository reads them; `DtoQueryOptions::$baseEntity` is the application's
+  class; a class-wide hide (`addStaticPropertiesToHide(true, …)`) covers subclasses; the OpenAPI documenter documents
+  the application's class (schema name `App.…`, its added properties) wherever an entity, value object or set of the
+  module is named. Action: regenerate the SDK; models of derived classes move from `DDD/…` to `App/…`. A workaround
+  that repeats `use QueryOptionsTrait;` or registers a hide on both classes keeps working.
 - 3.29.0 — `update()` / `insert()` of an object whose class is a parent class of the repository's entity class (a
   module object built with `new` while the application registered a subclass with its own repository) throws an
   `InternalErrorException` naming both classes; before, it wrote no row and threw nothing. Create such objects with

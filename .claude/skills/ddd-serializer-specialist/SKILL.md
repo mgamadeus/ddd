@@ -3,7 +3,7 @@ name: ddd-serializer-specialist
 description: Work with the SerializerTrait in mgamadeus/ddd — the one serialization layer behind ALL API output, DB persistence, request hydration and message payloads (every DefaultObject, RequestDto and RestResponseDto uses it). Covers toObject/toJSON and the forPersistence dual mode (DontPersistProperty vs HideProperty vs HidePropertyOnSystemSerialization), setPropertiesFromObject hydration (aliases are output-only), attribute and runtime hiding incl. dotted-path hides, renaming via OverwritePropertyName and Aliases, ExposePropertyInsteadOfClass flattening, per-class toObject overrides, SerializerRegistry cache semantics, TOON tabular serialization, and model-facing time zones (MODEL_FACING_DATETIME, withInputTimezone/withModelFacingTimezone, DateTime::fromStringInZone/formatForModel). Use when configuring serialization, hiding fields, renaming output, excluding fields from persistence, debugging missing or wrong-named output, emitting tabular formats, or converting date-times at an LLM/MCP tool boundary.
 metadata:
   author: mgamadeus
-  version: "1.3.2"
+  version: "1.3.3"
   framework: mgamadeus/ddd
 ---
 
@@ -197,10 +197,14 @@ $entity->getPropertiesToHide();             // returns current hide list
 ### Per-Class (static, lasts entire request)
 
 ```php
-Account::addStaticPropertiesToHide(true, 'password', 'apiToken');     // current class only
-Account::addStaticPropertiesToHide(false, 'password', 'apiToken');    // entire hierarchy
+Account::addStaticPropertiesToHide(true, 'password', 'apiToken');     // Account and its subclasses
+Account::addStaticPropertiesToHide(false, 'password', 'apiToken');    // every object with such a property
 Account::removeStaticPropertiesToHide(true, 'password');
 ```
+
+A class-wide hide covers the class **and its subclasses** (since v3.30.0): an application's subclass of a module class
+(`App\…\Conversation extends DDD\…\Conversation`) hides what the module class hides. A hide on the subclass leaves
+the parent class visible, and `removeStaticPropertiesToHide()` on a subclass cannot lift a hide its parent declares.
 
 ### Recursive (Dotted-Path)
 
