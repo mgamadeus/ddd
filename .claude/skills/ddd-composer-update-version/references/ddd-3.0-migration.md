@@ -440,6 +440,11 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.31.1 — A set an application derives from a module set in another namespace gets its parent's element type: the
+  `@property T[] $elements` of the nearest class up to the one declaring the property counts, and `T` is resolved with
+  the use statements and namespace of the class that declares it (before, only the derived class' own comment counted
+  and the property's `@var BaseObject[]` was resolved in the derived class' namespace, so the API document of 3.30
+  failed with `TypeDefinitionMissingOrWrong`). A derived set's own `@property` still wins.
 - 3.31.0 — A cron execution whose runner is gone no longer blocks its Cron for hours. `app:crons:execute` closes a
   RUNNING execution older than the runner's timeout per command (`Crons::TIMEOUT_PER_CRON_IN_SECONDS`, 360 s) plus
   `CronExecution::ABANDONED_GRACE_SECONDS` (60 s) as ENDED / FAILED with the reason in its output

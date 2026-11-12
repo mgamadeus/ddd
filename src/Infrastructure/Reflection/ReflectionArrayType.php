@@ -34,12 +34,17 @@ class ReflectionArrayType extends \ReflectionNamedType
         if (isset(self::$arrayTypeCache[$key])) {
             return self::$arrayTypeCache[$key];
         }
-        $arrayTypes = $this->reflectionProperty->getDocCommentInstance()->getPropertyTypes();
-        $classDefinedArrayTypes = $this->reflectionProperty->getReflectionClass()->getDocCommentInstance(
-        )->getPropertyTypes(
-            $this->reflectionProperty->getName()
-        );
-        $arrayTypes = $classDefinedArrayTypes ? $classDefinedArrayTypes : $arrayTypes;
+        // a class doc comment's (at)property wins over the property's own (at)var; each is resolved against the use
+        // statements and namespace of the class that declares it, not of the class being reflected: a set an application
+        // derives from a module set in another namespace inherits the module's declaration
+        $classDeclaringArrayTypes = $this->getClassDeclaringArrayTypesInItsDocComment();
+        if ($classDeclaringArrayTypes) {
+            $arrayTypes = $classDeclaringArrayTypes->getDocCommentInstance()->getPropertyTypes($this->reflectionProperty->getName());
+            $classResolvingArrayTypes = $classDeclaringArrayTypes;
+        } else {
+            $arrayTypes = $this->reflectionProperty->getDocCommentInstance()->getPropertyTypes();
+            $classResolvingArrayTypes = ReflectionClass::instance($this->reflectionProperty->getDeclaringClass()->getName());
+        }
 
         /** @var ReflectionNamedType[] $finalTypes */
         $finalTypes = [];
@@ -55,8 +60,7 @@ class ReflectionArrayType extends \ReflectionNamedType
                 $finalTypes[] = new ReflectionNamedType($arrayType, true, true);
                 continue;
             }
-            $propertyClass = $this->reflectionProperty->getReflectionClass(
-            )->getClassWithNamespaceConsideringUseStatements($arrayType);
+            $propertyClass = $classResolvingArrayTypes->getClassWithNamespaceConsideringUseStatements($arrayType);
             $classWiithNamespace = $propertyClass->getNameWithNamespace();
             if ($classWiithNamespace) {
                 $finalTypes[] = new ReflectionNamedType($classWiithNamespace, false, true);
@@ -80,12 +84,36 @@ class ReflectionArrayType extends \ReflectionNamedType
      */
     public function allowsNullElements(): bool
     {
-        $reflectionClass = $this->reflectionProperty->getReflectionClass();
-        $propertyName = $this->reflectionProperty->getName();
-        if ($reflectionClass->getDocCommentInstance()->getPropertyTypes($propertyName)) {
-            return $reflectionClass->getDocCommentInstance()->allowsNullArrayElements($propertyName);
+        $classDeclaringArrayTypes = $this->getClassDeclaringArrayTypesInItsDocComment();
+        if ($classDeclaringArrayTypes) {
+            return $classDeclaringArrayTypes->getDocCommentInstance()->allowsNullArrayElements(
+                $this->reflectionProperty->getName()
+            );
         }
         return $this->reflectionProperty->getDocCommentInstance()->allowsNullArrayElements();
+    }
+
+    /**
+     * The class whose doc comment declares the property's array type with (at)property: the reflected class or one of
+     * its parents up to the class that declares the property, the nearest one first.
+     *
+     * @return ReflectionClass|null null when no class of that chain declares it
+     */
+    public function getClassDeclaringArrayTypesInItsDocComment(): ?ReflectionClass
+    {
+        $propertyName = $this->reflectionProperty->getName();
+        $nameOfClassDeclaringProperty = $this->reflectionProperty->getDeclaringClass()->getName();
+        $reflectionClass = $this->reflectionProperty->getReflectionClass();
+        while ($reflectionClass) {
+            if ($reflectionClass->getDocCommentInstance()->getPropertyTypes($propertyName)) {
+                return $reflectionClass;
+            }
+            if ($reflectionClass->getName() === $nameOfClassDeclaringProperty) {
+                return null;
+            }
+            $reflectionClass = $reflectionClass->getParentClass();
+        }
+        return null;
     }
 
     public function getName(): string
