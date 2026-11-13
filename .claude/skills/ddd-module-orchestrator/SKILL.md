@@ -32,6 +32,23 @@ Centralized control for studying, updating, releasing, and propagating changes a
 | `mgamadeus/ddd-common-geo` | Addresses, geocoding, GeoRegion hierarchy |
 | `mgamadeus/ddd-common-translations` | Text translation, app UI translations, embeddings |
 | `mgamadeus/ddd-design-studio` | Design review studio: HTML design boards of a checkout on a canvas, comments, statuses, decisions, thumbnails; npm counterpart `@mgamadeus/ddd-design-studio` in `web/` |
+| `mgamadeus/ddd-agents` | The agentic loop on top of `ddd-ai`: conversations, task plan, agent skills and purposes, MCP tools, widgets, delegation and schedules, decision layer, observability; npm counterpart `@mgamadeus/ddd-agents` in `web/` (pre-release) |
+
+**Module skills of `ddd-agents`** — nine skills, one owner per source file
+(`references/source-ownership.tsv` of the entry skill; the Core skill gate requires the entry skill plus the owning
+topic skill before a file under the module's `src/` or `config/` changes):
+
+| Skill | Covers |
+|---|---|
+| `ddd-module-agents-specialist` | entry: install, wiring, host duties (console commands, crons, middlewares, transports), configuration, folder → skill table |
+| `ddd-module-agents-loop-specialist` | how a turn runs, from the owner's message to the answer |
+| `ddd-module-agents-context-specialist` | what the model sees on each call: prompts, cache, reduction, recall, state delivery |
+| `ddd-module-agents-skills-and-purposes-specialist` | agent skills, catalog and loading, purposes, done criteria |
+| `ddd-module-agents-tools-specialist` | MCP tool layer: attributes, DTOs, executor, batches |
+| `ddd-module-agents-widgets-specialist` | widgets, the owner's answer, signal sources, realtime signal |
+| `ddd-module-agents-autonomy-specialist` | delegation, schedules, mandates, supervisor, owner reports |
+| `ddd-module-agents-decisions-and-guards-specialist` | decision sites, owner consent, injection screening |
+| `ddd-module-agents-observability-specialist` | diagnosis, record and replay, evaluation, metrics |
 
 ### Dependency Graph (Determines Release & Update Order)
 
@@ -51,26 +68,28 @@ Level 2 (depends on ddd + Level 1):
 Level 3 (depends on ddd + Level 1/2):
   mgamadeus/ddd-common-geo         -> ddd, ddd-common-political
   mgamadeus/ddd-common-translations -> ddd, ddd-ai, ddd-common-money, ddd-common-political
+  mgamadeus/ddd-agents             -> ddd, ddd-ai, ddd-argus, ddd-common-money
 ```
 
 ### Reverse Dependencies (Who Depends on What)
 
 | If you release a fix in... | These children must bump their floor + re-release: |
 |------------------|-------------------------------|
-| **ddd** (Core) | Money, Argus, Political, AI, Geo, Translations, Design Studio (ALL) |
-| **ddd-common-money** | AI, Translations |
-| **ddd-argus** | Political, AI, Design Studio |
+| **ddd** (Core) | Money, Argus, Political, AI, Geo, Translations, Design Studio, Agents (ALL) |
+| **ddd-common-money** | AI, Translations, Agents |
+| **ddd-argus** | Political, AI, Design Studio, Agents |
 | **ddd-common-political** | Geo, Translations |
-| **ddd-ai** | Translations |
+| **ddd-ai** | Translations, Agents |
 | **ddd-common-geo** | (none -- leaf module) |
 | **ddd-common-translations** | (none -- leaf module) |
 | **ddd-design-studio** | (none -- leaf module) |
+| **ddd-agents** | (none -- leaf module) |
 
 > **The repositories live in the GitHub organisation `ddd-framework`; the package names stay `mgamadeus/*`.**
 > **GitHub repo names ≠ package names for the four `ddd-common-*` packages** — the repo drops the `common-` segment:
 > `ddd-common-money` → repo `ddd-framework/ddd-money`, `ddd-common-political` → `ddd-framework/ddd-political`,
 > `ddd-common-geo` → `ddd-framework/ddd-geo`, `ddd-common-translations` → `ddd-framework/ddd-translations`.
-> (`ddd`, `ddd-ai`, `ddd-argus`, `ddd-design-studio` match their repo names.) Never create a repository of the same
+> (`ddd`, `ddd-ai`, `ddd-argus`, `ddd-design-studio`, `ddd-agents` match their repo names.) Never create a repository of the same
 > name under `mgamadeus` — it would break GitHub's redirect from the old URLs. When pushing, resolve the real repo with
 > `git remote get-url origin` (or the Packagist `source.url`) — do not assume the repo matches the package name.
 
@@ -125,7 +144,7 @@ refresh, token utilities, and TS types of the DDD wire format. No UI components,
 Not part of the Composer dependency graph: a Core release needs no ddd-web release unless the OpenAPI contract
 changed.
 
-### A module with an npm counterpart: `ddd-design-studio`
+### A module with an npm counterpart: `ddd-design-studio` (and `ddd-agents`)
 
 The repository carries the Composer package at its root and the npm package `@mgamadeus/ddd-design-studio` in
 `web/`, versions in lockstep (`composer.json` = `web/package.json`). One tag `vX.Y.Z` releases both: Packagist reads
@@ -330,7 +349,7 @@ DDD Core (vendor/mgamadeus/ddd/)
 DDD Modules (vendor/mgamadeus/ddd-{name}/)
 +-- AGENTS.md               [Module architecture, entities, services -- references DDD Core AGENTS.md]
 +-- README.md                [Public module documentation]
-+-- .claude/skills/ddd-module-{name}-specialist  [Module-specific domain knowledge]
++-- .claude/skills/ddd-module-{name}-specialist  [Module-specific domain knowledge; a large module adds topic skills ddd-module-{name}-{topic}-specialist]
 
 Consuming Applications (.claude/skills/)
 +-- SYMLINKS to vendor/      [ddd-* and ddd-module-* skills; `composer update` refreshes an EXISTING symlink's target, but does NOT create a symlink for a NEWLY added module skill -- add that symlink by hand (git-tracked) when a new module or skill first ships]

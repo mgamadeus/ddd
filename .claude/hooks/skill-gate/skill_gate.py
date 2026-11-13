@@ -95,6 +95,58 @@ def get_missing_skills(required_skills, loaded_skills, require_all):
     return [] if any(skill in loaded_skills for skill in required_skills) else list(required_skills)
 
 
+def convert_manifest_glob_to_regex(manifest_glob):
+    # '**/' = zero or more path segments, '**' = anything, '*' = anything but '/'
+    regex_parts = []
+    position = 0
+    while position < len(manifest_glob):
+        if manifest_glob.startswith('**/', position):
+            regex_parts.append('(?:.*/)?')
+            position += 3
+        elif manifest_glob.startswith('**', position):
+            regex_parts.append('.*')
+            position += 2
+        elif manifest_glob[position] == '*':
+            regex_parts.append('[^/]*')
+            position += 1
+        else:
+            regex_parts.append(re.escape(manifest_glob[position]))
+            position += 1
+    return re.compile('^' + ''.join(regex_parts) + '$')
+
+
+def find_manifest_owning_skill(ownership_manifest, file_path):
+    """The skill a module's source-ownership manifest names for the file (first matching line wins), or None.
+
+    Manifest: one rule per line, <glob relative to the module root><TAB><skill id>; a header comment
+    '# <skill id> (<skill name>): …' maps an id to its skill name."""
+    if not ownership_manifest:
+        return None
+    module_root_marker = ownership_manifest['module_root_marker']
+    marker_position = file_path.find(module_root_marker)
+    if marker_position < 0:
+        return None
+    module_root = file_path[:marker_position + len(module_root_marker)]
+    relative_path = file_path[marker_position + len(module_root_marker):]
+    try:
+        with open(os.path.join(module_root, ownership_manifest['manifest_path'])) as manifest_file:
+            manifest_lines = manifest_file.read().splitlines()
+    except OSError:
+        return None
+    skill_names_by_id = {}
+    for manifest_line in manifest_lines:
+        header_match = re.match(r'^#\s+([a-z0-9-]+)\s+\(([A-Za-z0-9_:-]+)\):', manifest_line)
+        if header_match:
+            skill_names_by_id[header_match.group(1)] = header_match.group(2)
+    for manifest_line in manifest_lines:
+        if not manifest_line.strip() or manifest_line.startswith('#') or '\t' not in manifest_line:
+            continue
+        manifest_glob, skill_id = manifest_line.split('\t', 1)
+        if convert_manifest_glob_to_regex(manifest_glob.strip()).match(relative_path):
+            return skill_names_by_id.get(skill_id.strip())
+    return None
+
+
 def deny(reason):
     print(json.dumps({'hookSpecificOutput': {
         'hookEventName': 'PreToolUse',
@@ -120,7 +172,11 @@ def build_file_violation(policies, loaded_skills, file_path):
             ))
     for module_rule in policies.get('module_rules', []):
         if any(fnmatch.fnmatch(file_path, pattern) for pattern in module_rule['patterns']):
-            missing_skills = get_missing_skills(module_rule['skills'], loaded_skills, require_all=True)
+            required_skills = list(module_rule['skills'])
+            owning_skill = find_manifest_owning_skill(module_rule.get('ownership_manifest'), file_path)
+            if owning_skill and owning_skill not in required_skills:
+                required_skills.append(owning_skill)
+            missing_skills = get_missing_skills(required_skills, loaded_skills, require_all=True)
             if missing_skills:
                 violations.append('a file of the {} ({}) needs {} (read the module\'s .claude/skills/<name>/SKILL.md)'.format(
                     module_rule['category'], file_path, ' + '.join(missing_skills)))

@@ -1,5 +1,5 @@
 {
-  "comment": "Which ddd-* skills a session must have loaded before it creates or changes a file of a category. First matching rule wins (fnmatch over the absolute path). new_file: ALL skills required; existing file: ANY one of them. new_only: the rule applies to new files only. Paths match Core and the module repos alike (same src/ layout). module_rules apply IN ADDITION to the first matching file rule (a module's own skill plus the topic skill); a skill counts as loaded when it was loaded with the Skill tool or its SKILL.md was read.",
+  "comment": "Which ddd-* skills a session must have loaded before it creates or changes a file of a category. First matching rule wins (fnmatch over the absolute path). new_file: ALL skills required; existing file: ANY one of them. new_only: the rule applies to new files only. Paths match Core and the module repos alike (same src/ layout). module_rules apply IN ADDITION to the first matching file rule (a module's own skill plus the topic skill); a skill counts as loaded when it was loaded with the Skill tool or its SKILL.md was read. A module rule with ownership_manifest also requires the skill the module's manifest names for the file (first matching glob).",
   "file_rules": [
     {
       "category": "Skill (SKILL.md, references)",
@@ -157,6 +157,20 @@
     }
   ],
   "module_rules": [
+    {
+      "category": "ddd-agents module",
+      "patterns": [
+        "*/DDD/Modules/Agents/src/*",
+        "*/DDD/Modules/Agents/config/*"
+      ],
+      "skills": [
+        "ddd-module-agents-specialist"
+      ],
+      "ownership_manifest": {
+        "module_root_marker": "/DDD/Modules/Agents/",
+        "manifest_path": ".claude/skills/ddd-module-agents-specialist/references/source-ownership.tsv"
+      }
+    },
     {
       "category": "ddd-ai module",
       "patterns": [

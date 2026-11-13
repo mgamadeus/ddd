@@ -440,6 +440,18 @@ Unchanged:
   Fixes: `Role::setName()` marks the framework's admin roles as admin (a freshly built ADMIN / SUPERADMIN role was
   never admin); `DBAccount::BASE_ORM_MODEL` names the model (every find of the framework's own Account failed);
   the cache's configured `defaultTTL` is read as an integer.
+- 3.32.2 — Documentation and tooling only: the module orchestrator skill lists `mgamadeus/ddd-agents` (dependency graph,
+  reverse dependencies, its nine module skills); the framework repository's skill gate requires, for a file of that
+  module, its entry skill plus the skill its `source-ownership.tsv` names (`ownership_manifest` of a module rule). No
+  action.
+- 3.32.1 — Fixes: a lazy load while caches are off (`deactivateCaches()` … `restoreCachesSnapshot()`, `$noCache`) or
+  after a consumed cache-scope invalidation switched caching off for that property for the rest of the process: the
+  decision was written into the `#[LazyLoad]` instance that `StaticRegistry` shares for the process lifetime, so in a
+  long-lived worker every later load of it bypassed the entity and virtual registries (seconds per job). The decision
+  now holds for the one load (a copy of the instance when it differs from the declared value). A cache-scope
+  invalidation with a count no longer applies once the count is used up, also when it carries an unexpired
+  `invalidateUntil` (`CacheScopeInvalidation::isApplicable()` / `hasUnexpiredInvalidateUntil()` follow the rule the
+  database queries use; `isCountUsedUp()`); `applyInvalidation()` then deletes it. No action.
 - 3.32.0 — A lazy-loaded property declared with a framework or module entity class loads the application's class of
   that entity (container alias or same path under `App\`) when that class declares a `#[LazyLoadRepo]` of its own:
   a module's `?Account $account` reads the application's account through the application's repository and repo type
@@ -451,14 +463,6 @@ Unchanged:
   targets such an entity now points to the application's model (e.g. `use App\…\DBAccountModel` instead of
   `DDD\…\DBAccountModel`, same table). A workaround that redeclares the property with `entityClassName` or overrides
   the framework repository in `services.yaml` keeps working and can go.
-- 3.32.1 — Fixes: a lazy load while caches are off (`deactivateCaches()` … `restoreCachesSnapshot()`, `$noCache`) or
-  after a consumed cache-scope invalidation switched caching off for that property for the rest of the process: the
-  decision was written into the `#[LazyLoad]` instance that `StaticRegistry` shares for the process lifetime, so in a
-  long-lived worker every later load of it bypassed the entity and virtual registries (seconds per job). The decision
-  now holds for the one load (a copy of the instance when it differs from the declared value). A cache-scope
-  invalidation with a count no longer applies once the count is used up, also when it carries an unexpired
-  `invalidateUntil` (`CacheScopeInvalidation::isApplicable()` / `hasUnexpiredInvalidateUntil()` follow the rule the
-  database queries use; `isCountUsedUp()`); `applyInvalidation()` then deletes it. No action.
 - 3.31.2 — `phpunit/phpunit` `^9.5 || ^11.5`: a module whose tests need PHPUnit 11 installs next to the framework.
   `DatabaseVirtualColumn::getColumnNameForVirtualColumn()` returns a name without the `virtual` prefix unchanged (a
   PHPUnit constraint function stood in for `str_starts_with()`, so every name was cut); `src/` no longer uses PHPUnit.
