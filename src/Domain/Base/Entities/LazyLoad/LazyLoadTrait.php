@@ -187,12 +187,15 @@ trait LazyLoadTrait
                     if ($propertyContainingId && !isset($this->$propertyContainingId)) {
                         return null;
                     }
-                    // determine if caching is applicable
+                    // determine if caching is applicable — for this load only: the attribute instance is shared by
+                    // every load of the property in the process (StaticRegistry), so a load with caches off or after
+                    // a cache-scope invalidation works on a copy and never switches caching off for later loads
                     $repoClassReflection = ReflectionClass::instance($repoClass);
+                    $useCacheForThisLoad = $lazyloadAttributeInstance->useCache;
                     if (DDDService::instance()::$noCache) {
-                        $lazyloadAttributeInstance->useCache = false;
+                        $useCacheForThisLoad = false;
                     } elseif (
-                        $lazyloadAttributeInstance->useCache && $entityCacheAttributeInstance = $repoClassReflection->getAttributeInstance(
+                        $useCacheForThisLoad && $entityCacheAttributeInstance = $repoClassReflection->getAttributeInstance(
                             EntityCache::class
                         )
                     ) {
@@ -202,11 +205,15 @@ trait LazyLoadTrait
                             $cacheScopeServiceClass = DDDService::instance()->getService(
                                 CacheScopeInvalidationsService::class
                             );
-                            $lazyloadAttributeInstance->useCache = $cacheScopeServiceClass::canUseCachingForScopesAndLazyloadInitiatingEntity(
+                            $useCacheForThisLoad = $cacheScopeServiceClass::canUseCachingForScopesAndLazyloadInitiatingEntity(
                                 $entityCacheAttributeInstance->cacheScopes,
                                 $this
                             );
                         }
+                    }
+                    if ($useCacheForThisLoad !== $lazyloadAttributeInstance->useCache) {
+                        $lazyloadAttributeInstance = clone $lazyloadAttributeInstance;
+                        $lazyloadAttributeInstance->useCache = $useCacheForThisLoad;
                     }
                 }
 

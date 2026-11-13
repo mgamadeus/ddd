@@ -74,27 +74,38 @@ class CacheScopeInvalidation extends Entity
     }
 
     /**
-     * @return bool Returns true, if CacheScopeInvalidation did not expire maxium numberOfTimesToInvalidateCache have not been used up yet
+     * @return bool true while the invalidation still applies — the same rule the database queries use: a count it
+     *              carries is not used up (a row with a count is count-based: at 0 it no longer applies, also when it
+     *              carries an unexpired invalidateUntil as well), and its invalidateUntil, if any, lies in the future
      */
     public function isApplicable(): bool
     {
-        if (isset($this->numberOfTimesToInvalidateCache) && $this->numberOfTimesToInvalidateCache) {
-            return true;
+        if ($this->isCountUsedUp()) {
+            return false;
         }
-        if (isset($this->invalidateUntil) && $this->invalidateUntil->getTimestamp() > time()) {
-            return true;
+        if (isset($this->numberOfTimesToInvalidateCache)) {
+            return !isset($this->invalidateUntil) || $this->invalidateUntil->getTimestamp() > time();
         }
-        return false;
+        return isset($this->invalidateUntil) && $this->invalidateUntil->getTimestamp() > time();
     }
 
     /**
      * @return bool True while this invalidation's invalidateUntil lies in the future. This is the time-limited form
      * of invalidation, which stays active for its whole window and is not consumed per read — applyInvalidation()
-     * only decrements the count-based numberOfTimesToInvalidateCache form.
+     * only decrements the count-based numberOfTimesToInvalidateCache form. A row whose count is used up no longer
+     * applies, whatever its invalidateUntil says.
      */
     public function hasUnexpiredInvalidateUntil(): bool
     {
-        return isset($this->invalidateUntil) && $this->invalidateUntil->getTimestamp() > time();
+        return !$this->isCountUsedUp() && isset($this->invalidateUntil) && $this->invalidateUntil->getTimestamp() > time();
+    }
+
+    /**
+     * @return bool the invalidation carries a count and it is used up (0 or less)
+     */
+    public function isCountUsedUp(): bool
+    {
+        return isset($this->numberOfTimesToInvalidateCache) && $this->numberOfTimesToInvalidateCache <= 0;
     }
 
     /**
